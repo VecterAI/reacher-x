@@ -285,16 +285,16 @@ export function AgentOpsDashboard() {
     () => [
       metricCard(
         "memories-learned",
-        "Memories learned",
+        "Memories saved",
         data.overview.metrics.memoriesLearned,
         "this period",
         <BrainCircuit className="h-4 w-4" />
       ),
       metricCard(
         "average-memory-impact",
-        "Avg memory impact",
+        "Avg assigned impact",
         data.overview.metrics.averageMemoryImpact,
-        "learned memories",
+        "saved memories",
         <Bot className="h-4 w-4" />
       ),
       metricCard(
@@ -544,30 +544,30 @@ export function AgentOpsDashboard() {
     () => [
       metricCard(
         "mem-learned",
-        "Memories learned",
+        "Memories saved",
         data.memory.summary.memoriesLearned,
         "this period",
         <BrainCircuit className="h-4 w-4" />
       ),
       metricCard(
         "mem-high-impact",
-        "High-impact memories",
+        "High-scored memories",
         data.memory.summary.highImpactMemories,
-        "impact >= 80",
+        "assigned impact >= 80",
         <Bot className="h-4 w-4" />
       ),
       metricCard(
         "mem-average-impact",
-        "Average impact",
+        "Average assigned impact",
         data.memory.summary.averageImpact,
-        "learned memories",
+        "saved memories",
         <Radar className="h-4 w-4" />
       ),
       metricCard(
         "mem-average-confidence",
-        "Average confidence",
+        "Average assigned confidence",
         data.memory.summary.averageConfidence,
-        "learned memories",
+        "saved memories",
         <Cable className="h-4 w-4" />,
         "default",
         "percent"
@@ -858,14 +858,14 @@ export function AgentOpsDashboard() {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <AgentOpsMemoryChartWrapper data={data.memory.impactTrend} />
             <AgentOpsBarChart
-              title="High-impact memories over time"
+              title="Memory saves by assigned score"
               config={{
                 memoryWrites: {
-                  label: "Memories learned",
+                  label: "Memories saved",
                   color: AGENT_OPS_PRIMARY_CHART_COLOR,
                 },
                 highImpactMemories: {
-                  label: "High-impact",
+                  label: "High-scored",
                   color: "hsl(var(--chart-3))",
                 },
               }}
@@ -1064,9 +1064,11 @@ export function AgentOpsDashboard() {
               runId: params.runId ?? null,
               suggestionId: params.suggestionId ?? null,
             }}
-            onClose={closePanel}
-            onOpenMonitor={(monitorId) => openPanel("monitor", { monitorId })}
-            onOpenMemory={(memoryId) => openPanel("memory", { memoryId })}
+            onCloseAction={closePanel}
+            onOpenMonitorAction={(monitorId) =>
+              openPanel("monitor", { monitorId })
+            }
+            onOpenMemoryAction={(memoryId) => openPanel("memory", { memoryId })}
           />
         </div>
       ) : null}
@@ -1091,9 +1093,13 @@ export function AgentOpsDashboard() {
                 runId: params.runId ?? null,
                 suggestionId: params.suggestionId ?? null,
               }}
-              onClose={closePanel}
-              onOpenMonitor={(monitorId) => openPanel("monitor", { monitorId })}
-              onOpenMemory={(memoryId) => openPanel("memory", { memoryId })}
+              onCloseAction={closePanel}
+              onOpenMonitorAction={(monitorId) =>
+                openPanel("monitor", { monitorId })
+              }
+              onOpenMemoryAction={(memoryId) =>
+                openPanel("memory", { memoryId })
+              }
             />
           </DrawerContent>
         </Drawer>
@@ -1401,7 +1407,10 @@ function DiscoveryTable({
               onClick={() => onOpenQuery(row.queryCandidateId)}
             >
               <TableCell className="max-w-0">
-                <span className="block truncate font-medium" title={row.rawValue}>
+                <span
+                  className="block truncate font-medium"
+                  title={row.rawValue}
+                >
                   {row.rawValue}
                 </span>
               </TableCell>
@@ -1566,7 +1575,7 @@ function AgentOpsImprovementChartWrapper({
       title="Learning loop output"
       config={{
         memoriesLearned: {
-          label: "Memories learned",
+          label: "Memories saved",
           color: AGENT_OPS_PRIMARY_CHART_COLOR,
         },
         queriesActivated: {
@@ -1677,11 +1686,17 @@ function AgentOpsMemoryChartWrapper({
 }) {
   return (
     <AgentOpsLineChart
-      title="Memory quality over time"
+      title="Memory write signals over time"
       config={{
-        memoryWrites: { label: "Writes", color: "hsl(var(--chart-1))" },
-        impactScore: { label: "Impact", color: "hsl(var(--chart-2))" },
-        confidence: { label: "Confidence", color: "hsl(var(--chart-3))" },
+        memoryWrites: { label: "Saved", color: "hsl(var(--chart-1))" },
+        impactScore: {
+          label: "Assigned impact",
+          color: "hsl(var(--chart-2))",
+        },
+        confidence: {
+          label: "Assigned confidence",
+          color: "hsl(var(--chart-3))",
+        },
       }}
       data={data}
       lines={[

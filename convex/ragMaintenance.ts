@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation } from "./lib/functionBuilders";
-import { getProspectNamespace, prospectRag } from "./agents/outreach/rag";
+import { getProspectNamespace, getProspectRag } from "./agents/outreach/rag";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 const PROSPECT_CLAIM_BATCH_SIZE = 2;
@@ -96,7 +96,7 @@ export const cleanupProspectLegacyEntriesInternal = internalAction({
     continuationScheduled: boolean;
   }> => {
     try {
-      const namespace = await prospectRag.getNamespace(ctx, {
+      const namespace = await getProspectRag().getNamespace(ctx, {
         namespace: getProspectNamespace(String(args.prospectId)),
       });
       if (!namespace) {
@@ -111,7 +111,7 @@ export const cleanupProspectLegacyEntriesInternal = internalAction({
         };
       }
 
-      const entries = await prospectRag.list(ctx, {
+      const entries = await getProspectRag().list(ctx, {
         namespaceId: namespace.namespaceId,
         paginationOpts: {
           cursor: args.cursor ?? null,
@@ -120,7 +120,7 @@ export const cleanupProspectLegacyEntriesInternal = internalAction({
       });
       const legacyEntries = entries.page.filter((entry) => !entry.key);
       for (const entry of legacyEntries) {
-        await prospectRag.deleteAsync(ctx, { entryId: entry.entryId });
+        await getProspectRag().deleteAsync(ctx, { entryId: entry.entryId });
       }
 
       if (entries.isDone) {

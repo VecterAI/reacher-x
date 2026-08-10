@@ -4,7 +4,10 @@ import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
-import { agentMemoryRag, getWorkspaceNamespace } from "./agents/outreach/rag";
+import {
+  getAgentMemoryRag,
+  getWorkspaceNamespace,
+} from "./agents/outreach/rag";
 import { action } from "./lib/functionBuilders";
 import { mergeTierOrderedProspectIds } from "./lib/prospectSearchMerge";
 import {
@@ -110,7 +113,7 @@ export const searchProspectsUnified = action({
 
     if (!prev) {
       try {
-        const rag = await agentMemoryRag.search(ctx, {
+        const rag = await getAgentMemoryRag().search(ctx, {
           namespace: getWorkspaceNamespace(
             String(args.workspaceId),
             "prospect_search"

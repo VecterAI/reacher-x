@@ -405,6 +405,37 @@ export const generatePlan = createTool({
         }
       }
 
+      const compliance = await ctx.runAction(
+        internal.memory.evaluateWorkspaceMemoryComplianceInternal,
+        {
+          workspaceId,
+          userId,
+          prospectId,
+          surface: "manual_prospect",
+          channel: prospectPlatform,
+          query: [
+            prospect?.displayName ?? "",
+            prospect?.title ?? "",
+            prospect?.briefIntro ?? "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          taskContext:
+            "Create a new outreach plan for the selected prospect using the supplied strategy and ordered tasks.",
+          candidate: JSON.stringify({
+            strategy: args.strategy,
+            tasks: planTasks,
+          }),
+        }
+      );
+      if (!compliance.compliant) {
+        return {
+          success: false,
+          message: `The draft conflicts with saved workspace instructions. Regenerate it before saving. ${compliance.repairInstruction}`,
+          error: compliance.violations.join("; "),
+        };
+      }
+
       const executionThreadId = await resolveExecutionThreadId(
         ctx,
         "generatePlan"

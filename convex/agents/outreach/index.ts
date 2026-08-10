@@ -382,6 +382,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
                 ) || [],
               matchedKeywords: prospect.matchedKeywords || [],
               finance: prospect.finance?.displayValue,
+              prospectId: String(prospect._id),
             }
           )
       ),
@@ -495,24 +496,9 @@ You are chatting about this specific prospect and already have the complete prof
 
     const workspaceMemoryMessage = {
       role: "system" as const,
-      content: `## Workspace Strategy Memory
-
-Relevant reusable memories:
-${outreachLearningContext.relevantMemories.map((item: string) => `- ${item}`).join("\n") || "- None"}
-
-Operator preferences:
-${outreachLearningContext.operatorPreferences.map((item: string) => `- ${item}`).join("\n") || "- None"}
-
-Winning patterns:
-${outreachLearningContext.winningPatterns.map((item: string) => `- ${item}`).join("\n") || "- None"}
-
-Common objections or weak patterns:
-${outreachLearningContext.objections.map((item: string) => `- ${item}`).join("\n") || "- None"}
-
-Similar prior cases:
-${outreachLearningContext.similarCases.map((item: string) => `- ${item}`).join("\n") || "- None"}
-
-Use this memory as guidance when generating or refining outreach plans. Prefer patterns with clear operational pain, avoid weak or repetitive angles, and adapt to the current prospect rather than copying prior phrasing.`,
+      content:
+        outreachLearningContext.policyPrompt ||
+        "## Workspace Memory Policy\n\nNo applicable workspace memories were found.",
     };
 
     const xLimitMessage = {

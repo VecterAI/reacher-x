@@ -11,6 +11,7 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../_generated/api";
+import type { Id } from "../../_generated/dataModel";
 import {
   WORKSPACE_MEMORY_CATEGORIES,
   type WorkspaceMemoryCategory,
@@ -26,7 +27,12 @@ const workspaceMemoryCategoryEnum = z.enum(WORKSPACE_MEMORY_CATEGORIES);
 type MemorySummary = {
   memoryId: string;
   category: WorkspaceMemoryCategory;
-  source: "qualification" | "enrichment" | "outreach" | "operator";
+  source:
+    | "qualification"
+    | "enrichment"
+    | "outreach"
+    | "operator"
+    | "style_analysis";
   title: string;
   summary: string;
   confidence: number;
@@ -111,61 +117,43 @@ export const searchWorkspaceMemories = createTool({
         try {
           const limit = args.limit ?? 5;
 
-          // 1) Direct matches from built-in agent memories
-          const directMatches = await ctx.runQuery(
-            internal.memory.findRelevantBuiltInAgentMemoriesInternal,
+          const memoryContext = await ctx.runAction(
+            internal.memory.buildWorkspaceMemoryContextInternal,
             {
-              userId: String(context.userId),
-              workspaceId: context.workspaceId,
+              userId: context.userId,
+              workspaceId: context.workspaceId as Id<"workspaces">,
               query: args.query,
-              limit,
-              categories: args.categories,
+              surface: context.prospectId ? "manual_prospect" : "main",
+              prospectId: context.prospectId
+                ? (context.prospectId as Id<"prospects">)
+                : undefined,
             }
           );
-
-          const memories: MemorySummary[] = directMatches.map((match: any) => ({
-            memoryId: match.memoryId,
-            category: match.parsed.category,
-            source: match.parsed.source,
-            title: match.parsed.title,
-            summary: match.parsed.summary,
-            confidence: match.parsed.confidence,
-            impactScore: match.parsed.impactScore,
-            createdAt: match.createdAt,
-            promptLine: match.promptLine,
-          }));
-
-          // 2) Optional semantic matches from workspace RAG namespaces
-          const namespaces = [
-            "wins",
-            "losses",
-            "patterns",
-            "objections",
-          ] as const;
-
-          const semanticResults = await Promise.all(
-            namespaces.map(async (namespace) => {
-              const result = await ctx.runAction(
-                internal.memory.searchWorkspaceMemoryNamespaceInternal,
-                {
-                  workspaceId: context.workspaceId as string,
-                  namespace,
-                  query: args.query,
-                  limit: Math.min(3, limit),
-                }
-              );
-
-              return result.matches.map((match: any) => ({
-                namespace,
-                score: match.score,
-                text: match.text,
-                promptLine: match.promptLine,
-              }));
-            })
-          );
-
-          const semanticMatches: SemanticMatchSummary[] =
-            semanticResults.flat() ?? [];
+          const categoryFilter = args.categories?.length
+            ? new Set(args.categories)
+            : null;
+          const memories: MemorySummary[] = [
+            ...memoryContext.operatorInstructions,
+            ...memoryContext.learnedMemories,
+          ]
+            .filter(
+              (memory) =>
+                memory.category &&
+                (!categoryFilter || categoryFilter.has(memory.category))
+            )
+            .slice(0, limit)
+            .map((memory) => ({
+              memoryId: memory.memoryId,
+              category: memory.category as WorkspaceMemoryCategory,
+              source: memory.source,
+              title: memory.title,
+              summary: memory.summary,
+              confidence: memory.confidence,
+              impactScore: memory.impactScore,
+              createdAt: memory.createdAt,
+              promptLine: memory.instruction ?? memory.canonicalContent,
+            }));
+          const semanticMatches: SemanticMatchSummary[] = [];
 
           logEvent.set({
             memory: {

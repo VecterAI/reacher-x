@@ -61,6 +61,7 @@ import {
 import { researchProspect } from "./outreach/tools/researchProspect";
 import { socialAction } from "./outreach/tools/socialAction";
 import { stopOnDeferredAgentExecution } from "../lib/deferredAgentTurn";
+import { createWorkspaceMemoryContextHandler } from "./workspaceMemoryContext";
 
 // ============================================================================
 // Lazy Model Provider
@@ -165,6 +166,7 @@ export const mainAgent = new Agent(components.agent, {
   contextOptions: {
     recentMessages: 20,
   },
+  contextHandler: createWorkspaceMemoryContextHandler("main"),
   usageHandler: async (ctx, args) => {
     await ctx.runMutation(internal.agentTelemetry.insertUsageEvent, {
       userId: args.userId,
@@ -225,6 +227,7 @@ export const setupAgent = new Agent(components.agent, {
   contextOptions: {
     recentMessages: 20,
   },
+  contextHandler: createWorkspaceMemoryContextHandler("setup"),
   usageHandler: async (ctx, args) => {
     await ctx.runMutation(internal.agentTelemetry.insertUsageEvent, {
       userId: args.userId,

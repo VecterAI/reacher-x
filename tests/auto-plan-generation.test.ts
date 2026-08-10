@@ -236,6 +236,8 @@ test("provider transport schema stays compatible while app validation remains st
         description: "Wait for a relevant post.",
         timing: { type: "event" as const, value: null },
         targetTweetId: null,
+        targetCommentId: null,
+        reactionType: null,
         content: null,
       },
     ],
@@ -256,6 +258,8 @@ test("provider transport schema stays compatible while app validation remains st
         description: "Wait for a relevant post.",
         timing: { type: "event", value: undefined },
         targetTweetId: undefined,
+        targetCommentId: undefined,
+        reactionType: undefined,
         content: undefined,
       },
     ],
@@ -282,6 +286,8 @@ test("provider transport JSON schema requires every nullable field", async () =>
     "description",
     "timing",
     "targetTweetId",
+    "targetCommentId",
+    "reactionType",
     "content",
   ]);
   const taskProperties = asSchemaObject(task.properties);
@@ -406,7 +412,8 @@ test("automatic plan reliability prevents repeated paid work and dead notificati
     `${ROOT}/convex/socialapiMonitors.ts`,
     "utf8"
   );
-  assert.match(monitorSource, /keywords\.twitterSocialQueries/);
+  assert.match(monitorSource, /withIndex\("by_workspace_value"/);
+  assert.match(monitorSource, /normalizeMemoryText\(args\.query\)/);
   assert.doesNotMatch(
     monitorSource,
     /for \(const query of keywords\.socialQueries\)/

@@ -1,8 +1,11 @@
 import { v } from "convex/values";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx as ConvexActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { agentMemoryRag, getWorkspaceNamespace } from "./agents/outreach/rag";
+import {
+  getAgentMemoryRag,
+  getWorkspaceNamespace,
+} from "./agents/outreach/rag";
 import { logger } from "../shared/lib/logger";
 import {
   action,
@@ -33,8 +36,22 @@ import {
   promoteAgentMemory,
   type ParsedAgentMemory,
   type WorkspaceMemoryCategory,
+  type WorkspaceMemorySource,
   type WorkspaceAgentMemoryRecord,
 } from "./lib/agentMemoryCore";
+import {
+  buildCanonicalWorkspaceMemoryRagText,
+  buildWorkspaceMemoryContext as buildCanonicalWorkspaceMemoryContext,
+  listCanonicalWorkspaceMemoryCandidates,
+  listCanonicalLegacyMemoryIds,
+  markCanonicalWorkspaceMemoryIndexResult,
+  searchCanonicalWorkspaceMemories,
+  toCanonicalWorkspaceMemory,
+  type CanonicalWorkspaceMemory,
+  type WorkspaceMemoryContext,
+  type WorkspaceMemoryContextRequest,
+  type WorkspaceMemoryProvenanceKind,
+} from "./lib/workspaceMemoryCore";
 import {
   distillEnrichmentLearning,
   distillOutreachLearning,
@@ -59,6 +76,7 @@ import {
 import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import type { WorkspaceUseCaseKey } from "../shared/lib/workspaceUseCases";
 import { getStyleMemoryCategory } from "./lib/styleSourceCore";
+import { evaluateWorkspaceMemoryCompliance } from "./lib/workspaceMemoryCompliance";
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
@@ -76,6 +94,8 @@ type WorkspaceSemanticMatch = {
 
 type QualificationLearningContext = {
   queryText: string;
+  policyPrompt: string;
+  complianceInstructions: string[];
   relevantMemories: string[];
   similarQualifiedCases: string[];
   similarDisqualifiedCases: string[];
@@ -83,6 +103,7 @@ type QualificationLearningContext = {
 
 type OutreachLearningContext = {
   queryText: string;
+  policyPrompt: string;
   relevantMemories: string[];
   winningPatterns: string[];
   objections: string[];
@@ -192,7 +213,7 @@ async function persistWorkspaceMemoryDraft(
     userId: string;
     workspaceId: string;
     category: WorkspaceMemoryCategory;
-    source: "qualification" | "enrichment" | "outreach" | "operator";
+    source: WorkspaceMemorySource;
     title: string;
     summary: string;
     confidence: number;
@@ -203,41 +224,29 @@ async function persistWorkspaceMemoryDraft(
     evidence?: string[];
     relatedQueries?: string[];
     narrative?: string;
+    instruction?: string;
+    canonicalContent?: string;
+    conflictKey?: string;
+    metadata?: unknown;
+    kind?: string;
+    precedence?: number;
+    surfaces?: string[];
+    channels?: string[];
+    provenanceKind?: WorkspaceMemoryProvenanceKind;
+    provenanceMessageId?: string;
   }
 ): Promise<AgentMemoryPromotionResult> {
   const inserted = await ctx.runMutation(
     internal.memory.insertBuiltInAgentMemoryInternal,
     args
   );
-  const namespace = categoryToNamespace(args.category);
-  const key = [
-    "workspace-memory",
-    args.workspaceId,
-    namespace,
-    createStableHash(inserted.memoryText),
-  ].join(":");
-
-  const indexResult = await indexWorkspaceMemoryDocument(ctx, {
-    workspaceId: args.workspaceId,
-    namespace,
-    key,
-    title: inserted.parsed.title,
-    text: inserted.memoryText,
-    importance: inserted.parsed.impactScore,
-    prospectId: args.prospectId,
-    memoryItemId: inserted.memoryId,
-    category: args.category,
-    source: args.source,
-  });
-
-  if (!indexResult.indexed) {
-    memoryLogger.warn("Failed to index workspace memory", {
-      key,
-      error: indexResult.error ?? "Unknown error",
-      workspaceId: String(args.workspaceId),
-      namespace,
-    });
+  if (!inserted.canonicalShouldIndex) {
+    return inserted;
   }
+
+  await ctx.runAction(internal.memory.indexCanonicalWorkspaceMemoryInternal, {
+    memoryId: inserted.canonicalMemoryId as Id<"workspaceMemories">,
+  });
 
   return inserted;
 }
@@ -470,6 +479,23 @@ export const insertBuiltInAgentMemoryInternal = internalMutation({
     evidence: v.optional(v.array(v.string())),
     relatedQueries: v.optional(v.array(v.string())),
     narrative: v.optional(v.string()),
+    instruction: v.optional(v.string()),
+    canonicalContent: v.optional(v.string()),
+    conflictKey: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    kind: v.optional(v.string()),
+    precedence: v.optional(v.number()),
+    surfaces: v.optional(v.array(v.string())),
+    channels: v.optional(v.array(v.string())),
+    provenanceKind: v.optional(
+      v.union(
+        v.literal("user_instruction"),
+        v.literal("agent_learning"),
+        v.literal("style_analysis"),
+        v.literal("legacy_backfill")
+      )
+    ),
+    provenanceMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await promoteAgentMemory(ctx.db, {
@@ -477,11 +503,7 @@ export const insertBuiltInAgentMemoryInternal = internalMutation({
       workspaceId: args.workspaceId,
       category: args.category as WorkspaceMemoryCategory,
       namespace: categoryToNamespace(args.category as WorkspaceMemoryCategory),
-      source: args.source as
-        | "qualification"
-        | "enrichment"
-        | "outreach"
-        | "operator",
+      source: args.source as WorkspaceMemorySource,
       title: args.title,
       summary: args.summary,
       confidence: args.confidence,
@@ -492,7 +514,145 @@ export const insertBuiltInAgentMemoryInternal = internalMutation({
       evidence: args.evidence,
       relatedQueries: args.relatedQueries,
       narrative: args.narrative,
+      instruction: args.instruction,
+      canonicalContent: args.canonicalContent,
+      conflictKey: args.conflictKey,
+      metadata: args.metadata,
+      kind: args.kind,
+      precedence: args.precedence,
+      surfaces: args.surfaces,
+      channels: args.channels,
+      provenanceKind: args.provenanceKind,
+      provenanceMessageId: args.provenanceMessageId,
     });
+  },
+});
+
+/**
+ * Single idempotent write + RAG-index entry point used by explicit operator
+ * tools and background learning. The underlying mutation dual-writes the
+ * canonical row and legacy read models in one transaction.
+ */
+export const persistCanonicalWorkspaceMemoryInternal = internalAction({
+  args: {
+    userId: v.string(),
+    workspaceId: v.string(),
+    category: workspaceMemoryCategoryValidator,
+    source: workspaceMemorySourceValidator,
+    title: v.string(),
+    summary: v.string(),
+    confidence: v.number(),
+    impactScore: v.optional(v.number()),
+    prospectId: v.optional(v.string()),
+    threadId: v.optional(v.string()),
+    signals: v.optional(v.array(v.string())),
+    evidence: v.optional(v.array(v.string())),
+    relatedQueries: v.optional(v.array(v.string())),
+    narrative: v.optional(v.string()),
+    instruction: v.optional(v.string()),
+    canonicalContent: v.optional(v.string()),
+    conflictKey: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    kind: v.optional(v.string()),
+    precedence: v.optional(v.number()),
+    surfaces: v.optional(v.array(v.string())),
+    channels: v.optional(v.array(v.string())),
+    provenanceKind: v.optional(
+      v.union(
+        v.literal("user_instruction"),
+        v.literal("agent_learning"),
+        v.literal("style_analysis"),
+        v.literal("legacy_backfill")
+      )
+    ),
+    provenanceMessageId: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<AgentMemoryPromotionResult> =>
+    await persistWorkspaceMemoryDraft(ctx, {
+      ...args,
+      category: args.category as WorkspaceMemoryCategory,
+      source: args.source as WorkspaceMemorySource,
+    }),
+});
+
+export const markCanonicalWorkspaceMemoryIndexResultInternal = internalMutation(
+  {
+    args: {
+      memoryId: v.id("workspaceMemories"),
+      contentHash: v.string(),
+      indexed: v.boolean(),
+      error: v.optional(v.string()),
+    },
+    handler: async (ctx, args): Promise<boolean> =>
+      await markCanonicalWorkspaceMemoryIndexResult(ctx.db, args),
+  }
+);
+
+export const getCanonicalWorkspaceMemoryForIndexInternal = internalQuery({
+  args: { memoryId: v.id("workspaceMemories") },
+  handler: async (ctx, args) => await ctx.db.get(args.memoryId),
+});
+
+/** Idempotent canonical RAG indexing with bounded exponential retries. */
+export const indexCanonicalWorkspaceMemoryInternal = internalAction({
+  args: {
+    memoryId: v.id("workspaceMemories"),
+    attempt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const memory = await ctx.runQuery(
+      internal.memory.getCanonicalWorkspaceMemoryForIndexInternal,
+      { memoryId: args.memoryId }
+    );
+    if (!memory || memory.status !== "active") {
+      return { indexed: false, skipped: true };
+    }
+    if (memory.indexStatus === "ready") {
+      return { indexed: true, skipped: true };
+    }
+
+    const indexResult = await indexWorkspaceMemoryDocument(ctx, {
+      workspaceId: String(memory.workspaceId),
+      namespace: memory.ragNamespace as Parameters<
+        typeof getWorkspaceNamespace
+      >[1],
+      key: memory.ragKey,
+      title: memory.title,
+      text: buildCanonicalWorkspaceMemoryRagText({
+        title: memory.title,
+        summary: memory.summary,
+        canonicalContent: memory.canonicalContent,
+        instruction: memory.instruction,
+        kind: memory.kind,
+        metadata: memory.metadata,
+      }),
+      importance: memory.impactScore,
+      prospectId: memory.prospectId ? String(memory.prospectId) : undefined,
+      memoryItemId: String(memory._id),
+      category: memory.category,
+      source: memory.source,
+    });
+    await ctx.runMutation(
+      internal.memory.markCanonicalWorkspaceMemoryIndexResultInternal,
+      {
+        memoryId: memory._id,
+        contentHash: memory.contentHash,
+        indexed: indexResult.indexed,
+        error: indexResult.indexed
+          ? undefined
+          : (indexResult.error ?? "Unknown indexing error"),
+      }
+    );
+    const attempt = args.attempt ?? 0;
+    if (!indexResult.indexed && indexResult.retryable && attempt < 3) {
+      await ctx.scheduler.runAfter(
+        1_000 * 2 ** attempt,
+        internal.memory.indexCanonicalWorkspaceMemoryInternal,
+        { memoryId: memory._id, attempt: attempt + 1 }
+      );
+      return { indexed: false, retryScheduled: true };
+    }
+    return { indexed: indexResult.indexed, retryScheduled: false };
   },
 });
 
@@ -656,7 +816,7 @@ export const searchWorkspaceMemoryNamespaceInternal = internalAction({
     }
 
     try {
-      const result = await agentMemoryRag.search(ctx, {
+      const result = await getAgentMemoryRag().search(ctx, {
         namespace: getWorkspaceNamespace(
           workspaceId,
           namespace as Parameters<typeof getWorkspaceNamespace>[1]
@@ -687,6 +847,307 @@ export const searchWorkspaceMemoryNamespaceInternal = internalAction({
   },
 });
 
+export const listCanonicalWorkspaceMemoryCandidatesInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<CanonicalWorkspaceMemory[]> =>
+    await listCanonicalWorkspaceMemoryCandidates(ctx.db, args),
+});
+
+export const ownsWorkspaceMemoryScopeInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<boolean> => {
+    const workspace = await ctx.db.get("workspaces", args.workspaceId);
+    return workspace?.userId === args.userId;
+  },
+});
+
+export const listCanonicalLegacyMemoryIdsInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    legacyMemoryIds: v.array(v.string()),
+  },
+  handler: async (ctx, args): Promise<string[]> =>
+    await listCanonicalLegacyMemoryIds(ctx.db, args),
+});
+
+export const searchCanonicalWorkspaceMemoriesInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    query: v.string(),
+    authority: v.optional(v.union(v.literal("operator"), v.literal("learned"))),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<CanonicalWorkspaceMemory[]> =>
+    await searchCanonicalWorkspaceMemories(ctx.db, args),
+});
+
+export const getCanonicalWorkspaceMemoriesByIdsInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    memoryIds: v.array(v.id("workspaceMemories")),
+  },
+  handler: async (ctx, args): Promise<CanonicalWorkspaceMemory[]> => {
+    const workspace = await ctx.db.get("workspaces", args.workspaceId);
+    if (!workspace || workspace.userId !== args.userId) {
+      return [];
+    }
+
+    const uniqueIds = [...new Set(args.memoryIds)].slice(0, 64);
+    const rows = await Promise.all(
+      uniqueIds.map((memoryId) => ctx.db.get("workspaceMemories", memoryId))
+    );
+    return rows
+      .filter((row): row is NonNullable<typeof row> =>
+        Boolean(
+          row &&
+          row.workspaceId === args.workspaceId &&
+          row.userId === args.userId
+        )
+      )
+      .map(toCanonicalWorkspaceMemory);
+  },
+});
+
+const SHARED_MEMORY_SEMANTIC_THRESHOLD = 0.55;
+const SHARED_MEMORY_SEMANTIC_NAMESPACES = [
+  "lessons",
+  "patterns",
+  "objections",
+  "wins",
+  "losses",
+  "style",
+] as const;
+
+async function buildWorkspaceMemoryContextFromStore(
+  ctx: ConvexActionCtx,
+  request: WorkspaceMemoryContextRequest
+): Promise<WorkspaceMemoryContext> {
+  const ids = {
+    workspaceId: request.workspaceId as Id<"workspaces">,
+    userId: request.userId as Id<"users">,
+  };
+  const ownsWorkspace = await ctx.runQuery(
+    internal.memory.ownsWorkspaceMemoryScopeInternal,
+    ids
+  );
+  if (!ownsWorkspace) {
+    return buildCanonicalWorkspaceMemoryContext({
+      request,
+      memories: [],
+    });
+  }
+  const [candidates, exactMatches] = await Promise.all([
+    ctx.runQuery(
+      internal.memory.listCanonicalWorkspaceMemoryCandidatesInternal,
+      ids
+    ),
+    request.query.trim()
+      ? ctx.runQuery(internal.memory.searchCanonicalWorkspaceMemoriesInternal, {
+          ...ids,
+          query: request.query,
+          limit: 32,
+        })
+      : Promise.resolve([] as CanonicalWorkspaceMemory[]),
+  ]);
+  const legacyOperatorRows = await ctx.runQuery(
+    internal.memory.listPinnedWorkspaceMemoriesInternal,
+    {
+      workspaceId: request.workspaceId,
+      source: "operator",
+      limit: 120,
+    }
+  );
+  const canonicalLegacyIds = new Set(
+    await ctx.runQuery(internal.memory.listCanonicalLegacyMemoryIdsInternal, {
+      ...ids,
+      legacyMemoryIds: legacyOperatorRows.map(
+        (memory: { memoryId: string }) => memory.memoryId
+      ),
+    })
+  );
+  const legacyOperatorFallbacks: CanonicalWorkspaceMemory[] = legacyOperatorRows
+    .filter(
+      (memory: { memoryId: string }) => !canonicalLegacyIds.has(memory.memoryId)
+    )
+    .map(
+      (memory: {
+        memoryId: string;
+        createdAt: number;
+        parsed: ParsedAgentMemory;
+      }) => {
+        const instruction = [
+          memory.parsed.summary,
+          memory.parsed.narrative,
+          ...memory.parsed.evidence,
+        ]
+          .map((value) => value.trim())
+          .filter(Boolean)
+          .filter((value, index, values) => values.indexOf(value) === index)
+          .join("\n");
+        return {
+          memoryId: `legacy:${memory.memoryId}`,
+          workspaceId: request.workspaceId,
+          userId: request.userId,
+          identityKey: `legacy:${memory.memoryId}`,
+          legacyMemoryId: memory.memoryId,
+          authority: "operator" as const,
+          source: "operator" as const,
+          category: memory.parsed.category,
+          status: "active" as const,
+          indexStatus: "ready" as const,
+          kind: memory.parsed.category,
+          title: memory.parsed.title,
+          summary: memory.parsed.summary,
+          canonicalContent: instruction,
+          canonicalSearchText: instruction,
+          instruction,
+          metadata: {
+            evidence: memory.parsed.evidence,
+            relatedQueries: memory.parsed.relatedQueries,
+            verbatimRecovered: false,
+          },
+          precedence: 1_000,
+          confidence: memory.parsed.confidence,
+          impactScore: memory.parsed.impactScore,
+          prospectId: memory.parsed.prospectId,
+          provenanceKind: "legacy_backfill" as const,
+          ragNamespace: memory.parsed.namespace,
+          ragKey: `legacy:${memory.memoryId}`,
+          contentHash: createStableHash(instruction),
+          createdAt: memory.createdAt,
+          updatedAt: memory.createdAt,
+        } satisfies CanonicalWorkspaceMemory;
+      }
+    );
+  const rolloutCandidates = [...legacyOperatorFallbacks, ...candidates];
+  if (!request.query.trim()) {
+    return buildCanonicalWorkspaceMemoryContext({
+      request,
+      memories: [...exactMatches, ...rolloutCandidates],
+    });
+  }
+
+  const semanticMemoryIdGroups = await Promise.all(
+    SHARED_MEMORY_SEMANTIC_NAMESPACES.map(async (namespace) => {
+      try {
+        const result = await getAgentMemoryRag().search(ctx, {
+          namespace: getWorkspaceNamespace(request.workspaceId, namespace),
+          query: request.query,
+          limit: 4,
+          vectorScoreThreshold: SHARED_MEMORY_SEMANTIC_THRESHOLD,
+        });
+        return result.entries
+          .map((entry) => entry.metadata?.memoryItemId)
+          .filter(
+            (memoryId): memoryId is string =>
+              typeof memoryId === "string" && memoryId.length > 0
+          );
+      } catch (error) {
+        memoryLogger.warn("Shared workspace memory semantic search failed", {
+          workspaceId: request.workspaceId,
+          namespace,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return [];
+      }
+    })
+  );
+  const semanticMemoryIds = [...new Set(semanticMemoryIdGroups.flat())].slice(
+    0,
+    64
+  ) as Id<"workspaceMemories">[];
+  const semanticMemories = semanticMemoryIds.length
+    ? await ctx.runQuery(
+        internal.memory.getCanonicalWorkspaceMemoriesByIdsInternal,
+        {
+          ...ids,
+          memoryIds: semanticMemoryIds,
+        }
+      )
+    : [];
+
+  const byId = new Map<string, CanonicalWorkspaceMemory>();
+  for (const memory of [
+    ...exactMatches,
+    ...semanticMemories,
+    ...rolloutCandidates,
+  ]) {
+    byId.set(memory.memoryId, memory);
+  }
+  const base = buildCanonicalWorkspaceMemoryContext({
+    request,
+    memories: [...byId.values()],
+  });
+  const applicableMemoryIds = new Set(base.memoryIds);
+  const semanticMatches = semanticMemories
+    .filter((memory) => applicableMemoryIds.has(memory.memoryId))
+    .map((memory) => memory.canonicalContent)
+    .slice(0, 8);
+
+  return {
+    ...base,
+    semanticMatches,
+  };
+}
+
+export const buildWorkspaceMemoryContextInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    query: v.string(),
+    surface: v.string(),
+    prospectId: v.optional(v.id("prospects")),
+    channel: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<WorkspaceMemoryContext> =>
+    await buildWorkspaceMemoryContextFromStore(ctx, {
+      workspaceId: String(args.workspaceId),
+      userId: String(args.userId),
+      query: args.query,
+      surface: args.surface,
+      prospectId: args.prospectId ? String(args.prospectId) : undefined,
+      channel: args.channel,
+    }),
+});
+
+export const evaluateWorkspaceMemoryComplianceInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    query: v.string(),
+    surface: v.string(),
+    prospectId: v.optional(v.id("prospects")),
+    channel: v.optional(v.string()),
+    taskContext: v.string(),
+    candidate: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const memoryContext = await buildWorkspaceMemoryContextFromStore(ctx, {
+      workspaceId: String(args.workspaceId),
+      userId: String(args.userId),
+      query: args.query,
+      surface: args.surface,
+      prospectId: args.prospectId ? String(args.prospectId) : undefined,
+      channel: args.channel,
+    });
+    const evaluation = await evaluateWorkspaceMemoryCompliance({
+      instructions: memoryContext.complianceInstructions,
+      taskContext: args.taskContext,
+      candidate: args.candidate,
+    });
+    return { ...evaluation, memoryIds: memoryContext.memoryIds };
+  },
+});
+
 export const getQualificationLearningContextInternal = internalAction({
   args: {
     workspaceId: v.string(),
@@ -695,6 +1156,7 @@ export const getQualificationLearningContextInternal = internalAction({
     briefIntro: v.optional(v.string()),
     matchedKeywords: v.array(v.string()),
     evidenceHighlights: v.array(v.string()),
+    prospectId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<QualificationLearningContext> => {
     const queryText = buildWorkspaceMemorySearchQuery({
@@ -704,10 +1166,22 @@ export const getQualificationLearningContextInternal = internalAction({
       additionalContext: args.evidenceHighlights,
     });
 
+    const sharedContext = await buildWorkspaceMemoryContextFromStore(ctx, {
+      workspaceId: args.workspaceId,
+      userId: args.userId,
+      query: queryText || "qualification policy",
+      surface: "qualification",
+      prospectId: args.prospectId,
+    });
+
     if (!hasWorkspaceMemorySearchQuery(queryText)) {
       return {
         queryText,
-        relevantMemories: [],
+        policyPrompt: sharedContext.prompt,
+        complianceInstructions: sharedContext.complianceInstructions,
+        relevantMemories: sharedContext.learnedMemories.map(
+          (memory) => memory.canonicalContent
+        ),
         similarQualifiedCases: [],
         similarDisqualifiedCases: [],
       };
@@ -732,9 +1206,11 @@ export const getQualificationLearningContextInternal = internalAction({
 
     return {
       queryText,
-      // Historical built-in qualification memories were created before source
-      // validation existed, so they are intentionally excluded from decisions.
-      relevantMemories: [],
+      policyPrompt: sharedContext.prompt,
+      complianceInstructions: sharedContext.complianceInstructions,
+      relevantMemories: sharedContext.learnedMemories.map(
+        (memory) => memory.canonicalContent
+      ),
       similarQualifiedCases: similarQualifiedCases.matches.map(
         (match: WorkspaceSemanticMatch) => match.promptLine
       ),
@@ -755,6 +1231,7 @@ export const getOutreachLearningContextInternal = internalAction({
     painPoints: v.optional(v.array(v.string())),
     matchedKeywords: v.optional(v.array(v.string())),
     finance: v.optional(v.string()),
+    prospectId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<OutreachLearningContext> => {
     const queryText = buildWorkspaceMemorySearchQuery({
@@ -765,99 +1242,37 @@ export const getOutreachLearningContextInternal = internalAction({
       finance: args.finance,
     });
 
-    if (!hasWorkspaceMemorySearchQuery(queryText)) {
-      return {
-        queryText,
-        relevantMemories: [],
-        winningPatterns: [],
-        objections: [],
-        similarCases: [],
-        operatorPreferences: [],
-        styleProfiles: [],
-      };
-    }
-
-    const [relevantMemories, winningPatterns, objectionPatterns, similarCases] =
-      await Promise.all([
-        ctx.runQuery(internal.memory.findRelevantBuiltInAgentMemoriesInternal, {
-          userId: args.userId,
-          workspaceId: args.workspaceId,
-          query: queryText,
-          limit: 6,
-        }),
-        Promise.all([
-          ctx.runAction(
-            internal.memory.searchWorkspaceMemoryNamespaceInternal,
-            {
-              workspaceId: args.workspaceId,
-              namespace: "wins",
-              query: queryText,
-              limit: 3,
-            }
-          ),
-          ctx.runAction(
-            internal.memory.searchWorkspaceMemoryNamespaceInternal,
-            {
-              workspaceId: args.workspaceId,
-              namespace: "patterns",
-              query: queryText,
-              limit: 3,
-            }
-          ),
-        ]).then((groups) =>
-          groups.flatMap(
-            (group: { matches: WorkspaceSemanticMatch[] }) => group.matches
-          )
-        ),
-        ctx.runAction(internal.memory.searchWorkspaceMemoryNamespaceInternal, {
-          workspaceId: args.workspaceId,
-          namespace: "objections",
-          query: queryText,
-          limit: 3,
-        }),
-        ctx.runAction(internal.memory.searchWorkspaceMemoryNamespaceInternal, {
-          workspaceId: args.workspaceId,
-          namespace: "patterns",
-          query: queryText,
-          limit: 4,
-        }),
-      ]);
-
-    const [operatorMemories, styleMemories] = await Promise.all([
-      ctx.runQuery(internal.memory.listPinnedWorkspaceMemoriesInternal, {
-        workspaceId: args.workspaceId,
-        source: "operator",
-        limit: 8,
-      }),
-      args.platform
-        ? ctx.runQuery(internal.memory.listPinnedWorkspaceMemoriesInternal, {
-            workspaceId: args.workspaceId,
-            category: getStyleMemoryCategory(args.platform),
-            limit: 1,
-          })
-        : Promise.resolve([]),
-    ]);
+    const sharedContext = await buildWorkspaceMemoryContextFromStore(ctx, {
+      workspaceId: args.workspaceId,
+      userId: args.userId,
+      query: queryText || "outreach policy",
+      surface: "manual_prospect",
+      prospectId: args.prospectId,
+      channel: args.platform,
+    });
+    const styleCategory = args.platform
+      ? getStyleMemoryCategory(args.platform)
+      : undefined;
 
     return {
       queryText,
-      relevantMemories: relevantMemories.map(
-        (memory: { promptLine: string }) => memory.promptLine
+      policyPrompt: sharedContext.prompt,
+      relevantMemories: sharedContext.learnedMemories.map(
+        (memory) => memory.canonicalContent
       ),
-      winningPatterns: winningPatterns.map(
-        (match: WorkspaceSemanticMatch) => match.promptLine
+      winningPatterns: sharedContext.learnedMemories
+        .filter((memory) => memory.ragNamespace === "wins")
+        .map((memory) => memory.canonicalContent),
+      objections: sharedContext.learnedMemories
+        .filter((memory) => memory.ragNamespace === "objections")
+        .map((memory) => memory.canonicalContent),
+      similarCases: [],
+      operatorPreferences: sharedContext.operatorInstructions.map(
+        (memory) => memory.instruction ?? memory.canonicalContent
       ),
-      objections: objectionPatterns.matches.map(
-        (match: WorkspaceSemanticMatch) => match.promptLine
-      ),
-      similarCases: similarCases.matches.map(
-        (match: WorkspaceSemanticMatch) => match.promptLine
-      ),
-      operatorPreferences: operatorMemories.map(
-        (memory: { promptLine: string }) => memory.promptLine
-      ),
-      styleProfiles: styleMemories.map(
-        (memory: { promptLine: string }) => memory.promptLine
-      ),
+      styleProfiles: sharedContext.learnedMemories
+        .filter((memory) => memory.category === styleCategory)
+        .map((memory) => memory.canonicalContent),
     };
   },
 });
@@ -1167,7 +1582,7 @@ export const searchDiscoverySemanticDuplicatesInternal = internalAction({
     );
 
     try {
-      const result = await agentMemoryRag.search(ctx, {
+      const result = await getAgentMemoryRag().search(ctx, {
         namespace,
         query,
         limit: limit ?? 3,

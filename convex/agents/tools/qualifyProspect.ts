@@ -337,6 +337,18 @@ export const qualifyProspect = createTool({
           // 4. Calculate qualification using core logic
           const profileData =
             prospectData.user || prospectData.author || prospectData;
+          const learningContext = await ctx.runAction(
+            internal.memory.getQualificationLearningContextInternal,
+            {
+              workspaceId: String(workspace._id),
+              userId: String(workspace.userId),
+              prospectId: String(prospect._id),
+              title: prospect.title,
+              briefIntro: prospect.briefIntro,
+              matchedKeywords,
+              evidenceHighlights: [],
+            }
+          );
 
           const result: QualificationResult = await qualifyProspectCore({
             platform: prospect.platform,
@@ -348,6 +360,11 @@ export const qualifyProspect = createTool({
             totalKeywords: keywords.length,
             profileData: profileData as Record<string, unknown>,
             useCaseKey: workspace.useCaseKey,
+            relevantMemories: learningContext.relevantMemories,
+            workspaceMemoryPolicy: learningContext.policyPrompt,
+            complianceInstructions: learningContext.complianceInstructions,
+            similarQualifiedCases: learningContext.similarQualifiedCases,
+            similarDisqualifiedCases: learningContext.similarDisqualifiedCases,
             routing: "fast",
           });
 

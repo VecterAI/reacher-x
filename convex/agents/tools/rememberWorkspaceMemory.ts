@@ -6,7 +6,7 @@
 // Thin Layer-1 wrapper:
 // - Validates structured memory args from the LLM
 // - Resolves workspace + prospect from thread context
-// - Calls internal.memory.insertBuiltInAgentMemoryInternal to persist
+// - Calls the canonical idempotent persistence + RAG indexing action
 // - Returns a compact summary suitable for inline confirmation UI
 
 import { createTool } from "@convex-dev/agent";
@@ -19,7 +19,9 @@ import {
 } from "../../lib/agentMemoryCore";
 import type { DistilledMemoryDraft } from "../../lib/learningCore";
 import { distillOperatorLearningDetailed } from "../../lib/learningCore";
+import { resolveWorkspaceMemoryInstruction } from "../../lib/workspaceMemoryCaptureCore";
 import {
+  getToolPromptMessageId,
   resolveWorkspaceMemoryContext,
   type WorkspaceMemoryContext,
 } from "./workspaceMemoryHelpers";
@@ -27,88 +29,149 @@ import { createMemoryArtifact } from "../../../shared/lib/json-render/agentArtif
 import { runLoggedAgentTool } from "./logging";
 
 const workspaceMemoryCategoryEnum = z.enum(WORKSPACE_MEMORY_CATEGORIES);
+const workspaceMemorySurfaceEnum = z.enum([
+  "main",
+  "setup",
+  "manual_prospect",
+  "qualification",
+  "auto_plan",
+  "adaptive_outreach",
+]);
+const workspaceMemoryChannelEnum = z.enum(["twitter", "linkedin"]);
+
+const rememberWorkspaceMemoryInputSchema = z.object({
+  memoryKey: z
+    .string()
+    .min(3)
+    .max(120)
+    .describe(
+      "Stable topic key for this instruction, such as outreach.copy_length. Reuse the same key when the user corrects or replaces this instruction."
+    ),
+  kind: z
+    .string()
+    .min(3)
+    .max(80)
+    .describe(
+      "Open-ended instruction kind, such as writing_preference, resource, business_rule, or workflow_preference."
+    ),
+  category: workspaceMemoryCategoryEnum
+    .default("operator_instruction")
+    .describe(
+      "Memory category that best describes this lesson (e.g. qualification_win_pattern, outreach_winning_pattern)."
+    ),
+  title: z
+    .string()
+    .min(6)
+    .max(120)
+    .describe("Short, human-readable title for this memory."),
+  summary: z
+    .string()
+    .min(20)
+    .max(320)
+    .describe(
+      "1–3 sentence summary of the lesson in plain language, focused on what to repeat or avoid."
+    ),
+  confidence: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.8)
+    .describe(
+      "How confident you are that this lesson is generally true for this workspace (0–1)."
+    ),
+  impactScore: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe(
+      "How important this memory is for outcomes like qualified leads or replies (0–1). If unsure, omit."
+    ),
+  signals: z
+    .array(z.string())
+    .max(8)
+    .optional()
+    .describe(
+      "Optional bullet points capturing signals that predict this pattern (e.g. 'mentions GTM execution struggles')."
+    ),
+  evidence: z
+    .array(z.string())
+    .max(8)
+    .optional()
+    .describe(
+      "Optional bullet points with concrete evidence for this lesson (e.g. links, paraphrased posts, outcomes)."
+    ),
+  relatedQueries: z
+    .array(z.string())
+    .max(8)
+    .optional()
+    .describe(
+      "Optional keywords or queries that should retrieve this memory later."
+    ),
+  narrative: z
+    .string()
+    .max(2000)
+    .optional()
+    .describe(
+      "Optional longer narrative giving richer context. If omitted, the system will build one from title, summary, signals, and evidence."
+    ),
+  metadata: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "Optional open-ended structured metadata needed to apply this instruction later, such as URLs, labels, or constraints."
+    ),
+  sourceExcerpt: z
+    .string()
+    .max(4000)
+    .optional()
+    .describe(
+      "When the user says to remember something from an earlier message, copy only the exact relevant user text here verbatim. Never paraphrase it or include unrelated conversation."
+    ),
+  scope: z
+    .enum(["workspace", "prospect"])
+    .default("workspace")
+    .describe(
+      "Use workspace unless the instruction applies only to the prospect linked to this thread."
+    ),
+  surfaces: z
+    .array(workspaceMemorySurfaceEnum)
+    .max(12)
+    .optional()
+    .describe(
+      "Optional agent surfaces where this applies, such as main, setup, manual_prospect, qualification, auto_plan, or adaptive_outreach."
+    ),
+  channels: z
+    .array(workspaceMemoryChannelEnum)
+    .max(12)
+    .optional()
+    .describe(
+      "Optional outreach channels where this applies, such as twitter or linkedin."
+    ),
+  mode: z
+    .enum(["manual", "auto"])
+    .default("manual")
+    .describe(
+      'Use "auto" when you only have a raw note and want the system to distill 1–2 memories from it. Use "manual" when you are already providing a clean title and summary.'
+    )
+    .optional(),
+  noteText: z
+    .string()
+    .max(4000)
+    .optional()
+    .describe(
+      'Optional raw note text to distill into 1–2 reusable memories when mode="auto".'
+    ),
+});
 
 export const rememberWorkspaceMemory = createTool({
   description:
     "Save a reusable workspace memory based on what the user just told you. Use this when the user says things like 'remember this', 'save this as a pattern', or 'never do this again'. The tool automatically scopes the memory to the current workspace and, when relevant, links it to the current prospect.",
-  inputSchema: z.object({
-    category: workspaceMemoryCategoryEnum.describe(
-      "Memory category that best describes this lesson (e.g. qualification_win_pattern, outreach_winning_pattern)."
-    ),
-    title: z
-      .string()
-      .min(6)
-      .max(120)
-      .describe("Short, human-readable title for this memory."),
-    summary: z
-      .string()
-      .min(20)
-      .max(320)
-      .describe(
-        "1–3 sentence summary of the lesson in plain language, focused on what to repeat or avoid."
-      ),
-    confidence: z
-      .number()
-      .min(0)
-      .max(1)
-      .default(0.8)
-      .describe(
-        "How confident you are that this lesson is generally true for this workspace (0–1)."
-      ),
-    impactScore: z
-      .number()
-      .min(0)
-      .max(1)
-      .optional()
-      .describe(
-        "How important this memory is for outcomes like qualified leads or replies (0–1). If unsure, omit."
-      ),
-    signals: z
-      .array(z.string())
-      .max(8)
-      .optional()
-      .describe(
-        "Optional bullet points capturing signals that predict this pattern (e.g. 'mentions GTM execution struggles')."
-      ),
-    evidence: z
-      .array(z.string())
-      .max(8)
-      .optional()
-      .describe(
-        "Optional bullet points with concrete evidence for this lesson (e.g. links, paraphrased posts, outcomes)."
-      ),
-    relatedQueries: z
-      .array(z.string())
-      .max(8)
-      .optional()
-      .describe(
-        "Optional keywords or queries that should retrieve this memory later."
-      ),
-    narrative: z
-      .string()
-      .max(2000)
-      .optional()
-      .describe(
-        "Optional longer narrative giving richer context. If omitted, the system will build one from title, summary, signals, and evidence."
-      ),
-    mode: z
-      .enum(["manual", "auto"])
-      .default("manual")
-      .describe(
-        'Use "auto" when you only have a raw note and want the system to distill 1–2 memories from it. Use "manual" when you are already providing a clean title and summary.'
-      )
-      .optional(),
-    noteText: z
-      .string()
-      .max(4000)
-      .optional()
-      .describe(
-        'Optional raw note text to distill into 1–2 reusable memories when mode="auto".'
-      ),
-  }),
+  inputSchema: rememberWorkspaceMemoryInputSchema,
   execute: async (
     ctx,
-    args
+    args,
+    options
   ): Promise<{
     success: boolean;
     message: string;
@@ -153,13 +216,38 @@ export const rememberWorkspaceMemory = createTool({
           };
         }
 
+        if (args.scope === "prospect" && !context.prospectId) {
+          return {
+            success: false,
+            message:
+              "This memory was requested as prospect-specific, but this conversation is not linked to a prospect.",
+          };
+        }
+
         try {
           const mode = args.mode ?? "manual";
+          const verbatimInstruction = resolveWorkspaceMemoryInstruction({
+            messages: options.messages,
+            sourceExcerpt: args.sourceExcerpt,
+            fallback: args.noteText?.trim() || args.summary.trim(),
+          });
+          const scopedProspectId =
+            args.scope === "prospect"
+              ? (context.prospectId ?? undefined)
+              : undefined;
+          const provenanceMessageId = getToolPromptMessageId(ctx);
+          const openMetadata = {
+            ...args.metadata,
+            signals: args.signals ?? [],
+            evidence: args.evidence ?? [],
+            relatedQueries: args.relatedQueries ?? [],
+            narrative: args.narrative ?? null,
+          };
 
           // Manual mode: single structured memory from explicit fields
           if (mode === "manual" || !args.noteText) {
-            const result = await ctx.runMutation(
-              internal.memory.insertBuiltInAgentMemoryInternal,
+            const result = await ctx.runAction(
+              internal.memory.persistCanonicalWorkspaceMemoryInternal,
               {
                 userId: String(context.userId),
                 workspaceId: context.workspaceId,
@@ -169,12 +257,21 @@ export const rememberWorkspaceMemory = createTool({
                 summary: args.summary,
                 confidence: args.confidence ?? 0.8,
                 impactScore: args.impactScore,
-                prospectId: context.prospectId ?? undefined,
+                prospectId: scopedProspectId,
                 threadId: ctx.threadId ?? undefined,
                 signals: args.signals,
                 evidence: args.evidence,
                 relatedQueries: args.relatedQueries,
                 narrative: args.narrative,
+                instruction: verbatimInstruction,
+                canonicalContent: verbatimInstruction,
+                conflictKey: args.memoryKey,
+                metadata: openMetadata,
+                kind: args.kind,
+                surfaces: args.surfaces,
+                channels: args.channels,
+                provenanceKind: "user_instruction",
+                provenanceMessageId,
               }
             );
 
@@ -182,7 +279,7 @@ export const rememberWorkspaceMemory = createTool({
               createMemoryArtifact({
                 memoryId: result.memoryId,
                 workspaceId: context.workspaceId,
-                prospectId: context.prospectId ?? null,
+                prospectId: scopedProspectId ?? null,
                 title: result.parsed.title,
                 category: result.parsed.category,
                 source: result.parsed.source,
@@ -206,7 +303,7 @@ export const rememberWorkspaceMemory = createTool({
               message:
                 "Saved this as a reusable workspace memory so future qualification, enrichment, and outreach can rely on it.",
               workspaceId: context.workspaceId,
-              prospectId: context.prospectId ?? undefined,
+              prospectId: scopedProspectId,
               memoryId: result.memoryId,
               category: result.parsed.category,
               source: result.parsed.source,
@@ -240,8 +337,8 @@ export const rememberWorkspaceMemory = createTool({
           // Persist each draft as a separate operator memory
           const inserted = [];
           for (const draft of drafts) {
-            const result = await ctx.runMutation(
-              internal.memory.insertBuiltInAgentMemoryInternal,
+            const result = await ctx.runAction(
+              internal.memory.persistCanonicalWorkspaceMemoryInternal,
               {
                 userId: String(context.userId),
                 workspaceId: context.workspaceId,
@@ -251,12 +348,25 @@ export const rememberWorkspaceMemory = createTool({
                 summary: draft.summary,
                 confidence: draft.confidence,
                 impactScore: draft.impactScore,
-                prospectId: context.prospectId ?? undefined,
+                prospectId: scopedProspectId,
                 threadId: ctx.threadId ?? undefined,
                 signals: draft.signals,
                 evidence: draft.evidence,
                 relatedQueries: draft.relatedQueries,
                 narrative: draft.narrative,
+                instruction: verbatimInstruction,
+                canonicalContent: verbatimInstruction,
+                conflictKey: `${args.memoryKey}:${draft.category}`,
+                metadata: {
+                  ...openMetadata,
+                  distilledTitle: draft.title,
+                  distilledSummary: draft.summary,
+                },
+                kind: args.kind,
+                surfaces: args.surfaces,
+                channels: args.channels,
+                provenanceKind: "user_instruction",
+                provenanceMessageId,
               }
             );
             inserted.push(result);
@@ -267,7 +377,7 @@ export const rememberWorkspaceMemory = createTool({
             createMemoryArtifact({
               memoryId: primary.memoryId,
               workspaceId: context.workspaceId,
-              prospectId: context.prospectId ?? null,
+              prospectId: scopedProspectId ?? null,
               title: primary.parsed.title,
               category: primary.parsed.category,
               source: primary.parsed.source,
@@ -294,7 +404,7 @@ export const rememberWorkspaceMemory = createTool({
                 ? "Saved this note as a reusable workspace memory."
                 : `Saved ${drafts.length} reusable workspace memories distilled from this note.`,
             workspaceId: context.workspaceId,
-            prospectId: context.prospectId ?? undefined,
+            prospectId: scopedProspectId,
             memoryId: primary.memoryId,
             category: primary.parsed.category,
             source: primary.parsed.source,

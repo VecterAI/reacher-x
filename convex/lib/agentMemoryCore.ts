@@ -5,7 +5,6 @@ import type {
 import type { Id } from "../_generated/dataModel";
 import {
   type WorkspaceMemoryNamespaceKind,
-  createStableHash,
   normalizeMemoryText,
 } from "./memoryHelpers";
 import {
@@ -15,6 +14,13 @@ import {
 } from "./agentOpsReadModelHelpers";
 import { getUtcDayStartTimestamp } from "./readModelHelpers";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import {
+  buildCanonicalWorkspaceMemoryIdentity,
+  buildCanonicalWorkspaceMemoryRagText,
+  getWorkspaceMemoryAuthority,
+  type WorkspaceMemoryProvenanceKind,
+  upsertCanonicalWorkspaceMemory,
+} from "./workspaceMemoryCore";
 
 type MemoryDbReader = GenericDatabaseReader<any>;
 type MemoryDbWriter = GenericDatabaseWriter<any>;
@@ -57,6 +63,7 @@ const STOP_WORDS = new Set([
 ]);
 
 export const WORKSPACE_MEMORY_CATEGORIES = [
+  "operator_instruction",
   "qualification_win_pattern",
   "qualification_false_positive_pattern",
   "enrichment_signal_pattern",
@@ -69,6 +76,12 @@ export const WORKSPACE_MEMORY_CATEGORIES = [
 
 export type WorkspaceMemoryCategory =
   (typeof WORKSPACE_MEMORY_CATEGORIES)[number];
+
+export function normalizeWorkspaceMemoryCategories(
+  categories: WorkspaceMemoryCategory[] | undefined
+): WorkspaceMemoryCategory[] | undefined {
+  return categories?.length ? categories : undefined;
+}
 
 export type WorkspaceMemorySource =
   | "qualification"
@@ -163,6 +176,20 @@ export type PromoteAgentMemoryArgs = {
   evidence?: string[];
   relatedQueries?: string[];
   narrative?: string;
+  /** Exact, unmodified operator message when this memory came from the user. */
+  instruction?: string;
+  /** Exact canonical value/content. Never reconstructed from the summary. */
+  canonicalContent?: string;
+  /** Stable open-ended subject key; a newer value supersedes older active values. */
+  conflictKey?: string;
+  /** Open-ended application metadata for arbitrary instructions. */
+  metadata?: unknown;
+  kind?: string;
+  precedence?: number;
+  surfaces?: string[];
+  channels?: string[];
+  provenanceKind?: WorkspaceMemoryProvenanceKind;
+  provenanceMessageId?: string;
 };
 
 export type AgentMemoryPromotionResult = {
@@ -170,6 +197,12 @@ export type AgentMemoryPromotionResult = {
   memoryId: string;
   memoryText: string;
   parsed: ParsedAgentMemory;
+  canonicalMemoryId: string;
+  canonicalContentHash: string;
+  canonicalRagKey: string;
+  canonicalRagNamespace: WorkspaceMemoryNamespaceKind;
+  canonicalRagText: string;
+  canonicalShouldIndex: boolean;
 };
 
 export function buildAgentMemoryNarrative(args: {
@@ -196,6 +229,8 @@ export function categoryToNamespace(
   category: WorkspaceMemoryCategory
 ): WorkspaceMemoryNamespaceKind {
   switch (category) {
+    case "operator_instruction":
+      return "lessons";
     case "qualification_win_pattern":
     case "outreach_winning_pattern":
       return "wins";
@@ -1017,6 +1052,7 @@ export async function deleteWorkspaceAgentMemoriesByCategory(
     userId: string;
     workspaceId: string;
     category: WorkspaceMemoryCategory;
+    source: WorkspaceMemorySource;
   }
 ): Promise<{ deleted: number }> {
   const componentDb = getComponentMemoryWriter(db);
@@ -1028,7 +1064,11 @@ export async function deleteWorkspaceAgentMemoriesByCategory(
 
   let deleted = 0;
   for (const row of rows) {
-    if (row.parsed.category !== args.category) {
+    if (
+      row.parsed.category !== args.category ||
+      row.parsed.source !== args.source ||
+      row.parsed.source === "operator"
+    ) {
       continue;
     }
     await componentDb.delete(row.memoryId);
@@ -1039,24 +1079,68 @@ export async function deleteWorkspaceAgentMemoriesByCategory(
   return { deleted };
 }
 
-function memoryIdentityHashFromFields(args: {
-  workspaceId: string;
-  category: WorkspaceMemoryCategory;
-  title: string;
-  summary: string;
-}): string {
-  return createStableHash(
-    JSON.stringify({
-      workspaceId: args.workspaceId,
-      category: args.category,
-      title: normalizeMemoryText(args.title),
-      summary: normalizeMemoryText(args.summary),
-    })
-  );
-}
-
-function memoryIdentityHash(parsed: ParsedAgentMemory): string {
-  return memoryIdentityHashFromFields(parsed);
+async function attachCanonicalWorkspaceMemory(
+  db: MemoryDbWriter,
+  args: PromoteAgentMemoryArgs,
+  legacy: {
+    created: boolean;
+    memoryId: string;
+    memoryText: string;
+    parsed: ParsedAgentMemory;
+  }
+): Promise<AgentMemoryPromotionResult> {
+  const canonicalContent =
+    args.canonicalContent ??
+    args.instruction ??
+    legacy.parsed.narrative ??
+    legacy.memoryText;
+  const metadata = args.metadata ?? {
+    signals: legacy.parsed.signals,
+    evidence: legacy.parsed.evidence,
+    relatedQueries: legacy.parsed.relatedQueries,
+    narrative: legacy.parsed.narrative,
+  };
+  const canonical = await upsertCanonicalWorkspaceMemory(db, {
+    userId: args.userId as Id<"users">,
+    workspaceId: args.workspaceId as Id<"workspaces">,
+    legacyMemoryId: legacy.memoryId,
+    source: args.source,
+    category: args.category,
+    namespace: args.namespace,
+    kind: args.kind,
+    title: legacy.parsed.title,
+    summary: legacy.parsed.summary,
+    canonicalContent,
+    conflictKey: args.conflictKey,
+    instruction: args.instruction,
+    metadata,
+    precedence: args.precedence,
+    confidence: legacy.parsed.confidence,
+    impactScore: legacy.parsed.impactScore,
+    prospectId: args.prospectId as Id<"prospects"> | undefined,
+    surfaces: args.surfaces,
+    channels: args.channels,
+    provenanceKind: args.provenanceKind,
+    provenanceThreadId: args.threadId,
+    provenanceMessageId: args.provenanceMessageId,
+  });
+  const canonicalRagText = buildCanonicalWorkspaceMemoryRagText({
+    title: canonical.memory.title,
+    summary: canonical.memory.summary,
+    canonicalContent: canonical.memory.canonicalContent,
+    instruction: canonical.memory.instruction,
+    kind: canonical.memory.kind,
+    metadata: canonical.memory.metadata,
+  });
+  return {
+    ...legacy,
+    canonicalMemoryId: canonical.memory.memoryId,
+    canonicalContentHash: canonical.memory.contentHash,
+    canonicalRagKey: canonical.memory.ragKey,
+    canonicalRagNamespace: canonical.memory.ragNamespace,
+    canonicalRagText,
+    canonicalShouldIndex: canonical.shouldIndex,
+  };
 }
 
 export async function promoteAgentMemory(
@@ -1065,43 +1149,40 @@ export async function promoteAgentMemory(
 ): Promise<AgentMemoryPromotionResult> {
   const parsed = buildMemoryMeta(args);
   const memoryText = serializeAgentMemory(parsed);
-  const identityHash = memoryIdentityHash(parsed);
-  const existingInventoryRows = await db
-    .query("workspaceAgentMemoryInventory")
-    .withIndex("by_workspace_created_at", (q: any) =>
-      q.eq("workspaceId", args.workspaceId as Id<"workspaces">)
+  const canonicalContent =
+    args.canonicalContent ?? args.instruction ?? parsed.narrative ?? memoryText;
+  const canonicalIdentityKey = buildCanonicalWorkspaceMemoryIdentity({
+    workspaceId: args.workspaceId,
+    authority: getWorkspaceMemoryAuthority(args.source),
+    canonicalContent,
+    prospectId: args.prospectId,
+    surfaces: args.surfaces,
+    channels: args.channels,
+  });
+  const existingCanonical = await db
+    .query("workspaceMemories")
+    .withIndex("by_workspace_and_identity_key", (query: any) =>
+      query
+        .eq("workspaceId", args.workspaceId as Id<"workspaces">)
+        .eq("identityKey", canonicalIdentityKey)
     )
-    .order("desc")
-    .take(40);
-
-  for (const inventoryRow of existingInventoryRows) {
-    const existingIdentityHash = memoryIdentityHashFromFields({
-      workspaceId: String(inventoryRow.workspaceId),
-      category: inventoryRow.category as WorkspaceMemoryCategory,
-      title: inventoryRow.title,
-      summary: inventoryRow.summary,
-    });
-    if (existingIdentityHash !== identityHash) {
-      continue;
-    }
-
+    .unique();
+  if (existingCanonical?.legacyMemoryId) {
     const existingRow = await getBuiltInAgentMemoryRowById(
       db,
-      inventoryRow.memoryId
+      existingCanonical.legacyMemoryId
     );
     const existingParsed = existingRow
       ? parseAgentMemory(existingRow.memory)
       : null;
-    if (!existingRow || !existingParsed) {
-      continue;
+    if (existingRow && existingParsed) {
+      return await attachCanonicalWorkspaceMemory(db, args, {
+        created: false,
+        memoryId: existingRow._id,
+        memoryText: existingRow.memory,
+        parsed: existingParsed,
+      });
     }
-
-    return {
-      created: false,
-      memoryId: existingRow._id,
-      memoryText: existingRow.memory,
-      parsed: existingParsed,
-    };
   }
 
   const componentDb = getComponentMemoryWriter(db);
@@ -1154,12 +1235,12 @@ export async function promoteAgentMemory(
     }
   }
 
-  return {
+  return await attachCanonicalWorkspaceMemory(db, args, {
     created: true,
     memoryId,
     memoryText,
     parsed,
-  };
+  });
 }
 
 function tokenizeForRelevance(value: string): string[] {
@@ -1220,10 +1301,18 @@ export async function findRelevantAgentMemories(
     limit?: number;
   }
 ): Promise<BuiltInAgentMemoryMatch[]> {
-  const allowedCategories = args.categories
-    ? new Set<WorkspaceMemoryCategory>(args.categories)
+  const normalizedCategories = normalizeWorkspaceMemoryCategories(
+    args.categories
+  );
+  const allowedCategories = normalizedCategories
+    ? new Set<WorkspaceMemoryCategory>(normalizedCategories)
     : null;
-  const candidateRows = allowedCategories
+  const operatorRecords = await listWorkspaceAgentMemoriesBySource(db, {
+    workspaceId: args.workspaceId as Id<"workspaces">,
+    source: "operator",
+    limit: Math.max(MAX_RELEVANCE_CANDIDATES, (args.limit ?? 5) * 20),
+  });
+  const generalRecords = allowedCategories
     ? (
         await Promise.all(
           [...allowedCategories].map((category) =>
@@ -1234,25 +1323,26 @@ export async function findRelevantAgentMemories(
             })
           )
         )
-      )
-        .flat()
-        .map((record) => ({
-          _id: record.memoryId,
-          _creationTime: record.createdAt,
-          memory: record.memoryText,
-          userId: args.userId,
-        }))
-    : (
-        await listWorkspaceAgentMemoriesFromInventory(db, {
-          workspaceId: args.workspaceId as Id<"workspaces">,
-          limit: MAX_RELEVANCE_CANDIDATES,
-        })
-      ).map((record) => ({
-        _id: record.memoryId,
-        _creationTime: record.createdAt,
-        memory: record.memoryText,
-        userId: args.userId,
-      }));
+      ).flat()
+    : await listWorkspaceAgentMemoriesFromInventory(db, {
+        workspaceId: args.workspaceId as Id<"workspaces">,
+        limit: MAX_RELEVANCE_CANDIDATES,
+      });
+  const seen = new Set<string>();
+  const candidateRows = [...operatorRecords, ...generalRecords]
+    .filter((record) => {
+      if (seen.has(record.memoryId)) {
+        return false;
+      }
+      seen.add(record.memoryId);
+      return true;
+    })
+    .map((record) => ({
+      _id: record.memoryId,
+      _creationTime: record.createdAt,
+      memory: record.memoryText,
+      userId: args.userId,
+    }));
 
   return candidateRows
     .map((row) => {
@@ -1270,11 +1360,9 @@ export async function findRelevantAgentMemories(
       return {
         memoryId: row._id,
         createdAt: row._creationTime,
-        relevanceScore: scoreMemoryRelevance(
-          parsed,
-          args.query,
-          row._creationTime
-        ),
+        relevanceScore:
+          scoreMemoryRelevance(parsed, args.query, row._creationTime) +
+          (parsed.source === "operator" ? 100 : 0),
         parsed,
       } satisfies BuiltInAgentMemoryMatch;
     })

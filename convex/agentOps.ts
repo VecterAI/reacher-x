@@ -852,39 +852,54 @@ export const getAgentOpsMemoryDetail = query({
       return null;
     }
 
-    const [prospect, suggestions, queryCandidates] = await Promise.all([
-      memory.parsed.prospectId
-        ? ctx.db.get(memory.parsed.prospectId as Id<"prospects">)
-        : Promise.resolve(null),
-      ctx.db
-        .query("memorySuggestions")
-        .withIndex("by_workspace_status_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("status", "promoted")
-        )
-        .order("desc")
-        .collect()
-        .then((rows) =>
-          rows
-            .filter((row) => row.promotedMemoryId === memory.memoryId)
-            .slice(0, 5)
-        ),
-      ctx.db
-        .query("queryCandidates")
-        .withIndex("by_workspace_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId)
-        )
-        .order("desc")
-        .collect()
-        .then((rows) =>
-          rows.filter((row) =>
-            memory.parsed.relatedQueries.some(
-              (related) =>
-                related.toLowerCase() === row.rawValue.toLowerCase() ||
-                related.toLowerCase() === row.canonicalValue.toLowerCase()
-            )
+    const [prospect, suggestions, queryCandidates, canonicalMemory] =
+      await Promise.all([
+        memory.parsed.prospectId
+          ? ctx.db.get(memory.parsed.prospectId as Id<"prospects">)
+          : Promise.resolve(null),
+        ctx.db
+          .query("memorySuggestions")
+          .withIndex("by_workspace_status_updated_at", (q) =>
+            q.eq("workspaceId", args.workspaceId).eq("status", "promoted")
           )
-        ),
-    ]);
+          .order("desc")
+          .collect()
+          .then((rows) =>
+            rows
+              .filter((row) => row.promotedMemoryId === memory.memoryId)
+              .slice(0, 5)
+          ),
+        ctx.db
+          .query("queryCandidates")
+          .withIndex("by_workspace_updated_at", (q) =>
+            q.eq("workspaceId", args.workspaceId)
+          )
+          .order("desc")
+          .collect()
+          .then((rows) =>
+            rows.filter((row) =>
+              memory.parsed.relatedQueries.some(
+                (related) =>
+                  related.toLowerCase() === row.rawValue.toLowerCase() ||
+                  related.toLowerCase() === row.canonicalValue.toLowerCase()
+              )
+            )
+          ),
+        ctx.db
+          .query("workspaceMemories")
+          .withIndex("by_legacy_memory_id", (q) =>
+            q.eq("legacyMemoryId", memory.memoryId)
+          )
+          .collect()
+          .then(
+            (rows) =>
+              rows
+                .filter((row) => row.status === "active")
+                .sort((left, right) => right.updatedAt - left.updatedAt)[0] ??
+              rows.sort((left, right) => right.updatedAt - left.updatedAt)[0] ??
+              null
+          ),
+      ]);
 
     return {
       memoryId: memory.memoryId,
@@ -917,6 +932,21 @@ export const getAgentOpsMemoryDetail = query({
       })),
       narrative: memory.parsed.narrative,
       memoryText: memory.memoryText,
+      canonicalMemory: canonicalMemory
+        ? {
+            memoryId: String(canonicalMemory._id),
+            authority: canonicalMemory.authority,
+            kind: canonicalMemory.kind,
+            status: canonicalMemory.status,
+            indexStatus: canonicalMemory.indexStatus,
+            instruction: canonicalMemory.instruction ?? null,
+            canonicalContent: canonicalMemory.canonicalContent,
+            surfaces: canonicalMemory.surfaces ?? [],
+            channels: canonicalMemory.channels ?? [],
+            indexError: canonicalMemory.indexError ?? null,
+            updatedAt: canonicalMemory.updatedAt,
+          }
+        : null,
     };
   },
 });

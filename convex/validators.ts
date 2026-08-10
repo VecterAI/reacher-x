@@ -2085,6 +2085,7 @@ export const readModelRolloutWorkflowResultValidator = v.object({
 export const hourlyAnalyticsCountsValidator = v.array(v.number());
 
 export const workspaceMemoryCategoryValidator = v.union(
+  v.literal("operator_instruction"),
   v.literal("qualification_win_pattern"),
   v.literal("qualification_false_positive_pattern"),
   v.literal("enrichment_signal_pattern"),
@@ -2101,6 +2102,35 @@ export const workspaceMemorySourceValidator = v.union(
   v.literal("outreach"),
   v.literal("operator"),
   v.literal("style_analysis")
+);
+
+/**
+ * Canonical workspace-memory authority. Operator-authored instructions are
+ * always kept separate from inferred/learned observations so background
+ * learning can never outrank an explicit user instruction.
+ */
+export const workspaceMemoryAuthorityValidator = v.union(
+  v.literal("operator"),
+  v.literal("learned")
+);
+
+export const workspaceMemoryStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("superseded"),
+  v.literal("disabled")
+);
+
+export const workspaceMemoryIndexStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("ready"),
+  v.literal("failed")
+);
+
+export const workspaceMemoryProvenanceKindValidator = v.union(
+  v.literal("user_instruction"),
+  v.literal("agent_learning"),
+  v.literal("style_analysis"),
+  v.literal("legacy_backfill")
 );
 
 export const memorySourceTypeValidator = v.union(

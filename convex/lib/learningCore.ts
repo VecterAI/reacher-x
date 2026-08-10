@@ -188,12 +188,12 @@ function toDrafts(
 ): DistilledMemoryDraft[] {
   return memories.map((memory) => ({
     ...memory,
-    namespace: categoryToNamespace(memory.category as WorkspaceMemoryCategory),
+    namespace: categoryToNamespace(memory.category),
     impactScore: memory.impactScore ?? 0.5,
     narrative:
       memory.narrative ??
       `${memory.title}. ${memory.summary} ${memory.signals?.length ? `Signals: ${memory.signals.join("; ")}.` : ""}`,
-    category: memory.category as WorkspaceMemoryCategory,
+    category: memory.category,
   }));
 }
 

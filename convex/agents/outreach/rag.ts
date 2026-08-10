@@ -56,19 +56,33 @@ type AgentMemoryEntryMetadata = {
  * - Add workspace memory items and query candidates during Phase 1+
  * - Search during plan generation
  */
-export const agentMemoryRag = new RAG<
-  AgentMemoryRagFilters,
-  AgentMemoryEntryMetadata
->(components.rag, {
-  textEmbeddingModel: getTextEmbeddingModel() as any,
-  embeddingDimension: 1536,
-  filterNames: ["contentType"],
-});
+type AgentMemoryRag = RAG<AgentMemoryRagFilters, AgentMemoryEntryMetadata>;
+
+let agentMemoryRag: AgentMemoryRag | undefined;
+
+/**
+ * Lazily creates the shared RAG client.
+ *
+ * Importing a module that can schedule memory indexing must not require an
+ * embedding provider. The provider is only needed when an action actually
+ * performs a RAG operation.
+ */
+export function getAgentMemoryRag(): AgentMemoryRag {
+  agentMemoryRag ??= new RAG<AgentMemoryRagFilters, AgentMemoryEntryMetadata>(
+    components.rag,
+    {
+      textEmbeddingModel: getTextEmbeddingModel() as any,
+      embeddingDimension: 1536,
+      filterNames: ["contentType"],
+    }
+  );
+  return agentMemoryRag;
+}
 
 /**
  * Backwards-compatible alias used by the existing outreach/prospect RAG code.
  */
-export const prospectRag = agentMemoryRag;
+export const getProspectRag = getAgentMemoryRag;
 
 /**
  * Helper to generate namespace for a prospect

@@ -92,7 +92,11 @@ import {
   setupPreviewReviewModeValidator,
   setupProspectOriginValidator,
   workspaceMemoryCategoryValidator,
+  workspaceMemoryAuthorityValidator,
+  workspaceMemoryIndexStatusValidator,
+  workspaceMemoryProvenanceKindValidator,
   workspaceMemorySourceValidator,
+  workspaceMemoryStatusValidator,
   twitterActionRiskLevelValidator,
   twitterActionProviderValidator,
   twitterActionApprovalModeValidator,
@@ -1959,6 +1963,91 @@ export default defineSchema({
       "createdAt",
     ])
     .index("by_memory_id", ["memoryId"]),
+
+  /**
+   * Canonical, workspace-isolated memory source of truth.
+   *
+   * `kind` and `metadata` are intentionally open-ended: operator instructions
+   * are stored verbatim rather than forced into a closed list of examples.
+   * The legacy Agent-component memory plus inventory remain as rollout/read
+   * models until the additive backfill has been verified.
+   */
+  workspaceMemories: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    identityKey: v.string(),
+    topicKey: v.optional(v.string()),
+    conflictKey: v.optional(v.string()),
+    legacyMemoryId: v.optional(v.string()),
+    authority: workspaceMemoryAuthorityValidator,
+    source: workspaceMemorySourceValidator,
+    category: v.optional(workspaceMemoryCategoryValidator),
+    status: workspaceMemoryStatusValidator,
+    indexStatus: workspaceMemoryIndexStatusValidator,
+    kind: v.string(),
+    title: v.string(),
+    summary: v.string(),
+    /** Exact operator text or exact learned canonical content. */
+    canonicalContent: v.string(),
+    canonicalSearchText: v.string(),
+    /** Verbatim user instruction when authority is operator. */
+    instruction: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    precedence: v.number(),
+    confidence: v.number(),
+    impactScore: v.number(),
+    prospectId: v.optional(v.id("prospects")),
+    surfaces: v.optional(v.array(v.string())),
+    channels: v.optional(v.array(v.string())),
+    provenanceKind: workspaceMemoryProvenanceKindValidator,
+    provenanceThreadId: v.optional(v.string()),
+    provenanceMessageId: v.optional(v.string()),
+    ragNamespace: v.string(),
+    ragKey: v.string(),
+    contentHash: v.string(),
+    indexedAt: v.optional(v.number()),
+    indexError: v.optional(v.string()),
+    supersededById: v.optional(v.id("workspaceMemories")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace_and_identity_key", ["workspaceId", "identityKey"])
+    .index("by_workspace_and_conflict_key_and_status", [
+      "workspaceId",
+      "conflictKey",
+      "status",
+    ])
+    .index("by_workspace_and_authority_and_status_and_precedence", [
+      "workspaceId",
+      "authority",
+      "status",
+      "precedence",
+    ])
+    .index("by_workspace_and_status_and_precedence", [
+      "workspaceId",
+      "status",
+      "precedence",
+    ])
+    .index("by_workspace_and_prospect_and_status", [
+      "workspaceId",
+      "prospectId",
+      "status",
+    ])
+    .index("by_workspace_source_category_status", [
+      "workspaceId",
+      "source",
+      "category",
+      "status",
+    ])
+    .index("by_workspace_and_legacy_memory_id", [
+      "workspaceId",
+      "legacyMemoryId",
+    ])
+    .index("by_legacy_memory_id", ["legacyMemoryId"])
+    .searchIndex("search_canonical_content", {
+      searchField: "canonicalSearchText",
+      filterFields: ["workspaceId", "authority", "status"],
+    }),
 
   /**
    * Durable read-model rollout tracking for explicit backfill/reconciliation runs.

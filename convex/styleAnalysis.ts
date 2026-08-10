@@ -13,6 +13,7 @@ import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 import {
   deleteWorkspaceAgentMemoriesByCategory,
   listRecentAgentMemories,
+  parseAgentMemory,
 } from "./lib/agentMemoryCore";
 import {
   getStyleMemoryCategory,
@@ -24,6 +25,7 @@ import {
   getWorkspaceStyleProfileRow,
   upsertWorkspaceStyleProfileOnDb,
 } from "./lib/workspaceStyleProfileCore";
+import { disableCanonicalWorkspaceMemoriesBySourceCategory } from "./lib/workspaceMemoryCore";
 
 // ============================================================================
 // Constants
@@ -318,10 +320,11 @@ async function finalizeStyleProfilePromotionOnDb(
       continue;
     }
 
-    const text = typeof memory.memory === "string" ? memory.memory : "";
+    const parsed = parseAgentMemory(memory.memory);
     if (
-      text.includes(`"category":"${styleMemoryCategory}"`) &&
-      text.includes(`"workspaceId":"${String(args.workspaceId)}"`)
+      parsed?.category === styleMemoryCategory &&
+      parsed.workspaceId === String(args.workspaceId) &&
+      parsed.source === "style_analysis"
     ) {
       await (db as any).delete(memory._id);
     }
@@ -509,6 +512,12 @@ export const resetStyleSourceData = internalMutation({
         userId: String(args.userId),
         workspaceId: String(workspace._id),
         category: styleMemoryCategory,
+        source: "style_analysis",
+      });
+      await disableCanonicalWorkspaceMemoriesBySourceCategory(ctx.db, {
+        workspaceId: workspace._id,
+        category: styleMemoryCategory,
+        source: "style_analysis",
       });
 
       await upsertWorkspaceStyleProfileOnDb(ctx.db, {

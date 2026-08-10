@@ -1,7 +1,10 @@
 import type { Doc } from "../_generated/dataModel";
 import { getStringProperty, isRecord } from "./typeGuards";
 
-type PostedOutreachTask = Pick<Doc<"outreachTasks">, "type">;
+type PostedOutreachTask = Pick<
+  Doc<"outreachTasks">,
+  "type" | "approvalContext"
+>;
 
 /**
  * Returns the provider artifact that proves an outreach write succeeded.
@@ -17,6 +20,10 @@ export function getPostedOutreachArtifactId(
   }
 
   if (task.type === "comment") {
+    if (task.approvalContext?.platform === "twitter") {
+      return getStringProperty(resultData, "postedTweetId") ?? null;
+    }
+
     return (
       getStringProperty(resultData, "commentId") ??
       getStringProperty(resultData, "messageId") ??

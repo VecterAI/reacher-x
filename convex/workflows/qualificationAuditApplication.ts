@@ -23,7 +23,10 @@ import {
   buildKeywordCanonicalRecord,
   createStableHash,
 } from "../lib/memoryHelpers";
-import { agentMemoryRag, getWorkspaceNamespace } from "../agents/outreach/rag";
+import {
+  getAgentMemoryRag,
+  getWorkspaceNamespace,
+} from "../agents/outreach/rag";
 import type { WorkspaceAgentMemoryRecord } from "../lib/agentMemoryCore";
 
 const APPLICATION_BATCH_SIZE = 5;
@@ -47,11 +50,11 @@ async function deleteRagEntryByKey(
   ctx: ActionCtx,
   args: { namespace: string; key: string }
 ) {
-  const namespace = await agentMemoryRag.getNamespace(ctx, {
+  const namespace = await getAgentMemoryRag().getNamespace(ctx, {
     namespace: args.namespace,
   });
   if (!namespace) return;
-  await agentMemoryRag.deleteByKey(ctx, {
+  await getAgentMemoryRag().deleteByKey(ctx, {
     namespaceId: namespace.namespaceId,
     key: args.key,
   });
