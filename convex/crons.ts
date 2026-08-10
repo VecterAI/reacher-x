@@ -39,4 +39,10 @@ crons.interval(
   internal.ragMaintenance.cleanupLegacyProspectRagCron
 );
 
+crons.interval(
+  "retry failed workspace memory embeddings",
+  { minutes: 2 },
+  internal.memory.retryFailedCanonicalWorkspaceMemoryIndexesCron
+);
+
 export default crons;
