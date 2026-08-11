@@ -236,6 +236,7 @@ async function persistWorkspaceMemoryDraft(
     channels?: string[];
     provenanceKind?: WorkspaceMemoryProvenanceKind;
     provenanceMessageId?: string;
+    attachmentUploadIds?: Id<"mediaUploads">[];
   }
 ): Promise<AgentMemoryPromotionResult> {
   const inserted = await ctx.runMutation(
@@ -498,6 +499,7 @@ export const insertBuiltInAgentMemoryInternal = internalMutation({
       )
     ),
     provenanceMessageId: v.optional(v.string()),
+    attachmentUploadIds: v.optional(v.array(v.id("mediaUploads"))),
   },
   handler: async (ctx, args) => {
     return await promoteAgentMemory(ctx.db, {
@@ -526,6 +528,7 @@ export const insertBuiltInAgentMemoryInternal = internalMutation({
       channels: args.channels,
       provenanceKind: args.provenanceKind,
       provenanceMessageId: args.provenanceMessageId,
+      attachmentUploadIds: args.attachmentUploadIds,
     });
   },
 });
@@ -568,6 +571,7 @@ export const persistCanonicalWorkspaceMemoryInternal = internalAction({
       )
     ),
     provenanceMessageId: v.optional(v.string()),
+    attachmentUploadIds: v.optional(v.array(v.id("mediaUploads"))),
   },
   handler: async (ctx, args): Promise<AgentMemoryPromotionResult> =>
     await persistWorkspaceMemoryDraft(ctx, {

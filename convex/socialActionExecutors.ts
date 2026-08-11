@@ -28,6 +28,11 @@ import {
 import { logger } from "../shared/lib/logger";
 import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
 import { assertTwitterActionTextValid } from "../shared/lib/twitter/xPostTextLimit";
+import {
+  getMediaCapabilityErrorMessage,
+  type ResolvedOutreachMedia,
+} from "./lib/mediaCapabilityCore";
+import { twitterMediaKindValidator } from "./validators";
 
 const internalLinkedInApi = (internal as any).linkedin;
 const socialActionExecutorsLogger = logger.withScope("SocialActionExecutors");
@@ -402,11 +407,44 @@ export const executeActionRequestInternal = internalAction({
           typeof argsSnapshot.text === "string"
             ? argsSnapshot.text
             : request.draftContent;
-        const mediaUrls = Array.isArray(argsSnapshot.mediaUrls)
+        let mediaUrls = Array.isArray(argsSnapshot.mediaUrls)
           ? argsSnapshot.mediaUrls.filter(
               (value: unknown): value is string => typeof value === "string"
             )
           : undefined;
+        const mediaUploadIds = Array.isArray(argsSnapshot.mediaUploadIds)
+          ? argsSnapshot.mediaUploadIds.filter(
+              (value: unknown): value is Id<"mediaUploads"> =>
+                typeof value === "string"
+            )
+          : undefined;
+        const linkedInDestination =
+          request.actionKey === "linkedin_comment_on_post"
+            ? ({ platform: "linkedin", surface: "comment" } as const)
+            : request.actionKey === "linkedin_send_message" ||
+                request.actionKey ===
+                  "linkedin_send_message_existing_conversation"
+              ? ({ platform: "linkedin", surface: "dm" } as const)
+              : null;
+        if (mediaUrls?.length) {
+          if (!linkedInDestination || !request.workspaceId) {
+            throw new Error(
+              "Attachments are not supported for this LinkedIn action."
+            );
+          }
+          const validated: ResolvedOutreachMedia[] = await ctx.runQuery(
+            internal.workspaceAttachments
+              .resolveAndValidateOutreachMediaInternal,
+            {
+              userId: request.userId,
+              workspaceId: request.workspaceId,
+              destination: linkedInDestination,
+              mediaUrls,
+              mediaUploadIds,
+            }
+          );
+          mediaUrls = validated.map((attachment) => attachment.url);
+        }
         const postId =
           typeof argsSnapshot.postId === "string"
             ? argsSnapshot.postId.trim()
@@ -646,9 +684,17 @@ export const executeActionRequestInternal = internalAction({
         typeof argsSnapshot.text === "string"
           ? argsSnapshot.text
           : request.draftContent;
-      const mediaUrlsForValidation = Array.isArray(argsSnapshot.mediaUrls)
+      let mediaUrlsForValidation = Array.isArray(argsSnapshot.mediaUrls)
         ? argsSnapshot.mediaUrls.filter(
             (value: unknown): value is string => typeof value === "string"
+          )
+        : undefined;
+      const mediaUploadIdsForValidation = Array.isArray(
+        argsSnapshot.mediaUploadIds
+      )
+        ? argsSnapshot.mediaUploadIds.filter(
+            (value: unknown): value is Id<"mediaUploads"> =>
+              typeof value === "string"
           )
         : undefined;
       const mediaDescriptionsForExecution = Array.isArray(
@@ -670,6 +716,31 @@ export const executeActionRequestInternal = internalAction({
       );
 
       const actionKey = request.actionKey as CuratedTwitterActionKey;
+      const xAttachmentDestination =
+        actionKey === "reply_to_post" || actionKey === "create_post"
+          ? ({ platform: "twitter", surface: "comment" } as const)
+          : actionKey === "send_dm" ||
+              actionKey === "send_dm_in_existing_conversation"
+            ? ({ platform: "twitter", surface: "dm" } as const)
+            : null;
+      if (mediaUrlsForValidation?.length) {
+        if (!xAttachmentDestination || !request.workspaceId) {
+          throw new Error(
+            "Attachments are not supported for this X/Twitter action."
+          );
+        }
+        const validated: ResolvedOutreachMedia[] = await ctx.runQuery(
+          internal.workspaceAttachments.resolveAndValidateOutreachMediaInternal,
+          {
+            userId: request.userId,
+            workspaceId: request.workspaceId,
+            destination: xAttachmentDestination,
+            mediaUrls: mediaUrlsForValidation,
+            mediaUploadIds: mediaUploadIdsForValidation,
+          }
+        );
+        mediaUrlsForValidation = validated.map((attachment) => attachment.url);
+      }
       let resolvedTargetUserId =
         typeof argsSnapshot.targetUserId === "string"
           ? argsSnapshot.targetUserId.trim()
@@ -923,16 +994,64 @@ export const submitTwitterActionForThread = internalAction({
     conversationId: v.optional(v.string()),
     text: v.optional(v.string()),
     mediaUrls: v.optional(v.array(v.string())),
+    mediaUploadIds: v.optional(v.array(v.id("mediaUploads"))),
     mediaDescriptions: v.optional(v.array(v.string())),
-    mediaKinds: v.optional(
-      v.array(v.union(v.literal("image"), v.literal("gif"), v.literal("video")))
-    ),
+    mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
     targetLabel: v.optional(v.string()),
     context: v.optional(v.string()),
     replaceExistingPending: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SubmitTwitterActionResult> => {
     const threadContext = await resolveThreadContext(ctx, args.threadId);
+    const destination =
+      args.actionKey === "reply_to_post" || args.actionKey === "create_post"
+        ? ({ platform: "twitter", surface: "comment" } as const)
+        : args.actionKey === "send_dm" ||
+            args.actionKey === "send_dm_in_existing_conversation"
+          ? ({ platform: "twitter", surface: "dm" } as const)
+          : null;
+    if ((args.mediaUrls?.length ?? 0) > 0) {
+      if (!destination || !threadContext.workspaceId) {
+        return {
+          success: false,
+          executed: false,
+          pendingApproval: false,
+          actionKey: args.actionKey,
+          title: "Attachment unavailable",
+          message:
+            "Attachments are not supported for this X/Twitter action in the current workspace context.",
+          error: "Unsupported attachment context",
+        };
+      }
+      try {
+        const media: ResolvedOutreachMedia[] = await ctx.runQuery(
+          internal.workspaceAttachments.resolveAndValidateOutreachMediaInternal,
+          {
+            userId: threadContext.userId,
+            workspaceId: threadContext.workspaceId,
+            destination,
+            mediaUrls: args.mediaUrls ?? [],
+            mediaUploadIds: args.mediaUploadIds,
+          }
+        );
+        args.mediaUrls = media.map((attachment) => attachment.url);
+        args.mediaUploadIds = media.map((attachment) => attachment.uploadId);
+        args.mediaKinds = media.map((attachment) => attachment.kind);
+      } catch (error) {
+        const message =
+          getMediaCapabilityErrorMessage(error) ??
+          "The selected attachment could not be verified for this X/Twitter action.";
+        return {
+          success: false,
+          executed: false,
+          pendingApproval: false,
+          actionKey: args.actionKey,
+          title: "Attachment unavailable",
+          message,
+          error: message,
+        };
+      }
+    }
     const limit = await ctx.runQuery(
       internal.xPostLimits.getEffectivePostLimitInternal,
       { userId: threadContext.userId }
@@ -1134,6 +1253,7 @@ export const submitTwitterActionForThread = internalAction({
                 resolvedConversationIdForRequest ?? args.conversationId,
               text: args.text,
               mediaUrls: args.mediaUrls ?? [],
+              mediaUploadIds: args.mediaUploadIds ?? [],
               mediaDescriptions: args.mediaDescriptions ?? [],
               mediaKinds: args.mediaKinds ?? [],
               targetLabel: effectiveTargetLabel,
@@ -1203,6 +1323,7 @@ export const submitTwitterActionForThread = internalAction({
             resolvedConversationIdForRequest ?? args.conversationId,
           text: args.text,
           mediaUrls: args.mediaUrls ?? [],
+          mediaUploadIds: args.mediaUploadIds ?? [],
           mediaDescriptions: args.mediaDescriptions ?? [],
           mediaKinds: args.mediaKinds ?? [],
           targetLabel: effectiveTargetLabel,

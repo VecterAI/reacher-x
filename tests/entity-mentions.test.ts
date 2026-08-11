@@ -97,6 +97,7 @@ test("composer mention helpers use scoped handles, post URLs, and attachment upl
     attachmentUrl: "https://cdn.example.com/candidates-use-case.jpg",
     attachmentMimeType: "image/jpeg",
     attachmentMediaKind: "image",
+    attachmentSize: 2048,
   };
 
   assert.equal(
@@ -125,6 +126,49 @@ test("composer mention helpers use scoped handles, post URLs, and attachment upl
     uploadId: "file-1",
     type: "image",
     mediaKind: "image",
+    fileName: "candidates-use-case.jpg",
+    mimeType: "image/jpeg",
+    size: 2048,
+    description: undefined,
+  });
+});
+
+test("attachment mention normalization preserves disabled PDF metadata", () => {
+  const attachment = normalizeMentionEntitySearchResult({
+    id: "attachment:file-2",
+    entityId: "file-2",
+    kind: "attachment",
+    label: "results.pdf",
+    mentionText: "Attachment: results.pdf",
+    secondaryLabel: "Workspace attachment",
+    avatarUrl: null,
+    verified: false,
+    attachmentUrl: "https://cdn.example.com/results.pdf",
+    attachmentMimeType: "application/pdf",
+    attachmentMediaKind: "file",
+    attachmentSize: 4096,
+    attachmentDisabled: true,
+    attachmentDisabledReason: "results.pdf cannot be attached to X/Twitter.",
+  });
+
+  assert.ok(attachment);
+  assert.equal(attachment.attachmentMediaKind, "file");
+  assert.equal(attachment.attachmentSize, 4096);
+  assert.equal(attachment.attachmentDisabled, true);
+  assert.equal(
+    attachment.attachmentDisabledReason,
+    "results.pdf cannot be attached to X/Twitter."
+  );
+  assert.deepEqual(buildInitialMediaUploadFromMentionEntity(attachment), {
+    id: "mention-attachment:file-2",
+    url: "https://cdn.example.com/results.pdf",
+    serverUrl: "https://cdn.example.com/results.pdf",
+    uploadId: "file-2",
+    type: "file",
+    mediaKind: "file",
+    fileName: "results.pdf",
+    mimeType: "application/pdf",
+    size: 4096,
     description: undefined,
   });
 });

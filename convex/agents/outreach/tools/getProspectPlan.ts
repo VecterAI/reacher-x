@@ -45,7 +45,7 @@ export interface GetProspectPlanResult {
     targetTweetId?: string;
     mediaUrls?: string[];
     mediaDescriptions?: string[];
-    mediaKinds?: Array<"image" | "gif" | "video">;
+    mediaKinds?: Array<"image" | "gif" | "video" | "file">;
   }>;
   artifact?: AgentArtifactEnvelope;
   error?: string;

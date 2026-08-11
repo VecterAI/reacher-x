@@ -69,6 +69,7 @@ export type CanonicalWorkspaceMemory = {
   prospectId?: string;
   surfaces?: string[];
   channels?: string[];
+  attachmentUploadIds?: string[];
   provenanceKind: WorkspaceMemoryProvenanceKind;
   provenanceThreadId?: string;
   provenanceMessageId?: string;
@@ -108,6 +109,7 @@ export type CanonicalWorkspaceMemoryWriteArgs = {
   prospectId?: Id<"prospects">;
   surfaces?: string[];
   channels?: string[];
+  attachmentUploadIds?: Id<"mediaUploads">[];
   provenanceKind?: WorkspaceMemoryProvenanceKind;
   provenanceThreadId?: string;
   provenanceMessageId?: string;
@@ -195,6 +197,7 @@ export function buildCanonicalWorkspaceMemoryIdentity(args: {
   prospectId?: string;
   surfaces?: string[];
   channels?: string[];
+  attachmentUploadIds?: Array<Id<"mediaUploads"> | string>;
 }): string {
   const identity = JSON.stringify({
     workspaceId: args.workspaceId,
@@ -203,6 +206,9 @@ export function buildCanonicalWorkspaceMemoryIdentity(args: {
     prospectId: args.prospectId ?? null,
     surfaces: sanitizeStringList(args.surfaces) ?? [],
     channels: sanitizeStringList(args.channels) ?? [],
+    attachmentUploadIds: [...(args.attachmentUploadIds ?? [])]
+      .map(String)
+      .sort(),
   });
   return `workspace-memory-v2:${createStableHash(identity)}`;
 }
@@ -331,6 +337,7 @@ function serializePromptMemory(memory: CanonicalWorkspaceMemory): string {
     prospectId: memory.prospectId ?? null,
     surfaces: memory.surfaces ?? [],
     channels: memory.channels ?? [],
+    linkedAttachmentCount: memory.attachmentUploadIds?.length ?? 0,
     provenance: memory.provenanceKind,
   });
 }
@@ -401,6 +408,7 @@ export function toCanonicalWorkspaceMemory(row: any): CanonicalWorkspaceMemory {
     prospectId: row.prospectId ? String(row.prospectId) : undefined,
     surfaces: row.surfaces,
     channels: row.channels,
+    attachmentUploadIds: row.attachmentUploadIds?.map(String),
     provenanceKind: row.provenanceKind,
     provenanceThreadId: row.provenanceThreadId,
     provenanceMessageId: row.provenanceMessageId,
@@ -453,6 +461,24 @@ export async function upsertCanonicalWorkspaceMemory(
   }
   const surfaces = sanitizeStringList(args.surfaces);
   const channels = sanitizeStringList(args.channels);
+  const attachmentUploadIds = args.attachmentUploadIds
+    ? [...new Set(args.attachmentUploadIds)].slice(0, 4)
+    : undefined;
+  const attachmentUploads = await Promise.all(
+    (attachmentUploadIds ?? []).map((uploadId) =>
+      db.get("mediaUploads", uploadId)
+    )
+  );
+  if (
+    attachmentUploads.some(
+      (upload) =>
+        !upload ||
+        upload.userId !== args.userId ||
+        upload.workspaceId !== args.workspaceId
+    )
+  ) {
+    throw new Error("Workspace memory attachment validation failed");
+  }
   const conflictKey = requestedConflictKey
     ? [
         authority,
@@ -472,6 +498,7 @@ export async function upsertCanonicalWorkspaceMemory(
     prospectId: args.prospectId ? String(args.prospectId) : undefined,
     surfaces,
     channels,
+    attachmentUploadIds,
   });
   const ragText = buildCanonicalWorkspaceMemoryRagText({
     title: args.title,
@@ -512,6 +539,7 @@ export async function upsertCanonicalWorkspaceMemory(
     prospectId: args.prospectId,
     surfaces,
     channels,
+    attachmentUploadIds,
     provenanceKind: getWorkspaceMemoryProvenanceKind(
       args.source,
       args.provenanceKind

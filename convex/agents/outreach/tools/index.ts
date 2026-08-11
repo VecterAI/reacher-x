@@ -33,3 +33,4 @@ export {
 // Shared workspace memory tools (defined in the main agents/tools folder)
 export { rememberWorkspaceMemory } from "../../tools/rememberWorkspaceMemory";
 export { searchWorkspaceMemories } from "../../tools/searchWorkspaceMemories";
+export { workspaceAttachments } from "../../tools/workspaceAttachments";

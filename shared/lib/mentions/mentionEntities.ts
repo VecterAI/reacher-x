@@ -8,7 +8,7 @@ export type MentionEntityKind =
   | "attachment"
   | "post";
 
-export type MentionAttachmentMediaKind = "image" | "gif" | "video";
+export type MentionAttachmentMediaKind = "image" | "gif" | "video" | "file";
 export type MentionPostPlatform = "twitter" | "linkedin";
 
 export interface MentionEntitySearchResult {
@@ -28,7 +28,10 @@ export interface MentionEntitySearchResult {
   taskId?: string;
   attachmentUrl?: string | null;
   attachmentMimeType?: string | null;
+  attachmentSize?: number | null;
   attachmentMediaKind?: MentionAttachmentMediaKind | null;
+  attachmentDisabled?: boolean;
+  attachmentDisabledReason?: string | null;
   postId?: string;
   postUrl?: string | null;
   postPlatform?: MentionPostPlatform | null;
@@ -280,10 +283,19 @@ export function normalizeMentionEntitySearchResult(
     taskId: coerceOptionalString(value.taskId),
     attachmentUrl: coerceOptionalString(value.attachmentUrl) ?? null,
     attachmentMimeType: coerceOptionalString(value.attachmentMimeType) ?? null,
+    attachmentSize:
+      typeof value.attachmentSize === "number" &&
+      Number.isFinite(value.attachmentSize) &&
+      value.attachmentSize >= 0
+        ? value.attachmentSize
+        : null,
     attachmentMediaKind:
       (coerceOptionalString(value.attachmentMediaKind) as
         | MentionAttachmentMediaKind
         | undefined) ?? null,
+    attachmentDisabled: value.attachmentDisabled === true,
+    attachmentDisabledReason:
+      coerceOptionalString(value.attachmentDisabledReason) ?? null,
     postId,
     postUrl,
     postPlatform,

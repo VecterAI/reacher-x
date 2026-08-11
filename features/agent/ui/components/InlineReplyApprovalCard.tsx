@@ -39,7 +39,7 @@ const FALLBACK_CURRENT_USER: ComposerIdentityUser = {
 
 const EMPTY_MEDIA_URLS: string[] = [];
 const EMPTY_MEDIA_DESCRIPTIONS: string[] = [];
-const EMPTY_MEDIA_KINDS: Array<"image" | "gif" | "video"> = [];
+const EMPTY_MEDIA_KINDS: ComposerMediaKind[] = [];
 
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|mov|m4v|webm)$/i.test(url);
@@ -73,7 +73,7 @@ export interface InlineReplyApprovalCardProps {
   draftContent?: string | null;
   mediaUrls?: string[];
   mediaDescriptions?: string[];
-  mediaKinds?: Array<"image" | "gif" | "video">;
+  mediaKinds?: ComposerMediaKind[];
   sourcePostRef?: TwitterPostRef | null;
   sourcePostSummary?: TwitterPostSummary | null;
   targetTweetId?: string | null;

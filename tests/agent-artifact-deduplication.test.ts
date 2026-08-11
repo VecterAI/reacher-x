@@ -7,9 +7,28 @@ import {
   getToolResultArtifactSemanticKeys,
 } from "../features/agent/lib/toolArtifacts";
 import {
+  createAttachmentPreviewArtifact,
   createPlanPreviewArtifact,
   getAgentArtifactSemanticKey,
 } from "../shared/lib/json-render/agentArtifacts";
+
+function createAttachmentArtifact(...attachmentRefs: string[]) {
+  const artifact = createAttachmentPreviewArtifact({
+    attachments: attachmentRefs.map((attachmentRef, index) => ({
+      attachmentRef,
+      fileName: `file-${index + 1}.png`,
+      displayName: `File ${index + 1}`,
+      mimeType: "image/png",
+      mediaKind: "image",
+      size: 128,
+      uploadedAt: index + 1,
+      mediaUrl: `https://example.com/file-${index + 1}.png`,
+    })),
+  });
+
+  assert.ok(artifact);
+  return artifact;
+}
 
 function createPlanArtifact(planId: string, rationale: string) {
   const artifact = createPlanPreviewArtifact({
@@ -42,6 +61,16 @@ test("duplicate plan artifacts inside one tool result render once", () => {
   assert.deepEqual(getToolResultArtifactSemanticKeys({ artifact }), [
     "PlanPreviewCard:plan-1",
   ]);
+});
+
+test("attachment preview artifacts preserve ordered attachment identity", () => {
+  const artifact = createAttachmentArtifact("attachment_2", "attachment_1");
+
+  assert.equal(
+    getAgentArtifactSemanticKey(artifact),
+    "AttachmentPreview:attachment_2,attachment_1"
+  );
+  assert.equal(getAgentArtifactsFromToolResult({ artifact }).length, 1);
 });
 
 test("only the latest copy of the same plan artifact remains visible per turn", () => {

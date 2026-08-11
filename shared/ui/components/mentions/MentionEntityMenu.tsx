@@ -179,7 +179,8 @@ function MentionEntityVisual({
             width={36}
             height={36}
             sizes="36px"
-            loading="lazy"
+            loading="eager"
+            unoptimized
           />
         ) : (
           getAttachmentIcon(entity)
@@ -297,11 +298,15 @@ export function MentionEntityMenu({
             id={getOptionId?.(item, index)}
             role="option"
             type="button"
+            disabled={item.attachmentDisabled === true}
             className={cn(
               "hover:bg-muted flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors",
-              selectedIndex === index && "bg-muted"
+              selectedIndex === index && "bg-muted",
+              item.attachmentDisabled &&
+                "cursor-not-allowed opacity-50 hover:bg-transparent"
             )}
             aria-selected={selectedIndex === index}
+            aria-disabled={item.attachmentDisabled === true}
             onMouseDown={(event) => event.preventDefault()}
             onMouseEnter={() => onHover?.(index)}
             onClick={() => onSelect(item)}
@@ -319,8 +324,11 @@ export function MentionEntityMenu({
                   />
                 ) : null}
               </div>
-              <div className="text-muted-foreground truncate text-xs">
-                {item.secondaryLabel}
+              <div
+                className="text-muted-foreground truncate text-xs"
+                title={item.attachmentDisabledReason ?? undefined}
+              >
+                {item.attachmentDisabledReason ?? item.secondaryLabel}
               </div>
             </div>
           </button>

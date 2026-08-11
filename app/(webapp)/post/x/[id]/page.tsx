@@ -13,6 +13,7 @@ import {
 } from "@/features/webapp/ui/components";
 import { Tweet as TweetComponent } from "@/features/webapp/ui/components";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
+import type { ComposerMediaKind } from "@/features/composer/types";
 import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFallbackAlert";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
 import { X_POST_WEIGHTED_MAX } from "@/shared/lib/twitter/xPostTextLimit";
@@ -86,7 +87,7 @@ function PostDetailInner() {
       content: unknown,
       mediaUrls?: string[],
       mediaDescriptions?: string[],
-      _mediaKinds?: ("image" | "gif" | "video")[]
+      _mediaKinds?: ComposerMediaKind[]
     ) => {
       const text = extractTextFromEditorState(content).trim();
       const hasMedia = Array.isArray(mediaUrls) && mediaUrls.length > 0;

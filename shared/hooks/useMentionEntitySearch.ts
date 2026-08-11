@@ -25,12 +25,19 @@ function buildMentionEntityCacheKey(args: {
   prospectId?: string | null;
   limit?: number;
   remoteAllowedKinds?: MentionEntityKind[];
+  attachmentDestination?: {
+    platform: "twitter" | "linkedin";
+    surface: "comment" | "dm";
+  };
 }) {
   return [
     args.workspaceId ?? "workspace:none",
     args.prospectId ?? "prospect:none",
     args.limit ?? "limit:8",
     args.remoteAllowedKinds?.join(",") ?? "kinds:all",
+    args.attachmentDestination
+      ? `${args.attachmentDestination.platform}:${args.attachmentDestination.surface}`
+      : "destination:none",
     args.query ?? "",
   ].join("::");
 }
@@ -65,17 +72,30 @@ export function useMentionEntitySearch(args: {
   limit?: number;
   remoteAllowedKinds?: MentionEntityKind[];
   localEntities?: MentionEntitySearchResult[];
+  attachmentDestination?: {
+    platform: "twitter" | "linkedin";
+    surface: "comment" | "dm";
+  };
 }) {
+  const {
+    enabled,
+    query,
+    workspaceId,
+    prospectId,
+    limit,
+    remoteAllowedKinds,
+    localEntities,
+    attachmentDestination,
+  } = args;
   const convex = useConvex();
   const [results, setResults] = useState<MentionEntitySearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const localEntitySignature = buildMentionEntityContentSignature(
-    args.localEntities
-  );
-  const remoteAllowedKindsSignature = args.remoteAllowedKinds?.join(",") ?? "";
+  const localEntitySignature =
+    buildMentionEntityContentSignature(localEntities);
+  const remoteAllowedKindsSignature = remoteAllowedKinds?.join(",") ?? "";
 
   useEffect(() => {
-    if (!args.enabled || args.query === null) {
+    if (!enabled || query === null) {
       const timeoutId = window.setTimeout(() => {
         setResults([]);
         setLoading(false);
@@ -84,14 +104,13 @@ export function useMentionEntitySearch(args: {
     }
 
     const localResults = getLocalMentionResults({
-      query: args.query,
-      limit: args.limit,
-      localEntities: args.localEntities,
+      query,
+      limit,
+      localEntities,
     });
-    const resultLimit = Math.max(1, Math.min(12, args.limit ?? 8));
+    const resultLimit = Math.max(1, Math.min(12, limit ?? 8));
     const shouldQueryRemote =
-      args.remoteAllowedKinds === undefined ||
-      args.remoteAllowedKinds.length > 0;
+      remoteAllowedKinds === undefined || remoteAllowedKinds.length > 0;
 
     if (!shouldQueryRemote) {
       const timeoutId = window.setTimeout(() => {
@@ -101,7 +120,14 @@ export function useMentionEntitySearch(args: {
       return () => window.clearTimeout(timeoutId);
     }
 
-    const cacheKey = buildMentionEntityCacheKey(args);
+    const cacheKey = buildMentionEntityCacheKey({
+      query,
+      workspaceId,
+      prospectId,
+      limit,
+      remoteAllowedKinds,
+      attachmentDestination,
+    });
     const cachedResults = mentionEntityCache.get(cacheKey);
 
     if (cachedResults === null) {
@@ -137,15 +163,14 @@ export function useMentionEntitySearch(args: {
 
     void convex
       .query(api.mediaMentions.searchMentionEntities, {
-        query: args.query,
-        workspaceId: args.workspaceId
-          ? (args.workspaceId as Id<"workspaces">)
+        query,
+        workspaceId: workspaceId
+          ? (workspaceId as Id<"workspaces">)
           : undefined,
-        prospectId: args.prospectId
-          ? (args.prospectId as Id<"prospects">)
-          : undefined,
-        limit: args.limit,
-        allowedKinds: args.remoteAllowedKinds,
+        prospectId: prospectId ? (prospectId as Id<"prospects">) : undefined,
+        limit,
+        allowedKinds: remoteAllowedKinds,
+        attachmentDestination,
       })
       .then((nextResults) => {
         if (cancelled) {
@@ -184,13 +209,16 @@ export function useMentionEntitySearch(args: {
       window.clearTimeout(loadingTimeoutId);
     };
   }, [
-    args.enabled,
-    args.limit,
-    args.prospectId,
-    args.query,
-    args.workspaceId,
+    enabled,
+    limit,
+    prospectId,
+    query,
+    workspaceId,
+    attachmentDestination,
     convex,
+    localEntities,
     localEntitySignature,
+    remoteAllowedKinds,
     remoteAllowedKindsSignature,
   ]);
 

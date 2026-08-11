@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { SerializedEditorState } from "lexical";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Tweet } from "@/features/threads/types";
 import type { InlineAutocompleteContext } from "@/shared/lib/autocomplete/inlineAutocomplete";
 import type {
@@ -10,7 +11,12 @@ import type {
 // Base composer types
 /** `x_post`: X/Twitter weighted length (URLs count as fixed width). `raw`: JavaScript string length. */
 export type ComposerCharacterCountMode = "raw" | "x_post";
-export type ComposerMediaKind = "image" | "gif" | "video";
+export type ComposerMediaKind = "image" | "gif" | "video" | "file";
+export type ComposerUploadType = "image" | "video" | "file";
+export type ComposerAttachmentDestination = {
+  platform: "twitter" | "linkedin";
+  surface: "comment" | "dm";
+};
 
 /** Viewer row in post/reply composer: prefer X connection snapshot, then WorkOS. */
 export type ComposerIdentityUser = {
@@ -65,11 +71,16 @@ export interface ComposerBaseProps {
 }
 
 export interface ComposerEntityMentionsConfig {
+  workspaceId?: Id<"workspaces"> | null;
   remoteAllowedKinds?: MentionEntityKind[];
   localEntities?: MentionEntitySearchResult[];
   personTextMode?: "label" | "handle";
   prospectId?: string | null;
+  attachmentDestination?: ComposerAttachmentDestination;
   onSelectEntity?: (entity: MentionEntitySearchResult) => void;
+  getAttachmentDisabledReason?: (
+    entity: MentionEntitySearchResult
+  ) => string | null;
   buildInsertionText?: (entity: MentionEntitySearchResult) => string | null;
 }
 
@@ -78,8 +89,11 @@ export interface ComposerInitialMediaUpload {
   url?: string;
   serverUrl?: string;
   uploadId?: string;
-  type: "image" | "video";
+  type: ComposerUploadType;
   mediaKind?: ComposerMediaKind;
+  fileName?: string;
+  mimeType?: string;
+  size?: number;
   description?: string;
 }
 
@@ -133,8 +147,9 @@ export interface MediaUpload {
   url?: string; // Local blob URL for preview
   serverUrl?: string; // Server URL for backend access
   uploadId?: string; // Convex upload ID
-  type: "image" | "video";
+  type: ComposerUploadType;
   mediaKind: ComposerMediaKind;
+  size?: number;
   progress: number;
   status: "uploading" | "completed" | "error";
   error?: string;

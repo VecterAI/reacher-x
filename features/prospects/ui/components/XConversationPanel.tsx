@@ -666,6 +666,10 @@ export function XConversationPanel({
               }}
               entityMentions={{
                 prospectId,
+                attachmentDestination: {
+                  platform: "twitter",
+                  surface: "dm",
+                },
                 remoteAllowedKinds: ["prospect", "post", "attachment"],
                 personTextMode: "handle",
               }}

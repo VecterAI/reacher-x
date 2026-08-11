@@ -125,6 +125,12 @@ import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Spinner } from "@/shared/ui/components/Spinner";
 import { Markdown } from "@/shared/ui/components/Markdown";
 import { cn, extractTextFromEditorState } from "@/shared/lib/utils";
+import { inferAttachmentMediaKind } from "@/shared/lib/utils/media/inferAttachmentMediaKind";
+import { inferFileVisualKind } from "@/shared/lib/utils/media/inferFileVisualKind";
+import {
+  isLinkedInMessageDocumentMimeType,
+  LINKEDIN_MESSAGE_DOCUMENT_ACCEPT,
+} from "@/shared/lib/utils/media/linkedinMessageAttachmentTypes";
 import {
   Copy,
   Check,
@@ -291,6 +297,23 @@ interface ChatAttachment {
 
 const MAX_CHAT_ATTACHMENTS = 4;
 const MAX_CHAT_ATTACHMENT_BYTES = 512 * 1024 * 1024;
+const MAX_CHAT_DOCUMENT_BYTES = 15 * 1024 * 1024;
+const MAX_CHAT_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_CHAT_WEBP_BYTES = 5 * 1024 * 1024;
+const CHAT_IMAGE_MIME_TYPES = new Set([
+  "image/bmp",
+  "image/gif",
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+]);
+const CHAT_VIDEO_MIME_TYPES = new Set(["video/mp4", "video/quicktime"]);
+const CHAT_ATTACHMENT_ACCEPT = [
+  ...CHAT_IMAGE_MIME_TYPES,
+  ...CHAT_VIDEO_MIME_TYPES,
+  LINKEDIN_MESSAGE_DOCUMENT_ACCEPT,
+].join(",");
 
 function buildStableKey(base: string, sequence: Map<string, number>) {
   const nextCount = (sequence.get(base) ?? 0) + 1;
@@ -372,6 +395,8 @@ export interface AgentChatProps {
   prospectId?: string;
   /** Thread ID to load (from URL) */
   threadId?: string;
+  /** Workspace resolved from the active thread, including setup drafts. */
+  workspaceId?: Id<"workspaces"> | null;
   /** Action mode: "generatePlan" for plan generation */
   action?: string;
   /** Notification ID to mark seen (from URL) */
@@ -1144,6 +1169,7 @@ function AssistantModelBadge({ model }: { model: string }) {
 type DisplayAttachment = {
   id: string;
   fileName: string;
+  mimeType?: string | null;
   mediaUrl: string | null;
   status: "uploading" | "ready";
   sourceLabel?: string;
@@ -1156,6 +1182,7 @@ function buildAttachmentReferenceFromEntity(
   id: string;
   uploadId: string | null;
   fileName: string;
+  mimeType: string | null;
   mediaUrl: string | null;
 } | null {
   if (entity.kind !== "attachment") {
@@ -1166,6 +1193,7 @@ function buildAttachmentReferenceFromEntity(
     id: entity.id,
     uploadId: entity.entityId || null,
     fileName: entity.label,
+    mimeType: entity.attachmentMimeType ?? null,
     mediaUrl: entity.attachmentUrl ?? null,
   };
 }
@@ -1182,6 +1210,7 @@ function buildDisplayAttachmentFromEntity(
   return {
     id: attachment.id,
     fileName: attachment.fileName,
+    mimeType: attachment.mimeType,
     mediaUrl: attachment.mediaUrl,
     status: "ready",
     sourceLabel: "Tagged attachment",
@@ -1190,51 +1219,33 @@ function buildDisplayAttachmentFromEntity(
 }
 
 function inferDisplayAttachmentMediaKind(
-  attachment: Pick<DisplayAttachment, "fileName" | "mediaUrl">
+  attachment: Pick<DisplayAttachment, "fileName" | "mediaUrl" | "mimeType">
 ): "image" | "gif" | "video" | null {
-  const candidates = [attachment.mediaUrl, attachment.fileName].map(
-    (value) => value?.toLowerCase() ?? ""
-  );
-
-  if (candidates.some((value) => /\.(gif)(?:$|[?#])/.test(value))) {
-    return "gif";
-  }
-  if (
-    candidates.some((value) => /\.(mp4|mov|webm|m4v)(?:$|[?#])/.test(value))
-  ) {
-    return "video";
-  }
-  if (
-    candidates.some((value) =>
-      /\.(png|jpe?g|webp|avif|bmp|svg)(?:$|[?#])/.test(value)
-    )
-  ) {
-    return "image";
-  }
-
-  return null;
+  return inferAttachmentMediaKind({
+    mimeType: attachment.mimeType,
+    url: [attachment.fileName, attachment.mediaUrl].filter(Boolean).join(" "),
+  });
 }
 
 function getDisplayAttachmentIcon(
-  attachment: Pick<DisplayAttachment, "fileName" | "mediaUrl">
+  attachment: Pick<DisplayAttachment, "fileName" | "mediaUrl" | "mimeType">
 ) {
-  const fileName = attachment.fileName.toLowerCase();
-  const mediaKind = inferDisplayAttachmentMediaKind(attachment);
+  const visualKind = inferFileVisualKind({
+    fileName: attachment.fileName,
+    mimeType: attachment.mimeType,
+    url: attachment.mediaUrl,
+  });
 
-  if (mediaKind === "video") {
+  if (visualKind === "video") {
     return <FileVideo className="size-4" />;
   }
-  if (mediaKind === "image" || mediaKind === "gif") {
+  if (visualKind === "image") {
     return <FileImage className="size-4" />;
   }
-  if (/\.(csv|tsv|xls|xlsx)(?:$|[?#])/.test(fileName)) {
+  if (visualKind === "spreadsheet") {
     return <FileSpreadsheet className="size-4" />;
   }
-  if (
-    /\.(ts|tsx|js|jsx|json|md|py|go|rs|java|rb|php|css|scss|html)(?:$|[?#])/.test(
-      fileName
-    )
-  ) {
+  if (visualKind === "code") {
     return <FileCode2 className="size-4" />;
   }
 
@@ -2258,6 +2269,7 @@ function ChatSkeleton({
 export function AgentChat({
   prospectId,
   threadId,
+  workspaceId,
   action,
   notificationId: _notificationId,
   onBack,
@@ -2281,6 +2293,7 @@ export function AgentChat({
   const { user: authUser } = useAuth();
   const { workspace: currentWorkspace, isLoading: isWorkspaceLoading } =
     useWorkspace();
+  const effectiveWorkspaceId = workspaceId ?? currentWorkspace?._id ?? null;
 
   const {
     messages,
@@ -2301,7 +2314,7 @@ export function AgentChat({
   } = useAgentChat({
     threadId: threadId ?? null,
     prospectId: prospectId ?? null,
-    workspaceId: currentWorkspace?._id ?? null,
+    workspaceId: effectiveWorkspaceId,
     action: action ?? null,
     newThreadSignal,
     deferSetupHandoff,
@@ -2544,7 +2557,7 @@ export function AgentChat({
             post:
               candidate.postSummary ?? candidate.postData ?? candidate.postRef,
             platformHint: candidate.platform,
-            workspaceId: currentWorkspace?._id ?? undefined,
+            workspaceId: effectiveWorkspaceId ?? undefined,
             prospectId: candidate.prospectId ?? prospectId ?? undefined,
           });
           if (!entity || seenIds.has(entity.id)) {
@@ -2557,7 +2570,7 @@ export function AgentChat({
     }
 
     return collected.slice(0, 8);
-  }, [currentWorkspace?._id, displayMessages, prospectId]);
+  }, [displayMessages, effectiveWorkspaceId, prospectId]);
 
   useEffect(() => {
     setMentionComposerState((current) =>
@@ -2666,12 +2679,47 @@ export function AgentChat({
   const handleAttachFiles = useCallback(
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
-      const fileArray = Array.from(files).slice(0, MAX_CHAT_ATTACHMENTS);
+      if (!effectiveWorkspaceId) {
+        toast.error("Attachment unavailable", {
+          description: "Select a workspace before uploading an attachment.",
+        });
+        return;
+      }
+
+      const availableSlots = Math.max(
+        0,
+        MAX_CHAT_ATTACHMENTS - chatAttachments.length
+      );
+      if (availableSlots === 0) {
+        toast.error(`Maximum ${MAX_CHAT_ATTACHMENTS} attachments are allowed.`);
+        return;
+      }
+      const fileArray = Array.from(files).slice(0, availableSlots);
 
       for (const file of fileArray) {
-        if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+        const normalizedMimeType = file.type.toLowerCase();
+        const isDocument =
+          isLinkedInMessageDocumentMimeType(normalizedMimeType);
+        const isSupportedAttachment =
+          CHAT_IMAGE_MIME_TYPES.has(normalizedMimeType) ||
+          CHAT_VIDEO_MIME_TYPES.has(normalizedMimeType) ||
+          isDocument;
+        if (!isSupportedAttachment) {
+          toast.error("Unsupported attachment", {
+            description: `${file.name} is not supported. Use an image, GIF, video, or supported LinkedIn document.`,
+          });
+          continue;
+        }
+        const maxBytes = isDocument
+          ? MAX_CHAT_DOCUMENT_BYTES
+          : normalizedMimeType === "image/webp"
+            ? MAX_CHAT_WEBP_BYTES
+            : CHAT_IMAGE_MIME_TYPES.has(normalizedMimeType)
+              ? MAX_CHAT_IMAGE_BYTES
+              : MAX_CHAT_ATTACHMENT_BYTES;
+        if (file.size > maxBytes) {
           toast.error("File too large", {
-            description: `${file.name} exceeds 512 MB.`,
+            description: `${file.name} exceeds ${Math.round(maxBytes / (1024 * 1024))} MB.`,
           });
           continue;
         }
@@ -2689,7 +2737,9 @@ export function AgentChat({
         ]);
 
         try {
-          const uploadUrl = await generateUploadUrl();
+          const uploadUrl = await generateUploadUrl({
+            workspaceId: effectiveWorkspaceId,
+          });
           const uploadResponse = await fetch(uploadUrl, {
             method: "POST",
             headers: {
@@ -2708,7 +2758,7 @@ export function AgentChat({
             fileName: file.name,
             mimeType: file.type || "application/octet-stream",
             size: file.size,
-            workspaceId: currentWorkspace?._id,
+            workspaceId: effectiveWorkspaceId,
             displayName: file.name,
           });
 
@@ -2739,7 +2789,12 @@ export function AgentChat({
         }
       }
     },
-    [currentWorkspace?._id, generateUploadUrl, processUploadedMedia]
+    [
+      chatAttachments.length,
+      effectiveWorkspaceId,
+      generateUploadUrl,
+      processUploadedMedia,
+    ]
   );
 
   const handleRemoveAttachment = useCallback((attachmentId: string) => {
@@ -3543,6 +3598,7 @@ export function AgentChat({
             isSetupCollectingAudience
               ? undefined
               : {
+                  workspaceId: effectiveWorkspaceId,
                   prospectId: prospectId ?? null,
                   localEntities: threadPostMentionEntities,
                   remoteAllowedKinds: [
@@ -3572,7 +3628,7 @@ export function AgentChat({
                   ref={attachFileInputRef}
                   type="file"
                   multiple
-                  accept="image/*,video/*"
+                  accept={CHAT_ATTACHMENT_ACCEPT}
                   className="hidden"
                   onChange={(event) => {
                     void handleAttachFiles(event.target.files);

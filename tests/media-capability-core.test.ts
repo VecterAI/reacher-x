@@ -109,6 +109,57 @@ test("LinkedIn messages use LinkedIn file types rather than X file types", () =>
   );
 });
 
+test("PDFs are allowed in LinkedIn DMs and rejected for X/Twitter", () => {
+  const pdf = media({
+    fileName: "results.pdf",
+    mimeType: "application/pdf",
+    size: 1024,
+    kind: "file",
+  });
+  assert.doesNotThrow(() =>
+    assertOutreachMediaCapability({
+      platform: "linkedin",
+      surface: "dm",
+      media: [pdf],
+    })
+  );
+  assert.throws(
+    () =>
+      assertOutreachMediaCapability({
+        platform: "twitter",
+        surface: "dm",
+        media: [pdf],
+      }),
+    /cannot be attached to X\/Twitter/
+  );
+});
+
+test("LinkedIn DMs accept supported office documents while X/Twitter rejects them", () => {
+  const document = media({
+    fileName: "case-study.docx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: 1024,
+    kind: "file",
+  });
+  assert.doesNotThrow(() =>
+    assertOutreachMediaCapability({
+      platform: "linkedin",
+      surface: "dm",
+      media: [document],
+    })
+  );
+  assert.throws(
+    () =>
+      assertOutreachMediaCapability({
+        platform: "twitter",
+        surface: "dm",
+        media: [document],
+      }),
+    /cannot be attached to X\/Twitter/
+  );
+});
+
 test("LinkedIn messages enforce the combined attachment limit", () => {
   assert.throws(
     () =>

@@ -27,6 +27,10 @@ import {
 } from "./workspaceMemoryHelpers";
 import { createMemoryArtifact } from "../../../shared/lib/json-render/agentArtifacts";
 import { runLoggedAgentTool } from "./logging";
+import {
+  attachmentRefsSchema,
+  resolveToolAttachmentMediaInput,
+} from "../outreach/tools/attachmentReferences";
 
 const workspaceMemoryCategoryEnum = z.enum(WORKSPACE_MEMORY_CATEGORIES);
 const workspaceMemorySurfaceEnum = z.enum([
@@ -128,6 +132,9 @@ const rememberWorkspaceMemoryInputSchema = z.object({
     .describe(
       "When the user says to remember something from an earlier message, copy only the exact relevant user text here verbatim. Never paraphrase it or include unrelated conversation."
     ),
+  attachmentRefs: attachmentRefsSchema.describe(
+    "Optional application-issued attachment references to bind durably to this memory. Never provide upload IDs or storage URLs."
+  ),
   scope: z
     .enum(["workspace", "prospect"])
     .default("workspace")
@@ -236,6 +243,10 @@ export const rememberWorkspaceMemory = createTool({
               ? (context.prospectId ?? undefined)
               : undefined;
           const provenanceMessageId = getToolPromptMessageId(ctx);
+          const resolvedAttachments = await resolveToolAttachmentMediaInput(
+            ctx,
+            { attachmentRefs: args.attachmentRefs }
+          );
           const openMetadata = {
             ...args.metadata,
             signals: args.signals ?? [],
@@ -272,6 +283,7 @@ export const rememberWorkspaceMemory = createTool({
                 channels: args.channels,
                 provenanceKind: "user_instruction",
                 provenanceMessageId,
+                attachmentUploadIds: resolvedAttachments.mediaUploadIds,
               }
             );
 
@@ -367,6 +379,7 @@ export const rememberWorkspaceMemory = createTool({
                 channels: args.channels,
                 provenanceKind: "user_instruction",
                 provenanceMessageId,
+                attachmentUploadIds: resolvedAttachments.mediaUploadIds,
               }
             );
             inserted.push(result);

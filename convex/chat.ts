@@ -546,8 +546,9 @@ async function resolveAttachmentReference(
     });
     if (upload) {
       if (
-        scope.workspaceId &&
-        upload.workspaceId &&
+        !scope.userId ||
+        upload.userId !== scope.userId ||
+        !scope.workspaceId ||
         upload.workspaceId !== scope.workspaceId
       ) {
         return null;
@@ -563,7 +564,7 @@ async function resolveAttachmentReference(
     }
   }
 
-  if (!attachment.mediaUrl) {
+  if (!attachment.mediaUrl || scope.workspaceId) {
     return null;
   }
 
@@ -893,7 +894,7 @@ async function buildAgentTurnContextMessages(
     )
   ).filter((line): line is string => Boolean(line));
   const attachmentReferences =
-    scope.kind === "prospect"
+    (scope.kind === "prospect" || scope.kind === "workspace") && scope.userId
       ? await ctx.runQuery(
           internal.agentAttachments.listAvailableForAgentTool,
           {

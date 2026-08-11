@@ -41,7 +41,7 @@ test("attachment reference context distinguishes current and reusable files", ()
   const context = buildAgentAttachmentReferenceContext([demoReference]);
 
   assert.match(context ?? "", /attachment_1: demo\.mp4/);
-  assert.match(context ?? "", /selected earlier in this prospect thread/);
+  assert.match(context ?? "", /selected earlier in this thread/);
   assert.match(context ?? "", /Never put storage URLs or upload IDs/);
 });
 

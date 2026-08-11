@@ -105,6 +105,10 @@ export function LinkedInReplyComposer({
         }}
         entityMentions={{
           prospectId,
+          attachmentDestination: {
+            platform: "linkedin",
+            surface: "comment",
+          },
           remoteAllowedKinds: prospectId
             ? ["prospect", "post", "attachment"]
             : ["attachment"],

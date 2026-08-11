@@ -76,7 +76,14 @@ import {
   buildStyleSourceKey,
   getNextStyleSourceVersion,
 } from "./lib/styleSourceCore";
-import { linkedinProfileIdentityValidator } from "./validators";
+import {
+  linkedinProfileIdentityValidator,
+  twitterMediaKindValidator,
+} from "./validators";
+import {
+  getMediaCapabilityErrorMessage,
+  type ResolvedOutreachMedia,
+} from "./lib/mediaCapabilityCore";
 import type { LinkedInProfileIdentity } from "../shared/lib/linkedin/profile";
 import {
   getWebhookArray,
@@ -4453,10 +4460,9 @@ export const submitLinkedInActionForThread = internalAction({
     postId: v.optional(v.string()),
     text: v.optional(v.string()),
     mediaUrls: v.optional(v.array(v.string())),
+    mediaUploadIds: v.optional(v.array(v.id("mediaUploads"))),
     mediaDescriptions: v.optional(v.array(v.string())),
-    mediaKinds: v.optional(
-      v.array(v.union(v.literal("image"), v.literal("gif"), v.literal("video")))
-    ),
+    mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
     reactionType: v.optional(v.string()),
     targetLabel: v.optional(v.string()),
     context: v.optional(v.string()),
@@ -4477,6 +4483,55 @@ export const submitLinkedInActionForThread = internalAction({
         message: "LinkedIn actions require a prospect in the current thread.",
         error: "Missing prospect context for LinkedIn action.",
       };
+    }
+
+    const destination =
+      args.actionKey === "linkedin_comment_on_post"
+        ? ({ platform: "linkedin", surface: "comment" } as const)
+        : args.actionKey === "linkedin_send_message" ||
+            args.actionKey === "linkedin_send_message_existing_conversation"
+          ? ({ platform: "linkedin", surface: "dm" } as const)
+          : null;
+    if ((args.mediaUrls?.length ?? 0) > 0) {
+      if (!destination || !threadContext.workspaceId) {
+        return {
+          success: false,
+          executed: false,
+          pendingApproval: false,
+          actionKey: args.actionKey,
+          title: "Attachment unavailable",
+          message: "Attachments are not supported for this LinkedIn action.",
+          error: "Unsupported attachment context",
+        };
+      }
+      try {
+        const media: ResolvedOutreachMedia[] = await ctx.runQuery(
+          internal.workspaceAttachments.resolveAndValidateOutreachMediaInternal,
+          {
+            userId: threadContext.userId,
+            workspaceId: threadContext.workspaceId,
+            destination,
+            mediaUrls: args.mediaUrls ?? [],
+            mediaUploadIds: args.mediaUploadIds,
+          }
+        );
+        args.mediaUrls = media.map((attachment) => attachment.url);
+        args.mediaUploadIds = media.map((attachment) => attachment.uploadId);
+        args.mediaKinds = media.map((attachment) => attachment.kind);
+      } catch (error) {
+        const message =
+          getMediaCapabilityErrorMessage(error) ??
+          "The selected attachment could not be verified for this LinkedIn action.";
+        return {
+          success: false,
+          executed: false,
+          pendingApproval: false,
+          actionKey: args.actionKey,
+          title: "Attachment unavailable",
+          message,
+          error: message,
+        };
+      }
     }
 
     const metadata = getTwitterActionCatalogEntry(args.actionKey);
@@ -4694,6 +4749,7 @@ export const submitLinkedInActionForThread = internalAction({
               postId: args.postId,
               text: draftContent,
               mediaUrls: args.mediaUrls ?? [],
+              mediaUploadIds: args.mediaUploadIds ?? [],
               mediaDescriptions: args.mediaDescriptions ?? [],
               mediaKinds: args.mediaKinds ?? [],
               targetLabel,
@@ -4754,6 +4810,7 @@ export const submitLinkedInActionForThread = internalAction({
           reactionType: normalizedReactionType,
           text: draftContent,
           mediaUrls: args.mediaUrls ?? [],
+          mediaUploadIds: args.mediaUploadIds ?? [],
           mediaDescriptions: args.mediaDescriptions ?? [],
           mediaKinds: args.mediaKinds ?? [],
           targetLabel,

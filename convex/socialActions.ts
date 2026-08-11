@@ -192,11 +192,14 @@ function normalizeMediaUrls(mediaUrls?: unknown): string[] {
 function normalizeMediaKinds(
   mediaKinds: unknown,
   mediaUrls: string[]
-): Array<"image" | "gif" | "video"> {
+): Array<"image" | "gif" | "video" | "file"> {
   const normalized = Array.isArray(mediaKinds)
     ? mediaKinds.filter(
-        (value): value is "image" | "gif" | "video" =>
-          value === "image" || value === "gif" || value === "video"
+        (value): value is "image" | "gif" | "video" | "file" =>
+          value === "image" ||
+          value === "gif" ||
+          value === "video" ||
+          value === "file"
       )
     : [];
 
@@ -596,6 +599,7 @@ export const updatePendingActionRequestDraft = mutation({
         ...(hasMediaSnapshot
           ? {
               mediaUrls,
+              mediaUploadIds: [],
               mediaDescriptions: args.mediaDescriptions,
               mediaKinds: args.mediaKinds,
             }
@@ -623,9 +627,7 @@ export const approveActionRequestWithEdits = mutation({
     content: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
     mediaDescriptions: v.optional(v.array(v.string())),
-    mediaKinds: v.optional(
-      v.array(v.union(v.literal("image"), v.literal("gif"), v.literal("video")))
-    ),
+    mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, {
@@ -682,6 +684,7 @@ export const approveActionRequestWithEdits = mutation({
         ...snapshot,
         text: trimmedContent,
         mediaUrls,
+        mediaUploadIds: [],
         mediaDescriptions: args.mediaDescriptions ?? [],
         mediaKinds,
       },

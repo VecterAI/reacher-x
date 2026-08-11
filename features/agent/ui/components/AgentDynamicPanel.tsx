@@ -142,7 +142,8 @@ function resolveMediaKind(
   if (
     explicitKind === "image" ||
     explicitKind === "gif" ||
-    explicitKind === "video"
+    explicitKind === "video" ||
+    explicitKind === "file"
   ) {
     return explicitKind;
   }
@@ -513,17 +514,22 @@ export function AgentDynamicPanel({
       ? actionPanelData?.mediaKinds || []
       : taskPanelData?.draft?.mediaKinds || [];
 
-    return mediaUrls.map((url: string, index: number) => ({
-      id: `${isActionRequestPanel ? "action" : "task"}-draft-media-${index}`,
-      url,
-      serverUrl: url,
-      type:
-        resolveMediaKind(mediaKinds[index], url) === "video"
-          ? "video"
-          : "image",
-      mediaKind: resolveMediaKind(mediaKinds[index], url),
-      description: mediaDescriptions[index] || undefined,
-    }));
+    return mediaUrls.map((url: string, index: number) => {
+      const mediaKind = resolveMediaKind(mediaKinds[index], url);
+      return {
+        id: `${isActionRequestPanel ? "action" : "task"}-draft-media-${index}`,
+        url,
+        serverUrl: url,
+        type:
+          mediaKind === "video"
+            ? "video"
+            : mediaKind === "file"
+              ? "file"
+              : "image",
+        mediaKind,
+        description: mediaDescriptions[index] || undefined,
+      };
+    });
   }, [
     actionPanelData?.mediaDescriptions,
     actionPanelData?.mediaKinds,

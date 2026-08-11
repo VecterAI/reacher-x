@@ -92,8 +92,12 @@ export function buildInitialMediaUploadFromMentionEntity(
     url: entity.attachmentUrl,
     serverUrl: entity.attachmentUrl,
     uploadId: entity.entityId,
-    type: mediaKind === "video" ? "video" : "image",
+    type:
+      mediaKind === "video" ? "video" : mediaKind === "file" ? "file" : "image",
     mediaKind,
+    fileName: entity.label,
+    mimeType: entity.attachmentMimeType ?? undefined,
+    size: entity.attachmentSize ?? undefined,
     description: undefined,
   };
 }
