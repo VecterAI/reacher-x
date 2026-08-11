@@ -185,17 +185,22 @@ export function LinkedInConversationPanel({
 
   const initialMediaUploads = React.useMemo<ComposerInitialMediaUpload[]>(
     () =>
-      (taskDraft?.mediaUrls ?? []).map((url, index) => ({
-        id: `linkedin-task-dm-media-${index}`,
-        url,
-        serverUrl: url,
-        type:
-          (taskDraft?.mediaKinds?.[index] ?? "image") === "video"
-            ? "video"
-            : "image",
-        mediaKind: taskDraft?.mediaKinds?.[index] ?? "image",
-        description: taskDraft?.mediaDescriptions?.[index] ?? undefined,
-      })),
+      (taskDraft?.mediaUrls ?? []).map((url, index) => {
+        const mediaKind = taskDraft?.mediaKinds?.[index] ?? "image";
+        return {
+          id: `linkedin-task-dm-media-${index}`,
+          url,
+          serverUrl: url,
+          type:
+            mediaKind === "video"
+              ? "video"
+              : mediaKind === "file"
+                ? "file"
+                : "image",
+          mediaKind,
+          description: taskDraft?.mediaDescriptions?.[index] ?? undefined,
+        };
+      }),
     [taskDraft?.mediaDescriptions, taskDraft?.mediaKinds, taskDraft?.mediaUrls]
   );
 
@@ -728,6 +733,7 @@ export function LinkedInConversationPanel({
               showIdentityHeader={false}
               showMediaDescription={false}
               showMediaUpload
+              allowedMediaKinds={["image", "gif", "video", "file"]}
               maxAttachments={4}
               disabled={shouldDisableComposer}
               submitDisabled={shouldDisableTaskSubmit}
@@ -750,6 +756,10 @@ export function LinkedInConversationPanel({
               }}
               entityMentions={{
                 prospectId,
+                attachmentDestination: {
+                  platform: "linkedin",
+                  surface: "dm",
+                },
                 remoteAllowedKinds: ["prospect", "post", "attachment"],
                 personTextMode: "label",
               }}

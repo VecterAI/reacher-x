@@ -190,6 +190,7 @@ export type PromoteAgentMemoryArgs = {
   channels?: string[];
   provenanceKind?: WorkspaceMemoryProvenanceKind;
   provenanceMessageId?: string;
+  attachmentUploadIds?: Id<"mediaUploads">[];
 };
 
 export type AgentMemoryPromotionResult = {
@@ -1123,6 +1124,7 @@ async function attachCanonicalWorkspaceMemory(
     provenanceKind: args.provenanceKind,
     provenanceThreadId: args.threadId,
     provenanceMessageId: args.provenanceMessageId,
+    attachmentUploadIds: args.attachmentUploadIds,
   });
   const canonicalRagText = buildCanonicalWorkspaceMemoryRagText({
     title: canonical.memory.title,

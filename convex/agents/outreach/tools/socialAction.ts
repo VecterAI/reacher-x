@@ -116,7 +116,7 @@ const socialActionArgsSchema = z.object({
       "Optional media descriptions/alt text aligned by index with mediaUrls."
     ),
   mediaKinds: z
-    .array(z.enum(["image", "gif", "video"]))
+    .array(z.enum(["image", "gif", "video", "file"]))
     .optional()
     .describe(
       "Optional media kinds aligned by index with mediaUrls. Use this when the URL does not make the attachment type obvious."
@@ -276,6 +276,7 @@ export const socialAction = createTool({
           postId: args.postId ?? args.tweetId,
           text: normalizedText,
           mediaUrls: resolvedMedia.mediaUrls,
+          mediaUploadIds: resolvedMedia.mediaUploadIds,
           mediaDescriptions: resolvedMedia.mediaDescriptions,
           mediaKinds: resolvedMedia.mediaKinds,
           reactionType: args.reactionType,
@@ -293,6 +294,7 @@ export const socialAction = createTool({
             conversationId: args.conversationId,
             text: normalizedText,
             mediaUrls: resolvedMedia.mediaUrls,
+            mediaUploadIds: resolvedMedia.mediaUploadIds,
             mediaDescriptions: resolvedMedia.mediaDescriptions,
             mediaKinds: resolvedMedia.mediaKinds,
             replaceExistingPending: args.replaceExistingPending,

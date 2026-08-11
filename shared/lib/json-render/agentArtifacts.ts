@@ -227,6 +227,24 @@ export const agentArtifactCatalog = defineCatalog(schema, {
       description:
         "Displays an inline DM preview card for a staged X message draft with send/cancel/open actions.",
     },
+    AttachmentPreview: {
+      props: z.object({
+        attachments: z.array(
+          z.object({
+            attachmentRef: z.string(),
+            fileName: z.string(),
+            displayName: z.string(),
+            mimeType: z.string(),
+            mediaKind: z.enum(["image", "gif", "video", "file"]),
+            size: z.number(),
+            uploadedAt: z.number(),
+            mediaUrl: z.string(),
+          })
+        ),
+      }),
+      description:
+        "Displays workspace attachments inline using the existing attachment presentation.",
+    },
   },
   actions: {},
 });
@@ -369,6 +387,21 @@ export function getAgentArtifactSemanticKey(
   if (type === "WorkspaceProfileChangeCard") {
     const requestId = getStringProperty(props, "requestId");
     return requestId ? `${type}:${requestId}` : null;
+  }
+
+  if (type === "AttachmentPreview") {
+    const attachments = props.attachments;
+    if (!Array.isArray(attachments)) return null;
+    const attachmentRefs = attachments
+      .map((attachment) =>
+        isRecord(attachment)
+          ? getStringProperty(attachment, "attachmentRef")
+          : null
+      )
+      .filter((value): value is string => value !== null);
+    return attachmentRefs.length > 0
+      ? `${type}:${attachmentRefs.join(",")}`
+      : null;
   }
 
   return null;
@@ -762,5 +795,22 @@ export function createDmDraftArtifact(input: {
     message: input.message ?? null,
     status: input.status,
     draftContent: input.draftContent ?? null,
+  });
+}
+
+export function createAttachmentPreviewArtifact(input: {
+  attachments: Array<{
+    attachmentRef: string;
+    fileName: string;
+    displayName: string;
+    mimeType: string;
+    mediaKind: "image" | "gif" | "video" | "file";
+    size: number;
+    uploadedAt: number;
+    mediaUrl: string;
+  }>;
+}) {
+  return createAgentArtifact("AttachmentPreview", {
+    attachments: input.attachments,
   });
 }

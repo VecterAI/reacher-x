@@ -110,7 +110,7 @@ export interface OutreachTaskInput {
   mediaUrls?: string[];
   mediaUploadIds?: Id<"mediaUploads">[];
   mediaDescriptions?: string[];
-  mediaKinds?: Array<"image" | "gif" | "video">;
+  mediaKinds?: Array<"image" | "gif" | "video" | "file">;
   approvalContext?: {
     panelMode?: "approval" | "posted";
     platform?: "twitter" | "linkedin";

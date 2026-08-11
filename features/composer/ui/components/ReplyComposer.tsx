@@ -13,7 +13,7 @@ import { SerializedEditorState } from "lexical";
 import Link from "next/link";
 import { toast } from "sonner";
 import { BaseComposer } from "./BaseComposer";
-import { ReplyComposerProps } from "../../types";
+import type { ComposerMediaKind, ReplyComposerProps } from "../../types";
 import { logger } from "@/shared/lib/logger";
 import type { MentionEntitySearchResult } from "@/shared/lib/mentions/mentionEntities";
 import { buildPostMentionEntity } from "@/shared/lib/mentions/postMentions";
@@ -131,7 +131,7 @@ export function ReplyComposer({
     content: SerializedEditorState,
     mediaUrls?: string[],
     mediaDescriptions?: string[],
-    mediaKinds?: ("image" | "gif" | "video")[]
+    mediaKinds?: ComposerMediaKind[]
   ) => {
     try {
       await onSubmit?.(content, mediaUrls, mediaDescriptions, mediaKinds);
@@ -189,6 +189,10 @@ export function ReplyComposer({
       }}
       entityMentions={{
         prospectId,
+        attachmentDestination: {
+          platform: "twitter",
+          surface: "comment",
+        },
         remoteAllowedKinds: prospectId
           ? ["post", "attachment"]
           : ["attachment"],

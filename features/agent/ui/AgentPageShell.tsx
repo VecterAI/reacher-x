@@ -1021,6 +1021,16 @@ export function AgentPageShell() {
     setupPanelDraft.setupDraft?.inputPhase === "awaiting_icp_approval"
       ? setupPanelDraft.setupDraft
       : null;
+  const setupWorkspaceId =
+    setupPanelDraft.setupDraft?.targetWorkspaceId ??
+    setupPanelDraft.setupDraft?.existingWorkspaceId ??
+    null;
+  const agentWorkspaceId =
+    threadRouteContext?.kind === "workspace"
+      ? threadRouteContext.workspaceId
+      : isSetupRoute
+        ? setupWorkspaceId
+        : workspaceId;
   const showSetupChatOnly =
     isSetupRoute && isMobile && setupOnboardingPanelOpen;
   const showWorkspaceProfilePanel =
@@ -1046,6 +1056,7 @@ export function AgentPageShell() {
           <AgentChat
             prospectId={prospectId ?? undefined}
             threadId={threadId ?? undefined}
+            workspaceId={agentWorkspaceId}
             action={action ?? undefined}
             notificationId={notificationId ?? undefined}
             threadActionsReady={canUseThreadHistory}

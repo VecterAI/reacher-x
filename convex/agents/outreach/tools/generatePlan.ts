@@ -62,7 +62,7 @@ const taskSchema = z.object({
     ),
   mediaDescriptions: z.array(z.string().max(1_000)).max(4).optional(),
   mediaKinds: z
-    .array(z.enum(["image", "gif", "video"]))
+    .array(z.enum(["image", "gif", "video", "file"]))
     .max(4)
     .optional(),
 });
@@ -113,7 +113,7 @@ export interface GeneratePlanResult {
     reactionType?: string;
     mediaUrls?: string[];
     mediaDescriptions?: string[];
-    mediaKinds?: Array<"image" | "gif" | "video">;
+    mediaKinds?: Array<"image" | "gif" | "video" | "file">;
   }>;
   artifact?: AgentArtifactEnvelope;
   error?: string;

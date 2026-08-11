@@ -479,7 +479,8 @@ export const twitterActionErrorSummaryValidator = v.object({
 export const twitterMediaKindValidator = v.union(
   v.literal("image"),
   v.literal("gif"),
-  v.literal("video")
+  v.literal("video"),
+  v.literal("file")
 );
 
 export const twitterActionArgumentsSnapshotValidator = v.object({
@@ -498,6 +499,7 @@ export const twitterActionArgumentsSnapshotValidator = v.object({
   profileUrl: v.optional(v.string()),
   text: v.optional(v.string()),
   mediaUrls: v.optional(v.array(v.string())),
+  mediaUploadIds: v.optional(v.array(v.id("mediaUploads"))),
   mediaDescriptions: v.optional(v.array(v.string())),
   mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
   reactionType: v.optional(v.string()),
@@ -1110,8 +1112,63 @@ export const mentionEntityKindValidator = v.union(
 export const mentionAttachmentMediaKindValidator = v.union(
   v.literal("image"),
   v.literal("gif"),
-  v.literal("video")
+  v.literal("video"),
+  v.literal("file")
 );
+
+export const workspaceAttachmentDestinationValidator = v.object({
+  platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+  surface: v.union(v.literal("comment"), v.literal("dm")),
+});
+
+export const workspaceAttachmentKindValidator = v.union(
+  v.literal("image"),
+  v.literal("gif"),
+  v.literal("video"),
+  v.literal("file")
+);
+
+export const workspaceAttachmentCompatibilityValidator = v.object({
+  compatible: v.boolean(),
+  reason: v.union(v.string(), v.null()),
+});
+
+export const workspaceAttachmentCompatibilityMatrixValidator = v.object({
+  twitterReply: workspaceAttachmentCompatibilityValidator,
+  twitterDm: workspaceAttachmentCompatibilityValidator,
+  linkedInComment: workspaceAttachmentCompatibilityValidator,
+  linkedInDm: workspaceAttachmentCompatibilityValidator,
+});
+
+export const workspaceAttachmentRecordValidator = v.object({
+  uploadId: v.id("mediaUploads"),
+  fileName: v.string(),
+  displayName: v.string(),
+  mimeType: v.string(),
+  mediaKind: workspaceAttachmentKindValidator,
+  size: v.number(),
+  tags: v.array(v.string()),
+  uploadedAt: v.number(),
+  mediaUrl: v.string(),
+  compatibility: workspaceAttachmentCompatibilityMatrixValidator,
+});
+
+export const workspaceAttachmentCountBreakdownValidator = v.object({
+  total: v.number(),
+  images: v.number(),
+  gifs: v.number(),
+  videos: v.number(),
+  files: v.number(),
+});
+
+export const resolvedOutreachMediaValidator = v.object({
+  uploadId: v.id("mediaUploads"),
+  url: v.string(),
+  fileName: v.string(),
+  mimeType: v.string(),
+  size: v.number(),
+  kind: workspaceAttachmentKindValidator,
+});
 
 export const mentionPostPlatformValidator = v.union(
   v.literal("twitter"),

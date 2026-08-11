@@ -79,7 +79,7 @@ export type AgentProspectProfileRelatedContext = {
       targetTweetId?: string;
       mediaUrls?: string[];
       mediaDescriptions?: string[];
-      mediaKinds?: Array<"image" | "gif" | "video">;
+      mediaKinds?: Array<"image" | "gif" | "video" | "file">;
     }>;
   } | null;
   interactionHistory: unknown | null;

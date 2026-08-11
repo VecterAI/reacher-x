@@ -28,6 +28,7 @@ import {
   type OutreachPlanCardTask,
 } from "@/features/prospects/ui/components/outreach-plan";
 import { InlineDmPreviewCard } from "@/features/agent/ui/components/InlineDmPreviewCard";
+import { InlineAttachmentPreview } from "@/features/agent/ui/components/InlineAttachmentPreview";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -857,6 +858,9 @@ const { registry } = defineRegistry(agentArtifactCatalog, {
       <TwitterActionArtifactCard props={props} />
     ),
     DmDraftCard: ({ props }) => <DmDraftArtifactCard props={props} />,
+    AttachmentPreview: ({ props }) => (
+      <InlineAttachmentPreview attachments={props.attachments} />
+    ),
   },
 });
 

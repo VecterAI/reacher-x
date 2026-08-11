@@ -8,7 +8,7 @@ export type AgentAttachmentToolReference = {
   uploadId: Id<"mediaUploads">;
   url: string;
   fileName: string;
-  mediaKind: "image" | "gif" | "video";
+  mediaKind: "image" | "gif" | "video" | "file";
   selectedInCurrentMessage: boolean;
 };
 
@@ -16,14 +16,14 @@ export type AgentAttachmentMediaInput = {
   attachmentRefs?: string[];
   mediaUrls?: string[];
   mediaDescriptions?: string[];
-  mediaKinds?: Array<"image" | "gif" | "video">;
+  mediaKinds?: Array<"image" | "gif" | "video" | "file">;
 };
 
 export type ResolvedAgentAttachmentMediaInput = {
   mediaUrls?: string[];
   mediaUploadIds?: Id<"mediaUploads">[];
   mediaDescriptions?: string[];
-  mediaKinds?: Array<"image" | "gif" | "video">;
+  mediaKinds?: Array<"image" | "gif" | "video" | "file">;
 };
 
 export function getAgentAttachmentReference(index: number): string {
@@ -44,7 +44,7 @@ export function buildAgentAttachmentReferenceContext(
         `- ${attachment.reference}: ${attachment.fileName} (type: ${attachment.mediaKind}; ${
           attachment.selectedInCurrentMessage
             ? "selected in the current message"
-            : "selected earlier in this prospect thread"
+            : "selected earlier in this thread"
         })`
     ),
     "Use these exact reference names in a tool's attachmentRefs field. Never put storage URLs or upload IDs in tool input.",

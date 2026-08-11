@@ -62,6 +62,7 @@ import { researchProspect } from "./outreach/tools/researchProspect";
 import { socialAction } from "./outreach/tools/socialAction";
 import { stopOnDeferredAgentExecution } from "../lib/deferredAgentTurn";
 import { createWorkspaceMemoryContextHandler } from "./workspaceMemoryContext";
+import { workspaceAttachments } from "./tools/workspaceAttachments";
 
 // ============================================================================
 // Lazy Model Provider
@@ -127,6 +128,7 @@ export const workspaceVisionLanguageModel = createWorkspaceLanguageModel(
 const mainAgentBaseTools = {
   // Workspace context. Global discovery is intentionally setup-only.
   inspectWorkspace,
+  workspaceAttachments,
   queryWorkspace,
   listProspectPlans,
   managePlanBatch,

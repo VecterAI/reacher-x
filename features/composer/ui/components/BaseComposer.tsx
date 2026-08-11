@@ -9,6 +9,7 @@ import {
   isLikelyToHaveOpenGraph,
 } from "@/shared/lib/utils";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
+import { LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES } from "@/shared/lib/utils/media/linkedinMessageAttachmentTypes";
 import CharacterCounter from "@/shared/ui/components/CharacterCounter";
 import {
   Avatar,
@@ -28,6 +29,7 @@ import { MediaRenderPlugin } from "./MediaRenderPlugin";
 import { MediaPastePlugin } from "./MediaPastePlugin";
 import {
   ComposerBaseProps,
+  ComposerAttachmentDestination,
   ComposerEntityMentionsConfig,
   ComposerInitialMediaUpload,
   ComposerIdentityUser,
@@ -48,6 +50,7 @@ import {
   COMPOSER_PREVIEW_PLACEHOLDER_CLASS,
 } from "@/features/composer/ui/dmComposerClasses";
 import { buildInitialMediaUploadFromMentionEntity } from "../../lib/entityMentions";
+import { useWorkspace } from "@/shared/hooks";
 
 function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
   if (a === b) return true;
@@ -61,6 +64,7 @@ function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
       left.id !== right.id ||
       left.type !== right.type ||
       left.mediaKind !== right.mediaKind ||
+      left.size !== right.size ||
       left.progress !== right.progress ||
       left.status !== right.status ||
       left.error !== right.error ||
@@ -87,13 +91,25 @@ function inferMediaKindFromMimeType(
   if (normalized.startsWith("video/")) {
     return "video";
   }
+  if (LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES.has(normalized)) {
+    return "file";
+  }
   return "image";
 }
 
 function getComposerSelectionError(
   currentKinds: ComposerMediaKind[],
-  nextKind: ComposerMediaKind
+  nextKind: ComposerMediaKind,
+  destination?: ComposerAttachmentDestination,
+  currentBytes = 0,
+  nextBytes = 0
 ): string | null {
+  if (destination?.platform === "linkedin" && destination.surface === "dm") {
+    if (currentBytes + nextBytes > 20 * 1024 * 1024) {
+      return "LinkedIn DMs allow up to 20 MB total across all attachments.";
+    }
+    return null;
+  }
   const nextKinds = [...currentKinds, nextKind];
   const gifCount = nextKinds.filter((kind) => kind === "gif").length;
   const videoCount = nextKinds.filter((kind) => kind === "video").length;
@@ -119,28 +135,37 @@ function buildInitialMediaUpload(
   attachment: ComposerInitialMediaUpload
 ): MediaUpload {
   const mediaKind =
-    attachment.mediaKind ?? (attachment.type === "video" ? "video" : "image");
+    attachment.mediaKind ??
+    (attachment.type === "video"
+      ? "video"
+      : attachment.type === "file"
+        ? "file"
+        : "image");
+  const fallbackFileName =
+    attachment.type === "video"
+      ? `${attachment.id}.mp4`
+      : attachment.type === "file"
+        ? `${attachment.id}.pdf`
+        : `${attachment.id}.png`;
   return {
     id: attachment.id,
-    file: new File(
-      [],
-      attachment.type === "video"
-        ? `${attachment.id}.mp4`
-        : `${attachment.id}.png`,
-      {
-        type:
-          mediaKind === "gif"
-            ? "image/gif"
-            : attachment.type === "video"
-              ? "video/mp4"
-              : "image/png",
-      }
-    ),
+    file: new File([], attachment.fileName ?? fallbackFileName, {
+      type:
+        attachment.mimeType ??
+        (mediaKind === "gif"
+          ? "image/gif"
+          : attachment.type === "video"
+            ? "video/mp4"
+            : attachment.type === "file"
+              ? "application/pdf"
+              : "image/png"),
+    }),
     url: attachment.url ?? attachment.serverUrl,
     serverUrl: attachment.serverUrl ?? attachment.url,
     uploadId: attachment.uploadId,
     type: attachment.type,
     mediaKind,
+    size: attachment.size,
     progress: 100,
     status: "completed",
     description: attachment.description,
@@ -219,6 +244,7 @@ export function BaseComposer({
   onEditorBlur,
   onEditorFocus,
 }: BaseComposerProps) {
+  const { workspace } = useWorkspace();
   const isPreview = previewMode;
   const interactionDisabled = disabled || isPreview;
   const resolvedContentEditableClassName =
@@ -264,6 +290,9 @@ export function BaseComposer({
     if (allowedMediaKindsSet.has("video")) {
       labels.push("videos");
     }
+    if (allowedMediaKindsSet.has("file")) {
+      labels.push("documents");
+    }
 
     if (labels.length === 0) {
       return "attachments";
@@ -297,6 +326,9 @@ export function BaseComposer({
           uploadId: attachment.uploadId ?? null,
           type: attachment.type,
           mediaKind: attachment.mediaKind ?? null,
+          fileName: attachment.fileName ?? null,
+          mimeType: attachment.mimeType ?? null,
+          size: attachment.size ?? null,
           description: attachment.description ?? null,
         }))
       ),
@@ -316,6 +348,15 @@ export function BaseComposer({
   const handleMentionEntitySelection = useCallback(
     (entity: MentionEntitySearchResult) => {
       if (entity.kind !== "attachment") {
+        return;
+      }
+
+      if (entity.attachmentDisabled) {
+        toast.error("Attachment unavailable", {
+          description:
+            entity.attachmentDisabledReason ??
+            "This attachment is not supported here.",
+        });
         return;
       }
 
@@ -359,7 +400,13 @@ export function BaseComposer({
 
       const selectionError = getComposerSelectionError(
         currentActiveUploads.map((upload) => upload.mediaKind),
-        nextMediaKind
+        nextMediaKind,
+        entityMentions?.attachmentDestination,
+        currentActiveUploads.reduce(
+          (total, upload) => total + (upload.size ?? upload.file.size),
+          0
+        ),
+        initialUpload.size ?? 0
       );
       if (selectionError) {
         toast.error(selectionError);
@@ -371,7 +418,61 @@ export function BaseComposer({
         buildInitialMediaUpload(initialUpload),
       ]);
     },
-    [allowedMediaKindsLabel, allowedMediaKindsSet, maxAttachments, mediaUploads]
+    [
+      allowedMediaKindsLabel,
+      allowedMediaKindsSet,
+      entityMentions?.attachmentDestination,
+      maxAttachments,
+      mediaUploads,
+    ]
+  );
+
+  const getAttachmentDisabledReason = useCallback(
+    (entity: MentionEntitySearchResult): string | null => {
+      if (entity.kind !== "attachment") {
+        return null;
+      }
+      if (entity.attachmentDisabled) {
+        return (
+          entity.attachmentDisabledReason ??
+          "This attachment is not supported here."
+        );
+      }
+
+      const initialUpload = buildInitialMediaUploadFromMentionEntity(entity);
+      const nextMediaKind = initialUpload?.mediaKind;
+      if (!initialUpload?.serverUrl || !nextMediaKind) {
+        return "Attachment unavailable.";
+      }
+      if (!allowedMediaKindsSet.has(nextMediaKind)) {
+        return `This composer only supports ${allowedMediaKindsLabel}.`;
+      }
+
+      const currentActiveUploads = mediaUploads.filter(
+        (upload) => upload.status !== "error"
+      );
+      if (currentActiveUploads.length >= maxAttachments) {
+        return `Maximum ${maxAttachments} attachments are allowed.`;
+      }
+
+      return getComposerSelectionError(
+        currentActiveUploads.map((upload) => upload.mediaKind),
+        nextMediaKind,
+        entityMentions?.attachmentDestination,
+        currentActiveUploads.reduce(
+          (total, upload) => total + (upload.size ?? upload.file.size),
+          0
+        ),
+        initialUpload.size ?? 0
+      );
+    },
+    [
+      allowedMediaKindsLabel,
+      allowedMediaKindsSet,
+      entityMentions?.attachmentDestination,
+      maxAttachments,
+      mediaUploads,
+    ]
   );
 
   const resolvedEntityMentions = useMemo<
@@ -381,13 +482,14 @@ export function BaseComposer({
       entityMentions
         ? {
             ...entityMentions,
+            getAttachmentDisabledReason,
             onSelectEntity: (entity: MentionEntitySearchResult) => {
               handleMentionEntitySelection(entity);
               entityMentions.onSelectEntity?.(entity);
             },
           }
         : undefined,
-    [entityMentions, handleMentionEntitySelection]
+    [entityMentions, getAttachmentDisabledReason, handleMentionEntitySelection]
   );
 
   const handleContentChange = useCallback(
@@ -465,7 +567,7 @@ export function BaseComposer({
     setEditorAPI(api);
   }, []);
 
-  // Frontend media validation config aligned with X (Twitter) limits
+  // Frontend validation mirrors destination capability checks.
   const ALLOWED_IMAGE_TYPES = useMemo(
     () =>
       new Set([
@@ -481,17 +583,24 @@ export function BaseComposer({
     () => new Set(["video/mp4", "video/quicktime"]),
     []
   );
+  const ALLOWED_FILE_TYPES = LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES;
   const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
   const MAX_GIF_BYTES = 15 * 1024 * 1024; // 15 MB
   const MAX_VIDEO_BYTES = 512 * 1024 * 1024; // 512 MB
+  const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB
   const MAX_ATTACHMENTS = maxAttachments;
 
   const validateFile = useCallback(
     (
       file: File
-    ): { ok: true; kind: "image" | "video" } | { ok: false; error: string } => {
+    ):
+      | { ok: true; kind: "image" | "video" | "file" }
+      | { ok: false; error: string } => {
       const type = (file.type || "").toLowerCase();
       const mediaKind = inferMediaKindFromMimeType(type);
+      const isLinkedInDm =
+        entityMentions?.attachmentDestination?.platform === "linkedin" &&
+        entityMentions.attachmentDestination.surface === "dm";
 
       if (!allowedMediaKindsSet.has(mediaKind)) {
         return {
@@ -511,10 +620,10 @@ export function BaseComposer({
             } as const;
           }
         } else {
-          if (file.size > MAX_IMAGE_BYTES) {
+          if (file.size > (isLinkedInDm ? MAX_FILE_BYTES : MAX_IMAGE_BYTES)) {
             return {
               ok: false,
-              error: "Image exceeds 5 MB.",
+              error: `Image exceeds ${isLinkedInDm ? "15 MB" : "5 MB"}.`,
             } as const;
           }
         }
@@ -522,33 +631,53 @@ export function BaseComposer({
       }
 
       if (ALLOWED_VIDEO_TYPES.has(type)) {
-        if (file.size > MAX_VIDEO_BYTES) {
+        if (file.size > (isLinkedInDm ? MAX_FILE_BYTES : MAX_VIDEO_BYTES)) {
           return {
             ok: false,
-            error: "Video exceeds 512 MB.",
+            error: `Video exceeds ${isLinkedInDm ? "15 MB" : "512 MB"}.`,
           } as const;
         }
         return { ok: true, kind: "video" } as const;
       }
 
+      if (ALLOWED_FILE_TYPES.has(type)) {
+        if (file.size > MAX_FILE_BYTES) {
+          return {
+            ok: false,
+            error: "Document exceeds 15 MB.",
+          } as const;
+        }
+        return { ok: true, kind: "file" } as const;
+      }
+
       return {
         ok: false,
-        error: "Invalid format. Allowed: JPG, PNG, WEBP, GIF; MP4, MOV.",
+        error:
+          "Invalid format. Allowed: JPG, PNG, WEBP, GIF; MP4, MOV; CSV, XLS, XLSX, DOC, DOCX, PPT, PPTX, PDF, TXT.",
       } as const;
     },
     [
       ALLOWED_IMAGE_TYPES,
       ALLOWED_VIDEO_TYPES,
+      MAX_FILE_BYTES,
       MAX_GIF_BYTES,
       MAX_IMAGE_BYTES,
       MAX_VIDEO_BYTES,
       allowedMediaKindsLabel,
       allowedMediaKindsSet,
+      entityMentions?.attachmentDestination,
     ]
   );
 
   const handleMediaUpload = useCallback(
     async (files: FileList | File[]) => {
+      if (!workspace?._id) {
+        toast.error("Attachment unavailable", {
+          description: "Select a workspace before uploading an attachment.",
+        });
+        return;
+      }
+
       const fileArray = Array.isArray(files) ? files : Array.from(files);
 
       // Count current active (non-error) attachments for the 4-item cap
@@ -569,8 +698,14 @@ export function BaseComposer({
           prepared.push({
             id,
             file,
-            type: mediaKind === "video" ? "video" : "image",
+            type:
+              mediaKind === "video"
+                ? "video"
+                : mediaKind === "file"
+                  ? "file"
+                  : "image",
             mediaKind,
+            size: file.size,
             progress: 0,
             status: "error",
             error: validation.error,
@@ -587,9 +722,19 @@ export function BaseComposer({
             .filter((upload) => upload.status !== "error")
             .map((upload) => upload.mediaKind),
         ];
+        const activeBytes = [
+          ...mediaUploads.filter((upload) => upload.status !== "error"),
+          ...prepared.filter((upload) => upload.status !== "error"),
+        ].reduce(
+          (total, upload) => total + (upload.size ?? upload.file.size),
+          0
+        );
         const selectionError = getComposerSelectionError(
           activeKinds,
-          mediaKind
+          mediaKind,
+          entityMentions?.attachmentDestination,
+          activeBytes,
+          file.size
         );
         if (selectionError) {
           prepared.push({
@@ -623,6 +768,7 @@ export function BaseComposer({
           file,
           type: validation.kind,
           mediaKind,
+          size: file.size,
           progress: 0,
           status: "uploading",
           url: URL.createObjectURL(file),
@@ -641,7 +787,9 @@ export function BaseComposer({
 
         try {
           // Step 1: Generate upload URL
-          const uploadUrl = await generateUploadUrl();
+          const uploadUrl = await generateUploadUrl({
+            workspaceId: workspace._id,
+          });
 
           // Step 2: Upload file with XHR to get real progress events
           const storageIdString = await new Promise<string>(
@@ -726,6 +874,7 @@ export function BaseComposer({
             fileName: upload.file.name,
             mimeType: upload.file.type,
             size: upload.file.size,
+            workspaceId: workspace._id,
           });
 
           if (processingTimer) clearInterval(processingTimer);
@@ -767,6 +916,8 @@ export function BaseComposer({
       processUploadedMedia,
       mediaUploads,
       validateFile,
+      workspace?._id,
+      entityMentions?.attachmentDestination,
     ]
   );
 

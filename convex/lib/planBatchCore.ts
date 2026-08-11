@@ -14,7 +14,7 @@ export type PlanBatchItemOperation = "create" | "update";
 export type PlanBatchAttachment = {
   url: string;
   fileName: string;
-  mediaKind: "image" | "gif" | "video";
+  mediaKind: "image" | "gif" | "video" | "file";
 };
 
 export type PlanBatchTaggedTarget = {

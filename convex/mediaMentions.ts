@@ -15,12 +15,18 @@ import {
   buildPostMentionEntity,
   buildTwitterReplyMentionEntity,
 } from "../shared/lib/mentions/postMentions";
-import { inferAttachmentMediaKind } from "../shared/lib/utils/media/inferAttachmentMediaKind";
 import type {
   MentionEntityKind,
   MentionEntitySearchResult,
 } from "../shared/lib/mentions/mentionEntities";
-import { mentionEntityKindValidator } from "./validators";
+import {
+  mentionEntityKindValidator,
+  workspaceAttachmentDestinationValidator,
+} from "./validators";
+import {
+  getWorkspaceAttachmentCompatibility,
+  getWorkspaceAttachmentKind,
+} from "./lib/workspaceAttachmentCore";
 
 const ACTIVE_PLAN_STATUSES = [
   "draft",
@@ -310,6 +316,7 @@ export const searchMentionEntities = query({
     prospectId: v.optional(v.id("prospects")),
     limit: v.optional(v.number()),
     allowedKinds: v.optional(v.array(mentionEntityKindValidator)),
+    attachmentDestination: v.optional(workspaceAttachmentDestinationValidator),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -400,13 +407,25 @@ export const searchMentionEntities = query({
         .map(buildProspectSnapshotFromSummary);
     }
 
-    const uploads = shouldIncludeAttachments
-      ? await ctx.db
-          .query("mediaUploads")
-          .withIndex("by_user_uploaded_at", (q) => q.eq("userId", user._id))
-          .order("desc")
-          .take(40)
-      : [];
+    const uploads = !shouldIncludeAttachments
+      ? []
+      : normalizedQuery
+        ? await ctx.db
+            .query("mediaUploads")
+            .withSearchIndex("search_workspace_attachments", (q) =>
+              q
+                .search("searchText", normalizedQuery)
+                .eq("workspaceId", workspace._id)
+                .eq("userId", user._id)
+            )
+            .take(Math.max(resultLimit * 3, 12))
+        : await ctx.db
+            .query("mediaUploads")
+            .withIndex("by_workspace_and_user_and_uploaded_at", (q) =>
+              q.eq("workspaceId", workspace._id).eq("userId", user._id)
+            )
+            .order("desc")
+            .take(Math.max(resultLimit * 3, 12));
 
     const plans =
       shouldIncludePlans || shouldIncludeTasks
@@ -452,34 +471,35 @@ export const searchMentionEntities = query({
     );
 
     const uploadMentionEntities = await Promise.all(
-      uploads
-        .filter(
-          (upload) =>
-            !upload.workspaceId || upload.workspaceId === workspace._id
-        )
-        .map(async (upload) => {
-          const displayName = upload.displayName ?? upload.fileName;
-          const attachmentUrl = await ctx.storage.getUrl(upload.storageId);
-          return {
-            id: `attachment:${String(upload._id)}`,
-            entityId: String(upload._id),
-            kind: "attachment" as const,
-            label: displayName,
-            mentionText: `Attachment: ${displayName}`,
-            secondaryLabel: "Workspace attachment",
-            avatarUrl: null,
-            verified: false,
-            referenceText: `Attachment: ${displayName}${attachmentUrl ? ` (${attachmentUrl})` : ""}`,
-            workspaceId: upload.workspaceId
-              ? String(upload.workspaceId)
-              : String(workspace._id),
-            attachmentUrl,
-            attachmentMimeType: upload.mimeType,
-            attachmentMediaKind: inferAttachmentMediaKind({
-              mimeType: upload.mimeType,
-            }),
-          };
-        })
+      uploads.map(async (upload) => {
+        const displayName = upload.displayName ?? upload.fileName;
+        const attachmentUrl = await ctx.storage.getUrl(upload.storageId);
+        const attachmentMediaKind = getWorkspaceAttachmentKind(upload);
+        const compatibility = args.attachmentDestination
+          ? getWorkspaceAttachmentCompatibility({
+              attachment: upload,
+              destination: args.attachmentDestination,
+            })
+          : null;
+        return {
+          id: `attachment:${String(upload._id)}`,
+          entityId: String(upload._id),
+          kind: "attachment" as const,
+          label: displayName,
+          mentionText: `Attachment: ${displayName}`,
+          secondaryLabel: "Workspace attachment",
+          avatarUrl: null,
+          verified: false,
+          referenceText: `Attachment: ${displayName}`,
+          workspaceId: String(workspace._id),
+          attachmentUrl,
+          attachmentMimeType: upload.mimeType,
+          attachmentSize: upload.size,
+          attachmentMediaKind,
+          attachmentDisabled: compatibility ? !compatibility.compatible : false,
+          attachmentDisabledReason: compatibility?.reason ?? null,
+        };
+      })
     );
 
     const postMentionEntities =

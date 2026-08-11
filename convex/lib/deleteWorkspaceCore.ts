@@ -36,6 +36,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
       auditItems,
       memoryQueues,
       mediaUploads,
+      attachmentStats,
       conversationMessages,
       conversations,
       socialMonitors,
@@ -92,6 +93,10 @@ export const sweepWorkspaceRowsInternal = internalMutation({
       ctx.db
         .query("mediaUploads")
         .withIndex("by_workspace_uploaded_at", (q) => q.eq("workspaceId", w))
+        .take(n),
+      ctx.db
+        .query("workspaceAttachmentStats")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", w))
         .take(n),
       ctx.db
         .query("platformConversationMessages")
@@ -238,6 +243,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
     deleted += await deleteDocuments(ctx, keywords);
     deleted += await deleteDocuments(ctx, auditItems);
     deleted += await deleteDocuments(ctx, memoryQueues);
+    deleted += await deleteDocuments(ctx, attachmentStats);
     deleted += await deleteDocuments(ctx, conversationMessages);
     deleted += await deleteDocuments(ctx, conversations);
     deleted += await deleteDocuments(ctx, socialMonitors);

@@ -1026,11 +1026,37 @@ export default defineSchema({
     mimeType: v.string(),
     size: v.number(),
     tags: v.optional(v.array(v.string())),
+    /** Actual Convex storage digest; additive until legacy rows are backfilled. */
+    sha256: v.optional(v.string()),
+    /** Normalized text used by workspace-scoped full-text attachment search. */
+    searchText: v.optional(v.string()),
+    /** Marks rows included in the denormalized workspace attachment counts. */
+    statsRecordedAt: v.optional(v.number()),
     uploadedAt: v.number(),
   })
     .index("by_uploaded_at", ["uploadedAt"])
     .index("by_user_uploaded_at", ["userId", "uploadedAt"])
-    .index("by_workspace_uploaded_at", ["workspaceId", "uploadedAt"]),
+    .index("by_workspace_uploaded_at", ["workspaceId", "uploadedAt"])
+    .index("by_workspace_and_user_and_uploaded_at", [
+      "workspaceId",
+      "userId",
+      "uploadedAt",
+    ])
+    .searchIndex("search_workspace_attachments", {
+      searchField: "searchText",
+      filterFields: ["workspaceId", "userId"],
+    }),
+
+  /** Transactionally maintained counts for accurate Agent answers at scale. */
+  workspaceAttachmentStats: defineTable({
+    workspaceId: v.id("workspaces"),
+    total: v.number(),
+    images: v.number(),
+    gifs: v.number(),
+    videos: v.number(),
+    files: v.number(),
+    updatedAt: v.number(),
+  }).index("by_workspace", ["workspaceId"]),
 
   platformConversations: defineTable({
     userId: v.id("users"),
@@ -2025,6 +2051,8 @@ export default defineSchema({
     prospectId: v.optional(v.id("prospects")),
     surfaces: v.optional(v.array(v.string())),
     channels: v.optional(v.array(v.string())),
+    /** Verified workspace attachment bindings selected through opaque refs. */
+    attachmentUploadIds: v.optional(v.array(v.id("mediaUploads"))),
     provenanceKind: workspaceMemoryProvenanceKindValidator,
     provenanceThreadId: v.optional(v.string()),
     provenanceMessageId: v.optional(v.string()),
@@ -2046,6 +2074,11 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_workspace_and_identity_key", ["workspaceId", "identityKey"])
+    .index("by_workspace_and_topic_key_and_status", [
+      "workspaceId",
+      "topicKey",
+      "status",
+    ])
     .index("by_workspace_and_conflict_key_and_status", [
       "workspaceId",
       "conflictKey",

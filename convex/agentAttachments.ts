@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internalQuery } from "./lib/functionBuilders";
 import { agentAttachmentToolReferenceValidator } from "./validators";
 import type { Doc, Id } from "./_generated/dataModel";
-import { inferAttachmentMediaKind } from "../shared/lib/utils/media/inferAttachmentMediaKind";
+import { getWorkspaceAttachmentKind } from "./lib/workspaceAttachmentCore";
 import {
   AGENT_ATTACHMENT_CONTEXT_WINDOW,
   getAgentAttachmentReference,
@@ -14,7 +14,7 @@ type AttachmentCandidate = {
   context: Doc<"agentMessageContexts">;
   uploadId: string | null;
   fileName: string;
-  mediaKind?: "image" | "gif" | "video" | null;
+  mediaKind?: "image" | "gif" | "video" | "file" | null;
 };
 
 function getContextAttachmentCandidates(
@@ -57,7 +57,8 @@ export const listAvailableForAgentTool = internalQuery({
     if (
       !currentContext ||
       currentContext.threadId !== args.threadId ||
-      currentContext.userId !== args.userId
+      currentContext.userId !== args.userId ||
+      !currentContext.workspaceId
     ) {
       return [];
     }
@@ -97,19 +98,14 @@ export const listAvailableForAgentTool = internalQuery({
       if (
         !upload ||
         upload.userId !== args.userId ||
-        (currentContext.workspaceId &&
-          upload.workspaceId !== currentContext.workspaceId)
+        upload.workspaceId !== currentContext.workspaceId
       ) {
         continue;
       }
 
       const url = await ctx.storage.getUrl(upload.storageId);
       const mediaKind =
-        candidate.mediaKind ??
-        inferAttachmentMediaKind({
-          mimeType: upload.mimeType,
-          url: upload.fileName,
-        });
+        candidate.mediaKind ?? getWorkspaceAttachmentKind(upload);
       if (!url || !mediaKind) {
         continue;
       }

@@ -329,6 +329,7 @@ ${buildUseCaseContextBlock(useCase)}
 
 **Workspace tools:**
 - inspectWorkspace
+- workspaceAttachments
 - queryWorkspace
 - listProspectPlans
 - managePlanBatch
@@ -354,6 +355,10 @@ ${buildUseCaseContextBlock(useCase)}
 **Memory tools:**
 - rememberWorkspaceMemory
 - searchWorkspaceMemories
+
+When the user asks how many attachments/files exist, searches for a file, or asks to see one, call workspaceAttachments against live workspace data. Use operation=show for inline rendering. When applicable memory context contains a memoryKey with linked attachments, call operation=resolve_memory before selecting files for an outreach task. Never guess file counts, URLs, IDs, or attachment references.
+
+Attachment references selected in the current user message take precedence when the user says "this attachment" or otherwise refers to the file they just added. Earlier attachments in the same thread remain available by their visible names and relative order. If the user adds a second attachment in a later turn, treat that new file as the current attachment without forgetting the first. Ask one short clarification question only when multiple available files genuinely fit the user's wording and neither the current message, an exact visible name, a live workspaceAttachments result, nor an applicable memory binding resolves which file they mean.
 
 Remember: stay workspace-scoped when no ${entitySingularLower} is selected, and act on exactly one selected ${entitySingularLower} when the user has clearly tagged or focused one.`;
 }
@@ -584,6 +589,7 @@ When you are in a record-specific conversation, context is automatically injecte
 - getProspectInteractionHistory: Read the real X/LinkedIn DM, comment, and reply history between the workspace user and this ${entitySingularLower}. Use it for conversation-history and relationship-progress questions. It returns live/cached/failed evidence, connection state, freshness, coverage boundary, and bounded-page metadata for your reasoning. X evidence separates plaintext legacy DMs from encrypted XChat envelope metadata, so reason from each source's actual coverage.
 - getProspectPlan: Get an existing plan for the internal prospect record
 - inspectWorkspace: Get the workspace's offering description, ideal customer profiles, connected accounts, and autonomy settings. Use this to ground strategy in the user's real goals before generating or refining plans.
+- workspaceAttachments: Count, search, inspect, show, or resolve memory-linked workspace attachments from live data. Use operation=show for inline rendering and operation=resolve_memory when an applicable memory supplies a memoryKey with linked attachments.
 - researchProspect: Deep web research on the prospect and their company (recent news, launches, funding, hiring, public opinions). Use BEFORE generating a plan when prospect context is thin, and whenever the user asks for deeper research. Cite what you learned when proposing angles.
 - proposeWorkspaceProfiles: Create or refine the workspace-wide ${useCase.profileLabelPlural.toLowerCase()} proposal after an explicit user request.
 - approveWorkspaceProfiles: Apply the pending workspace profile proposal after explicit approval.
@@ -612,6 +618,11 @@ When you are in a record-specific conversation, context is automatically injecte
 **Memory Tools:**
 - rememberWorkspaceMemory: Save a reusable workspace lesson based on the current conversation (auto-scoped to the current workspace and prospect).
 - searchWorkspaceMemories: Retrieve relevant workspace memories before answering questions about what has worked, what failed, or which patterns to repeat or avoid.
+
+**Attachment Resolution:**
+- Treat attachments selected in the current user message as the primary referent for "this attachment" or "the file I just uploaded". A file added in a later turn becomes current context; files from earlier turns remain addressable by visible name and relative order.
+- Use \`workspaceAttachments\` for live counts, search, inspection, inline display, and memory-bound lookup. Never infer a count from thread history or invent a file reference.
+- Ask one short clarification question only when multiple files genuinely match and current-turn selection, exact naming, live search, and memory binding do not disambiguate the request.
 
 ## Generative UI Rules (CRITICAL)
 When the user asks to see a post or wants to visualize content:

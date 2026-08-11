@@ -15,7 +15,18 @@ import {
   AutorenewIcon,
   CloseIcon,
   EditIcon,
+  PictureAsPdfIcon,
 } from "@/shared/ui/components/icons";
+import { FileText } from "lucide-react";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "@/shared/ui/components/Attachment";
 
 interface MediaUploadSectionProps {
   uploads: MediaUpload[];
@@ -114,6 +125,10 @@ export function MediaUploadSection({
 
       const file = upload.file;
       if (!file) return;
+      if (upload.type === "file") {
+        measuredAspectIds.add(upload.id);
+        return;
+      }
 
       try {
         pendingAspectIds.add(upload.id);
@@ -203,66 +218,97 @@ export function MediaUploadSection({
         <div key={upload.id}>
           {upload.status !== "error" && (
             <>
-              {/* Media Preview */}
-              <div
-                className="border-border relative w-full overflow-hidden rounded-md border"
-                style={{ aspectRatio: aspectById[upload.id] ?? "16 / 9" }}
-              >
-                {upload.type === "image" && upload.url ? (
-                  upload.url.startsWith("blob:") ? (
-                    <Image
+              {upload.type === "file" ? (
+                <Attachment
+                  className="w-full"
+                  state={upload.status === "uploading" ? "uploading" : "done"}
+                >
+                  <AttachmentMedia>
+                    {upload.file.type.toLowerCase() === "application/pdf" ? (
+                      <PictureAsPdfIcon className="fill-current" />
+                    ) : (
+                      <FileText className="size-4" />
+                    )}
+                  </AttachmentMedia>
+                  <AttachmentContent>
+                    <AttachmentTitle>{upload.file.name}</AttachmentTitle>
+                    <AttachmentDescription>
+                      {upload.file.type.toLowerCase() === "application/pdf"
+                        ? "PDF"
+                        : "Document"}
+                    </AttachmentDescription>
+                  </AttachmentContent>
+                  <AttachmentActions>
+                    <AttachmentAction
+                      type="button"
+                      onClick={() => onRemove?.(upload.id)}
+                      aria-label={`Remove ${upload.file.name}`}
+                    >
+                      <CloseIcon className="fill-current" />
+                    </AttachmentAction>
+                  </AttachmentActions>
+                </Attachment>
+              ) : (
+                <div
+                  className="border-border relative w-full overflow-hidden rounded-md border"
+                  style={{ aspectRatio: aspectById[upload.id] ?? "16 / 9" }}
+                >
+                  {upload.type === "image" && upload.url ? (
+                    upload.url.startsWith("blob:") ? (
+                      <Image
+                        src={upload.url}
+                        alt="Uploaded media"
+                        fill
+                        className="object-cover"
+                        sizes="100vw"
+                        onLoad={() => {
+                          // next/image doesn't expose natural size in event target; precomputed aspect used
+                        }}
+                      />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={upload.url}
+                        alt="Uploaded media"
+                        className="h-full w-full object-cover"
+                      />
+                    )
+                  ) : null}
+                  {upload.type === "video" && upload.url && (
+                    <video
                       src={upload.url}
-                      alt="Uploaded media"
-                      fill
-                      className="object-cover"
-                      sizes="100vw"
-                      onLoad={() => {
-                        // next/image doesn't expose natural size in event target; precomputed aspect used
+                      className="h-full w-full object-cover"
+                      controls
+                      aria-label="Uploaded video preview"
+                      onLoadedMetadata={(e) => {
+                        const video = e.currentTarget as HTMLVideoElement;
+                        setAspectById((prev) => ({
+                          ...prev,
+                          [upload.id]: chooseNearestAspect(
+                            video.videoWidth,
+                            video.videoHeight
+                          ),
+                        }));
                       }}
                     />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={upload.url}
-                      alt="Uploaded media"
-                      className="h-full w-full object-cover"
-                    />
-                  )
-                ) : null}
-                {upload.type === "video" && upload.url && (
-                  <video
-                    src={upload.url}
-                    className="h-full w-full object-cover"
-                    controls
-                    aria-label="Uploaded video preview"
-                    onLoadedMetadata={(e) => {
-                      const video = e.currentTarget as HTMLVideoElement;
-                      setAspectById((prev) => ({
-                        ...prev,
-                        [upload.id]: chooseNearestAspect(
-                          video.videoWidth,
-                          video.videoHeight
-                        ),
-                      }));
-                    }}
-                  />
-                )}
-                {!upload.url && (
-                  <Skeleton className="absolute inset-0 h-full w-full" />
-                )}
+                  )}
+                  {!upload.url && (
+                    <Skeleton className="absolute inset-0 h-full w-full" />
+                  )}
 
-                {/* Remove Button */}
-                <Button
-                  variant="outline"
-                  size="xsIcon"
-                  type="button"
-                  onClick={() => onRemove?.(upload.id)}
-                  className="absolute top-2 right-2"
-                  aria-label="Remove media"
-                >
-                  <CloseIcon className="fill-current" />
-                </Button>
-              </div>
+                  {/* Remove Button */}
+                  <Button
+                    variant="outline"
+                    size="xsIcon"
+                    type="button"
+                    onClick={() => onRemove?.(upload.id)}
+                    className="absolute top-2 right-2"
+                    aria-label="Remove media"
+                  >
+                    <CloseIcon className="fill-current" />
+                  </Button>
+                </div>
+              )}
 
               {/* Status + optional description (posts/replies); DMs omit description */}
               {(upload.status === "uploading" || showDescription) && (

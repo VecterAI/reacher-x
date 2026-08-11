@@ -17,6 +17,12 @@ import {
   getWorkspaceAgentMemoryById,
 } from "./lib/agentMemoryCore";
 import { upsertCanonicalWorkspaceMemory } from "./lib/workspaceMemoryCore";
+import {
+  buildWorkspaceAttachmentSearchText,
+  getWorkspaceAttachmentKind,
+  updateWorkspaceAttachmentStats,
+} from "./lib/workspaceAttachmentCore";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 export const migrations = new Migrations<DataModel, typeof schema>(
   components.migrations,
@@ -330,3 +336,57 @@ export const backfillCanonicalWorkspaceMemories = migrations.define({
     }
   },
 });
+
+/**
+ * Additive attachment-library backfill. Unscoped legacy rows intentionally
+ * remain quarantined; scoped rows become searchable and enter exact counters.
+ */
+export const backfillWorkspaceAttachmentSearchAndStats = migrations.define({
+  table: "mediaUploads",
+  batchSize: 25,
+  migrateOne: async (ctx, upload) => {
+    const searchText = buildWorkspaceAttachmentSearchText({
+      fileName: upload.fileName,
+      displayName: upload.displayName,
+      mimeType: upload.mimeType,
+      tags: upload.tags,
+    });
+    const workspace = upload.workspaceId
+      ? await ctx.db.get("workspaces", upload.workspaceId)
+      : null;
+    const isOwnedScopedUpload = Boolean(
+      workspace && upload.userId && workspace.userId === upload.userId
+    );
+    const patch: {
+      searchText?: string;
+      statsRecordedAt?: number;
+    } = {};
+    if (upload.searchText !== searchText) {
+      patch.searchText = searchText;
+    }
+    if (
+      isOwnedScopedUpload &&
+      upload.workspaceId &&
+      upload.statsRecordedAt === undefined
+    ) {
+      const statsRecordedAt = getCurrentUTCTimestamp();
+      await updateWorkspaceAttachmentStats(ctx, {
+        workspaceId: upload.workspaceId,
+        kind: getWorkspaceAttachmentKind(upload),
+        delta: 1,
+      });
+      patch.statsRecordedAt = statsRecordedAt;
+    }
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch("mediaUploads", upload._id, patch);
+    }
+  },
+});
+
+/**
+ * Deliberately scoped runner for the attachment rollout. Keeping this runner
+ * explicit avoids exposing the component's generic "run any migration" API.
+ */
+export const runWorkspaceAttachmentBackfill = migrations.runner([
+  internal.migrations.backfillWorkspaceAttachmentSearchAndStats,
+]);

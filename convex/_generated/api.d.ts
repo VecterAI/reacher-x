@@ -57,6 +57,7 @@ import type * as agents_tools_searchWorkspaceMemories from "../agents/tools/sear
 import type * as agents_tools_setupSessionChat from "../agents/tools/setupSessionChat.js";
 import type * as agents_tools_startWorkspacePlans from "../agents/tools/startWorkspacePlans.js";
 import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorkspace.js";
+import type * as agents_tools_workspaceAttachments from "../agents/tools/workspaceAttachments.js";
 import type * as agents_tools_workspaceMemoryHelpers from "../agents/tools/workspaceMemoryHelpers.js";
 import type * as agents_tools_workspaceProfileChanges from "../agents/tools/workspaceProfileChanges.js";
 import type * as agents_tools_workspaceSetupContext from "../agents/tools/workspaceSetupContext.js";
@@ -221,6 +222,7 @@ import type * as lib_workflow from "../lib/workflow.js";
 import type * as lib_workflowSafeProspect from "../lib/workflowSafeProspect.js";
 import type * as lib_workspaceActivity from "../lib/workspaceActivity.js";
 import type * as lib_workspaceAgentSettingsCore from "../lib/workspaceAgentSettingsCore.js";
+import type * as lib_workspaceAttachmentCore from "../lib/workspaceAttachmentCore.js";
 import type * as lib_workspaceCapacityCore from "../lib/workspaceCapacityCore.js";
 import type * as lib_workspaceEntitlements from "../lib/workspaceEntitlements.js";
 import type * as lib_workspaceIcpSignalsCore from "../lib/workspaceIcpSignalsCore.js";
@@ -317,6 +319,7 @@ import type * as workflows_readModels from "../workflows/readModels.js";
 import type * as workflows_setup from "../workflows/setup.js";
 import type * as workspaceAgentOpsDaily from "../workspaceAgentOpsDaily.js";
 import type * as workspaceAnalyticsDaily from "../workspaceAnalyticsDaily.js";
+import type * as workspaceAttachments from "../workspaceAttachments.js";
 import type * as workspaceIcpSignals from "../workspaceIcpSignals.js";
 import type * as workspacePlanStarts from "../workspacePlanStarts.js";
 import type * as workspaceProfileChanges from "../workspaceProfileChanges.js";
@@ -389,6 +392,7 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/setupSessionChat": typeof agents_tools_setupSessionChat;
   "agents/tools/startWorkspacePlans": typeof agents_tools_startWorkspacePlans;
   "agents/tools/updateWorkspace": typeof agents_tools_updateWorkspace;
+  "agents/tools/workspaceAttachments": typeof agents_tools_workspaceAttachments;
   "agents/tools/workspaceMemoryHelpers": typeof agents_tools_workspaceMemoryHelpers;
   "agents/tools/workspaceProfileChanges": typeof agents_tools_workspaceProfileChanges;
   "agents/tools/workspaceSetupContext": typeof agents_tools_workspaceSetupContext;
@@ -553,6 +557,7 @@ declare const fullApi: ApiFromModules<{
   "lib/workflowSafeProspect": typeof lib_workflowSafeProspect;
   "lib/workspaceActivity": typeof lib_workspaceActivity;
   "lib/workspaceAgentSettingsCore": typeof lib_workspaceAgentSettingsCore;
+  "lib/workspaceAttachmentCore": typeof lib_workspaceAttachmentCore;
   "lib/workspaceCapacityCore": typeof lib_workspaceCapacityCore;
   "lib/workspaceEntitlements": typeof lib_workspaceEntitlements;
   "lib/workspaceIcpSignalsCore": typeof lib_workspaceIcpSignalsCore;
@@ -649,6 +654,7 @@ declare const fullApi: ApiFromModules<{
   "workflows/setup": typeof workflows_setup;
   workspaceAgentOpsDaily: typeof workspaceAgentOpsDaily;
   workspaceAnalyticsDaily: typeof workspaceAnalyticsDaily;
+  workspaceAttachments: typeof workspaceAttachments;
   workspaceIcpSignals: typeof workspaceIcpSignals;
   workspacePlanStarts: typeof workspacePlanStarts;
   workspaceProfileChanges: typeof workspaceProfileChanges;

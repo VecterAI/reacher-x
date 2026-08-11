@@ -180,19 +180,37 @@ export function MentionsPlugin({
   const { results, loading } = useMentionEntitySearch({
     enabled: queryString !== null,
     query: queryString,
-    workspaceId: workspace?._id ?? null,
+    workspaceId: entityMentions?.workspaceId ?? workspace?._id ?? null,
     prospectId,
     limit: SUGGESTION_LIST_LENGTH_LIMIT,
     remoteAllowedKinds: activeRemoteAllowedKinds,
     localEntities: activeLocalEntities,
+    attachmentDestination: entityMentions?.attachmentDestination,
   });
-  const visibleResults = React.useMemo(
-    () =>
+  const visibleResults = React.useMemo(() => {
+    const filteredResults =
       activeFilter === "all"
         ? results
-        : results.filter((result) => result.kind === activeFilter),
-    [activeFilter, results]
-  );
+        : results.filter((result) => result.kind === activeFilter);
+
+    return filteredResults.map((result) => {
+      if (result.kind !== "attachment") {
+        return result;
+      }
+
+      const localDisabledReason =
+        entityMentions?.getAttachmentDisabledReason?.(result) ?? null;
+      if (!localDisabledReason) {
+        return result;
+      }
+
+      return {
+        ...result,
+        attachmentDisabled: true,
+        attachmentDisabledReason: localDisabledReason,
+      };
+    });
+  }, [activeFilter, entityMentions, results]);
 
   React.useEffect(
     () => () => {
@@ -245,6 +263,10 @@ export function MentionsPlugin({
       nodeToReplace: TextNode | null,
       closeMenu: () => void
     ) => {
+      if (selectedOption.entity.attachmentDisabled) {
+        return;
+      }
+
       const replacementText =
         entityMentions?.buildInsertionText?.(selectedOption.entity) ??
         buildComposerMentionInsertionText({

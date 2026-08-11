@@ -1,8 +1,9 @@
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { inferAttachmentMediaKind } from "../../shared/lib/utils/media/inferAttachmentMediaKind";
+import { LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES } from "../../shared/lib/utils/media/linkedinMessageAttachmentTypes";
 
-export type OutreachMediaKind = "image" | "gif" | "video";
+export type OutreachMediaKind = "image" | "gif" | "video" | "file";
 export type OutreachMediaPlatform = "twitter" | "linkedin";
 export type OutreachMediaSurface = "comment" | "dm";
 
@@ -34,6 +35,7 @@ const LINKEDIN_MESSAGE_MIME_TYPES = new Set([
   "image/png",
   "image/bmp",
   "video/mp4",
+  ...LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES,
 ]);
 
 export interface ResolvedOutreachMedia {
@@ -143,25 +145,35 @@ export function assertOutreachMediaCapability(args: {
     return;
   }
 
+  const files = media.filter((attachment) => attachment.kind === "file");
+  if (files.length > 0) {
+    throw mediaCapabilityError(
+      `${files[0].fileName} cannot be attached to X/Twitter. Use it in a supported LinkedIn DM or choose an image, GIF, or video.`
+    );
+  }
+
   const images = media.filter((attachment) => attachment.kind === "image");
   const gifs = media.filter((attachment) => attachment.kind === "gif");
   const videos = media.filter((attachment) => attachment.kind === "video");
-  const destination = surface === "dm" ? "an X DM" : "an X reply";
+  const destination =
+    surface === "dm" ? "an X/Twitter DM" : "an X/Twitter reply";
 
   if (surface === "dm" && media.length > 1) {
-    throw mediaCapabilityError("X DMs support at most one media attachment.");
+    throw mediaCapabilityError(
+      "X/Twitter DMs support at most one media attachment."
+    );
   }
   if (surface === "comment" && images.length > 4) {
-    throw mediaCapabilityError("X replies support up to four images.");
+    throw mediaCapabilityError("X/Twitter replies support up to four images.");
   }
   if (gifs.length > 1 || videos.length > 1 || gifs.length + videos.length > 1) {
     throw mediaCapabilityError(
-      "X supports one GIF or one video per reply/message."
+      "X/Twitter supports one GIF or one video per reply/message."
     );
   }
   if ((gifs.length > 0 || videos.length > 0) && images.length > 0) {
     throw mediaCapabilityError(
-      "X cannot mix images with a GIF or video in the same reply/message."
+      "X/Twitter cannot mix images with a GIF or video in the same reply/message."
     );
   }
 
@@ -202,20 +214,26 @@ export async function resolveOwnedOutreachMedia(
         if (
           !upload ||
           upload.userId !== args.userId ||
-          (upload.workspaceId && upload.workspaceId !== args.workspaceId)
+          upload.workspaceId !== args.workspaceId
         ) {
           throw mediaCapabilityError(
             "The selected attachment could not be verified in this workspace. Re-select or upload the file and try again."
           );
         }
         const url = await ctx.storage.getUrl(upload.storageId);
-        const kind = inferAttachmentMediaKind({
-          mimeType: upload.mimeType,
-          url: upload.fileName,
-        });
+        const kind =
+          inferAttachmentMediaKind({
+            mimeType: upload.mimeType,
+            url: upload.fileName,
+          }) ??
+          (LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES.has(
+            upload.mimeType.toLowerCase()
+          )
+            ? "file"
+            : null);
         if (!url || !kind) {
           throw mediaCapabilityError(
-            `${upload.displayName?.trim() || upload.fileName} is no longer available or is not a supported image, GIF, or video.`
+            `${upload.displayName?.trim() || upload.fileName} is no longer available or is not a supported attachment.`
           );
         }
         return {
@@ -234,19 +252,24 @@ export async function resolveOwnedOutreachMedia(
 
   const uploads = await ctx.db
     .query("mediaUploads")
-    .withIndex("by_user_uploaded_at", (q) => q.eq("userId", args.userId))
+    .withIndex("by_workspace_and_user_and_uploaded_at", (q) =>
+      q.eq("workspaceId", args.workspaceId).eq("userId", args.userId)
+    )
     .order("desc")
     .take(MAX_RESOLVABLE_UPLOADS);
   const byUrl = new Map<string, ResolvedOutreachMedia>();
 
   await Promise.all(
     uploads.map(async (upload) => {
-      if (upload.workspaceId && upload.workspaceId !== args.workspaceId) return;
       const url = await ctx.storage.getUrl(upload.storageId);
-      const kind = inferAttachmentMediaKind({
-        mimeType: upload.mimeType,
-        url: upload.fileName,
-      });
+      const kind =
+        inferAttachmentMediaKind({
+          mimeType: upload.mimeType,
+          url: upload.fileName,
+        }) ??
+        (LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES.has(upload.mimeType.toLowerCase())
+          ? "file"
+          : null);
       if (!url || !kind) return;
       byUrl.set(url, {
         uploadId: upload._id,

@@ -214,11 +214,14 @@ async function requireViewerUser(ctx: QueryCtx | MutationCtx) {
 function normalizeMediaKinds(
   mediaKinds: unknown,
   mediaUrls: string[]
-): Array<"image" | "gif" | "video"> {
+): Array<"image" | "gif" | "video" | "file"> {
   const normalized = Array.isArray(mediaKinds)
     ? mediaKinds.filter(
-        (value): value is "image" | "gif" | "video" =>
-          value === "image" || value === "gif" || value === "video"
+        (value): value is "image" | "gif" | "video" | "file" =>
+          value === "image" ||
+          value === "gif" ||
+          value === "video" ||
+          value === "file"
       )
     : [];
 
