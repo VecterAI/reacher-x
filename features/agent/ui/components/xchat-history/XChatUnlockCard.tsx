@@ -21,7 +21,8 @@ import { Input } from "@/shared/ui/components/Input";
 import {
   decryptXChatInBrowser,
   hasUnlockedXChatSession,
-  type BrowserDecryptedXChatMessage,
+  lockXChatInBrowser,
+  useXChatBrowserSession,
   type XChatDecryptBundle,
 } from "@/features/agent/lib/xChatBrowserSession";
 import type { LockedXChatToolEvidence } from "@/features/agent/lib/xChatToolEvidence";
@@ -44,14 +45,15 @@ export function XChatUnlockCard({
   const streamAnalysis = useAction(api.chat.streamSharedXChatResponse);
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState("");
-  const [messages, setMessages] = useState<BrowserDecryptedXChatMessage[]>([]);
   const [bundle, setBundle] = useState<XChatDecryptBundle | null>(null);
-  const [decryptionErrorCount, setDecryptionErrorCount] = useState(0);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const prospectId = selectedContext?.prospectId ?? null;
+  const browserSession = useXChatBrowserSession({ prospectId });
+  const messages = browserSession?.messages ?? [];
+  const decryptionErrorCount = browserSession?.decryptionErrorCount ?? 0;
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) {
@@ -64,7 +66,13 @@ export function XChatUnlockCard({
     nextBundle: XChatDecryptBundle,
     nextPin: string
   ) => {
+    if (!prospectId) {
+      throw new Error(
+        "The selected prospect could not be resolved for this task."
+      );
+    }
     const decrypted = await decryptXChatInBrowser({
+      prospectId,
       bundle: nextBundle,
       pin: nextPin,
       getRealmAuthToken: async (realmId) =>
@@ -72,8 +80,6 @@ export function XChatUnlockCard({
     });
     setPin("");
     setBundle(nextBundle);
-    setMessages(decrypted.messages);
-    setDecryptionErrorCount(decrypted.decryptionErrorCount);
     if (decrypted.messages.length === 0) {
       setError(
         "XChat unlocked, but no verified text messages could be decrypted from this history window."
@@ -85,6 +91,9 @@ export function XChatUnlockCard({
     setOpen(true);
     setError(null);
     if (!prospectId) {
+      return;
+    }
+    if (browserSession) {
       return;
     }
     setIsUnlocking(true);
@@ -132,14 +141,14 @@ export function XChatUnlockCard({
   };
 
   const handleShare = async () => {
-    if (!prospectId || !bundle || messages.length === 0) {
+    if (!prospectId || !browserSession || messages.length === 0) {
       return;
     }
     setIsSharing(true);
     setError(null);
     const sharedMessages = messages.slice(-MAX_SHARED_XCHAT_MESSAGES);
     const coverageComplete =
-      !bundle.hasMore &&
+      !browserSession.hasMore &&
       messages.length <= MAX_SHARED_XCHAT_MESSAGES &&
       decryptionErrorCount === 0;
     try {
@@ -149,7 +158,6 @@ export function XChatUnlockCard({
         prospectId: prospectId as Id<"prospects">,
         prompt,
       });
-      setMessages([]);
       setBundle(null);
       setOpen(false);
       toast.success("XChat shared for this Agent response");
@@ -158,7 +166,7 @@ export function XChatUnlockCard({
         promptMessageId: saved.messageId,
         context: {
           prospectId: prospectId as Id<"prospects">,
-          conversationId: bundle.conversationId,
+          conversationId: browserSession.conversationId,
           decryptedAt: getCurrentUTCTimestamp(),
           coverageComplete,
           messages: sharedMessages,
@@ -181,6 +189,13 @@ export function XChatUnlockCard({
           : "XChat could not be shared with the Agent."
       );
     }
+  };
+
+  const handleLock = () => {
+    lockXChatInBrowser();
+    setBundle(null);
+    setPin("");
+    setError(null);
   };
 
   return (
@@ -208,7 +223,7 @@ export function XChatUnlockCard({
           onClick={() => void handleOpen()}
           disabled={!prospectId && selectedContext !== undefined}
         >
-          Unlock and analyze
+          {browserSession ? "Review unlocked XChat" : "Unlock and analyze"}
         </Button>
       </div>
 
@@ -223,7 +238,7 @@ export function XChatUnlockCard({
             </DialogDescription>
           </DialogHeader>
 
-          {messages.length === 0 ? (
+          {!browserSession ? (
             <form
               className="space-y-3"
               onSubmit={(event) => {
@@ -292,6 +307,12 @@ export function XChatUnlockCard({
                 telemetry, although the Agent&apos;s resulting answer remains in
                 this task.
               </p>
+              {browserSession?.hasMore ? (
+                <p className="text-muted-foreground text-xs leading-5">
+                  This XChat window is partial; additional encrypted events
+                  remain available on X.
+                </p>
+              ) : null}
               {error ? (
                 <p className="text-destructive text-sm" role="alert">
                   {error}
@@ -308,8 +329,16 @@ export function XChatUnlockCard({
                 </Button>
                 <Button
                   type="button"
-                  onClick={() => void handleShare()}
+                  variant="outline"
+                  onClick={handleLock}
                   disabled={isSharing}
+                >
+                  Lock XChat
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void handleShare()}
+                  disabled={isSharing || messages.length === 0}
                 >
                   {isSharing ? "Sharing…" : "Share with Agent"}
                 </Button>

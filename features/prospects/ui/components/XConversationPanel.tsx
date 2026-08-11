@@ -16,8 +16,10 @@ import {
   DM_COMPOSER_PLACEHOLDER_CLASS,
 } from "@/features/composer/ui/dmComposerClasses";
 import { formatDmMessageTime } from "../../lib/formatDmMessageTime";
+import { mergeXChatConversationMessages } from "../../lib/xChatConversationMessages";
 import { useProspectDmPanel } from "../../hooks/useProspectDmPanel";
 import { ConversationHistoryPagination } from "./ConversationHistoryPagination";
+import { XChatConversationUnlock } from "./XChatConversationUnlock";
 import { XDmConversationMenu } from "./XDmConversationMenu";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -49,6 +51,7 @@ import type {
   ComposerMediaKind,
 } from "@/features/composer/types";
 import { XDmAttachmentGallery } from "./XDmAttachmentGallery";
+import { useXChatBrowserSession } from "@/features/agent/lib/xChatBrowserSession";
 
 export interface XConversationPanelProps {
   prospectId: string;
@@ -115,6 +118,10 @@ export function XConversationPanel({
     actionRequestId,
     enabled: Boolean(prospectId),
   });
+  const xChatSession = useXChatBrowserSession({
+    prospectId,
+    participantUserId: data?.participantUserId,
+  });
   const updatePendingActionRequestDraft = useMutation(
     api.socialActions.updatePendingActionRequestDraft
   );
@@ -171,9 +178,14 @@ export function XConversationPanel({
     return undefined;
   }, [data]);
 
+  const messagesWithXChat = React.useMemo(
+    () => mergeXChatConversationMessages(data?.messages ?? [], xChatSession),
+    [data?.messages, xChatSession]
+  );
+
   const renderedMessages = React.useMemo(() => {
-    if (!data?.messages.length) {
-      return data?.messages ?? [];
+    if (!messagesWithXChat.length) {
+      return messagesWithXChat;
     }
 
     if (
@@ -181,12 +193,12 @@ export function XConversationPanel({
       !taskPosted?.messageId ||
       !taskPosted.mediaUrls?.length
     ) {
-      return data.messages;
+      return messagesWithXChat;
     }
 
     const taskPostedMediaUrls = taskPosted.mediaUrls;
 
-    return data.messages.map((message) => {
+    return messagesWithXChat.map((message) => {
       if (message.id !== taskPosted.messageId) {
         return message;
       }
@@ -212,7 +224,7 @@ export function XConversationPanel({
             : message.attachments,
       };
     });
-  }, [data, taskMode, taskPosted]);
+  }, [messagesWithXChat, taskMode, taskPosted]);
 
   const draftSync = useDebouncedDraftSync({
     enabled: isTaskBacked
@@ -470,10 +482,14 @@ export function XConversationPanel({
                       Refreshing conversation
                     </span>
                   ) : null}
+                  <XChatConversationUnlock
+                    prospectId={prospectId}
+                    participantUserId={data.participantUserId}
+                  />
                   {data.history?.boundary === "x_30_day_limit" &&
                   !data.history.hasMore ? (
                     <p className="text-muted-foreground text-center text-xs">
-                      X/Twitter provides conversation history from the past 30
+                      Legacy X/Twitter DM history is limited to the past 30
                       days.
                     </p>
                   ) : null}
