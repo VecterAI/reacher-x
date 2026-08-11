@@ -54,7 +54,7 @@ export interface XDmProspectSummary {
 }
 
 export interface XDmPanelWarning {
-  code: "rate_limited" | "activity_degraded";
+  code: "rate_limited" | "activity_degraded" | "provider_error";
   message: string;
   retryAfterMs?: number;
 }

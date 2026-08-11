@@ -167,6 +167,7 @@ export function useProspectDmPanel(args: {
     const cursor = currentData?.history?.nextCursor;
     if (
       !prospectId ||
+      !currentData?.eligibility.enabled ||
       !currentData?.history?.hasMore ||
       !cursor ||
       isLoadingOlder

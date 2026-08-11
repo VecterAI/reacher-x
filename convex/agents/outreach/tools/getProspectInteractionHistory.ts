@@ -1,15 +1,24 @@
 "use node";
 
-// Shared agent tool: reads the real platform interaction history for the
-// selected prospect. Thin Layer 1 wrapper over platform sync actions and the
-// normalized Layer 3 interaction read model.
+// Shared Agent tool: reads the real platform interaction history for the
+// selected prospect. Provider cursors remain backend-owned; the Agent receives
+// evidence about freshness and coverage, not pagination implementation details.
 
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
-import type { ProspectInteractionHistoryItem } from "../../../lib/prospectInteractionHistoryCore";
-import { isCurrentConversationHistoryCursor } from "../../../lib/conversationHistoryPaginationCore";
+import {
+  AGENT_PROVIDER_HISTORY_PAGE_SIZE,
+  getAgentProviderHistoryPageBudget,
+  getInteractionHistoryEvidenceSource,
+  normalizeInteractionHistoryConnectionState,
+  shouldContinueAgentProviderHistoryRead,
+  type InteractionHistoryConnectionState,
+  type InteractionHistoryEvidenceSource,
+  type InteractionHistoryProviderEvidence,
+  type ProspectInteractionHistoryItem,
+} from "../../../lib/prospectInteractionHistoryCore";
 import { parseIsoToTimestamp } from "../../../../shared/lib/utils/time/timeUtils";
 import {
   AMBIGUOUS_PROSPECT_SELECTION_MESSAGE,
@@ -25,8 +34,42 @@ import {
 const platformSchema = z.enum(["all", "twitter", "linkedin"]);
 const kindSchema = z.enum(["dm", "comment", "reply"]);
 const directionSchema = z.enum(["all", "sent", "received"]);
-const MAX_AGENT_PROVIDER_HISTORY_PAGES = 4;
-const AGENT_PROVIDER_HISTORY_PAGE_SIZE = 25;
+
+export const getProspectInteractionHistoryInputSchema = z
+  .object({
+    platform: platformSchema
+      .optional()
+      .default("all")
+      .describe("Read X, LinkedIn, or both platforms."),
+    kinds: z
+      .array(kindSchema)
+      .min(1)
+      .optional()
+      .default(["dm", "comment", "reply"])
+      .describe("Interaction types to include."),
+    direction: directionSchema
+      .optional()
+      .default("all")
+      .describe("Read sent interactions, received interactions, or both."),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .optional()
+      .default(20)
+      .describe("Maximum number of interactions to return."),
+    since: z
+      .string()
+      .datetime({ offset: true })
+      .optional()
+      .describe(
+        "Optional ISO-8601 lower time boundary. The backend may read up to four bounded provider pages to cover it."
+      ),
+  })
+  .strict();
+
+type Platform = "twitter" | "linkedin";
 
 type ProviderDmMessage = {
   id: string;
@@ -37,6 +80,7 @@ type ProviderDmMessage = {
 };
 
 type ProviderHistoryPage = {
+  conversationId: string;
   messages: ProviderDmMessage[];
   history: {
     nextCursor?: string;
@@ -46,17 +90,14 @@ type ProviderHistoryPage = {
 } | null;
 
 type InteractionHistoryCoverage = {
-  platform: "twitter" | "linkedin";
+  platform: Platform;
   hasConversation: boolean;
   lastSyncSuccessAt?: number;
   lastSyncAttemptAt?: number;
   syncError?: string;
-  historyNextCursor?: string;
   historyHasMore: boolean;
   historyBoundary?: "complete" | "x_30_day_limit";
   historyOldestLoadedAt?: number;
-  providerPagesFetched?: number;
-  providerPageLimitReached?: boolean;
 };
 
 type ProspectInteractionHistoryResult = {
@@ -67,6 +108,7 @@ type ProspectInteractionHistoryResult = {
   items: ProspectInteractionHistoryItem[];
   truncated: boolean;
   coverage: InteractionHistoryCoverage[];
+  evidence: InteractionHistoryProviderEvidence[];
   queriedAt: number;
 };
 
@@ -74,7 +116,6 @@ type GetProspectInteractionHistoryResult =
   | {
       success: true;
       history: ProspectInteractionHistoryResult;
-      refreshWarnings: string[];
     }
   | {
       success: false;
@@ -82,8 +123,27 @@ type GetProspectInteractionHistoryResult =
       error: string;
     };
 
+type ProviderRead = {
+  platform: Platform;
+  items: ProspectInteractionHistoryItem[];
+  source: InteractionHistoryEvidenceSource;
+  connection: InteractionHistoryConnectionState;
+  refreshAttempted: boolean;
+  refreshSucceeded: boolean;
+  conversationFound: boolean;
+  pagesFetched: number;
+  pageLimitReached: boolean;
+  historyHasMore: boolean;
+  boundary?: "complete" | "x_30_day_limit";
+  error?: string;
+};
+
+function getPlatforms(platform: "all" | Platform): Platform[] {
+  return platform === "all" ? ["twitter", "linkedin"] : [platform];
+}
+
 function normalizeProviderMessage(
-  platform: "twitter" | "linkedin",
+  platform: Platform,
   message: ProviderDmMessage
 ): ProspectInteractionHistoryItem {
   return {
@@ -128,159 +188,197 @@ function mergeHistoryItems(args: {
   };
 }
 
-async function readProviderDmPages(args: {
+function getProviderErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return "The provider could not refresh this conversation.";
+}
+
+function getUnavailableConnectionMessage(
+  platform: Platform,
+  connection: InteractionHistoryConnectionState
+): string | undefined {
+  if (connection === "connected" || connection === "unknown") {
+    return undefined;
+  }
+  const label = platform === "twitter" ? "X/Twitter" : "LinkedIn";
+  return connection === "reconnect_required"
+    ? `${label} needs to be reconnected before this conversation can be verified.`
+    : `${label} is ${connection}, so this conversation cannot be verified live.`;
+}
+
+async function getConnectionState(args: {
+  ctx: ToolContext;
+  userId: Id<"users">;
+  platform: Platform;
+}): Promise<InteractionHistoryConnectionState> {
+  try {
+    const account =
+      args.platform === "twitter"
+        ? await args.ctx.runQuery(internal.xStore.getXAccountForUserInternal, {
+            userId: args.userId,
+          })
+        : await args.ctx.runQuery(
+            internal.linkedinStore.getLinkedInAccountForUserInternal,
+            { userId: args.userId }
+          );
+    return account
+      ? normalizeInteractionHistoryConnectionState(account.status)
+      : "disconnected";
+  } catch {
+    return "unknown";
+  }
+}
+
+async function getProviderHistoryPage(args: {
   ctx: ToolContext;
   userId: Id<"users">;
   prospectId: Id<"prospects">;
-  platform: "all" | "twitter" | "linkedin";
+  platform: Platform;
   cursor?: string;
   sinceMs?: number;
-  cachedCoverage: InteractionHistoryCoverage[];
-}) {
-  const platforms =
-    args.platform === "all"
-      ? (["twitter", "linkedin"] as const)
-      : ([args.platform] as const);
-  const providerItems: ProspectInteractionHistoryItem[] = [];
-  const pagination = new Map<
-    "twitter" | "linkedin",
-    Pick<
-      InteractionHistoryCoverage,
-      | "historyNextCursor"
-      | "historyHasMore"
-      | "historyBoundary"
-      | "providerPagesFetched"
-      | "providerPageLimitReached"
-    >
-  >();
+}): Promise<ProviderHistoryPage> {
+  const pageArgs = {
+    userId: args.userId,
+    prospectId: args.prospectId,
+    limit: AGENT_PROVIDER_HISTORY_PAGE_SIZE,
+    ...(args.cursor ? { cursor: args.cursor } : {}),
+    ...(typeof args.sinceMs === "number" ? { sinceMs: args.sinceMs } : {}),
+  };
+  return args.platform === "twitter"
+    ? await args.ctx.runAction(
+        internal.x.getDmConversationHistoryPageInternal,
+        pageArgs
+      )
+    : await args.ctx.runAction(
+        internal.linkedin.getLinkedInConversationHistoryPageInternal,
+        pageArgs
+      );
+}
 
-  for (const platform of platforms) {
-    const cached = args.cachedCoverage.find(
-      (coverage) => coverage.platform === platform
-    );
-    let cursor = args.cursor ?? cached?.historyNextCursor;
-    let pagesFetched = 0;
-    let page: ProviderHistoryPage = null;
-    const pageBudget =
-      typeof args.sinceMs === "number" ? MAX_AGENT_PROVIDER_HISTORY_PAGES : 1;
+async function readLiveProviderHistory(args: {
+  ctx: ToolContext;
+  userId: Id<"users">;
+  prospectId: Id<"prospects">;
+  platform: Platform;
+  sinceMs?: number;
+  hasCachedConversation: boolean;
+}): Promise<ProviderRead> {
+  const connectionPromise = getConnectionState(args);
+  const pageBudget = getAgentProviderHistoryPageBudget(args.sinceMs);
+  const items: ProspectInteractionHistoryItem[] = [];
+  let cursor: string | undefined;
+  let lastPage: ProviderHistoryPage = null;
+  let pagesFetched = 0;
 
-    // A recent cached page already satisfies an ordinary read. We only issue
-    // provider requests for an explicit continuation or date-range request.
-    if (!args.cursor && typeof args.sinceMs !== "number") {
-      continue;
-    }
-    if (!cursor) {
-      pagination.set(platform, {
-        historyNextCursor: undefined,
-        historyHasMore: false,
-        historyBoundary: cached?.historyBoundary,
-        providerPagesFetched: 0,
+  try {
+    do {
+      const page = await getProviderHistoryPage({
+        ...args,
+        cursor,
       });
-      continue;
-    }
-
-    while (cursor && pagesFetched < pageBudget) {
-      page =
-        platform === "twitter"
-          ? await args.ctx.runAction(
-              internal.x.getDmConversationHistoryPageInternal,
-              {
-                userId: args.userId,
-                prospectId: args.prospectId,
-                cursor,
-                limit: AGENT_PROVIDER_HISTORY_PAGE_SIZE,
-                ...(typeof args.sinceMs === "number"
-                  ? { sinceMs: args.sinceMs }
-                  : {}),
-              }
-            )
-          : await args.ctx.runAction(
-              internal.linkedin.getLinkedInConversationHistoryPageInternal,
-              {
-                userId: args.userId,
-                prospectId: args.prospectId,
-                cursor,
-                limit: AGENT_PROVIDER_HISTORY_PAGE_SIZE,
-                ...(typeof args.sinceMs === "number"
-                  ? { sinceMs: args.sinceMs }
-                  : {}),
-              }
-            );
       pagesFetched += 1;
       if (!page) {
-        break;
+        const connection = await connectionPromise;
+        const error = getUnavailableConnectionMessage(
+          args.platform,
+          connection
+        );
+        const refreshSucceeded = !error;
+        return {
+          platform: args.platform,
+          items,
+          source: getInteractionHistoryEvidenceSource({
+            liveSucceeded: refreshSucceeded,
+            hasCachedConversation: args.hasCachedConversation,
+          }),
+          connection,
+          refreshAttempted: true,
+          refreshSucceeded,
+          conversationFound: items.length > 0,
+          pagesFetched,
+          pageLimitReached: false,
+          historyHasMore: false,
+          error,
+        };
       }
-      providerItems.push(
+
+      lastPage = page;
+      items.push(
         ...page.messages.map((message) =>
-          normalizeProviderMessage(platform, message)
+          normalizeProviderMessage(args.platform, message)
         )
       );
       cursor = page.history.nextCursor;
-      if (typeof args.sinceMs !== "number" || !page.history.hasMore) {
-        break;
-      }
-    }
+    } while (
+      shouldContinueAgentProviderHistoryRead({
+        sinceMs: args.sinceMs,
+        pagesFetched,
+        nextCursor: cursor,
+        hasMore: lastPage?.history.hasMore ?? false,
+      })
+    );
 
-    pagination.set(platform, {
-      historyNextCursor: page?.history.nextCursor,
-      historyHasMore: page?.history.hasMore ?? false,
-      historyBoundary: page?.history.boundary ?? cached?.historyBoundary,
-      providerPagesFetched: pagesFetched,
-      providerPageLimitReached: Boolean(cursor) && pagesFetched >= pageBudget,
-    });
+    const connection = await connectionPromise;
+    return {
+      platform: args.platform,
+      items,
+      source: "live",
+      connection,
+      refreshAttempted: true,
+      refreshSucceeded: true,
+      conversationFound: Boolean(lastPage),
+      pagesFetched,
+      pageLimitReached:
+        pagesFetched >= pageBudget && lastPage?.history.hasMore === true,
+      historyHasMore: lastPage?.history.hasMore ?? false,
+      boundary: lastPage?.history.boundary,
+    };
+  } catch (error) {
+    const connection = await connectionPromise;
+    return {
+      platform: args.platform,
+      items,
+      source: getInteractionHistoryEvidenceSource({
+        liveSucceeded: false,
+        hasCachedConversation: args.hasCachedConversation,
+      }),
+      connection,
+      refreshAttempted: true,
+      refreshSucceeded: false,
+      conversationFound: items.length > 0,
+      pagesFetched,
+      pageLimitReached: false,
+      historyHasMore: false,
+      error: getProviderErrorMessage(error),
+    };
   }
+}
 
-  return { providerItems, pagination };
+function readCachedProviderHistory(args: {
+  platform: Platform;
+  hasCachedConversation: boolean;
+  connection: InteractionHistoryConnectionState;
+}): ProviderRead {
+  return {
+    platform: args.platform,
+    items: [],
+    source: "cached",
+    connection: args.connection,
+    refreshAttempted: false,
+    refreshSucceeded: false,
+    conversationFound: args.hasCachedConversation,
+    pagesFetched: 0,
+    pageLimitReached: false,
+    historyHasMore: false,
+  };
 }
 
 export const getProspectInteractionHistory = createTool({
   description:
-    "Read the actual interaction history between the workspace user and the selected prospect: X/Twitter or LinkedIn DMs, comments, and replies, including direction and timestamps. Use this before answering what was said, what happened, who replied, or how the relationship has progressed. For older DMs, pass the opaque cursor returned in coverage with exactly one platform; for a date range, pass since and inspect coverage for provider limits. You must disclose x_30_day_limit when X/Twitter coverage reports it. The selected prospect is resolved from the current prospect thread or an explicit tag in the main workspace thread.",
-  inputSchema: z.object({
-    platform: platformSchema
-      .optional()
-      .default("all")
-      .describe("Read X, LinkedIn, or both platforms."),
-    kinds: z
-      .array(kindSchema)
-      .min(1)
-      .optional()
-      .default(["dm", "comment", "reply"])
-      .describe("Interaction types to include."),
-    direction: directionSchema
-      .optional()
-      .default("all")
-      .describe("Read sent interactions, received interactions, or both."),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(50)
-      .optional()
-      .default(20)
-      .describe("Maximum number of interactions to return."),
-    since: z
-      .string()
-      .datetime({ offset: true })
-      .optional()
-      .describe(
-        "Optional ISO-8601 lower time boundary. The tool deliberately reads up to four bounded older DM pages to reach it."
-      ),
-    cursor: z
-      .string()
-      .min(1)
-      .optional()
-      .describe(
-        "Opaque older-DM cursor returned in coverage. Only valid with one platform and when DMs are included."
-      ),
-    refresh: z
-      .boolean()
-      .optional()
-      .default(true)
-      .describe(
-        "Refresh connected-platform DM snapshots before reading when possible."
-      ),
-  }),
+    "Read the actual interaction history between the workspace user and the selected prospect: X/Twitter or LinkedIn DMs, comments, and replies, including direction and timestamps. Use this before answering what was said, what happened, who replied, or how the relationship has progressed. The backend owns provider pagination: a normal read fetches the latest bounded DM page, and a since read may fetch up to four bounded pages. Never ask for or provide provider cursors. Inspect history.evidence before drawing conclusions: live means the provider read succeeded now; cached means a live read could not be verified and the items are previously synced; failed means no trustworthy DM evidence was available. Disclose an X/Twitter x_30_day_limit boundary when present. The selected prospect is resolved from the current prospect thread or an explicit tag in the main workspace thread.",
+  inputSchema: getProspectInteractionHistoryInputSchema,
   execute: async (ctx, args): Promise<GetProspectInteractionHistoryResult> => {
     try {
       const selected = await resolveSelectedThreadContext(
@@ -307,21 +405,6 @@ export const getProspectInteractionHistory = createTool({
 
       const userId = ctx.userId as Id<"users">;
       const prospectId = selected.prospectId;
-      if (args.cursor && args.platform === "all") {
-        return {
-          success: false as const,
-          history: null,
-          error:
-            "An older-DM cursor is scoped to one platform. Choose X/Twitter or LinkedIn.",
-        };
-      }
-      if (args.cursor && !args.kinds.includes("dm")) {
-        return {
-          success: false as const,
-          history: null,
-          error: "An older-DM cursor can only be used when DMs are included.",
-        };
-      }
       const sinceMs = args.since ? parseIsoToTimestamp(args.since) : undefined;
       if (args.since && typeof sinceMs !== "number") {
         return {
@@ -330,39 +413,67 @@ export const getProspectInteractionHistory = createTool({
           error: "The since value must be a valid ISO-8601 timestamp.",
         };
       }
-      const refreshWarnings: string[] = [];
-      if (args.refresh && !args.cursor && args.kinds.includes("dm")) {
-        const refreshes: Array<Promise<unknown>> = [];
-        if (args.platform === "all" || args.platform === "twitter") {
-          refreshes.push(
-            ctx.runAction(internal.x.refreshProspectDmConversationInternal, {
-              userId,
-              prospectId,
-            })
-          );
-        }
-        if (args.platform === "all" || args.platform === "linkedin") {
-          refreshes.push(
-            ctx.runAction(
-              internal.linkedin.getProspectLinkedInMessageStateInternal,
-              { userId, prospectId }
-            )
-          );
-        }
 
-        const refreshResults = await Promise.allSettled(refreshes);
-        for (const result of refreshResults) {
-          if (result.status === "rejected") {
-            refreshWarnings.push(
-              result.reason instanceof Error
-                ? result.reason.message
-                : "A platform conversation refresh failed."
-            );
-          }
+      const cachedHistory: Omit<
+        ProspectInteractionHistoryResult,
+        "evidence"
+      > | null = await ctx.runQuery(
+        internal.interactions.getProspectInteractionHistoryInternal,
+        {
+          userId,
+          prospectId,
+          platform: args.platform,
+          kinds: args.kinds,
+          direction: args.direction,
+          limit: args.limit,
+          sinceMs,
         }
+      );
+      if (!cachedHistory) {
+        return {
+          success: false as const,
+          history: null,
+          error: "Prospect not found or unavailable to the current user.",
+        };
       }
 
-      const history: ProspectInteractionHistoryResult | null =
+      const platforms = getPlatforms(args.platform);
+      const providerReads = args.kinds.includes("dm")
+        ? await Promise.all(
+            platforms.map((platform) =>
+              readLiveProviderHistory({
+                ctx,
+                userId,
+                prospectId,
+                platform,
+                sinceMs,
+                hasCachedConversation: Boolean(
+                  cachedHistory.coverage.find(
+                    (coverage) => coverage.platform === platform
+                  )?.hasConversation
+                ),
+              })
+            )
+          )
+        : await Promise.all(
+            platforms.map(async (platform) =>
+              readCachedProviderHistory({
+                platform,
+                hasCachedConversation: Boolean(
+                  cachedHistory.coverage.find(
+                    (coverage) => coverage.platform === platform
+                  )?.hasConversation
+                ),
+                connection: await getConnectionState({
+                  ctx,
+                  userId,
+                  platform,
+                }),
+              })
+            )
+          );
+
+      const history: Omit<ProspectInteractionHistoryResult, "evidence"> | null =
         await ctx.runQuery(
           internal.interactions.getProspectInteractionHistoryInternal,
           {
@@ -383,46 +494,47 @@ export const getProspectInteractionHistory = createTool({
         };
       }
 
-      if (args.cursor) {
-        if (
-          args.platform === "all" ||
-          !isCurrentConversationHistoryCursor({
-            cursor: args.cursor,
-            platform: args.platform,
-            coverage: history.coverage,
-          })
-        ) {
-          return {
-            success: false as const,
-            history: null,
-            error:
-              "That older-DM cursor is no longer valid. Start a fresh history read.",
-          };
-        }
-      }
-
-      const providerRead = await readProviderDmPages({
-        ctx,
-        userId,
-        prospectId,
-        platform: args.platform,
-        cursor: args.cursor,
-        sinceMs,
-        cachedCoverage: history.coverage,
-      });
+      const readsByPlatform = new Map(
+        providerReads.map((read) => [read.platform, read] as const)
+      );
       const merged = mergeHistoryItems({
         cached: history.items,
-        provider: providerRead.providerItems,
+        provider: providerReads.flatMap((read) => read.items),
         direction: args.direction,
         limit: args.limit,
       });
       const coverage = history.coverage.map((coverageItem) => {
-        const providerPagination = providerRead.pagination.get(
-          coverageItem.platform
-        );
-        return providerPagination
-          ? { ...coverageItem, ...providerPagination }
-          : coverageItem;
+        const read = readsByPlatform.get(coverageItem.platform);
+        return {
+          ...coverageItem,
+          historyHasMore: read?.historyHasMore ?? coverageItem.historyHasMore,
+          historyBoundary: read?.boundary ?? coverageItem.historyBoundary,
+          providerPagesFetched: read?.pagesFetched ?? 0,
+          providerPageLimitReached: read?.pageLimitReached ?? false,
+        };
+      });
+      const evidence = coverage.map((coverageItem) => {
+        const read = readsByPlatform.get(coverageItem.platform);
+        const lastSuccessfulSyncAt = coverageItem.lastSyncSuccessAt;
+        return {
+          platform: coverageItem.platform,
+          source: read?.source ?? "cached",
+          connection: read?.connection ?? "unknown",
+          refreshAttempted: read?.refreshAttempted ?? false,
+          refreshSucceeded: read?.refreshSucceeded ?? false,
+          conversationFound:
+            read?.conversationFound ?? coverageItem.hasConversation,
+          pagesFetched: read?.pagesFetched ?? 0,
+          pageLimitReached: read?.pageLimitReached ?? false,
+          lastSuccessfulSyncAt,
+          lastSyncAttemptAt: coverageItem.lastSyncAttemptAt,
+          staleForMs:
+            typeof lastSuccessfulSyncAt === "number"
+              ? Math.max(0, history.queriedAt - lastSuccessfulSyncAt)
+              : undefined,
+          boundary: read?.boundary ?? coverageItem.historyBoundary,
+          error: read?.error ?? coverageItem.syncError,
+        } satisfies InteractionHistoryProviderEvidence;
       });
 
       return {
@@ -433,10 +545,14 @@ export const getProspectInteractionHistory = createTool({
           truncated:
             history.truncated ||
             merged.truncated ||
-            coverage.some((coverageItem) => coverageItem.historyHasMore),
+            coverage.some(
+              (coverageItem) =>
+                coverageItem.historyHasMore ||
+                coverageItem.providerPageLimitReached
+            ),
           coverage,
+          evidence,
         },
-        refreshWarnings,
       };
     } catch (error) {
       return {

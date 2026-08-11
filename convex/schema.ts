@@ -209,9 +209,29 @@ export default defineSchema({
     activitySubscriptionsNextRetryAt: v.optional(v.number()),
     activitySubscriptionsLastError: v.optional(v.string()),
     activitySubscriptionsLastAuthMode: v.optional(xActivityAuthModeValidator),
+    /** X Activity health is tracked per capability so post delivery cannot mask broken DMs. */
+    dmActivitySubscriptionStatus: v.optional(
+      xActivitySubscriptionStatusValidator
+    ),
+    dmActivitySubscriptionsEnsuredAt: v.optional(v.number()),
+    dmActivitySubscriptionsLastAttemptAt: v.optional(v.number()),
+    dmActivitySubscriptionsNextRetryAt: v.optional(v.number()),
+    dmActivitySubscriptionsLastError: v.optional(v.string()),
+    dmActivitySubscriptionsLastAuthMode: v.optional(xActivityAuthModeValidator),
+    postActivitySubscriptionStatus: v.optional(
+      xActivitySubscriptionStatusValidator
+    ),
+    postActivitySubscriptionsEnsuredAt: v.optional(v.number()),
+    postActivitySubscriptionsLastAttemptAt: v.optional(v.number()),
+    postActivitySubscriptionsNextRetryAt: v.optional(v.number()),
+    postActivitySubscriptionsLastError: v.optional(v.string()),
+    postActivitySubscriptionsLastAuthMode: v.optional(
+      xActivityAuthModeValidator
+    ),
   })
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"])
+    .index("by_status", ["status"])
     .index("by_x_user_id", ["xUserId"]),
 
   xAuthSessions: defineTable({

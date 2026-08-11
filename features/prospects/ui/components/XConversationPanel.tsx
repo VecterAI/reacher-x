@@ -488,7 +488,9 @@ export function XConversationPanel({
                   <ConversationHistoryPagination
                     conversationKey={`${prospectId}:${data.conversationId ?? "pending"}`}
                     messageCount={data.messages.length}
-                    hasMore={data.history?.hasMore === true}
+                    hasMore={
+                      data.eligibility.enabled && data.history?.hasMore === true
+                    }
                     isLoading={isLoadingOlder}
                     loadMoreError={loadOlderError}
                     onLoadMore={() => void loadOlder()}

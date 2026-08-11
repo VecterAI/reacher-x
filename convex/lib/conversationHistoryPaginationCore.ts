@@ -120,14 +120,20 @@ export function buildConversationHistoryPageMetadata(args: {
   platform: "twitter" | "linkedin";
 }): ConversationHistoryPageMetadata {
   const hasMore = Boolean(args.providerCursor) && !args.reachedSince;
+  // Reaching the caller's requested lower bound is complete coverage for that
+  // request. X's 30-day boundary is only meaningful when the provider itself
+  // has no older page left before that requested boundary was reached.
+  const boundary = args.reachedSince
+    ? "complete"
+    : hasMore
+      ? undefined
+      : args.platform === "twitter"
+        ? "x_30_day_limit"
+        : "complete";
   return {
     nextCursor: hasMore ? args.providerCursor : undefined,
     hasMore,
-    ...(hasMore
-      ? {}
-      : {
-          boundary: args.platform === "twitter" ? "x_30_day_limit" : "complete",
-        }),
+    ...(boundary ? { boundary } : {}),
   };
 }
 

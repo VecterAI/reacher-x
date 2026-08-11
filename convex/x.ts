@@ -37,6 +37,7 @@ import {
   shouldPersistRecentConversationHistoryPage,
   type ConversationHistoryPageMetadata,
 } from "./lib/conversationHistoryPaginationCore";
+import { getXActivitySubscriptionHealth } from "./lib/xActivityReconciliationCore";
 import { getTwitterActionCatalogEntry } from "./lib/twitterActionCatalog";
 import { getTwitterViewerStatesForUser } from "./lib/twitterViewerStateService";
 import { userTimelineModeValidator } from "./validators";
@@ -406,7 +407,7 @@ async function persistDmConversationSnapshot(
     lastSyncAttemptAt?: number;
     lastSyncSuccessAt?: number;
     nextSyncAllowedAt?: number;
-    lastSyncErrorCode?: "rate_limited" | "activity_degraded";
+    lastSyncErrorCode?: "rate_limited" | "activity_degraded" | "provider_error";
     lastSyncErrorMessage?: string;
     history?: ConversationHistoryPageMetadata;
     historyOldestLoadedAt?: number;
@@ -465,11 +466,11 @@ function buildCachedDmWarning(args: {
   }
 
   const account = args.account;
+  const dmHealth = getXActivitySubscriptionHealth(account ?? {}, "dm");
   if (
     args.connectionStatus.status === "connected" &&
     args.connectionStatus.isConnected &&
-    account?.activitySubscriptionStatus &&
-    account.activitySubscriptionStatus !== "healthy" &&
+    dmHealth.status !== "healthy" &&
     (typeof conversation?.lastSyncSuccessAt !== "number" ||
       getCurrentUTCTimestamp() - conversation.lastSyncSuccessAt >
         DM_PANEL_FRESH_MS)
@@ -479,12 +480,8 @@ function buildCachedDmWarning(args: {
       message:
         "Realtime DM activity is temporarily degraded. Messaging still works, but live updates may lag.",
       retryAfterMs:
-        typeof account.activitySubscriptionsNextRetryAt === "number"
-          ? Math.max(
-              0,
-              account.activitySubscriptionsNextRetryAt -
-                getCurrentUTCTimestamp()
-            )
+        typeof dmHealth.nextRetryAt === "number"
+          ? Math.max(0, dmHealth.nextRetryAt - getCurrentUTCTimestamp())
           : undefined,
     };
   }
@@ -502,6 +499,17 @@ function buildBaseDmPanelContext(args: {
   draftAttachments?: XDmAttachmentSummary[];
   actionRequestId?: string;
 }): XDmPanelContext {
+  const currentConnectionEligibility = buildDmEligibility({
+    isConnected: args.connectionStatus.isConnected,
+    missingScopes: args.connectionStatus.missingScopes,
+    receivesYourDm: args.prospectIdentity.canDm,
+    conversationId: args.cachedSnapshot?.conversation?.conversationId,
+  });
+  const canUseCachedEligibility =
+    args.connectionStatus.isConnected &&
+    !(args.connectionStatus.missingScopes ?? []).some(
+      (scope) => scope === "dm.read" || scope === "dm.write"
+    );
   return {
     platform: "twitter",
     conversationId: args.cachedSnapshot?.conversation?.conversationId,
@@ -517,6 +525,7 @@ function buildBaseDmPanelContext(args: {
       verified: args.prospectIdentity.verified,
     },
     eligibility:
+      canUseCachedEligibility &&
       args.cachedSnapshot?.conversation?.eligibilityReasonCode &&
       typeof args.cachedSnapshot?.conversation?.eligibilityEnabled === "boolean"
         ? {
@@ -527,12 +536,7 @@ function buildBaseDmPanelContext(args: {
               "DM eligibility unavailable right now.",
             conversationId: args.cachedSnapshot.conversation.conversationId,
           }
-        : buildDmEligibility({
-            isConnected: args.connectionStatus.isConnected,
-            missingScopes: args.connectionStatus.missingScopes,
-            receivesYourDm: args.prospectIdentity.canDm,
-            conversationId: args.cachedSnapshot?.conversation?.conversationId,
-          }),
+        : currentConnectionEligibility,
     messages: toCachedDmMessages(args.cachedSnapshot),
     history: {
       nextCursor:
@@ -712,6 +716,7 @@ async function syncProspectDmConversationForUser(
     historyCursor?: string;
     historySinceMs?: number;
     historyLimit?: number;
+    activitySubscriptionsEnsured: boolean;
   }
 ): Promise<XDmPanelContext> {
   const syncAttemptAt = getCurrentUTCTimestamp();
@@ -842,13 +847,6 @@ async function syncProspectDmConversationForUser(
     }
   }
 
-  const ensured = await ctx.runAction(
-    internal.xActivity.ensureDmActivitySubscriptionsForUserInternal,
-    {
-      userId: args.userId,
-    }
-  );
-
   return {
     ...args.baseContext,
     conversationId,
@@ -860,7 +858,13 @@ async function syncProspectDmConversationForUser(
     eligibility,
     messages: panelMessages,
     history,
-    warning: ensured.ensured ? undefined : args.baseContext.warning,
+    warning: args.activitySubscriptionsEnsured
+      ? undefined
+      : (args.baseContext.warning ?? {
+          code: "activity_degraded",
+          message:
+            "Realtime X/Twitter DM updates are temporarily degraded. Live history reads still work, but new messages may arrive late.",
+        }),
   };
 }
 
@@ -931,11 +935,27 @@ async function resolveProspectDmPanelContext(
   ) {
     return baseContext;
   }
+  const dmSubscriptions = await ctx.runAction(
+    internal.xActivity.ensureDmActivitySubscriptionsForUserInternal,
+    { userId }
+  );
+  const resolvedBaseContext = dmSubscriptions.ensured
+    ? baseContext.warning?.code === "activity_degraded"
+      ? { ...baseContext, warning: undefined }
+      : baseContext
+    : {
+        ...baseContext,
+        warning: baseContext.warning ?? {
+          code: "activity_degraded" as const,
+          message:
+            "Realtime X/Twitter DM updates are temporarily degraded. Live history reads still work, but new messages may arrive late.",
+        },
+      };
   const isExplicitHistoryPage =
     typeof options?.historyCursor === "string" ||
     typeof options?.historySinceMs === "number";
   if (!isExplicitHistoryPage && !shouldPerformLiveDmSync(cachedSnapshot)) {
-    return baseContext;
+    return resolvedBaseContext;
   }
 
   try {
@@ -944,18 +964,52 @@ async function resolveProspectDmPanelContext(
       prospect,
       prospectIdentity,
       connectionStatus,
-      baseContext,
+      baseContext: resolvedBaseContext,
       historyCursor: options?.historyCursor,
       historySinceMs: options?.historySinceMs,
       historyLimit: options?.historyLimit,
+      activitySubscriptionsEnsured: dmSubscriptions.ensured,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.warn("Unable to refresh X/Twitter DM panel context", {
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
       userId,
       prospectId,
     });
-    return baseContext;
+    if (resolvedBaseContext.conversationId) {
+      try {
+        await persistDmConversationSnapshot(ctx, {
+          userId,
+          prospect,
+          conversationId: resolvedBaseContext.conversationId,
+          participantUserId: resolvedBaseContext.participantUserId,
+          participantUsername: resolvedBaseContext.participantUsername,
+          eligibility: resolvedBaseContext.eligibility,
+          messages: resolvedBaseContext.messages,
+          lastSyncAttemptAt: getCurrentUTCTimestamp(),
+          lastSyncErrorCode: "provider_error",
+          lastSyncErrorMessage: message,
+        });
+      } catch (persistError) {
+        logger.warn("Unable to persist X/Twitter DM refresh failure", {
+          error:
+            persistError instanceof Error
+              ? persistError.message
+              : String(persistError),
+          userId,
+          prospectId,
+        });
+      }
+    }
+    return {
+      ...resolvedBaseContext,
+      warning: {
+        code: "provider_error",
+        message:
+          "Live X/Twitter DM history could not be refreshed. Showing last synced messages.",
+      },
+    };
   }
 }
 
@@ -999,6 +1053,14 @@ async function getProspectXDmHistoryPageForUser(
   ) {
     return null;
   }
+
+  // Every DM read is also a recovery opportunity. The ensure action is
+  // idempotent and only performs a remote reconciliation after its bounded
+  // verification window expires.
+  await ctx.runAction(
+    internal.xActivity.ensureDmActivitySubscriptionsForUserInternal,
+    { userId }
+  );
 
   const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
     userId,
@@ -1313,6 +1375,11 @@ export const completeTwitterConnection = action({
       await ctx.scheduler.runAfter(
         0,
         internal.styleMonitorActions.ensureStyleMonitor,
+        { userId }
+      );
+      await ctx.scheduler.runAfter(
+        0,
+        internal.xActivity.ensureDmActivitySubscriptionsForUserInternal,
         { userId }
       );
     }

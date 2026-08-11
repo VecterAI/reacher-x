@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   findMatchingXActivitySubscription,
+  getXActivitySubscriptionHealth,
   isDuplicateXActivitySubscriptionError,
 } from "./xActivityReconciliationCore";
 
@@ -60,5 +61,24 @@ describe("X Activity subscription reconciliation", () => {
     new Error("Subscription already exists"),
   ])("recognizes provider duplicate responses", (error) => {
     expect(isDuplicateXActivitySubscriptionError(error)).toBe(true);
+  });
+
+  test("keeps DM health independent from post subscription health", () => {
+    const account = {
+      dmActivitySubscriptionStatus: "pending_retry" as const,
+      dmActivitySubscriptionsLastError: "missing dm.received",
+      postActivitySubscriptionStatus: "healthy" as const,
+    };
+
+    expect(getXActivitySubscriptionHealth(account, "dm")).toEqual({
+      status: "pending_retry",
+      nextRetryAt: undefined,
+      lastError: "missing dm.received",
+    });
+    expect(getXActivitySubscriptionHealth(account, "post")).toEqual({
+      status: "healthy",
+      nextRetryAt: undefined,
+      lastError: undefined,
+    });
   });
 });

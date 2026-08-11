@@ -6,6 +6,40 @@ export type XActivitySubscriptionCandidate<TEvent extends string = string> = {
   tag?: string;
 };
 
+export type XActivitySubscriptionCapability = "dm" | "post";
+export type XActivitySubscriptionHealthStatus =
+  | "unknown"
+  | "healthy"
+  | "degraded"
+  | "pending_retry";
+
+type XActivitySubscriptionHealthRecord = {
+  dmActivitySubscriptionStatus?: XActivitySubscriptionHealthStatus;
+  dmActivitySubscriptionsNextRetryAt?: number;
+  dmActivitySubscriptionsLastError?: string;
+  postActivitySubscriptionStatus?: XActivitySubscriptionHealthStatus;
+  postActivitySubscriptionsNextRetryAt?: number;
+  postActivitySubscriptionsLastError?: string;
+};
+
+/** Post monitoring health must never be treated as evidence that DMs are healthy. */
+export function getXActivitySubscriptionHealth(
+  account: XActivitySubscriptionHealthRecord,
+  capability: XActivitySubscriptionCapability
+) {
+  return capability === "dm"
+    ? {
+        status: account.dmActivitySubscriptionStatus,
+        nextRetryAt: account.dmActivitySubscriptionsNextRetryAt,
+        lastError: account.dmActivitySubscriptionsLastError,
+      }
+    : {
+        status: account.postActivitySubscriptionStatus,
+        nextRetryAt: account.postActivitySubscriptionsNextRetryAt,
+        lastError: account.postActivitySubscriptionsLastError,
+      };
+}
+
 /**
  * Select an X Activity subscription by its immutable identity first. X's list
  * response may omit `webhook_id`, so webhook equality cannot be a requirement

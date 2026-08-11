@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
 import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import {
@@ -29,6 +30,23 @@ export const getXAccountByXUserIdInternal = internalQuery({
       .query("xAccounts")
       .withIndex("by_x_user_id", (q) => q.eq("xUserId", xUserId))
       .first();
+  },
+});
+
+/** Bounded account pages for scheduled subscription reconciliation. */
+export const listConnectedXAccountUserIdsInternal = internalQuery({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query("xAccounts")
+      .withIndex("by_status", (q) => q.eq("status", "connected"))
+      .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map((account) => account.userId),
+    };
   },
 });
 
@@ -142,7 +160,20 @@ export const patchXAccountInternal = internalMutation({
       return null;
     }
 
-    await ctx.db.patch(existing._id, patch);
+    const normalizedPatch = {
+      ...(patch as Record<string, unknown>),
+    };
+    // `undefined` does not survive Convex function argument serialization.
+    // Clear capability-specific errors inside the mutation that owns the DB
+    // write whenever that capability has just been verified healthy.
+    if (normalizedPatch.dmActivitySubscriptionStatus === "healthy") {
+      normalizedPatch.dmActivitySubscriptionsLastError = undefined;
+    }
+    if (normalizedPatch.postActivitySubscriptionStatus === "healthy") {
+      normalizedPatch.postActivitySubscriptionsLastError = undefined;
+    }
+
+    await ctx.db.patch(existing._id, normalizedPatch);
     return existing._id;
   },
 });
@@ -198,6 +229,18 @@ export const disconnectXAccountInternal = internalMutation({
         activitySubscriptionsNextRetryAt: undefined,
         activitySubscriptionsLastError: undefined,
         activitySubscriptionsLastAuthMode: undefined,
+        dmActivitySubscriptionStatus: undefined,
+        dmActivitySubscriptionsEnsuredAt: undefined,
+        dmActivitySubscriptionsLastAttemptAt: undefined,
+        dmActivitySubscriptionsNextRetryAt: undefined,
+        dmActivitySubscriptionsLastError: undefined,
+        dmActivitySubscriptionsLastAuthMode: undefined,
+        postActivitySubscriptionStatus: undefined,
+        postActivitySubscriptionsEnsuredAt: undefined,
+        postActivitySubscriptionsLastAttemptAt: undefined,
+        postActivitySubscriptionsNextRetryAt: undefined,
+        postActivitySubscriptionsLastError: undefined,
+        postActivitySubscriptionsLastAuthMode: undefined,
         updatedAt: now,
       },
       now
