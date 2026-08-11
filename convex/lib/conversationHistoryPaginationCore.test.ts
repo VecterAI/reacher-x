@@ -4,6 +4,7 @@ import {
   applyConversationHistorySince,
   buildConversationHistoryPageMetadata,
   getProviderPageCursor,
+  getProviderPageHasMore,
   isCurrentConversationHistoryCursor,
   normalizeConversationHistoryPageLimit,
   selectDeterministicLinkedInChat,
@@ -23,6 +24,12 @@ describe("conversation history pagination", () => {
     expect(getProviderPageCursor({ cursor: "unipile-cursor" })).toBe(
       "unipile-cursor"
     );
+    expect(getProviderPageCursor({ next_cursor: "xchat-cursor" })).toBe(
+      "xchat-cursor"
+    );
+    expect(getProviderPageHasMore({ has_more: true })).toBe(true);
+    expect(getProviderPageHasMore({ meta: { hasMore: true } })).toBe(true);
+    expect(getProviderPageHasMore({ meta: { has_more: false } })).toBe(false);
   });
 
   test("stops a date-range read at the requested lower boundary", () => {

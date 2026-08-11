@@ -1,5 +1,5 @@
 import { parseIsoToTimestamp } from "../../shared/lib/utils/time/timeUtils";
-import { getNestedRecord, getStringProperty } from "./typeGuards";
+import { getNestedRecord, getStringProperty, isRecord } from "./typeGuards";
 
 /** Keep provider reads small enough for panels and agent tools. */
 export const DEFAULT_CONVERSATION_HISTORY_PAGE_SIZE = 25;
@@ -74,6 +74,9 @@ export function getProviderPageCursor(payload: unknown): string | undefined {
     getStringProperty(meta, "nextToken"),
     getStringProperty(meta, "next_token"),
     getStringProperty(meta, "paginationToken"),
+    getStringProperty(payload, "nextToken"),
+    getStringProperty(payload, "next_token"),
+    getStringProperty(payload, "paginationToken"),
     getStringProperty(payload, "cursor"),
     getStringProperty(payload, "nextCursor"),
     getStringProperty(payload, "next_cursor"),
@@ -81,6 +84,19 @@ export function getProviderPageCursor(payload: unknown): string | undefined {
   return candidates
     .map((candidate) => candidate?.trim())
     .find((candidate): candidate is string => Boolean(candidate));
+}
+
+/**
+ * Providers do not consistently pair a positive continuation flag with an
+ * opaque cursor. Preserve that signal so callers do not label a partial page
+ * as complete when the provider does not expose a supported continuation.
+ */
+export function getProviderPageHasMore(payload: unknown): boolean {
+  const meta = getNestedRecord(payload, "meta");
+  return [payload, meta].some(
+    (value) =>
+      isRecord(value) && (value.hasMore === true || value.has_more === true)
+  );
 }
 
 /**

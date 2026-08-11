@@ -1,7 +1,11 @@
 import type { Infer } from "convex/values";
 import type { xChatConversationHistoryEvidenceValidator } from "../validators";
 import { parseIsoToTimestamp } from "../../shared/lib/utils/time/timeUtils";
-import { getNestedRecord, getStringProperty, isRecord } from "./typeGuards";
+import { getStringProperty, isRecord } from "./typeGuards";
+import {
+  getProviderPageCursor,
+  getProviderPageHasMore,
+} from "./conversationHistoryPaginationCore";
 
 export type XChatConversationHistoryEvidence = Infer<
   typeof xChatConversationHistoryEvidenceValidator
@@ -28,6 +32,7 @@ export type XChatEventPage = {
     createdAtMs?: number;
   }>;
   nextCursor?: string;
+  hasMore: boolean;
 };
 
 export type XChatEventPageSummary = {
@@ -106,12 +111,7 @@ export function normalizeXChatConversationPage(
         )
     : [];
 
-  const meta = getNestedRecord(payload, "meta");
-  const nextCursor =
-    getStringProperty(meta, "nextToken")?.trim() ||
-    getStringProperty(meta, "next_token")?.trim() ||
-    getStringProperty(meta, "paginationToken")?.trim() ||
-    undefined;
+  const nextCursor = getProviderPageCursor(payload);
 
   return {
     conversations,
@@ -184,16 +184,12 @@ export function normalizeXChatEventPage(payload: unknown): XChatEventPage {
         )
     : [];
 
-  const meta = getNestedRecord(payload, "meta");
-  const nextCursor =
-    getStringProperty(meta, "nextToken")?.trim() ||
-    getStringProperty(meta, "next_token")?.trim() ||
-    getStringProperty(meta, "paginationToken")?.trim() ||
-    undefined;
+  const nextCursor = getProviderPageCursor(payload);
 
   return {
     events,
     ...(nextCursor ? { nextCursor } : {}),
+    hasMore: getProviderPageHasMore(payload),
   };
 }
 
