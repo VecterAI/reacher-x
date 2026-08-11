@@ -30,6 +30,88 @@ export type ProspectInteractionHistoryItem = {
   attachmentCount: number;
 };
 
+export const AGENT_PROVIDER_HISTORY_PAGE_SIZE = 25;
+export const MAX_AGENT_PROVIDER_HISTORY_PAGES = 4;
+
+export type InteractionHistoryEvidenceSource = "live" | "cached" | "failed";
+
+export type InteractionHistoryConnectionState =
+  | "connected"
+  | "disconnected"
+  | "reconnect_required"
+  | "action_required"
+  | "restricted"
+  | "unknown";
+
+export type InteractionHistoryProviderEvidence = {
+  platform: "twitter" | "linkedin";
+  source: InteractionHistoryEvidenceSource;
+  connection: InteractionHistoryConnectionState;
+  refreshAttempted: boolean;
+  refreshSucceeded: boolean;
+  conversationFound: boolean;
+  pagesFetched: number;
+  pageLimitReached: boolean;
+  lastSuccessfulSyncAt?: number;
+  lastSyncAttemptAt?: number;
+  staleForMs?: number;
+  boundary?: "complete" | "x_30_day_limit";
+  error?: string;
+};
+
+/** Normalize provider-specific account statuses for Agent-facing evidence. */
+export function normalizeInteractionHistoryConnectionState(
+  status?: string
+): InteractionHistoryConnectionState {
+  switch (status) {
+    case "connected":
+      return "connected";
+    case "reconnect_required":
+    case "expired":
+      return "reconnect_required";
+    case "action_required":
+      return "action_required";
+    case "restricted":
+      return "restricted";
+    case "disconnected":
+      return "disconnected";
+    default:
+      return "unknown";
+  }
+}
+
+/** Latest reads use one bounded page; date-range reads may walk a small budget. */
+export function getAgentProviderHistoryPageBudget(sinceMs?: number): number {
+  return typeof sinceMs === "number" ? MAX_AGENT_PROVIDER_HISTORY_PAGES : 1;
+}
+
+/** Provider cursors stay backend-owned for Agent reads. */
+export function shouldContinueAgentProviderHistoryRead(args: {
+  sinceMs?: number;
+  pagesFetched: number;
+  nextCursor?: string;
+  hasMore: boolean;
+}): boolean {
+  return (
+    typeof args.sinceMs === "number" &&
+    args.pagesFetched < MAX_AGENT_PROVIDER_HISTORY_PAGES &&
+    args.hasMore &&
+    typeof args.nextCursor === "string" &&
+    args.nextCursor.length > 0
+  );
+}
+
+/** Preserve whether the Agent is reasoning over live data or a fallback. */
+export function getInteractionHistoryEvidenceSource(args: {
+  liveSucceeded: boolean;
+  hasCachedConversation: boolean;
+}): InteractionHistoryEvidenceSource {
+  if (args.liveSucceeded) {
+    return "live";
+  }
+  return args.hasCachedConversation ? "cached" : "failed";
+}
+
 type ConversationMessage = Pick<
   Doc<"platformConversationMessages">,
   | "platform"

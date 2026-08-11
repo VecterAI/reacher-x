@@ -22,6 +22,21 @@ export type XPostActivityEventType =
 export type XActivityEventType = (typeof X_ACTIVITY_EVENT_TYPES)[number];
 export type XActivityAuthMode = "app" | "user";
 
+/**
+ * X currently returns the encrypted-chat join event with dot separators even
+ * though the subscription catalog documents the final separator as an
+ * underscore. Keep one internal value while accepting the provider alias.
+ */
+export function normalizeXActivityEventType(
+  value: string
+): XActivityEventType | undefined {
+  const normalized =
+    value === "chat.conversation.join" ? "chat.conversation_join" : value;
+  return X_ACTIVITY_EVENT_TYPES.includes(normalized as XActivityEventType)
+    ? (normalized as XActivityEventType)
+    : undefined;
+}
+
 const textEncoder = new TextEncoder();
 
 function getRequiredEnv(name: "X_API_BEARER_TOKEN"): string {
@@ -138,24 +153,23 @@ function normalizeSubscription(
       : typeof input.subscriptionId === "string"
         ? input.subscriptionId
         : undefined;
-  const eventType =
+  const rawEventType =
     typeof input.event_type === "string"
       ? input.event_type
       : typeof input.eventType === "string"
         ? input.eventType
         : undefined;
-  if (
-    !subscriptionId ||
-    !eventType ||
-    !X_ACTIVITY_EVENT_TYPES.includes(eventType as XActivityEventType)
-  ) {
+  const eventType = rawEventType
+    ? normalizeXActivityEventType(rawEventType)
+    : undefined;
+  if (!subscriptionId || !eventType) {
     return null;
   }
 
   const filter = isRecord(input.filter) ? input.filter : undefined;
   return {
     subscriptionId,
-    eventType: eventType as XActivityEventType,
+    eventType,
     filterUserId:
       typeof filter?.user_id === "string"
         ? filter.user_id

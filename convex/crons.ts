@@ -45,4 +45,11 @@ crons.interval(
   internal.memory.retryFailedCanonicalWorkspaceMemoryIndexesCron
 );
 
+crons.interval(
+  "reconcile X/Twitter DM activity subscriptions",
+  { minutes: 15 },
+  internal.xActivity.retryDmActivitySubscriptionsCron,
+  {}
+);
+
 export default crons;

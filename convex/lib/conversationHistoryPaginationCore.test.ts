@@ -61,6 +61,13 @@ describe("conversation history pagination", () => {
         platform: "twitter",
       })
     ).toEqual({ hasMore: false, boundary: "x_30_day_limit" });
+    expect(
+      buildConversationHistoryPageMetadata({
+        providerCursor: "older-page-not-needed",
+        reachedSince: true,
+        platform: "twitter",
+      })
+    ).toEqual({ hasMore: false, boundary: "complete" });
   });
 
   test("selects the exact LinkedIn attendee chat deterministically", () => {

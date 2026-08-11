@@ -13,6 +13,7 @@ import {
   getXWebhookCallbackUrl,
   listXActivitySubscriptions,
   listXWebhooks,
+  normalizeXActivityEventType,
   updateXActivitySubscription,
   type XActivityEventType,
   type XDmActivityEventType,
@@ -20,6 +21,7 @@ import {
 } from "./lib/xActivity";
 import {
   findMatchingXActivitySubscription,
+  getXActivitySubscriptionHealth,
   isDuplicateXActivitySubscriptionError,
 } from "./lib/xActivityReconciliationCore";
 import {
@@ -174,8 +176,12 @@ function normalizeWebhookEvents(
     if (!envelope) {
       continue;
     }
-    const eventType =
+    const rawEventType =
       asString(envelope.event_type) ?? asString(envelope.eventType);
+    if (!rawEventType) {
+      continue;
+    }
+    const eventType = normalizeXActivityEventType(rawEventType);
     if (!eventType) {
       continue;
     }
@@ -608,29 +614,22 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
         typeof subscription.webhookId === "string" &&
         validLocalWebhookIds.has(subscription.webhookId)
     )?.webhookId;
-    if (localWebhookId && hasAllLocalSubscriptions) {
-      await ctx.runMutation(internal.xStore.patchXAccountInternal, {
-        userId: args.userId,
-        patch: {
-          activitySubscriptionStatus: "healthy",
-          activitySubscriptionsEnsuredAt: now,
-          activitySubscriptionsLastAttemptAt: now,
-          activitySubscriptionsNextRetryAt: undefined,
-          activitySubscriptionsLastError: undefined,
-        },
-      });
+    const dmHealth = getXActivitySubscriptionHealth(account, "dm");
+    const isRecentlyVerified =
+      dmHealth.status === "healthy" &&
+      typeof dmHealth.nextRetryAt === "number" &&
+      dmHealth.nextRetryAt > now;
+    if (localWebhookId && hasAllLocalSubscriptions && isRecentlyVerified) {
       return { ensured: true, webhookId: localWebhookId };
     }
 
     const isPendingRetryWindow =
-      account.activitySubscriptionStatus === "pending_retry" &&
-      typeof account.activitySubscriptionsNextRetryAt === "number" &&
-      account.activitySubscriptionsNextRetryAt > now;
+      dmHealth.status === "pending_retry" &&
+      typeof dmHealth.nextRetryAt === "number" &&
+      dmHealth.nextRetryAt > now;
     const shouldAttemptDuplicateReconciliation =
       isPendingRetryWindow &&
-      isDuplicateXActivitySubscriptionError(
-        account.activitySubscriptionsLastError
-      );
+      isDuplicateXActivitySubscriptionError(dmHealth.lastError);
 
     if (isPendingRetryWindow && !shouldAttemptDuplicateReconciliation) {
       return { ensured: false };
@@ -639,7 +638,7 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
     await ctx.runMutation(internal.xStore.patchXAccountInternal, {
       userId: args.userId,
       patch: {
-        activitySubscriptionsLastAttemptAt: now,
+        dmActivitySubscriptionsLastAttemptAt: now,
       },
     });
 
@@ -670,13 +669,13 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
       await ctx.runMutation(internal.xStore.patchXAccountInternal, {
         userId: args.userId,
         patch: {
-          activitySubscriptionStatus: "healthy",
-          activitySubscriptionsEnsuredAt: now,
-          activitySubscriptionsLastAttemptAt: now,
-          activitySubscriptionsNextRetryAt:
+          dmActivitySubscriptionStatus: "healthy",
+          dmActivitySubscriptionsEnsuredAt: now,
+          dmActivitySubscriptionsLastAttemptAt: now,
+          dmActivitySubscriptionsNextRetryAt:
             now + ACTIVITY_ENSURE_SUCCESS_TTL_MS,
-          activitySubscriptionsLastError: undefined,
-          activitySubscriptionsLastAuthMode: authMode,
+          dmActivitySubscriptionsLastError: undefined,
+          dmActivitySubscriptionsLastAuthMode: authMode,
         },
       });
 
@@ -692,10 +691,10 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
       await ctx.runMutation(internal.xStore.patchXAccountInternal, {
         userId: args.userId,
         patch: {
-          activitySubscriptionStatus: "pending_retry",
-          activitySubscriptionsLastAttemptAt: now,
-          activitySubscriptionsNextRetryAt: nextRetryAt,
-          activitySubscriptionsLastError: message,
+          dmActivitySubscriptionStatus: "pending_retry",
+          dmActivitySubscriptionsLastAttemptAt: now,
+          dmActivitySubscriptionsNextRetryAt: nextRetryAt,
+          dmActivitySubscriptionsLastError: message,
         },
       });
 
@@ -769,25 +768,19 @@ export const ensurePostCreateActivitySubscriptionForUserInternal =
           typeof subscription.webhookId === "string" &&
           validLocalWebhookIds.has(subscription.webhookId)
       )?.webhookId;
-      if (localWebhookId && hasLocalPostCreate) {
-        await ctx.runMutation(internal.xStore.patchXAccountInternal, {
-          userId: args.userId,
-          patch: {
-            activitySubscriptionStatus: "healthy",
-            activitySubscriptionsEnsuredAt: now,
-            activitySubscriptionsLastAttemptAt: now,
-            activitySubscriptionsNextRetryAt:
-              now + ACTIVITY_ENSURE_SUCCESS_TTL_MS,
-            activitySubscriptionsLastError: undefined,
-          },
-        });
+      const postHealth = getXActivitySubscriptionHealth(account, "post");
+      const isRecentlyVerified =
+        postHealth.status === "healthy" &&
+        typeof postHealth.nextRetryAt === "number" &&
+        postHealth.nextRetryAt > now;
+      if (localWebhookId && hasLocalPostCreate && isRecentlyVerified) {
         return { ensured: true, webhookId: localWebhookId };
       }
 
       const isPendingRetryWindow =
-        account.activitySubscriptionStatus === "pending_retry" &&
-        typeof account.activitySubscriptionsNextRetryAt === "number" &&
-        account.activitySubscriptionsNextRetryAt > now;
+        postHealth.status === "pending_retry" &&
+        typeof postHealth.nextRetryAt === "number" &&
+        postHealth.nextRetryAt > now;
       if (isPendingRetryWindow) {
         return { ensured: false };
       }
@@ -795,7 +788,7 @@ export const ensurePostCreateActivitySubscriptionForUserInternal =
       await ctx.runMutation(internal.xStore.patchXAccountInternal, {
         userId: args.userId,
         patch: {
-          activitySubscriptionsLastAttemptAt: now,
+          postActivitySubscriptionsLastAttemptAt: now,
         },
       });
 
@@ -820,13 +813,13 @@ export const ensurePostCreateActivitySubscriptionForUserInternal =
         await ctx.runMutation(internal.xStore.patchXAccountInternal, {
           userId: args.userId,
           patch: {
-            activitySubscriptionStatus: "healthy",
-            activitySubscriptionsEnsuredAt: now,
-            activitySubscriptionsLastAttemptAt: now,
-            activitySubscriptionsNextRetryAt:
+            postActivitySubscriptionStatus: "healthy",
+            postActivitySubscriptionsEnsuredAt: now,
+            postActivitySubscriptionsLastAttemptAt: now,
+            postActivitySubscriptionsNextRetryAt:
               now + ACTIVITY_ENSURE_SUCCESS_TTL_MS,
-            activitySubscriptionsLastError: undefined,
-            activitySubscriptionsLastAuthMode: authMode,
+            postActivitySubscriptionsLastError: undefined,
+            postActivitySubscriptionsLastAuthMode: authMode,
           },
         });
         return { ensured: true, webhookId };
@@ -840,10 +833,10 @@ export const ensurePostCreateActivitySubscriptionForUserInternal =
         await ctx.runMutation(internal.xStore.patchXAccountInternal, {
           userId: args.userId,
           patch: {
-            activitySubscriptionStatus: "pending_retry",
-            activitySubscriptionsLastAttemptAt: now,
-            activitySubscriptionsNextRetryAt: nextRetryAt,
-            activitySubscriptionsLastError: message,
+            postActivitySubscriptionStatus: "pending_retry",
+            postActivitySubscriptionsLastAttemptAt: now,
+            postActivitySubscriptionsNextRetryAt: nextRetryAt,
+            postActivitySubscriptionsLastError: message,
           },
         });
         console.warn("[XActivity] Failed to ensure post.create subscription", {
@@ -854,6 +847,68 @@ export const ensurePostCreateActivitySubscriptionForUserInternal =
       }
     },
   });
+
+type ConnectedXAccountUserIdPage = {
+  page: Id<"users">[];
+  isDone: boolean;
+  continueCursor: string;
+};
+
+/**
+ * Reconcile every connected account in bounded pages. Each per-user ensure is
+ * already idempotent and avoids provider calls while the complete local DM
+ * subscription set is healthy.
+ */
+export const retryDmActivitySubscriptionsCron = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const accounts: ConnectedXAccountUserIdPage = await ctx.runQuery(
+      internal.xStore.listConnectedXAccountUserIdsInternal,
+      {
+        paginationOpts: {
+          numItems: 10,
+          cursor: args.cursor ?? null,
+        },
+      }
+    );
+    let ensured = 0;
+    for (const userId of accounts.page) {
+      try {
+        const result: { ensured: boolean } = await ctx.runAction(
+          internal.xActivity.ensureDmActivitySubscriptionsForUserInternal,
+          { userId }
+        );
+        if (result.ensured) {
+          ensured += 1;
+        }
+      } catch (error) {
+        console.warn(
+          "[XActivity] Scheduled DM subscription reconciliation failed",
+          {
+            userId: String(userId),
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
+    }
+
+    if (!accounts.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.xActivity.retryDmActivitySubscriptionsCron,
+        { cursor: accounts.continueCursor }
+      );
+    }
+
+    return {
+      checked: accounts.page.length,
+      ensured,
+      hasMore: !accounts.isDone,
+    };
+  },
+});
 
 export const handleWebhookPayloadInternal = internalAction({
   args: {

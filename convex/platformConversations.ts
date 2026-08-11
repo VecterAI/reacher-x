@@ -179,6 +179,8 @@ export const upsertConversationSnapshotInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = getCurrentUTCTimestamp();
+    const didSyncSucceed = typeof args.lastSyncSuccessAt === "number";
+    const hasNewHistoryState = typeof args.historyHasMore === "boolean";
     const existingConversation = await ctx.db
       .query("platformConversations")
       .withIndex("by_user_conversation", (q) =>
@@ -229,36 +231,40 @@ export const upsertConversationSnapshotInternal = internalMutation({
         "lastSyncSuccessAt",
         existingConversation?.lastSyncSuccessAt
       ),
-      nextSyncAllowedAt: pickOptionalPatchValue(
-        args,
-        "nextSyncAllowedAt",
-        existingConversation?.nextSyncAllowedAt
-      ),
-      lastSyncErrorCode: pickOptionalPatchValue(
-        args,
-        "lastSyncErrorCode",
-        existingConversation?.lastSyncErrorCode
-      ),
-      lastSyncErrorMessage: pickOptionalPatchValue(
-        args,
-        "lastSyncErrorMessage",
-        existingConversation?.lastSyncErrorMessage
-      ),
-      historyNextCursor: pickOptionalPatchValue(
-        args,
-        "historyNextCursor",
-        existingConversation?.historyNextCursor
-      ),
+      nextSyncAllowedAt: didSyncSucceed
+        ? undefined
+        : pickOptionalPatchValue(
+            args,
+            "nextSyncAllowedAt",
+            existingConversation?.nextSyncAllowedAt
+          ),
+      lastSyncErrorCode: didSyncSucceed
+        ? undefined
+        : pickOptionalPatchValue(
+            args,
+            "lastSyncErrorCode",
+            existingConversation?.lastSyncErrorCode
+          ),
+      lastSyncErrorMessage: didSyncSucceed
+        ? undefined
+        : pickOptionalPatchValue(
+            args,
+            "lastSyncErrorMessage",
+            existingConversation?.lastSyncErrorMessage
+          ),
+      historyNextCursor: hasNewHistoryState
+        ? args.historyHasMore
+          ? args.historyNextCursor
+          : undefined
+        : existingConversation?.historyNextCursor,
       historyHasMore: pickOptionalPatchValue(
         args,
         "historyHasMore",
         existingConversation?.historyHasMore
       ),
-      historyBoundary: pickOptionalPatchValue(
-        args,
-        "historyBoundary",
-        existingConversation?.historyBoundary
-      ),
+      historyBoundary: hasNewHistoryState
+        ? args.historyBoundary
+        : existingConversation?.historyBoundary,
       historyOldestLoadedAt:
         typeof args.historyOldestLoadedAt === "number"
           ? Math.min(

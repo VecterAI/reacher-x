@@ -1839,9 +1839,9 @@ export const ensureTwitterManualReplyRecoveryForUserInternal = internalAction({
 
     const now = getCurrentUTCTimestamp();
     const isPendingRetryWindow =
-      account.activitySubscriptionStatus === "pending_retry" &&
-      typeof account.activitySubscriptionsNextRetryAt === "number" &&
-      account.activitySubscriptionsNextRetryAt > now;
+      account.postActivitySubscriptionStatus === "pending_retry" &&
+      typeof account.postActivitySubscriptionsNextRetryAt === "number" &&
+      account.postActivitySubscriptionsNextRetryAt > now;
     if (isPendingRetryWindow) {
       await ctx.runMutation(
         internalRecovery.syncTwitterManualReplyRecoveryStatusForUserInternal,
@@ -1854,7 +1854,8 @@ export const ensureTwitterManualReplyRecoveryForUserInternal = internalAction({
       await ctx.scheduler.runAfter(
         Math.max(
           0,
-          account.activitySubscriptionsNextRetryAt! - getCurrentUTCTimestamp()
+          account.postActivitySubscriptionsNextRetryAt! -
+            getCurrentUTCTimestamp()
         ),
         internalRecovery.ensureTwitterManualReplyRecoveryForUserInternal,
         { userId: args.userId }
@@ -1902,8 +1903,8 @@ export const ensureTwitterManualReplyRecoveryForUserInternal = internalAction({
         { userId: args.userId }
       );
       const retryAt =
-        typeof latestAccount?.activitySubscriptionsNextRetryAt === "number"
-          ? latestAccount.activitySubscriptionsNextRetryAt
+        typeof latestAccount?.postActivitySubscriptionsNextRetryAt === "number"
+          ? latestAccount.postActivitySubscriptionsNextRetryAt
           : now + TWITTER_ACTIVITY_RETRY_DELAY_MS;
       await ctx.scheduler.runAfter(
         Math.max(0, retryAt - getCurrentUTCTimestamp()),

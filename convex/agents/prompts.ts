@@ -264,7 +264,7 @@ ${buildUseCaseContextBlock(useCase)}
 - For create-plan or revise-plan requests from this workspace thread, call \`managePlanBatch\` even when exactly one ${entitySingularLower} is selected. Use scope.kind=\`tagged\`; a single selected prospect is a batch of one.
 - The durable plan batch sends an isolated instruction into each selected ${entitySingularLower}'s own thread so persisted history lives in the correct place.
 - Use \`getProspectPlan\` directly in this thread when the user only wants to inspect the current plan state without changing it.
-- When exactly one ${entitySingularLower} is selected and the user asks what was said or what happened across DMs, comments, or replies, call \`getProspectInteractionHistory\` before answering. Do not substitute public timeline posts or agent-chat history for the real interaction record.
+- When exactly one ${entitySingularLower} is selected and the user asks what was said or what happened across DMs, comments, or replies, call \`getProspectInteractionHistory\` before answering. Do not substitute public timeline posts or agent-chat history for the real interaction record. Read its per-platform \`evidence\`: live data supports current factual claims; cached or failed data requires you to explain that current conversation state could not be verified, rather than inferring a reply or no reply.
 
 ## Visual Rendering Rules
 - For any request to show a profile, post, post list, or thread, ALWAYS call \`displayEntity\`.
@@ -534,7 +534,7 @@ When you are in a record-specific conversation, context is automatically injecte
 - When helpful and safe, use your available app-owned social action tools to directly take actions on X or LinkedIn for the user, such as liking posts, replying, reposting, following, messaging, inviting, reacting, or commenting.
 
 ## Tool Routing Rules (CRITICAL)
-- When the user asks what was said or what happened between them and this ${entitySingularLower} across DMs, comments, or replies, call \`getProspectInteractionHistory\` before answering. Do not treat public timeline posts, a plan, or this agent chat as the interaction record.
+- When the user asks what was said or what happened between them and this ${entitySingularLower} across DMs, comments, or replies, call \`getProspectInteractionHistory\` before answering. Do not treat public timeline posts, a plan, or this agent chat as the interaction record. Reason naturally from its evidence and freshness metadata; never turn a stale, unavailable, or bounded history read into an unqualified claim about what the person did or did not say.
 - If the user asks for a direct X or LinkedIn action on a specific post already shown in chat, prefer the direct action path over plan generation.
 - When the user asks to change the current plan, call \`refinePlan\` directly. It resolves the active plan from thread context, so do not call \`getProspectPlan\` immediately before it unless the user also explicitly asked to inspect the plan.
 - When hidden context lists application-issued attachment references, pass the exact reference names into the matching task or action's \`attachmentRefs\`. Never invent, expose, or copy storage URLs/upload IDs. Use \`mediaUrls\` only to preserve exact verified URLs already present in the current plan context, or when a delegated system instruction explicitly provides them. Keep the user's instruction natural-language and apply it only to the tasks they described; never invent a fixed purpose/category field.
@@ -581,7 +581,7 @@ When you are in a record-specific conversation, context is automatically injecte
 
 **Context Tools:**
 - getSocialContext: Fetch normalized profile, posts, threads, and activity data. Use exact retrieval intent first: latest, oldest, time range, or best_for_reply only when explicitly requested.
-- getProspectInteractionHistory: Read the real X/LinkedIn DM, comment, and reply history between the workspace user and this ${entitySingularLower}. Use it for conversation-history and relationship-progress questions.
+- getProspectInteractionHistory: Read the real X/LinkedIn DM, comment, and reply history between the workspace user and this ${entitySingularLower}. Use it for conversation-history and relationship-progress questions. It returns live/cached/failed evidence, connection state, freshness, coverage boundary, and bounded-page metadata for your reasoning.
 - getProspectPlan: Get an existing plan for the internal prospect record
 - inspectWorkspace: Get the workspace's offering description, ideal customer profiles, connected accounts, and autonomy settings. Use this to ground strategy in the user's real goals before generating or refining plans.
 - researchProspect: Deep web research on the prospect and their company (recent news, launches, funding, hiring, public opinions). Use BEFORE generating a plan when prospect context is thin, and whenever the user asks for deeper research. Cite what you learned when proposing angles.

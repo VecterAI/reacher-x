@@ -2829,10 +2829,9 @@ async function resolveProspectLinkedInPanelContext(
 }
 
 /**
- * Fetch one bounded LinkedIn provider page for an already-resolved prospect
- * conversation. The page action intentionally does not rediscover chats: the
- * cached conversation id scopes the opaque provider cursor and keeps one
- * provider message request per page.
+ * Fetch one bounded LinkedIn provider page. A latest read may discover the
+ * prospect chat when no snapshot exists; continuation cursors remain scoped to
+ * an already-resolved cached conversation.
  */
 async function getProspectLinkedInHistoryPageForUser(
   ctx: any,
@@ -2872,14 +2871,44 @@ async function getProspectLinkedInHistoryPageForUser(
     internal.platformConversations.getConversationSnapshotInternal,
     { userId, platform: "linkedin", prospectId }
   );
-  const conversation = cachedSnapshot?.conversation;
-  if (!conversation?.conversationId) {
+  const prospectIdentity = getProspectLinkedInIdentity(prospect);
+  if (!prospectIdentity.providerId) {
     return null;
   }
+  let conversation = cachedSnapshot?.conversation;
+  let resolvedChat: UnipileChat | null = null;
+  if (!conversation?.conversationId) {
+    // Provider cursors are only safe for an already-resolved panel snapshot.
+    // A fresh backend-owned Agent read may discover the latest matching chat.
+    if (args.cursor) {
+      return null;
+    }
+    const chats = await listLinkedInChatsForAttendeeOrEmpty({
+      attendeeId: prospectIdentity.providerId,
+      accountId: storedAccount.accountId,
+      limit: 25,
+    });
+    resolvedChat = selectDeterministicLinkedInChat(
+      chats,
+      prospectIdentity.providerId ?? ""
+    );
+    if (!resolvedChat) {
+      return null;
+    }
+    conversation = {
+      conversationId: resolvedChat.id,
+      sourceId: resolvedChat.provider_id,
+      participantProviderId:
+        resolvedChat.attendee_provider_id ?? prospectIdentity.providerId,
+    };
+  }
 
-  const prospectIdentity = getProspectLinkedInIdentity(prospect);
+  const conversationId = conversation.conversationId;
+  if (!conversationId) {
+    return null;
+  }
   const page = await loadLinkedInConversationHistoryPage({
-    chatId: conversation.conversationId,
+    chatId: conversationId,
     cursor: args.cursor,
     limit: args.limit,
     sinceMs: args.sinceMs,
@@ -2887,21 +2916,23 @@ async function getProspectLinkedInHistoryPageForUser(
   const eligibility = buildEligibility({
     status: connectionStatus,
     providerId: prospectIdentity.providerId,
-    conversationId: conversation.conversationId,
+    conversationId,
   });
   if (shouldPersistRecentConversationHistoryPage(args)) {
     await persistConversationSnapshot(ctx, {
       userId,
       prospect,
       accountId: storedAccount.accountId,
-      chat: {
-        id: conversation.conversationId,
-        account_id: storedAccount.accountId,
-        account_type: "LINKEDIN",
-        provider_id: conversation.sourceId,
-        attendee_provider_id:
-          conversation.participantProviderId ?? prospectIdentity.providerId,
-      },
+      chat:
+        resolvedChat ??
+        ({
+          id: conversationId,
+          account_id: storedAccount.accountId,
+          account_type: "LINKEDIN",
+          provider_id: conversation.sourceId,
+          attendee_provider_id:
+            conversation.participantProviderId ?? prospectIdentity.providerId,
+        } as UnipileChat),
       prospectIdentity,
       eligibility,
       messages: page.messages,
@@ -2911,7 +2942,7 @@ async function getProspectLinkedInHistoryPageForUser(
   }
 
   return {
-    conversationId: conversation.conversationId,
+    conversationId,
     messages: page.messages,
     history: page.history,
   };
