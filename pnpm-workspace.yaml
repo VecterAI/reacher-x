@@ -4,4 +4,5 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
 patchedDependencies:
+  "@xdevplatform/chat-xdk@0.4.3": patches/@xdevplatform__chat-xdk@0.4.3.patch
   next-themes@0.4.6: patches/next-themes@0.4.6.patch

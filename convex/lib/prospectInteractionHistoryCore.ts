@@ -5,6 +5,7 @@ import type {
   prospectInteractionHistoryKindValidator,
   prospectInteractionHistoryPlatformValidator,
 } from "../validators";
+import type { XChatConversationHistoryEvidence } from "./xChatConversationHistoryCore";
 
 export type ProspectInteractionHistoryPlatform = Infer<
   typeof prospectInteractionHistoryPlatformValidator
@@ -43,6 +44,34 @@ export type InteractionHistoryConnectionState =
   | "restricted"
   | "unknown";
 
+/** Legacy DM coverage is readable plaintext when the provider returns it. */
+export type InteractionHistoryLegacyDmEvidence = {
+  source: InteractionHistoryEvidenceSource;
+  conversationFound: boolean;
+  pagesFetched: number;
+  pageLimitReached: boolean;
+  hasMore: boolean;
+  boundary?: "complete" | "x_30_day_limit";
+  error?: string;
+};
+
+/**
+ * XChat is a separate encrypted transport. Its evidence intentionally exposes
+ * only envelope metadata, never message content or raw ciphertext.
+ */
+export type InteractionHistoryXChatEvidence = Omit<
+  XChatConversationHistoryEvidence,
+  "encrypted" | "contentState"
+> & {
+  source: "live" | "failed";
+  connection: InteractionHistoryConnectionState;
+  refreshAttempted: boolean;
+  refreshSucceeded: boolean;
+  encrypted: boolean;
+  contentState: "encrypted_locked" | "unavailable";
+  error?: string;
+};
+
 export type InteractionHistoryProviderEvidence = {
   platform: "twitter" | "linkedin";
   source: InteractionHistoryEvidenceSource;
@@ -57,6 +86,8 @@ export type InteractionHistoryProviderEvidence = {
   staleForMs?: number;
   boundary?: "complete" | "x_30_day_limit";
   error?: string;
+  legacyDm: InteractionHistoryLegacyDmEvidence;
+  xChat?: InteractionHistoryXChatEvidence;
 };
 
 /** Normalize provider-specific account statuses for Agent-facing evidence. */

@@ -94,6 +94,7 @@ import {
 import {
   agentMessageContextMetadataValidator,
   urgencyLevelValidator,
+  xChatTransientContextValidator,
 } from "./validators";
 import {
   getWorkspaceUseCase,
@@ -124,6 +125,10 @@ import { buildPlanBatchReferenceCatalogContext } from "./lib/planBatchCore";
 import { buildAgentAttachmentReferenceContext } from "./lib/agentAttachmentReferenceCore";
 import { OUTREACH_AGENT_MODEL, PINNED_AGENT_MODEL } from "./lib/ai";
 import { getPostedOutreachArtifactId } from "./lib/outreachResultCore";
+import {
+  buildTransientXChatAgentContext,
+  type XChatTransientContext,
+} from "./lib/xChatAgentContextCore";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 type ReadableCtx = QueryCtx | MutationCtx | ActionCtx;
@@ -2675,6 +2680,7 @@ async function runStreamOutreachResponse(
   args: {
     threadId: string;
     promptMessageId: string;
+    transientXChatContext?: string;
   }
 ): Promise<{
   text: string;
@@ -2774,7 +2780,12 @@ async function runStreamOutreachResponse(
       promptMessageId: args.promptMessageId,
       system: buildOutreachAgentPrompt(useCase),
       tools,
-      messages: hiddenContext.messages,
+      messages: args.transientXChatContext
+        ? [
+            ...hiddenContext.messages,
+            { role: "system" as const, content: args.transientXChatContext },
+          ]
+        : hiddenContext.messages,
       model: resolvedRoute.model,
       preferHistorySearch: shouldUseHistorySearch,
       timing: streamTiming,
@@ -2783,13 +2794,15 @@ async function runStreamOutreachResponse(
       getCurrentUTCTimestamp() - streamStartedAt;
 
     const persistenceStartedAt = getCurrentUTCTimestamp();
-    await persistRawModelResponse(ctx, {
-      threadId: args.threadId,
-      agentName: "Outreach Agent",
-      request: result.request,
-      response: result.response,
-      providerMetadata: result.providerMetadata,
-    });
+    if (!args.transientXChatContext) {
+      await persistRawModelResponse(ctx, {
+        threadId: args.threadId,
+        agentName: "Outreach Agent",
+        request: result.request,
+        response: result.response,
+        providerMetadata: result.providerMetadata,
+      });
+    }
 
     const toolCalls = await result.toolCalls;
     const askHumanCalls = toolCalls.filter((tc) => tc.toolName === "askHuman");
@@ -3479,6 +3492,141 @@ export const initiateStreamingMessage = mutation({
 });
 
 /**
+ * Save the operator's visible XChat-analysis request without scheduling the
+ * normal Agent path. The browser follows this with streamSharedXChatResponse,
+ * whose decrypted context is deliberately not written to application tables.
+ */
+export const initiateSharedXChatAnalysis = mutation({
+  args: {
+    threadId: v.string(),
+    prospectId: v.id("prospects"),
+    prompt: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const prompt = args.prompt.trim();
+    if (!prompt) {
+      throw new Error("Message cannot be empty.");
+    }
+
+    const user = await requireViewerUser(ctx);
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId: args.threadId,
+    });
+    if (!thread || thread.userId !== user._id) {
+      throw new Error("Thread not found or not authorized.");
+    }
+
+    const prospect = await requireOwnedProspect(ctx, args.prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Not authorized",
+    });
+    requireProspectNotArchived(prospect);
+    const scope = await resolveAgentThreadScopeContext(ctx, args.threadId);
+    if (
+      scope.userId !== user._id ||
+      scope.workspaceId !== prospect.workspaceId ||
+      (scope.kind === "prospect" && scope.prospectId !== prospect._id) ||
+      scope.kind === "setup"
+    ) {
+      throw new Error("The XChat conversation does not match this Agent task.");
+    }
+
+    const { messageId, message } = await saveMessage(ctx, components.agent, {
+      threadId: args.threadId,
+      prompt,
+    });
+    await persistAgentMessageContext(ctx, {
+      threadId: args.threadId,
+      messageId,
+      userId: user._id,
+      metadata: null,
+    });
+
+    return { messageId, order: message.order };
+  },
+});
+
+/**
+ * Stream one Agent response with browser-decrypted, explicitly shared XChat
+ * text. The plaintext exists only in this action invocation and the model
+ * request; it is excluded from ReacherX raw-model telemetry and message
+ * context tables.
+ */
+export const streamSharedXChatResponse = action({
+  args: {
+    threadId: v.string(),
+    promptMessageId: v.string(),
+    context: xChatTransientContextValidator,
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    text: string;
+    finishReason: string | null;
+    pendingAskHuman?: boolean;
+  } | void> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+    const user = await ctx.runQuery(internal.users.getUserByWorkosIdInternal, {
+      workosUserId: identity.subject,
+    });
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const [thread, prospect, scope, promptMessage]: [
+      Awaited<ReturnType<typeof ctx.runQuery>>,
+      Awaited<ReturnType<typeof ctx.runQuery>>,
+      AgentThreadScopeContext,
+      Awaited<ReturnType<typeof getThreadMessageById>>,
+    ] = await Promise.all([
+      ctx.runQuery(components.agent.threads.getThread, {
+        threadId: args.threadId,
+      }),
+      ctx.runQuery(internal.prospects.getProspectInternal, {
+        prospectId: args.context.prospectId,
+      }),
+      resolveAgentThreadScopeContext(ctx, args.threadId),
+      getThreadMessageById(ctx, args.promptMessageId),
+    ]);
+    if (!thread || thread.userId !== user._id) {
+      throw new Error("Thread not found or not authorized.");
+    }
+    if (!promptMessage || promptMessage.threadId !== args.threadId) {
+      throw new Error("The XChat analysis message was not found.");
+    }
+    if (
+      !prospect ||
+      prospect.userId !== user._id ||
+      prospect.workspaceId !== scope.workspaceId ||
+      (scope.kind === "prospect" && scope.prospectId !== prospect._id) ||
+      scope.kind === "setup"
+    ) {
+      throw new Error("The XChat conversation does not match this Agent task.");
+    }
+
+    const transientXChatContext = buildTransientXChatAgentContext(
+      args.context as XChatTransientContext
+    );
+    return scope.kind === "prospect"
+      ? await runStreamOutreachResponse(ctx, {
+          threadId: args.threadId,
+          promptMessageId: args.promptMessageId,
+          transientXChatContext,
+        })
+      : await runStreamAgentResponse(ctx, {
+          threadId: args.threadId,
+          promptMessageId: args.promptMessageId,
+          transientXChatContext,
+        });
+  },
+});
+
+/**
  * Aborts any active agent streams for a thread owned by the current user.
  * This powers the prompt-input "Stop generating" action in the chat UI.
  */
@@ -3543,6 +3691,125 @@ export const abortThreadStream = mutation({
   },
 });
 
+async function runStreamAgentResponse(
+  ctx: ActionCtx,
+  args: {
+    threadId: string;
+    promptMessageId: string;
+    setupSourceUrl?: string;
+    transientXChatContext?: string;
+  }
+): Promise<{ text: string; finishReason: string | null } | void> {
+  try {
+    const useCase = await resolveSetupUseCaseForThread(ctx, args.threadId);
+    const surface = await resolveWorkspaceAgentSurface(ctx, args.threadId);
+    if (args.transientXChatContext && surface !== "main") {
+      throw new Error("XChat analysis is available only in the main Agent.");
+    }
+    const hiddenContext = await buildAgentTurnContextMessages(ctx, {
+      threadId: args.threadId,
+      promptMessageId: args.promptMessageId,
+    });
+    const mainMessages = args.transientXChatContext
+      ? [
+          ...hiddenContext.messages,
+          { role: "system" as const, content: args.transientXChatContext },
+        ]
+      : hiddenContext.messages;
+    const result =
+      surface === "main"
+        ? await streamMainTextWithRetry(ctx, {
+            threadId: args.threadId,
+            promptMessageId: args.promptMessageId,
+            messages: mainMessages,
+            model: hiddenContext.hasVisionInput
+              ? workspaceVisionLanguageModel
+              : undefined,
+            system: buildMainAgentPrompt(useCase),
+          })
+        : await streamSetupTextWithRetry(ctx, {
+            threadId: args.threadId,
+            promptMessageId: args.promptMessageId,
+            messages: args.setupSourceUrl
+              ? [
+                  ...hiddenContext.messages,
+                  {
+                    role: "system" as const,
+                    content: `This setup turn came from the website URL ${args.setupSourceUrl}. Pass that exact URL as sourceUrl if you call submitSetupAudience.`,
+                  },
+                ]
+              : hiddenContext.messages,
+            model: hiddenContext.hasVisionInput
+              ? workspaceVisionLanguageModel
+              : undefined,
+            system: buildSetupAgentPrompt(useCase),
+          });
+
+    // Browser-decrypted XChat text is intentionally current-turn-only. The
+    // model necessarily receives it after explicit consent, but ReacherX does
+    // not copy the raw model request/response into its telemetry table.
+    if (!args.transientXChatContext) {
+      await persistRawModelResponse(ctx, {
+        threadId: args.threadId,
+        agentName: surface === "main" ? "Main Agent" : "Setup Agent",
+        request: result.request,
+        response: result.response,
+        providerMetadata: result.providerMetadata,
+      });
+    }
+
+    return {
+      text: await result.text,
+      finishReason: await result.finishReason,
+    };
+  } catch (error) {
+    const normalizedError = normalizeUnknownError(error);
+    try {
+      const promptMessage = await getThreadMessageById(
+        ctx,
+        args.promptMessageId
+      );
+      if (promptMessage) {
+        const finalized: boolean = await ctx.runMutation(
+          internal.chat.finalizeWorkspaceAgentGenerationFailureInternal,
+          {
+            threadId: args.threadId,
+            order: promptMessage.order,
+            errorMessage: stringifyUnknownError(normalizedError),
+          }
+        );
+        if (!finalized) {
+          chatLogger.warn(
+            "Workspace agent stream failed without a pending assistant message",
+            {
+              threadId: args.threadId,
+              promptMessageId: args.promptMessageId,
+            }
+          );
+        }
+      }
+    } catch (finalizationError) {
+      chatLogger.error(
+        "Workspace agent stream failure could not be finalized",
+        {
+          threadId: args.threadId,
+          promptMessageId: args.promptMessageId,
+        },
+        normalizeUnknownError(finalizationError)
+      );
+    }
+    chatLogger.error(
+      "Workspace agent stream error",
+      {
+        threadId: args.threadId,
+        promptMessageId: args.promptMessageId,
+      },
+      normalizedError
+    );
+    throw normalizedError;
+  }
+}
+
 /**
  * Internal action that streams the agent response.
  * Per docs: https://docs.convex.dev/agents/streaming#streaming-message-deltas
@@ -3555,102 +3822,7 @@ export const streamAgentResponse = internalAction({
     promptMessageId: v.string(),
     setupSourceUrl: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    try {
-      const useCase = await resolveSetupUseCaseForThread(ctx, args.threadId);
-      const surface = await resolveWorkspaceAgentSurface(ctx, args.threadId);
-      const hiddenContext = await buildAgentTurnContextMessages(ctx, {
-        threadId: args.threadId,
-        promptMessageId: args.promptMessageId,
-      });
-      const result =
-        surface === "main"
-          ? await streamMainTextWithRetry(ctx, {
-              threadId: args.threadId,
-              promptMessageId: args.promptMessageId,
-              messages: hiddenContext.messages,
-              model: hiddenContext.hasVisionInput
-                ? workspaceVisionLanguageModel
-                : undefined,
-              system: buildMainAgentPrompt(useCase),
-            })
-          : await streamSetupTextWithRetry(ctx, {
-              threadId: args.threadId,
-              promptMessageId: args.promptMessageId,
-              messages: args.setupSourceUrl
-                ? [
-                    ...hiddenContext.messages,
-                    {
-                      role: "system" as const,
-                      content: `This setup turn came from the website URL ${args.setupSourceUrl}. Pass that exact URL as sourceUrl if you call submitSetupAudience.`,
-                    },
-                  ]
-                : hiddenContext.messages,
-              model: hiddenContext.hasVisionInput
-                ? workspaceVisionLanguageModel
-                : undefined,
-              system: buildSetupAgentPrompt(useCase),
-            });
-
-      await persistRawModelResponse(ctx, {
-        threadId: args.threadId,
-        agentName: surface === "main" ? "Main Agent" : "Setup Agent",
-        request: result.request,
-        response: result.response,
-        providerMetadata: result.providerMetadata,
-      });
-
-      return {
-        text: await result.text,
-        finishReason: await result.finishReason,
-      };
-    } catch (error) {
-      const normalizedError = normalizeUnknownError(error);
-      try {
-        const promptMessage = await getThreadMessageById(
-          ctx,
-          args.promptMessageId
-        );
-        if (promptMessage) {
-          const finalized: boolean = await ctx.runMutation(
-            internal.chat.finalizeWorkspaceAgentGenerationFailureInternal,
-            {
-              threadId: args.threadId,
-              order: promptMessage.order,
-              errorMessage: stringifyUnknownError(normalizedError),
-            }
-          );
-          if (!finalized) {
-            chatLogger.warn(
-              "Workspace agent stream failed without a pending assistant message",
-              {
-                threadId: args.threadId,
-                promptMessageId: args.promptMessageId,
-              }
-            );
-          }
-        }
-      } catch (finalizationError) {
-        chatLogger.error(
-          "Workspace agent stream failure could not be finalized",
-          {
-            threadId: args.threadId,
-            promptMessageId: args.promptMessageId,
-          },
-          normalizeUnknownError(finalizationError)
-        );
-      }
-      chatLogger.error(
-        "Workspace agent stream error",
-        {
-          threadId: args.threadId,
-          promptMessageId: args.promptMessageId,
-        },
-        normalizedError
-      );
-      throw normalizedError;
-    }
-  },
+  handler: async (ctx, args) => await runStreamAgentResponse(ctx, args),
 });
 
 type PlanBatchAgentResponseContext = {

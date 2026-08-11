@@ -20,6 +20,12 @@ export type AgentThreadContextRow = {
   taggedEntities: MentionEntitySearchResult[];
 };
 
+/** Durable selection created only by an explicit prospect tag. */
+export type AgentThreadPersistentTargetSelection = {
+  workspaceId: string;
+  prospectIds: string[];
+};
+
 export type AgentThreadSelection = {
   workspaceId: string | null;
   prospectId: string | null;
@@ -126,6 +132,50 @@ function buildThreadSelectionFallback(
   };
 }
 
+function buildPersistentTargetSelection(args: {
+  routeScope: AgentThreadRouteScope;
+  persistentTargetSelection?: AgentThreadPersistentTargetSelection | null;
+}): AgentThreadSelection | null {
+  const persistentTargetSelection = args.persistentTargetSelection;
+  if (!persistentTargetSelection || args.routeScope.prospectId) {
+    return null;
+  }
+
+  const workspaceId = normalizeId(persistentTargetSelection.workspaceId);
+  if (
+    !workspaceId ||
+    (args.routeScope.workspaceId && workspaceId !== args.routeScope.workspaceId)
+  ) {
+    return null;
+  }
+
+  const prospectIds = dedupeIds(persistentTargetSelection.prospectIds);
+  if (prospectIds.length === 0) {
+    return null;
+  }
+
+  if (prospectIds.length > 1) {
+    return {
+      ...buildThreadSelectionFallback(args.routeScope),
+      workspaceId: args.routeScope.workspaceId ?? workspaceId,
+      source: "tagged",
+      ambiguousProspectIds: prospectIds,
+    };
+  }
+
+  return {
+    workspaceId: args.routeScope.workspaceId ?? workspaceId,
+    prospectId: prospectIds[0],
+    planId: null,
+    taskId: null,
+    postId: null,
+    postPlatform: null,
+    postUrl: null,
+    source: "tagged",
+    ambiguousProspectIds: [],
+  };
+}
+
 function pickPrimaryEntity(
   entities: MentionEntitySearchResult[],
   kind: MentionEntitySearchResult["kind"],
@@ -148,7 +198,13 @@ function pickPrimaryEntity(
 export function resolveAgentThreadSelection(args: {
   routeScope: AgentThreadRouteScope;
   contextRows: AgentThreadContextRow[];
+  persistentTargetSelection?: AgentThreadPersistentTargetSelection | null;
 }): AgentThreadSelection {
+  const persistentSelection = buildPersistentTargetSelection({
+    routeScope: args.routeScope,
+    persistentTargetSelection: args.persistentTargetSelection,
+  });
+
   for (const [rowIndex, row] of args.contextRows.entries()) {
     const scopedEntities = row.taggedEntities
       .map(normalizeMentionEntitySearchResult)
@@ -156,10 +212,12 @@ export function resolveAgentThreadSelection(args: {
       .filter((entity) => entityMatchesRouteScope(entity, args.routeScope));
 
     if (scopedEntities.length === 0) {
-      // Context rows are newest-first. An explicit row for the current turn
-      // with no selected entity clears an older workspace-thread selection.
+      // Context rows are newest-first. An untagged follow-up retains the
+      // durable target selected by the latest explicit prospect tag.
       if (rowIndex === 0) {
-        return buildThreadSelectionFallback(args.routeScope);
+        return (
+          persistentSelection ?? buildThreadSelectionFallback(args.routeScope)
+        );
       }
       continue;
     }
@@ -203,5 +261,5 @@ export function resolveAgentThreadSelection(args: {
     };
   }
 
-  return buildThreadSelectionFallback(args.routeScope);
+  return persistentSelection ?? buildThreadSelectionFallback(args.routeScope);
 }

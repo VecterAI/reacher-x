@@ -140,7 +140,7 @@ test("prospect threads fall back to the canonical thread scope when nothing is t
   });
 });
 
-test("an untagged current workspace turn clears an older tagged prospect", () => {
+test("an untagged current workspace turn clears an older transient tag without durable selection", () => {
   const selection = resolveAgentThreadSelection({
     routeScope: {
       kind: "workspace",
@@ -170,6 +170,33 @@ test("an untagged current workspace turn clears an older tagged prospect", () =>
     postPlatform: null,
     postUrl: null,
     source: "thread",
+    ambiguousProspectIds: [],
+  });
+});
+
+test("an untagged follow-up retains the latest durable prospect selection", () => {
+  const selection = resolveAgentThreadSelection({
+    routeScope: {
+      kind: "workspace",
+      workspaceId: "workspace_1",
+      prospectId: null,
+    },
+    contextRows: [{ taggedEntities: [] }],
+    persistentTargetSelection: {
+      workspaceId: "workspace_1",
+      prospectIds: ["prospect_nikolay"],
+    },
+  });
+
+  assert.deepEqual(selection, {
+    workspaceId: "workspace_1",
+    prospectId: "prospect_nikolay",
+    planId: null,
+    taskId: null,
+    postId: null,
+    postPlatform: null,
+    postUrl: null,
+    source: "tagged",
     ambiguousProspectIds: [],
   });
 });

@@ -16,9 +16,11 @@ import {
   shouldContinueAgentProviderHistoryRead,
   type InteractionHistoryConnectionState,
   type InteractionHistoryEvidenceSource,
+  type InteractionHistoryXChatEvidence,
   type InteractionHistoryProviderEvidence,
   type ProspectInteractionHistoryItem,
 } from "../../../lib/prospectInteractionHistoryCore";
+import type { XChatConversationHistoryEvidence } from "../../../lib/xChatConversationHistoryCore";
 import { parseIsoToTimestamp } from "../../../../shared/lib/utils/time/timeUtils";
 import {
   AMBIGUOUS_PROSPECT_SELECTION_MESSAGE,
@@ -356,6 +358,86 @@ async function readLiveProviderHistory(args: {
   }
 }
 
+function unavailableXChatEvidence(args: {
+  connection: InteractionHistoryConnectionState;
+  error?: string;
+}): InteractionHistoryXChatEvidence {
+  return {
+    source: "failed",
+    connection: args.connection,
+    refreshAttempted: true,
+    refreshSucceeded: false,
+    conversationFound: false,
+    conversationLookupComplete: false,
+    encrypted: false,
+    contentState: "unavailable",
+    conversationPagesFetched: 0,
+    eventPagesFetched: 0,
+    eventCount: 0,
+    inboundEventCount: 0,
+    outboundEventCount: 0,
+    unattributedEventCount: 0,
+    hasMore: false,
+    pageLimitReached: false,
+    ...(args.error ? { error: args.error } : {}),
+  };
+}
+
+/**
+ * XChat evidence is intentionally separate from legacy DMs. The provider
+ * action returns only encrypted-envelope metadata, never ciphertext or text.
+ */
+async function readLiveXChatEvidence(args: {
+  ctx: ToolContext;
+  userId: Id<"users">;
+  prospectId: Id<"prospects">;
+  sinceMs?: number;
+}): Promise<InteractionHistoryXChatEvidence> {
+  const connectionPromise = getConnectionState({
+    ctx: args.ctx,
+    userId: args.userId,
+    platform: "twitter",
+  });
+
+  try {
+    const result: XChatConversationHistoryEvidence | null =
+      await args.ctx.runAction(
+        internal.x.getXChatConversationHistoryEvidenceInternal,
+        {
+          userId: args.userId,
+          prospectId: args.prospectId,
+          limit: AGENT_PROVIDER_HISTORY_PAGE_SIZE,
+          ...(typeof args.sinceMs === "number"
+            ? { sinceMs: args.sinceMs }
+            : {}),
+        }
+      );
+    const connection = await connectionPromise;
+    if (!result) {
+      return unavailableXChatEvidence({
+        connection,
+        error:
+          getUnavailableConnectionMessage("twitter", connection) ??
+          "XChat history could not be verified for this prospect.",
+      });
+    }
+
+    return {
+      ...result,
+      source: "live",
+      connection,
+      refreshAttempted: true,
+      refreshSucceeded: true,
+    };
+  } catch (error) {
+    const connection = await connectionPromise;
+    return unavailableXChatEvidence({
+      connection,
+      error: getProviderErrorMessage(error),
+    });
+  }
+}
+
 function readCachedProviderHistory(args: {
   platform: Platform;
   hasCachedConversation: boolean;
@@ -377,7 +459,7 @@ function readCachedProviderHistory(args: {
 
 export const getProspectInteractionHistory = createTool({
   description:
-    "Read the actual interaction history between the workspace user and the selected prospect: X/Twitter or LinkedIn DMs, comments, and replies, including direction and timestamps. Use this before answering what was said, what happened, who replied, or how the relationship has progressed. The backend owns provider pagination: a normal read fetches the latest bounded DM page, and a since read may fetch up to four bounded pages. Never ask for or provide provider cursors. Inspect history.evidence before drawing conclusions: live means the provider read succeeded now; cached means a live read could not be verified and the items are previously synced; failed means no trustworthy DM evidence was available. Disclose an X/Twitter x_30_day_limit boundary when present. The selected prospect is resolved from the current prospect thread or an explicit tag in the main workspace thread.",
+    "Read the actual interaction history between the workspace user and the selected prospect: X/Twitter or LinkedIn DMs, comments, and replies, including direction and timestamps. Use this before answering what was said, what happened, who replied, or how the relationship has progressed. The backend owns provider pagination: a normal read fetches the latest bounded DM page, and a since read may fetch up to four bounded pages. Never ask for or provide provider cursors. Inspect history.evidence before drawing conclusions: live means the provider read succeeded now; cached means a live read could not be verified and the items are previously synced; failed means no trustworthy DM evidence was available. X/Twitter evidence separates readable legacyDm coverage from optional encrypted xChat metadata; encrypted_locked XChat evidence has counts, direction, timestamps, and pagination coverage but no readable message text. Disclose an X/Twitter x_30_day_limit boundary when present. The selected prospect is resolved from the current prospect thread or an explicit tag in the main workspace thread.",
   inputSchema: getProspectInteractionHistoryInputSchema,
   execute: async (ctx, args): Promise<GetProspectInteractionHistoryResult> => {
     try {
@@ -438,40 +520,50 @@ export const getProspectInteractionHistory = createTool({
       }
 
       const platforms = getPlatforms(args.platform);
-      const providerReads = args.kinds.includes("dm")
-        ? await Promise.all(
-            platforms.map((platform) =>
-              readLiveProviderHistory({
-                ctx,
-                userId,
-                prospectId,
-                platform,
-                sinceMs,
-                hasCachedConversation: Boolean(
-                  cachedHistory.coverage.find(
-                    (coverage) => coverage.platform === platform
-                  )?.hasConversation
-                ),
-              })
-            )
-          )
-        : await Promise.all(
-            platforms.map(async (platform) =>
-              readCachedProviderHistory({
-                platform,
-                hasCachedConversation: Boolean(
-                  cachedHistory.coverage.find(
-                    (coverage) => coverage.platform === platform
-                  )?.hasConversation
-                ),
-                connection: await getConnectionState({
+      const [providerReads, xChatEvidence] = await Promise.all([
+        args.kinds.includes("dm")
+          ? Promise.all(
+              platforms.map((platform) =>
+                readLiveProviderHistory({
                   ctx,
                   userId,
+                  prospectId,
                   platform,
-                }),
-              })
+                  sinceMs,
+                  hasCachedConversation: Boolean(
+                    cachedHistory.coverage.find(
+                      (coverage) => coverage.platform === platform
+                    )?.hasConversation
+                  ),
+                })
+              )
             )
-          );
+          : Promise.all(
+              platforms.map(async (platform) =>
+                readCachedProviderHistory({
+                  platform,
+                  hasCachedConversation: Boolean(
+                    cachedHistory.coverage.find(
+                      (coverage) => coverage.platform === platform
+                    )?.hasConversation
+                  ),
+                  connection: await getConnectionState({
+                    ctx,
+                    userId,
+                    platform,
+                  }),
+                })
+              )
+            ),
+        args.kinds.includes("dm") && platforms.includes("twitter")
+          ? readLiveXChatEvidence({
+              ctx,
+              userId,
+              prospectId,
+              sinceMs,
+            })
+          : Promise.resolve(undefined),
+      ]);
 
       const history: Omit<ProspectInteractionHistoryResult, "evidence"> | null =
         await ctx.runQuery(
@@ -534,6 +626,19 @@ export const getProspectInteractionHistory = createTool({
               : undefined,
           boundary: read?.boundary ?? coverageItem.historyBoundary,
           error: read?.error ?? coverageItem.syncError,
+          legacyDm: {
+            source: read?.source ?? "cached",
+            conversationFound:
+              read?.conversationFound ?? coverageItem.hasConversation,
+            pagesFetched: read?.pagesFetched ?? 0,
+            pageLimitReached: read?.pageLimitReached ?? false,
+            hasMore: read?.historyHasMore ?? coverageItem.historyHasMore,
+            boundary: read?.boundary ?? coverageItem.historyBoundary,
+            error: read?.error ?? coverageItem.syncError,
+          },
+          ...(coverageItem.platform === "twitter" && xChatEvidence
+            ? { xChat: xChatEvidence }
+            : {}),
         } satisfies InteractionHistoryProviderEvidence;
       });
 
@@ -549,7 +654,9 @@ export const getProspectInteractionHistory = createTool({
               (coverageItem) =>
                 coverageItem.historyHasMore ||
                 coverageItem.providerPageLimitReached
-            ),
+            ) ||
+            xChatEvidence?.hasMore === true ||
+            xChatEvidence?.pageLimitReached === true,
           coverage,
           evidence,
         },
