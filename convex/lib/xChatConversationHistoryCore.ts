@@ -9,8 +9,9 @@ export type XChatConversationHistoryEvidence = Infer<
 
 /**
  * XChat responses expose encrypted envelopes. These types intentionally omit
- * `encodedEvent`, so no caller can accidentally treat ciphertext as message
- * text while building Agent-facing history evidence.
+ * `encodedEvent`, so callers cannot treat ciphertext as message text. The
+ * account-wide listing is normalized for isolated uses, but it is not a
+ * prerequisite for direct participant-event retrieval.
  */
 export type XChatConversationPage = {
   conversations: Array<{

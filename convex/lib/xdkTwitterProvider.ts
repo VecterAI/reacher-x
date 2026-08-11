@@ -5,8 +5,6 @@ import { ApiError, type Client } from "@xdevplatform/xdk";
 import type { CuratedTwitterActionKey } from "./twitterActionCatalog";
 import { getXAppBearerToken } from "./xdkClient";
 import {
-  findDirectXChatConversation,
-  normalizeXChatConversationPage,
   normalizeXChatEventPage,
   summarizeXChatEventPage,
   type XChatConversationHistoryEvidence,
@@ -1905,55 +1903,6 @@ export async function getXChatConversationHistoryEvidence(
 ): Promise<XChatConversationHistoryEvidence> {
   const limit = normalizeConversationHistoryPageLimit(options?.limit);
   const pageBudget = getXChatPageBudget(options?.maxPages);
-  let conversationCursor: string | undefined;
-  let conversationPagesFetched = 0;
-  let directConversation: ReturnType<typeof findDirectXChatConversation> = null;
-
-  do {
-    const conversationResponse = await getXChatJson(
-      context,
-      "/2/chat/conversations",
-      getXChatHistoryParams({
-        limit,
-        cursor: conversationCursor,
-        fieldName: "chat_conversation.fields",
-        fields: ["id", "participant_ids", "type"],
-      })
-    );
-    conversationPagesFetched += 1;
-    const conversationPage =
-      normalizeXChatConversationPage(conversationResponse);
-    directConversation = findDirectXChatConversation({
-      conversations: conversationPage.conversations,
-      viewerUserId: context.xUserId,
-      participantUserId,
-    });
-    conversationCursor = conversationPage.nextCursor;
-  } while (
-    !directConversation &&
-    conversationCursor &&
-    conversationPagesFetched < pageBudget
-  );
-
-  if (!directConversation) {
-    const hasMore = Boolean(conversationCursor);
-    return {
-      conversationFound: false,
-      conversationLookupComplete: !hasMore,
-      encrypted: true,
-      contentState: "encrypted_locked",
-      conversationPagesFetched,
-      eventPagesFetched: 0,
-      eventCount: 0,
-      inboundEventCount: 0,
-      outboundEventCount: 0,
-      unattributedEventCount: 0,
-      hasMore,
-      pageLimitReached: hasMore,
-      boundary: hasMore ? "page_limit" : "complete",
-    };
-  }
-
   let eventCursor: string | undefined;
   let eventPagesFetched = 0;
   let eventCount = 0;
@@ -1963,6 +1912,7 @@ export async function getXChatConversationHistoryEvidence(
   let latestEventAt: number | undefined;
   let oldestEventAt: number | undefined;
   let reachedSince = false;
+  let conversationFound = false;
 
   do {
     const eventResponse = await getXChatJson(
@@ -1982,8 +1932,12 @@ export async function getXChatConversationHistoryEvidence(
       })
     );
     eventPagesFetched += 1;
+    const eventPage = normalizeXChatEventPage(eventResponse);
+    // An observed encrypted envelope proves the participant conversation
+    // exists even if a requested date range filters every event out.
+    conversationFound ||= eventPage.events.length > 0;
     const summary = summarizeXChatEventPage({
-      page: normalizeXChatEventPage(eventResponse),
+      page: eventPage,
       viewerUserId: context.xUserId,
       participantUserId,
       sinceMs: options?.sinceMs,
@@ -2010,11 +1964,14 @@ export async function getXChatConversationHistoryEvidence(
 
   const hasMore = !reachedSince && Boolean(eventCursor);
   return {
-    conversationFound: true,
-    conversationLookupComplete: true,
+    conversationFound,
+    conversationLookupComplete: conversationFound || !hasMore,
     encrypted: true,
     contentState: "encrypted_locked",
-    conversationPagesFetched,
+    // The participant-specific endpoint itself establishes this direct
+    // conversation. Do not preflight the paginated account-wide listing: it
+    // can omit an otherwise retrievable participant conversation.
+    conversationPagesFetched: 0,
     eventPagesFetched,
     eventCount,
     inboundEventCount,

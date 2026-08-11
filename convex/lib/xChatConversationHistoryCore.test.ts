@@ -100,12 +100,16 @@ describe("XChat conversation-history metadata", () => {
     });
   });
 
-  test("uses the documented participant-events route and returns metadata only", async () => {
+  test("reads participant events when the bounded account-wide listing omits the conversation", async () => {
     const data = Array.from({ length: 23 }, (_, index) => ({
       encoded_event: `ciphertext-${index}`,
       sender_id: index < 8 ? participantUserId : viewerUserId,
       created_at_msec: String(1_700_000_000_000 + index),
     }));
+    const boundedAccountWideListing = {
+      data: [],
+      meta: { next_token: "unread-account-wide-page" },
+    };
     const requests: string[] = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: string | URL | Request) => {
@@ -113,15 +117,7 @@ describe("XChat conversation-history metadata", () => {
       requests.push(url);
       const payload = url.includes("/events")
         ? { data }
-        : {
-            data: [
-              {
-                id: "direct-conversation",
-                participant_ids: [viewerUserId, participantUserId],
-                type: "direct",
-              },
-            ],
-          };
+        : boundedAccountWideListing;
       return new Response(JSON.stringify(payload), { status: 200 });
     }) as typeof fetch;
 
@@ -135,9 +131,8 @@ describe("XChat conversation-history metadata", () => {
         { limit: 25 }
       );
 
-      expect(requests).toHaveLength(2);
-      expect(new URL(requests[0]!).pathname).toBe("/2/chat/conversations");
-      expect(new URL(requests[1]!).pathname).toBe(
+      expect(requests).toHaveLength(1);
+      expect(new URL(requests[0]!).pathname).toBe(
         `/2/chat/conversations/${participantUserId}/events`
       );
       expect(evidence).toMatchObject({
@@ -152,6 +147,71 @@ describe("XChat conversation-history metadata", () => {
         boundary: "complete",
       });
       expect(JSON.stringify(evidence)).not.toContain("ciphertext-");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("marks the conversation found before a since filter excludes its encrypted event", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              encoded_event: "older-ciphertext",
+              sender_id: participantUserId,
+              created_at_msec: "1000",
+            },
+          ],
+        }),
+        { status: 200 }
+      )) as typeof fetch;
+
+    try {
+      const evidence = await getXChatConversationHistoryEvidence(
+        {
+          client: new Client({ accessToken: "test-user-access-token" }),
+          xUserId: viewerUserId,
+        },
+        participantUserId,
+        { sinceMs: 2_000 }
+      );
+
+      expect(evidence).toMatchObject({
+        conversationFound: true,
+        eventCount: 0,
+        inboundEventCount: 0,
+        outboundEventCount: 0,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("does not report a conversation for an empty participant-events response", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+      })) as typeof fetch;
+
+    try {
+      const evidence = await getXChatConversationHistoryEvidence(
+        {
+          client: new Client({ accessToken: "test-user-access-token" }),
+          xUserId: viewerUserId,
+        },
+        participantUserId
+      );
+
+      expect(evidence).toMatchObject({
+        conversationFound: false,
+        conversationLookupComplete: true,
+        conversationPagesFetched: 0,
+        eventPagesFetched: 1,
+        eventCount: 0,
+      });
     } finally {
       globalThis.fetch = originalFetch;
     }
