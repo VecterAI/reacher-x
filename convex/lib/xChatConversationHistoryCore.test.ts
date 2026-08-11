@@ -48,6 +48,7 @@ describe("XChat conversation-history metadata", () => {
     const page = normalizeXChatEventPage({
       data,
       meta: { next_token: "older-encrypted-events" },
+      hasMore: true,
     });
     const summary = summarizeXChatEventPage({
       page,
@@ -65,6 +66,7 @@ describe("XChat conversation-history metadata", () => {
       nextCursor: "older-encrypted-events",
     });
     expect(page.events[0]).not.toHaveProperty("encodedEvent");
+    expect(page.hasMore).toBe(true);
     expect(JSON.stringify(summary)).not.toContain("ciphertext-");
   });
 
@@ -100,7 +102,7 @@ describe("XChat conversation-history metadata", () => {
     });
   });
 
-  test("reads participant events when the bounded account-wide listing omits the conversation", async () => {
+  test("uses the bare participant-events request and preserves partial encrypted coverage", async () => {
     const data = Array.from({ length: 23 }, (_, index) => ({
       encoded_event: `ciphertext-${index}`,
       sender_id: index < 8 ? participantUserId : viewerUserId,
@@ -116,7 +118,7 @@ describe("XChat conversation-history metadata", () => {
       const url = String(input);
       requests.push(url);
       const payload = url.includes("/events")
-        ? { data }
+        ? { data, has_more: true }
         : boundedAccountWideListing;
       return new Response(JSON.stringify(payload), { status: 200 });
     }) as typeof fetch;
@@ -135,6 +137,7 @@ describe("XChat conversation-history metadata", () => {
       expect(new URL(requests[0]!).pathname).toBe(
         `/2/chat/conversations/${participantUserId}/events`
       );
+      expect(new URL(requests[0]!).search).toBe("");
       expect(evidence).toMatchObject({
         conversationFound: true,
         conversationLookupComplete: true,
@@ -143,8 +146,9 @@ describe("XChat conversation-history metadata", () => {
         eventCount: 23,
         inboundEventCount: 8,
         outboundEventCount: 15,
-        hasMore: false,
-        boundary: "complete",
+        hasMore: true,
+        pageLimitReached: true,
+        boundary: "page_limit",
       });
       expect(JSON.stringify(evidence)).not.toContain("ciphertext-");
     } finally {

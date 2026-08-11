@@ -1,3 +1,4 @@
+import { Client } from "@xdevplatform/xdk";
 import { describe, expect, it } from "vitest";
 import {
   buildSanitizedXChatJuiceboxConfig,
@@ -5,6 +6,7 @@ import {
   normalizeXChatEncryptedEventPage,
   normalizeXChatPublicKeyRecords,
 } from "./xChatDecryptBundleCore";
+import { getXChatBrowserDecryptBundle } from "./xdkTwitterProvider";
 
 const PUBLIC_KEYS_PAYLOAD = {
   data: [
@@ -26,6 +28,9 @@ const PUBLIC_KEYS_PAYLOAD = {
     },
   ],
 };
+
+const viewerUserId = "1743216568451125248";
+const participantUserId = "2035575047868583936";
 
 describe("XChat decrypt bundle normalization", () => {
   it("keeps signing material but strips realm tokens from browser config", () => {
@@ -62,6 +67,7 @@ describe("XChat decrypt bundle normalization", () => {
           { id: "missing-ciphertext" },
         ],
         meta: { next_token: "next" },
+        has_more: true,
       })
     ).toEqual({
       events: [
@@ -74,6 +80,53 @@ describe("XChat decrypt bundle normalization", () => {
         },
       ],
       nextCursor: "next",
+      hasMore: true,
     });
+  });
+
+  it("uses a bare initial participant-events request and preserves partial encrypted coverage", async () => {
+    const events = Array.from({ length: 23 }, (_, index) => ({
+      id: `event-${index}`,
+      conversation_id: "direct-conversation",
+      sender_id: index < 8 ? participantUserId : viewerUserId,
+      created_at_msec: String(1_700_000_000_000 + index),
+      encoded_event: `ciphertext-${index}`,
+    }));
+    const requests: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      const payload = url.includes("/events")
+        ? { data: events, hasMore: true }
+        : PUBLIC_KEYS_PAYLOAD;
+      return new Response(JSON.stringify(payload), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const bundle = await getXChatBrowserDecryptBundle(
+        {
+          client: new Client({ accessToken: "test-user-access-token" }),
+          xUserId: viewerUserId,
+        },
+        participantUserId
+      );
+
+      const eventRequests = requests.filter((request) =>
+        request.includes(`/2/chat/conversations/${participantUserId}/events`)
+      );
+      expect(eventRequests).toHaveLength(1);
+      expect(new URL(eventRequests[0]!).search).toBe("");
+      expect(bundle.events).toHaveLength(23);
+      expect(
+        bundle.events.filter((event) => event.senderId === participantUserId)
+      ).toHaveLength(8);
+      expect(
+        bundle.events.filter((event) => event.senderId === viewerUserId)
+      ).toHaveLength(15);
+      expect(bundle.hasMore).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

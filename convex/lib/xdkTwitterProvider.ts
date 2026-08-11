@@ -18,7 +18,6 @@ import {
   type XChatPublicKeyRecord,
   type XChatSigningKey,
 } from "./xChatDecryptBundleCore";
-import { normalizeConversationHistoryPageLimit } from "./conversationHistoryPaginationCore";
 import { MAX_AGENT_PROVIDER_HISTORY_PAGES } from "./prospectInteractionHistoryCore";
 import type {
   Entities,
@@ -1872,20 +1871,14 @@ function getXChatPageBudget(maxPages?: number): number {
   );
 }
 
-function getXChatHistoryParams(args: {
-  limit: number;
-  cursor?: string;
-  fieldName: "chat_conversation.fields" | "chat_message_event.fields";
-  fields: string[];
-}): URLSearchParams {
-  const params = new URLSearchParams({
-    max_results: String(args.limit),
-  });
-  params.set(args.fieldName, args.fields.join(","));
-  if (args.cursor) {
-    params.set("pagination_token", args.cursor);
+function getXChatEventContinuationParams(
+  cursor?: string
+): URLSearchParams | undefined {
+  if (!cursor) {
+    return undefined;
   }
-  return params;
+
+  return new URLSearchParams({ pagination_token: cursor });
 }
 
 /**
@@ -1901,9 +1894,9 @@ export async function getXChatConversationHistoryEvidence(
     sinceMs?: number;
   }
 ): Promise<XChatConversationHistoryEvidence> {
-  const limit = normalizeConversationHistoryPageLimit(options?.limit);
   const pageBudget = getXChatPageBudget(options?.maxPages);
   let eventCursor: string | undefined;
+  let eventPageHasMore = false;
   let eventPagesFetched = 0;
   let eventCount = 0;
   let inboundEventCount = 0;
@@ -1918,18 +1911,7 @@ export async function getXChatConversationHistoryEvidence(
     const eventResponse = await getXChatJson(
       context,
       `/2/chat/conversations/${encodeURIComponent(participantUserId)}/events`,
-      getXChatHistoryParams({
-        limit,
-        cursor: eventCursor,
-        fieldName: "chat_message_event.fields",
-        fields: [
-          "id",
-          "sender_id",
-          "created_at_msec",
-          "conversation_id",
-          "encoded_event",
-        ],
-      })
+      getXChatEventContinuationParams(eventCursor)
     );
     eventPagesFetched += 1;
     const eventPage = normalizeXChatEventPage(eventResponse);
@@ -1960,9 +1942,10 @@ export async function getXChatConversationHistoryEvidence(
         : oldestEventAt;
     reachedSince = summary.reachedSince;
     eventCursor = summary.nextCursor;
+    eventPageHasMore = eventPage.hasMore;
   } while (!reachedSince && eventCursor && eventPagesFetched < pageBudget);
 
-  const hasMore = !reachedSince && Boolean(eventCursor);
+  const hasMore = !reachedSince && (Boolean(eventCursor) || eventPageHasMore);
   return {
     conversationFound,
     conversationLookupComplete: conversationFound || !hasMore,
@@ -2085,28 +2068,19 @@ export async function getXChatBrowserDecryptBundle(
 
   const events: XChatEncryptedEvent[] = [];
   let cursor: string | undefined;
+  let eventPageHasMore = false;
   let eventPagesFetched = 0;
   do {
     const payload = await getXChatJson(
       context,
       `/2/chat/conversations/${encodeURIComponent(participantUserId)}/events`,
-      getXChatHistoryParams({
-        limit: 100,
-        cursor,
-        fieldName: "chat_message_event.fields",
-        fields: [
-          "id",
-          "sender_id",
-          "created_at_msec",
-          "conversation_id",
-          "encoded_event",
-        ],
-      })
+      getXChatEventContinuationParams(cursor)
     );
     eventPagesFetched += 1;
     const page = normalizeXChatEncryptedEventPage(payload);
     events.push(...page.events);
     cursor = page.nextCursor;
+    eventPageHasMore = page.hasMore;
   } while (cursor && eventPagesFetched < MAX_AGENT_PROVIDER_HISTORY_PAGES);
 
   const conversationId =
@@ -2135,7 +2109,7 @@ export async function getXChatBrowserDecryptBundle(
     ),
     events,
     eventPagesFetched,
-    hasMore: Boolean(cursor),
+    hasMore: Boolean(cursor) || eventPageHasMore,
   };
 }
 

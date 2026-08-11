@@ -1,4 +1,8 @@
 import { getNestedRecord, getStringProperty, isRecord } from "./typeGuards";
+import {
+  getProviderPageCursor,
+  getProviderPageHasMore,
+} from "./conversationHistoryPaginationCore";
 
 export type XChatSigningKey = {
   userId: string;
@@ -172,6 +176,7 @@ export function getXChatRealmAuthToken(
 export function normalizeXChatEncryptedEventPage(payload: unknown): {
   events: XChatEncryptedEvent[];
   nextCursor?: string;
+  hasMore: boolean;
 } {
   const root = isRecord(payload) ? payload : undefined;
   const events = Array.isArray(root?.data)
@@ -208,11 +213,10 @@ export function normalizeXChatEncryptedEventPage(payload: unknown): {
         ];
       })
     : [];
-  const meta = getNestedRecord(payload, "meta");
-  const nextCursor =
-    getStringProperty(meta, "nextToken")?.trim() ||
-    getStringProperty(meta, "next_token")?.trim() ||
-    getStringProperty(meta, "paginationToken")?.trim() ||
-    undefined;
-  return { events, ...(nextCursor ? { nextCursor } : {}) };
+  const nextCursor = getProviderPageCursor(payload);
+  return {
+    events,
+    ...(nextCursor ? { nextCursor } : {}),
+    hasMore: getProviderPageHasMore(payload),
+  };
 }
