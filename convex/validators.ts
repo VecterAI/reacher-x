@@ -570,6 +570,57 @@ export const conversationHistoryBoundaryValidator = v.union(
   v.literal("x_30_day_limit")
 );
 
+/**
+ * Metadata-only result for XChat history. XChat events are encrypted; this
+ * contract deliberately contains counts and timestamps, never event payloads
+ * or decrypted text.
+ */
+export const xChatConversationHistoryEvidenceValidator = v.object({
+  conversationFound: v.boolean(),
+  conversationLookupComplete: v.boolean(),
+  encrypted: v.literal(true),
+  contentState: v.literal("encrypted_locked"),
+  conversationPagesFetched: v.number(),
+  eventPagesFetched: v.number(),
+  eventCount: v.number(),
+  inboundEventCount: v.number(),
+  outboundEventCount: v.number(),
+  unattributedEventCount: v.number(),
+  latestEventAt: v.optional(v.number()),
+  oldestEventAt: v.optional(v.number()),
+  hasMore: v.boolean(),
+  pageLimitReached: v.boolean(),
+  boundary: v.optional(v.union(v.literal("complete"), v.literal("page_limit"))),
+});
+
+export const xChatSigningKeyValidator = v.object({
+  userId: v.string(),
+  publicKeyVersion: v.string(),
+  publicKey: v.string(),
+  identityPublicKey: v.string(),
+  identityPublicKeySignature: v.string(),
+});
+
+export const xChatEncryptedEventValidator = v.object({
+  id: v.optional(v.string()),
+  conversationId: v.optional(v.string()),
+  senderId: v.optional(v.string()),
+  createdAtMs: v.optional(v.number()),
+  encodedEvent: v.string(),
+});
+
+export const xChatBrowserDecryptBundleValidator = v.object({
+  viewerUserId: v.string(),
+  participantUserId: v.string(),
+  conversationId: v.string(),
+  signingKeyVersion: v.string(),
+  juiceboxConfig: v.string(),
+  signingKeys: v.array(xChatSigningKeyValidator),
+  events: v.array(xChatEncryptedEventValidator),
+  eventPagesFetched: v.number(),
+  hasMore: v.boolean(),
+});
+
 export const platformConversationAttachmentValidator = v.object({
   mediaKey: v.optional(v.string()),
   type: v.string(),
@@ -1117,6 +1168,26 @@ export const agentMessageContextMetadataValidator = v.object({
   promptTextSource: agentMessagePromptTextSourceValidator,
   taggedEntities: v.array(agentMessageTaggedEntityValidator),
   attachments: v.array(agentMessageAttachmentReferenceValidator),
+});
+
+/**
+ * Browser-decrypted XChat context is accepted only for the active Agent turn.
+ * The PIN and private key material are never part of this contract.
+ */
+export const xChatDecryptedMessageValidator = v.object({
+  id: v.string(),
+  senderId: v.string(),
+  direction: v.union(v.literal("sent"), v.literal("received")),
+  occurredAt: v.number(),
+  text: v.string(),
+});
+
+export const xChatTransientContextValidator = v.object({
+  prospectId: v.id("prospects"),
+  conversationId: v.string(),
+  decryptedAt: v.number(),
+  coverageComplete: v.boolean(),
+  messages: v.array(xChatDecryptedMessageValidator),
 });
 
 export const agentThreadTargetSelectionTargetValidator = v.object({

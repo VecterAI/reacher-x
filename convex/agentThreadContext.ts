@@ -93,11 +93,28 @@ export const resolveSelectedContextForThread = internalQuery({
       }
     }
 
-    const contextRows = await ctx.db
-      .query("agentMessageContexts")
-      .withIndex("by_thread", (q) => q.eq("threadId", threadId))
-      .order("desc")
-      .take(8);
+    const [contextRows, targetSelection] = await Promise.all([
+      ctx.db
+        .query("agentMessageContexts")
+        .withIndex("by_thread", (q) => q.eq("threadId", threadId))
+        .order("desc")
+        .take(8),
+      ctx.db
+        .query("agentThreadTargetSelections")
+        .withIndex("by_thread", (q) => q.eq("threadId", threadId))
+        .unique(),
+    ]);
+
+    const persistentTargetSelection =
+      targetSelection &&
+      (!workspaceId || targetSelection.workspaceId === workspaceId)
+        ? {
+            workspaceId: String(targetSelection.workspaceId),
+            prospectIds: targetSelection.targets.map((target) =>
+              String(target.prospectId)
+            ),
+          }
+        : null;
 
     const selection = resolveAgentThreadSelection({
       routeScope: {
@@ -108,6 +125,7 @@ export const resolveSelectedContextForThread = internalQuery({
       contextRows: contextRows.map((row) => ({
         taggedEntities: row.taggedEntities as MentionEntitySearchResult[],
       })),
+      persistentTargetSelection,
     });
 
     let resolvedWorkspaceId = selection.workspaceId;

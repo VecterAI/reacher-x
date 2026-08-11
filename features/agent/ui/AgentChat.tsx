@@ -194,6 +194,8 @@ import {
 } from "@/features/agent/lib/entityMentions";
 import { SetupOnboardingInlineCard } from "./components/SetupOnboardingInlineCard";
 import { SetupOnboardingCardMenu } from "./components/SetupOnboardingCardMenu";
+import { XChatUnlockCard } from "./components/xchat-history";
+import { getLockedXChatToolEvidence } from "@/features/agent/lib/xChatToolEvidence";
 import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
@@ -648,12 +650,14 @@ function ToolCallGroup({
 
 function ToolCallVisualization({
   toolCalls,
+  threadId,
   onOpenPanelFromCard,
   onOpenPlanPanel,
   onOpenWorkspaceProfilePanel,
   supersededArtifactKeysByToolCallId,
 }: {
   toolCalls: ToolCallInfo[];
+  threadId?: string;
   onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
   onOpenPlanPanel?: (prospectId?: string | null) => void;
   onOpenWorkspaceProfilePanel?: (requestId: string) => void;
@@ -676,6 +680,29 @@ function ToolCallVisualization({
     // Handle both Convex Agent states ("result") and AI SDK states ("output-available")
     const isToolComplete =
       tc.state === "result" || tc.state === "output-available";
+    const lockedXChatEvidence =
+      isToolComplete && tc.toolName === "getProspectInteractionHistory"
+        ? getLockedXChatToolEvidence(result)
+        : null;
+    if (lockedXChatEvidence && threadId) {
+      if (pendingMarkerToolCalls.length > 0) {
+        renderedToolCallNodes.push(
+          <ToolCallGroup
+            key={`tool-group-${idx}`}
+            toolCalls={[...pendingMarkerToolCalls]}
+          />
+        );
+        pendingMarkerToolCalls.length = 0;
+      }
+      renderedToolCallNodes.push(
+        <XChatUnlockCard
+          key={`${tc.toolCallId ?? tc.toolName}:xchat-unlock`}
+          threadId={threadId}
+          evidence={lockedXChatEvidence}
+        />
+      );
+      continue;
+    }
     const allArtifacts =
       isToolComplete && result ? getAgentArtifactsFromToolResult(result) : [];
     const supersededArtifactKeys =
@@ -1526,6 +1553,7 @@ function getUserMessageDisplayAttachments(args: {
  */
 function ChatMessage({
   message,
+  threadId,
   userImage,
   userName,
   threadModelName,
@@ -1536,6 +1564,7 @@ function ChatMessage({
   supplementalContent,
 }: {
   message: UIMessage;
+  threadId?: string;
   userImage?: string;
   userName?: string;
   threadModelName?: string | null;
@@ -1794,6 +1823,7 @@ function ChatMessage({
                   >
                     <ToolCallVisualization
                       toolCalls={[tc]}
+                      threadId={threadId}
                       onOpenPanelFromCard={onOpenPanelFromCard}
                       onOpenPlanPanel={onOpenPlanPanel}
                       onOpenWorkspaceProfilePanel={onOpenWorkspaceProfilePanel}
@@ -1819,6 +1849,7 @@ function ChatMessage({
               >
                 <ToolCallVisualization
                   toolCalls={toolCalls}
+                  threadId={threadId}
                   onOpenPanelFromCard={onOpenPanelFromCard}
                   onOpenPlanPanel={onOpenPlanPanel}
                   onOpenWorkspaceProfilePanel={onOpenWorkspaceProfilePanel}
@@ -3685,6 +3716,7 @@ export function AgentChat({
                       >
                         <ChatMessage
                           message={message}
+                          threadId={effectiveThreadId ?? undefined}
                           userImage={userDisplayImage ?? undefined}
                           userName={userDisplayName}
                           threadModelName={threadModelName}

@@ -22,6 +22,9 @@ import {
   formatXWriteActionError,
   getDmEvents,
   getDmEventsByConversationId,
+  getXChatBrowserDecryptBundle,
+  getXChatConversationHistoryEvidence,
+  getXChatRealmAuthTokenForUser,
   getHydratedConversationByThreadId,
   getHydratedPostById,
   getHydratedPostsByIds,
@@ -37,10 +40,18 @@ import {
   shouldPersistRecentConversationHistoryPage,
   type ConversationHistoryPageMetadata,
 } from "./lib/conversationHistoryPaginationCore";
+import {
+  AGENT_PROVIDER_HISTORY_PAGE_SIZE,
+  getAgentProviderHistoryPageBudget,
+} from "./lib/prospectInteractionHistoryCore";
 import { getXActivitySubscriptionHealth } from "./lib/xActivityReconciliationCore";
 import { getTwitterActionCatalogEntry } from "./lib/twitterActionCatalog";
 import { getTwitterViewerStatesForUser } from "./lib/twitterViewerStateService";
-import { userTimelineModeValidator } from "./validators";
+import {
+  userTimelineModeValidator,
+  xChatBrowserDecryptBundleValidator,
+  xChatConversationHistoryEvidenceValidator,
+} from "./validators";
 import { getTwitterPostRef } from "../shared/lib/twitter/contracts";
 import {
   computeOneToOneDmConversationId,
@@ -1113,6 +1124,67 @@ async function getProspectXDmHistoryPageForUser(
   };
 }
 
+/**
+ * XChat is separate from legacy DMs. It returns only encrypted-envelope
+ * metadata so callers can reason about live coverage without treating
+ * ciphertext as readable conversation text.
+ */
+async function getProspectXChatHistoryEvidenceForUser(
+  ctx: any,
+  userId: Id<"users">,
+  prospectId: Id<"prospects">,
+  args: {
+    limit?: number;
+    sinceMs?: number;
+  }
+) {
+  const prospect = await getOwnedTwitterProspectForUser(
+    ctx,
+    userId,
+    prospectId
+  );
+  if (!prospect) {
+    return null;
+  }
+
+  const prospectIdentity = resolveProspectTwitterIdentity(
+    prospect as Record<string, unknown>
+  );
+  const connectionStatus = await getXConnectionStatusForUser(
+    ctx,
+    getXStoreRefs(),
+    userId
+  );
+  if (
+    !prospectIdentity.username ||
+    !connectionStatus.xUserId ||
+    !connectionStatus.isConnected ||
+    (connectionStatus.missingScopes ?? []).some((scope) => scope === "dm.read")
+  ) {
+    return null;
+  }
+
+  await ctx.runAction(
+    internal.xActivity.ensureDmActivitySubscriptionsForUserInternal,
+    { userId }
+  );
+
+  const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+    userId,
+    requiredScopes: ["tweet.read", "users.read", "dm.read"],
+  });
+  const { profileUserId } = await getHydratedProfileByUsername(
+    provider,
+    prospectIdentity.username
+  );
+
+  return await getXChatConversationHistoryEvidence(provider, profileUserId, {
+    limit: args.limit ?? AGENT_PROVIDER_HISTORY_PAGE_SIZE,
+    maxPages: getAgentProviderHistoryPageBudget(args.sinceMs),
+    sinceMs: args.sinceMs,
+  });
+}
+
 async function hydrateViewerStatesForPosts(
   ctx: any,
   userId: Id<"users">,
@@ -2080,6 +2152,85 @@ export const getDmConversationHistoryPageInternal = internalAction({
         sinceMs: args.sinceMs,
       }
     );
+  },
+});
+
+/**
+ * Trusted Agent/workflow read for XChat encrypted-envelope metadata. This is
+ * intentionally not public and never returns ciphertext or plaintext.
+ */
+export const getXChatConversationHistoryEvidenceInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    limit: v.optional(v.number()),
+    sinceMs: v.optional(v.number()),
+  },
+  returns: v.union(v.null(), xChatConversationHistoryEvidenceValidator),
+  handler: async (ctx, args) => {
+    return await getProspectXChatHistoryEvidenceForUser(
+      ctx,
+      args.userId,
+      args.prospectId,
+      {
+        limit: args.limit,
+        sinceMs: args.sinceMs,
+      }
+    );
+  },
+});
+
+/**
+ * Browser-only XChat decrypt input for an authenticated, owned prospect. The
+ * response contains ciphertext and public verification material, never a PIN,
+ * realm auth token, private key, or plaintext.
+ */
+export const getXChatDecryptBundle = action({
+  args: {
+    prospectId: v.id("prospects"),
+  },
+  returns: xChatBrowserDecryptBundleValidator,
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedTwitterProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("X prospect not found or not authorized.");
+    }
+    const identity = resolveProspectTwitterIdentity(
+      prospect as Record<string, unknown>
+    );
+    if (!identity.username) {
+      throw new Error("This prospect does not have a usable X username.");
+    }
+    const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+      userId,
+      requiredScopes: ["tweet.read", "users.read", "dm.read"],
+    });
+    const { profileUserId } = await getHydratedProfileByUsername(
+      provider,
+      identity.username
+    );
+    return await getXChatBrowserDecryptBundle(provider, profileUserId);
+  },
+});
+
+/** Mint/fetch one Juicebox realm token only when browser WASM requests it. */
+export const getXChatRealmAuthToken = action({
+  args: {
+    realmId: v.string(),
+  },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+      userId,
+      requiredScopes: ["tweet.read", "users.read", "dm.read"],
+    });
+    return await getXChatRealmAuthTokenForUser(provider, args.realmId);
   },
 });
 

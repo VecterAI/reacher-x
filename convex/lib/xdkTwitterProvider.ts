@@ -4,6 +4,24 @@ import { Buffer } from "node:buffer";
 import { ApiError, type Client } from "@xdevplatform/xdk";
 import type { CuratedTwitterActionKey } from "./twitterActionCatalog";
 import { getXAppBearerToken } from "./xdkClient";
+import {
+  findDirectXChatConversation,
+  normalizeXChatConversationPage,
+  normalizeXChatEventPage,
+  summarizeXChatEventPage,
+  type XChatConversationHistoryEvidence,
+} from "./xChatConversationHistoryCore";
+import {
+  buildSanitizedXChatJuiceboxConfig,
+  getXChatRealmAuthToken,
+  normalizeXChatEncryptedEventPage,
+  normalizeXChatPublicKeyRecords,
+  type XChatEncryptedEvent,
+  type XChatPublicKeyRecord,
+  type XChatSigningKey,
+} from "./xChatDecryptBundleCore";
+import { normalizeConversationHistoryPageLimit } from "./conversationHistoryPaginationCore";
+import { MAX_AGENT_PROVIDER_HISTORY_PAGES } from "./prospectInteractionHistoryCore";
 import type {
   Entities,
   Media,
@@ -1791,6 +1809,394 @@ export async function getDmEventsByConversationId(
       ],
     }
   );
+}
+
+/**
+ * Fetch an XChat payload with the current user OAuth token. The generated XDK
+ * helper targets a different endpoint shape, and its generic request path does
+ * not declare this route's user-auth requirement, so call the documented URL
+ * directly. The token never leaves this Node helper or appears in errors/logs.
+ */
+async function getXChatJson(
+  context: XProviderContext,
+  path: string,
+  params?: URLSearchParams
+): Promise<Record<string, unknown>> {
+  const accessToken = context.client.accessToken?.trim();
+  if (!accessToken) {
+    throw new Error(
+      "XChat history is unavailable because the user token is missing."
+    );
+  }
+
+  const response = await fetch(
+    `https://api.x.com${path}${params ? `?${params.toString()}` : ""}`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+  const rawBody = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `XChat history request failed (${response.status} ${response.statusText}).`
+    );
+  }
+
+  try {
+    const payload: unknown = rawBody ? JSON.parse(rawBody) : null;
+    if (!isRecord(payload)) {
+      throw new Error("XChat history returned an unexpected payload.");
+    }
+    return payload;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("unexpected payload")
+    ) {
+      throw error;
+    }
+    throw new Error("XChat history returned invalid JSON.");
+  }
+}
+
+function getXChatPageBudget(maxPages?: number): number {
+  if (!Number.isFinite(maxPages)) {
+    return 1;
+  }
+
+  return Math.min(
+    MAX_AGENT_PROVIDER_HISTORY_PAGES,
+    Math.max(1, Math.trunc(maxPages ?? 1))
+  );
+}
+
+function getXChatHistoryParams(args: {
+  limit: number;
+  cursor?: string;
+  fieldName: "chat_conversation.fields" | "chat_message_event.fields";
+  fields: string[];
+}): URLSearchParams {
+  const params = new URLSearchParams({
+    max_results: String(args.limit),
+  });
+  params.set(args.fieldName, args.fields.join(","));
+  if (args.cursor) {
+    params.set("pagination_token", args.cursor);
+  }
+  return params;
+}
+
+/**
+ * Read XChat coverage as ciphertext metadata only. This does not return,
+ * persist, decrypt, or inspect `encoded_event` content.
+ */
+export async function getXChatConversationHistoryEvidence(
+  context: XProviderContext,
+  participantUserId: string,
+  options?: {
+    limit?: number;
+    maxPages?: number;
+    sinceMs?: number;
+  }
+): Promise<XChatConversationHistoryEvidence> {
+  const limit = normalizeConversationHistoryPageLimit(options?.limit);
+  const pageBudget = getXChatPageBudget(options?.maxPages);
+  let conversationCursor: string | undefined;
+  let conversationPagesFetched = 0;
+  let directConversation: ReturnType<typeof findDirectXChatConversation> = null;
+
+  do {
+    const conversationResponse = await getXChatJson(
+      context,
+      "/2/chat/conversations",
+      getXChatHistoryParams({
+        limit,
+        cursor: conversationCursor,
+        fieldName: "chat_conversation.fields",
+        fields: ["id", "participant_ids", "type"],
+      })
+    );
+    conversationPagesFetched += 1;
+    const conversationPage =
+      normalizeXChatConversationPage(conversationResponse);
+    directConversation = findDirectXChatConversation({
+      conversations: conversationPage.conversations,
+      viewerUserId: context.xUserId,
+      participantUserId,
+    });
+    conversationCursor = conversationPage.nextCursor;
+  } while (
+    !directConversation &&
+    conversationCursor &&
+    conversationPagesFetched < pageBudget
+  );
+
+  if (!directConversation) {
+    const hasMore = Boolean(conversationCursor);
+    return {
+      conversationFound: false,
+      conversationLookupComplete: !hasMore,
+      encrypted: true,
+      contentState: "encrypted_locked",
+      conversationPagesFetched,
+      eventPagesFetched: 0,
+      eventCount: 0,
+      inboundEventCount: 0,
+      outboundEventCount: 0,
+      unattributedEventCount: 0,
+      hasMore,
+      pageLimitReached: hasMore,
+      boundary: hasMore ? "page_limit" : "complete",
+    };
+  }
+
+  let eventCursor: string | undefined;
+  let eventPagesFetched = 0;
+  let eventCount = 0;
+  let inboundEventCount = 0;
+  let outboundEventCount = 0;
+  let unattributedEventCount = 0;
+  let latestEventAt: number | undefined;
+  let oldestEventAt: number | undefined;
+  let reachedSince = false;
+
+  do {
+    const eventResponse = await getXChatJson(
+      context,
+      `/2/chat/conversations/${encodeURIComponent(participantUserId)}/events`,
+      getXChatHistoryParams({
+        limit,
+        cursor: eventCursor,
+        fieldName: "chat_message_event.fields",
+        fields: [
+          "id",
+          "sender_id",
+          "created_at_msec",
+          "conversation_id",
+          "encoded_event",
+        ],
+      })
+    );
+    eventPagesFetched += 1;
+    const summary = summarizeXChatEventPage({
+      page: normalizeXChatEventPage(eventResponse),
+      viewerUserId: context.xUserId,
+      participantUserId,
+      sinceMs: options?.sinceMs,
+    });
+    eventCount += summary.eventCount;
+    inboundEventCount += summary.inboundEventCount;
+    outboundEventCount += summary.outboundEventCount;
+    unattributedEventCount += summary.unattributedEventCount;
+    latestEventAt =
+      typeof summary.latestEventAt === "number"
+        ? typeof latestEventAt === "number"
+          ? Math.max(latestEventAt, summary.latestEventAt)
+          : summary.latestEventAt
+        : latestEventAt;
+    oldestEventAt =
+      typeof summary.oldestEventAt === "number"
+        ? typeof oldestEventAt === "number"
+          ? Math.min(oldestEventAt, summary.oldestEventAt)
+          : summary.oldestEventAt
+        : oldestEventAt;
+    reachedSince = summary.reachedSince;
+    eventCursor = summary.nextCursor;
+  } while (!reachedSince && eventCursor && eventPagesFetched < pageBudget);
+
+  const hasMore = !reachedSince && Boolean(eventCursor);
+  return {
+    conversationFound: true,
+    conversationLookupComplete: true,
+    encrypted: true,
+    contentState: "encrypted_locked",
+    conversationPagesFetched,
+    eventPagesFetched,
+    eventCount,
+    inboundEventCount,
+    outboundEventCount,
+    unattributedEventCount,
+    ...(typeof latestEventAt === "number" ? { latestEventAt } : {}),
+    ...(typeof oldestEventAt === "number" ? { oldestEventAt } : {}),
+    hasMore,
+    pageLimitReached: hasMore,
+    boundary: hasMore ? "page_limit" : "complete",
+  };
+}
+
+export type XChatBrowserDecryptBundle = {
+  viewerUserId: string;
+  participantUserId: string;
+  conversationId: string;
+  signingKeyVersion: string;
+  juiceboxConfig: string;
+  signingKeys: XChatSigningKey[];
+  events: XChatEncryptedEvent[];
+  eventPagesFetched: number;
+  hasMore: boolean;
+};
+
+const XCHAT_PUBLIC_KEY_FIELDS = [
+  "public_key_version",
+  "public_key",
+  "signing_public_key",
+  "identity_public_key_signature",
+  "juicebox_config",
+] as const;
+
+async function getXChatPublicKeyRecords(
+  context: XProviderContext,
+  userId: string
+): Promise<XChatPublicKeyRecord[]> {
+  const params = new URLSearchParams();
+  params.set("public_key.fields", XCHAT_PUBLIC_KEY_FIELDS.join(","));
+  const payload = await getXChatJson(
+    context,
+    `/2/users/${encodeURIComponent(userId)}/public_keys`,
+    params
+  );
+  return normalizeXChatPublicKeyRecords(payload, userId);
+}
+
+function compareXChatKeyVersions(
+  left: XChatPublicKeyRecord,
+  right: XChatPublicKeyRecord
+): number {
+  try {
+    const leftVersion = BigInt(left.publicKeyVersion);
+    const rightVersion = BigInt(right.publicKeyVersion);
+    return leftVersion === rightVersion
+      ? 0
+      : leftVersion > rightVersion
+        ? -1
+        : 1;
+  } catch {
+    return right.publicKeyVersion.localeCompare(left.publicKeyVersion);
+  }
+}
+
+function getLatestXChatOwnerRecord(
+  records: XChatPublicKeyRecord[]
+): XChatPublicKeyRecord | null {
+  return (
+    [...records]
+      .filter((record) => record.juiceboxConfig)
+      .sort(compareXChatKeyVersions)[0] ?? null
+  );
+}
+
+function computeDirectXChatConversationId(
+  viewerUserId: string,
+  participantUserId: string
+): string {
+  try {
+    return BigInt(viewerUserId) < BigInt(participantUserId)
+      ? `${viewerUserId}-${participantUserId}`
+      : `${participantUserId}-${viewerUserId}`;
+  } catch {
+    return [viewerUserId, participantUserId].sort().join("-");
+  }
+}
+
+/**
+ * Return the ciphertext, public verification keys, and sanitized Juicebox
+ * topology required for browser-only XChat decryption. No PIN, private key,
+ * realm auth token, or plaintext crosses this boundary.
+ */
+export async function getXChatBrowserDecryptBundle(
+  context: XProviderContext,
+  participantUserId: string
+): Promise<XChatBrowserDecryptBundle> {
+  const [viewerKeyRecords, participantKeyRecords] = await Promise.all([
+    getXChatPublicKeyRecords(context, context.xUserId),
+    getXChatPublicKeyRecords(context, participantUserId),
+  ]);
+  const ownerRecord = getLatestXChatOwnerRecord(viewerKeyRecords);
+  if (!ownerRecord) {
+    throw new Error(
+      "XChat encryption keys are not configured for this account."
+    );
+  }
+  const juiceboxConfig = buildSanitizedXChatJuiceboxConfig(ownerRecord);
+  if (!juiceboxConfig) {
+    throw new Error("XChat secure key backup is unavailable for this account.");
+  }
+
+  const events: XChatEncryptedEvent[] = [];
+  let cursor: string | undefined;
+  let eventPagesFetched = 0;
+  do {
+    const payload = await getXChatJson(
+      context,
+      `/2/chat/conversations/${encodeURIComponent(participantUserId)}/events`,
+      getXChatHistoryParams({
+        limit: 100,
+        cursor,
+        fieldName: "chat_message_event.fields",
+        fields: [
+          "id",
+          "sender_id",
+          "created_at_msec",
+          "conversation_id",
+          "encoded_event",
+        ],
+      })
+    );
+    eventPagesFetched += 1;
+    const page = normalizeXChatEncryptedEventPage(payload);
+    events.push(...page.events);
+    cursor = page.nextCursor;
+  } while (cursor && eventPagesFetched < MAX_AGENT_PROVIDER_HISTORY_PAGES);
+
+  const conversationId =
+    events.find((event) => event.conversationId)?.conversationId ??
+    computeDirectXChatConversationId(context.xUserId, participantUserId);
+  return {
+    viewerUserId: context.xUserId,
+    participantUserId,
+    conversationId,
+    signingKeyVersion: ownerRecord.publicKeyVersion,
+    juiceboxConfig,
+    signingKeys: [...viewerKeyRecords, ...participantKeyRecords].map(
+      ({
+        userId,
+        publicKeyVersion,
+        publicKey,
+        identityPublicKey,
+        identityPublicKeySignature,
+      }) => ({
+        userId,
+        publicKeyVersion,
+        publicKey,
+        identityPublicKey,
+        identityPublicKeySignature,
+      })
+    ),
+    events,
+    eventPagesFetched,
+    hasMore: Boolean(cursor),
+  };
+}
+
+/** Resolve one short-lived realm token only when the browser SDK asks for it. */
+export async function getXChatRealmAuthTokenForUser(
+  context: XProviderContext,
+  realmId: string
+): Promise<string> {
+  const ownerRecord = getLatestXChatOwnerRecord(
+    await getXChatPublicKeyRecords(context, context.xUserId)
+  );
+  const token = ownerRecord
+    ? getXChatRealmAuthToken(ownerRecord, realmId)
+    : null;
+  if (!token) {
+    throw new Error("XChat secure key backup authorization is unavailable.");
+  }
+  return token;
 }
 
 export async function getLikedPosts(
