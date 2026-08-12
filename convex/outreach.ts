@@ -104,6 +104,7 @@ import {
   hasDmBody,
   hasPostBody,
 } from "../shared/lib/twitter/xPostTextLimit";
+import { resolveTaskDmComposerState } from "../shared/lib/outreach/taskDmComposerHelpers";
 import { getEffectivePostTextLimitForUser } from "./lib/xPostLimits";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
 import {
@@ -1574,6 +1575,21 @@ export const getAgentPanelContext = query({
       getStringProperty(resultData, "text") ||
       task.content ||
       "";
+    const taskDraft = {
+      content: task.content || "",
+      mediaUrls: task.mediaUrls || [],
+      mediaDescriptions: task.mediaDescriptions || [],
+      mediaKinds: normalizeMediaKinds(task.mediaKinds, task.mediaUrls || []),
+    };
+    const draft =
+      task.type === "dm"
+        ? (resolveTaskDmComposerState({
+            taskId: task._id,
+            taskMode: mode,
+            taskStatus: task.status,
+            taskDraft,
+          }).draft ?? null)
+        : taskDraft;
 
     return {
       kind: task.type === "dm" ? "dm" : "post",
@@ -1585,12 +1601,7 @@ export const getAgentPanelContext = query({
       approvalReady: Boolean(task.approvalEventId),
       resolvedTaskId: task._id,
       targetTweetId: task.targetTweetId,
-      draft: {
-        content: task.content || "",
-        mediaUrls: task.mediaUrls || [],
-        mediaDescriptions: task.mediaDescriptions || [],
-        mediaKinds: normalizeMediaKinds(task.mediaKinds, task.mediaUrls || []),
-      },
+      draft,
       originalPost:
         task.type === "comment" &&
         (sourcePostSummary || fallbackSource?.sourcePostData)

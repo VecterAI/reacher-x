@@ -44,6 +44,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftSync";
 import { resolveOutreachTaskApprovalUiState } from "@/shared/lib/outreach/taskApprovalHelpers";
+import { resolveTaskDmComposerState } from "@/shared/lib/outreach/taskDmComposerHelpers";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -155,17 +156,39 @@ export function LinkedInConversationPanel({
   );
   const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
   const approvePlan = useMutation(api.outreach.approvePlan);
-  const [currentDraftText, setCurrentDraftText] = React.useState("");
-  const lastServerDraftRef = React.useRef<string | undefined>(undefined);
-
-  React.useEffect(() => {
-    lastServerDraftRef.current = undefined;
-  }, [prospectId, actionRequestId]);
 
   const resolvedData = previewData ?? data;
   const resolvedLoading = isPreview ? false : loading;
   const resolvedError = isPreview ? null : error;
   const profileUrl = resolvedData?.prospect.profileUrl;
+  const taskComposerState = React.useMemo(
+    () =>
+      resolveTaskDmComposerState({
+        taskId,
+        taskMode,
+        taskStatus,
+        taskDraft,
+      }),
+    [taskDraft, taskId, taskMode, taskStatus]
+  );
+  const taskDraftForComposer = taskComposerState.draft;
+  const isTaskApprovalComposer = taskComposerState.behavior === "task-approval";
+  const serverDraft =
+    (isTaskBacked ? taskDraftForComposer?.content : resolvedData?.draftText) ??
+    "";
+  const draftSourceKey = isTaskBacked
+    ? taskComposerState.resetKey
+    : `${prospectId}:${actionRequestId ?? "live"}`;
+  const [localDraftState, setLocalDraftState] = React.useState<{
+    sourceKey: string;
+    serverValue: string;
+    text: string;
+  } | null>(null);
+  const currentDraftText =
+    localDraftState?.sourceKey === draftSourceKey &&
+    localDraftState.serverValue === serverDraft
+      ? localDraftState.text
+      : serverDraft;
   const messagingRecoveryAction = resolveLinkedInRecoveryAction(
     resolvedData?.eligibility.reasonCode
   );
@@ -173,20 +196,10 @@ export function LinkedInConversationPanel({
     resolvedData?.warning?.code
   );
 
-  React.useEffect(() => {
-    const serverDraft =
-      (isTaskBacked ? taskDraft?.content : resolvedData?.draftText) ?? "";
-    if (lastServerDraftRef.current === serverDraft) {
-      return;
-    }
-    lastServerDraftRef.current = serverDraft;
-    setCurrentDraftText(serverDraft);
-  }, [isTaskBacked, resolvedData?.draftText, taskDraft?.content]);
-
   const initialMediaUploads = React.useMemo<ComposerInitialMediaUpload[]>(
     () =>
-      (taskDraft?.mediaUrls ?? []).map((url, index) => {
-        const mediaKind = taskDraft?.mediaKinds?.[index] ?? "image";
+      (taskDraftForComposer?.mediaUrls ?? []).map((url, index) => {
+        const mediaKind = taskDraftForComposer?.mediaKinds?.[index] ?? "image";
         return {
           id: `linkedin-task-dm-media-${index}`,
           url,
@@ -198,22 +211,29 @@ export function LinkedInConversationPanel({
                 ? "file"
                 : "image",
           mediaKind,
-          description: taskDraft?.mediaDescriptions?.[index] ?? undefined,
+          description:
+            taskDraftForComposer?.mediaDescriptions?.[index] ?? undefined,
         };
       }),
-    [taskDraft?.mediaDescriptions, taskDraft?.mediaKinds, taskDraft?.mediaUrls]
+    [taskDraftForComposer]
   );
+  const visiblePanelDraftAttachments = isTaskBacked
+    ? undefined
+    : resolvedData?.draftAttachments;
+  const composerResetKey = isTaskBacked
+    ? taskComposerState.resetKey
+    : `${actionRequestId ?? "live"}:${actionRequestStatus ?? "none"}`;
 
   const draftSync = useDebouncedDraftSync({
     enabled: isTaskBacked
-      ? taskMode === "approval" &&
+      ? isTaskApprovalComposer &&
         Boolean(taskId) &&
         (taskStatus === "pending" || taskStatus === "executing")
       : Boolean(actionRequestId && data && isPendingApproval),
     value: currentDraftText,
-    persistedValue: (isTaskBacked ? taskDraft?.content : data?.draftText) ?? "",
+    persistedValue: serverDraft,
     onSave: async (nextValue) => {
-      if (isTaskBacked) {
+      if (isTaskApprovalComposer) {
         if (!taskId) {
           return;
         }
@@ -221,10 +241,13 @@ export function LinkedInConversationPanel({
           taskId: taskId as Id<"outreachTasks">,
           expectedType: "dm",
           content: nextValue,
-          mediaUrls: taskDraft?.mediaUrls,
-          mediaDescriptions: taskDraft?.mediaDescriptions,
-          mediaKinds: taskDraft?.mediaKinds,
+          mediaUrls: taskDraftForComposer?.mediaUrls,
+          mediaDescriptions: taskDraftForComposer?.mediaDescriptions,
+          mediaKinds: taskDraftForComposer?.mediaKinds,
         });
+        return;
+      }
+      if (isTaskBacked) {
         return;
       }
       if (!actionRequestId || !isPendingApproval) {
@@ -274,9 +297,8 @@ export function LinkedInConversationPanel({
     planStatus: taskPlanStatus,
   });
   const shouldDisableTaskSubmit =
-    isTaskBacked &&
-    (taskMode !== "approval" ||
-      (taskStatus !== "pending" && taskStatus !== "executing") ||
+    isTaskApprovalComposer &&
+    ((taskStatus !== "pending" && taskStatus !== "executing") ||
       (taskApprovalUi.submitBlockedByPlan &&
         !taskApprovalUi.planCanBeApproved));
 
@@ -291,37 +313,43 @@ export function LinkedInConversationPanel({
         const nextText = extractTextFromEditorState(content).trim();
         const resolvedMediaUrls = mediaUrls?.length
           ? mediaUrls
-          : isTaskBacked
-            ? taskDraft?.mediaUrls
-            : resolvedData?.draftAttachments
-                ?.map(
-                  (attachment: LinkedInConversationAttachmentSummary) =>
-                    attachment.url
-                )
-                .filter((url: string | undefined): url is string =>
-                  Boolean(url)
-                );
+          : isTaskApprovalComposer
+            ? taskDraftForComposer?.mediaUrls
+            : isTaskBacked
+              ? undefined
+              : resolvedData?.draftAttachments
+                  ?.map(
+                    (attachment: LinkedInConversationAttachmentSummary) =>
+                      attachment.url
+                  )
+                  .filter((url: string | undefined): url is string =>
+                    Boolean(url)
+                  );
         const resolvedDescriptions = mediaDescriptions?.length
           ? mediaDescriptions
-          : isTaskBacked
-            ? taskDraft?.mediaDescriptions
-            : resolvedData?.draftAttachments?.map(
-                (attachment: LinkedInConversationAttachmentSummary) =>
-                  attachment.altText ?? ""
-              );
+          : isTaskApprovalComposer
+            ? taskDraftForComposer?.mediaDescriptions
+            : isTaskBacked
+              ? undefined
+              : resolvedData?.draftAttachments?.map(
+                  (attachment: LinkedInConversationAttachmentSummary) =>
+                    attachment.altText ?? ""
+                );
         const resolvedMediaKinds = mediaKinds?.length
           ? mediaKinds
-          : isTaskBacked
-            ? taskDraft?.mediaKinds
+          : isTaskApprovalComposer
+            ? taskDraftForComposer?.mediaKinds
             : undefined;
 
         if (!nextText && !(resolvedMediaUrls && resolvedMediaUrls.length > 0)) {
           return;
         }
 
-        if (isTaskBacked) {
+        if (isTaskApprovalComposer) {
+          if (!taskId) {
+            return;
+          }
           if (
-            taskMode === "approval" &&
             taskApprovalUi.submitBlockedByPlan &&
             taskApprovalUi.planCanBeApproved
           ) {
@@ -356,7 +384,11 @@ export function LinkedInConversationPanel({
         }
 
         await send(nextText, resolvedMediaUrls, resolvedDescriptions);
-        setCurrentDraftText("");
+        setLocalDraftState({
+          sourceKey: draftSourceKey,
+          serverValue: serverDraft,
+          text: "",
+        });
       } catch (err) {
         toast.error("Failed to send LinkedIn message", {
           description: err instanceof Error ? err.message : "Please try again.",
@@ -366,14 +398,16 @@ export function LinkedInConversationPanel({
     [
       approvePlan,
       approveTaskWithEdits,
+      draftSourceKey,
+      isTaskApprovalComposer,
       isTaskBacked,
       resolvedData,
       send,
+      serverDraft,
       taskApprovalUi.planCanBeApproved,
       taskApprovalUi.submitBlockedByPlan,
-      taskDraft,
+      taskDraftForComposer,
       taskId,
-      taskMode,
       taskPlanId,
       updatePendingTaskDraft,
     ]
@@ -389,12 +423,11 @@ export function LinkedInConversationPanel({
 
   const shouldDisableComposer =
     isPreview ||
-    (!isTaskBacked &&
+    (!isTaskApprovalComposer &&
       (!resolvedData ||
         !resolvedData.eligibility.enabled ||
         isSendingActionRequest ||
-        isSendingMessage)) ||
-    Boolean(taskMode === "posted");
+        isSendingMessage));
   const inlineDraftStatus =
     draftSync.status === "saving" ? (
       <span className="text-muted-foreground text-xs">Saving</span>
@@ -408,7 +441,8 @@ export function LinkedInConversationPanel({
     ) : !isTaskBacked && isPendingApproval && isSendingActionRequest ? (
       <span className="text-muted-foreground text-xs">Sending</span>
     ) : null;
-  const shouldRenderDraftStatusSlot = isTaskBacked || isPendingApproval;
+  const shouldRenderDraftStatusSlot =
+    isTaskApprovalComposer || isPendingApproval;
   const draftStatusSlot =
     shouldRenderDraftStatusSlot && inlineDraftStatus
       ? inlineDraftStatus
@@ -688,9 +722,9 @@ export function LinkedInConversationPanel({
           </ScrollArea>
 
           <div className="bg-background shrink-0 px-4 pt-2 pb-4 backdrop-blur-xl">
-            {resolvedData?.draftAttachments?.length ? (
+            {visiblePanelDraftAttachments?.length ? (
               <div className="mb-3 grid gap-2">
-                {resolvedData.draftAttachments.map(
+                {visiblePanelDraftAttachments.map(
                   (
                     attachment: LinkedInConversationAttachmentSummary,
                     index: number
@@ -718,7 +752,7 @@ export function LinkedInConversationPanel({
               </div>
             ) : null}
             <BaseComposer
-              key={`linkedin-dm-composer:${prospectId}:${actionRequestId ?? "live"}:${actionRequestStatus ?? "none"}`}
+              key={`linkedin-dm-composer:${prospectId}:${composerResetKey}`}
               currentUser={currentUser}
               initialContent={buildSerializedTextState(currentDraftText)}
               initialMediaUploads={initialMediaUploads}
@@ -726,9 +760,11 @@ export function LinkedInConversationPanel({
               maxLength={LINKEDIN_DM_TEXT_MAX}
               characterCountMode="raw"
               submitButtonText={
-                isTaskBacked ? taskApprovalUi.submitButtonText : "Send"
+                isTaskApprovalComposer
+                  ? taskApprovalUi.submitButtonText
+                  : "Send"
               }
-              submitButtonVariant={isTaskBacked ? "text" : "icon"}
+              submitButtonVariant={isTaskApprovalComposer ? "text" : "icon"}
               toolbarPlacement="bottom"
               showIdentityHeader={false}
               showMediaDescription={false}
@@ -765,7 +801,11 @@ export function LinkedInConversationPanel({
               }}
               className="rounded-xl border p-2"
               onContentChange={(content) => {
-                setCurrentDraftText(extractTextFromEditorState(content).trim());
+                setLocalDraftState({
+                  sourceKey: draftSourceKey,
+                  serverValue: serverDraft,
+                  text: extractTextFromEditorState(content).trim(),
+                });
               }}
               onEditorBlur={() => {
                 void draftSync.flushNow();
