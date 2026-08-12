@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect } from "react";
-import { Button } from "@/shared/ui/components/Button";
+import { AppErrorState } from "@/shared/ui/components/AppErrorState";
 import { logger } from "@/shared/lib/logger";
 import { geistMono, geistPixelSquare, geistSans } from "./fonts";
 import "./globals.css";
@@ -11,10 +10,10 @@ const globalErrorLogger = logger.withScope("GlobalError");
 
 export default function GlobalError({
   error,
-  reset,
+  unstable_retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  unstable_retry: () => void;
 }) {
   useEffect(() => {
     globalErrorLogger.error("Unhandled global error boundary event", error);
@@ -26,31 +25,14 @@ export default function GlobalError({
         suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} ${geistPixelSquare.variable} bg-background text-foreground antialiased`}
       >
-        <title>Something went wrong | ReacherX</title>
-        <main className="flex min-h-screen items-center justify-center p-6">
-          <div className="bg-background w-full max-w-xl rounded-2xl border p-6 shadow-sm">
-            <p className="text-muted-foreground text-xs font-medium tracking-[0.18em] uppercase">
-              Global error
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-              ReacherX ran into an unexpected failure.
-            </h1>
-            <p className="text-muted-foreground mt-3 text-sm leading-6">
-              Try reloading the app. If the error persists, return to the
-              dashboard and start a fresh session.
-            </p>
-            {error.digest ? (
-              <p className="text-muted-foreground mt-3 font-mono text-xs">
-                Reference: {error.digest}
-              </p>
-            ) : null}
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Button onClick={() => reset()}>Try again</Button>
-              <Button asChild variant="outline">
-                <Link href="/">Go to dashboard</Link>
-              </Button>
-            </div>
-          </div>
+        <title>Couldn’t load ReacherX | ReacherX</title>
+        <main className="flex min-h-screen items-center justify-center">
+          <AppErrorState
+            className="px-6 py-16"
+            title="We couldn’t load this page."
+            description="Please try again, or return to your dashboard."
+            onRetry={unstable_retry}
+          />
         </main>
       </body>
     </html>
