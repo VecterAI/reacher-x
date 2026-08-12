@@ -82,6 +82,20 @@ test("lock frees the browser-only XChat view state", () => {
   assert.equal(getXChatBrowserSession({ prospectId: "prospect-1" }), null);
 });
 
+test("an unresolved session target never receives another prospect's session", () => {
+  const session = cacheVerifiedXChatBrowserSession({
+    prospectId: "prospect-1",
+    bundle: bundle(),
+    messages: [],
+    decryptionErrorCount: 0,
+  });
+
+  assert.equal(getXChatBrowserSession({}), null);
+  assert.equal(getXChatBrowserSession({ prospectId: null }), null);
+  assert.equal(getXChatBrowserSession({ prospectId: "prospect-2" }), null);
+  assert.equal(getXChatBrowserSession({ prospectId: "prospect-1" }), session);
+});
+
 test("concurrent XChat token requests for the same realm share one backend call", async () => {
   let backendCallCount = 0;
   let resolveToken: ((token: string) => void) | undefined;

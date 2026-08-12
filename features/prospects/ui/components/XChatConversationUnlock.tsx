@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { useAction } from "convex/react";
-import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -22,6 +21,8 @@ import {
   DialogTitle,
 } from "@/shared/ui/components/Dialog";
 import { Input } from "@/shared/ui/components/Input";
+import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
+import { LockIcon, LockOpenRightIcon } from "@/shared/ui/components/icons";
 
 type XChatAvailability = "checking" | "available" | "unavailable" | "failed";
 
@@ -50,7 +51,8 @@ export function XChatConversationUnlock({
   const [pin, setPin] = React.useState("");
   const [isUnlocking, setIsUnlocking] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const preparedProspectIdRef = React.useRef<string | null>(null);
+  const preparedTargetKeyRef = React.useRef<string | null>(null);
+  const targetKey = JSON.stringify([prospectId, participantUserId ?? null]);
 
   const decryptBundle = React.useCallback(
     async (nextBundle: XChatDecryptBundle, nextPin: string) => {
@@ -61,29 +63,26 @@ export function XChatConversationUnlock({
         getRealmAuthToken: async (realmId) =>
           await getRealmAuthToken({ realmId }),
       });
-      if (preparedProspectIdRef.current !== prospectId) {
-        return;
+      if (preparedTargetKeyRef.current !== targetKey) {
+        return null;
       }
       setPin("");
       setBundle(nextBundle);
-      if (decrypted.messages.length === 0) {
-        setError(
-          "XChat unlocked, but no verified text messages could be decrypted from this history window."
-        );
-      }
+      setError(null);
+      return decrypted.messages.length;
     },
-    [getRealmAuthToken, prospectId]
+    [getRealmAuthToken, prospectId, targetKey]
   );
 
   const prepareBundle = React.useCallback(async () => {
-    const requestedProspectId = prospectId;
+    const requestedTargetKey = targetKey;
     setAvailability("checking");
     setError(null);
     try {
       const nextBundle = (await getDecryptBundle({
         prospectId: prospectId as Id<"prospects">,
       })) as XChatDecryptBundle;
-      if (preparedProspectIdRef.current !== requestedProspectId) {
+      if (preparedTargetKeyRef.current !== requestedTargetKey) {
         return null;
       }
       setBundle(nextBundle);
@@ -97,25 +96,25 @@ export function XChatConversationUnlock({
       }
       return nextBundle;
     } catch {
-      if (preparedProspectIdRef.current !== requestedProspectId) {
+      if (preparedTargetKeyRef.current !== requestedTargetKey) {
         return null;
       }
       setAvailability("failed");
-      setError("XChat history could not be checked. Please try again.");
+      setError("Couldn't check encrypted messages. Please try again.");
       return null;
     }
-  }, [decryptBundle, getDecryptBundle, prospectId]);
+  }, [decryptBundle, getDecryptBundle, prospectId, targetKey]);
 
   React.useEffect(() => {
-    if (preparedProspectIdRef.current === prospectId) {
+    if (preparedTargetKeyRef.current === targetKey) {
       return;
     }
-    preparedProspectIdRef.current = prospectId;
+    preparedTargetKeyRef.current = targetKey;
     setBundle(null);
     setError(null);
     setAvailability("checking");
     void prepareBundle();
-  }, [prepareBundle, prospectId]);
+  }, [prepareBundle, targetKey]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
@@ -131,16 +130,19 @@ export function XChatConversationUnlock({
     try {
       const nextBundle = bundle ?? (await prepareBundle());
       if (!nextBundle || !hasEncryptedEvents(nextBundle)) {
-        setError("No encrypted XChat events are available for this prospect.");
+        setError("No encrypted messages are available for this prospect.");
         return;
       }
-      await decryptBundle(nextBundle, pin);
+      const messageCount = await decryptBundle(nextBundle, pin);
+      if (messageCount !== null) {
+        setOpen(false);
+      }
     } catch (unlockError) {
       setPin("");
       setError(
         unlockError instanceof Error
           ? unlockError.message
-          : "XChat could not be unlocked."
+          : "Couldn't unlock messages."
       );
     } finally {
       setIsUnlocking(false);
@@ -153,81 +155,81 @@ export function XChatConversationUnlock({
     setError(null);
   };
 
-  if (availability === "unavailable" && !session) {
+  if (session && !open) {
     return null;
   }
 
   const hasPartialCoverage = session?.hasMore ?? bundle?.hasMore ?? false;
+  if (availability === "unavailable" && !session) {
+    return null;
+  }
+
+  const statusLabel = session
+    ? `XChat unlocked${hasPartialCoverage ? " · More on X" : ""}`
+    : availability === "failed"
+      ? "Couldn't check encrypted messages"
+      : availability === "checking"
+        ? "Checking encrypted messages…"
+        : hasPartialCoverage
+          ? "Encrypted messages · More on X"
+          : "Encrypted messages · Enter PIN to view";
 
   return (
-    <section className="border-border bg-muted/20 rounded-lg border p-3">
-      <header className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-2">
-          <span className="bg-primary/10 text-primary mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md">
-            {session ? (
-              <ShieldCheck className="size-4" aria-hidden="true" />
-            ) : (
-              <LockKeyhole className="size-4" aria-hidden="true" />
-            )}
-          </span>
-          <div className="min-w-0">
-            <h3 className="text-sm font-medium">
-              {session
-                ? "XChat unlocked in this browser"
-                : availability === "failed"
-                  ? "XChat availability unavailable"
-                  : availability === "checking"
-                    ? "Checking XChat history"
-                    : "Encrypted XChat"}
-            </h3>
-            <p className="text-muted-foreground mt-1 text-xs leading-5">
-              {session
-                ? `${session.messages.length} verified text messages are shown below.`
-                : availability === "checking"
-                  ? "Checking for encrypted XChat history…"
-                  : availability === "failed"
-                    ? "XChat history could not be checked."
-                    : "Unlock locally to view verified XChat messages in this panel."}
-            </p>
-          </div>
-        </div>
-        {session ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            onClick={handleLock}
-          >
-            Lock XChat
-          </Button>
-        ) : availability === "failed" ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            onClick={() => void prepareBundle()}
-          >
-            Retry
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            size="xs"
-            onClick={() => setOpen(true)}
-            disabled={availability === "checking"}
-          >
-            Unlock XChat
-          </Button>
-        )}
-      </header>
-      {hasPartialCoverage ? (
-        <p className="text-muted-foreground mt-3 text-xs leading-5">
-          XChat history is partially loaded; additional encrypted events remain
-          available on X.
-        </p>
-      ) : null}
-      {availability === "failed" && error ? (
-        <p className="text-destructive mt-3 text-xs leading-5" role="alert">
+    <div className="space-y-2">
+      <InlineFeatureStrip
+        leading={
+          <>
+            <div className="border-border shrink-0 rounded-md border p-1">
+              {session ? (
+                <LockOpenRightIcon
+                  className="text-foreground size-4 fill-current"
+                  aria-hidden="true"
+                />
+              ) : (
+                <LockIcon
+                  className="text-foreground size-4 fill-current"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+            <span className="min-w-0 truncate text-sm font-medium">
+              {statusLabel}
+            </span>
+          </>
+        }
+        trailing={
+          session ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={handleLock}
+            >
+              Lock
+            </Button>
+          ) : availability === "failed" ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={() => void prepareBundle()}
+            >
+              Retry
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="xs"
+              onClick={() => setOpen(true)}
+              disabled={availability === "checking" || isUnlocking}
+            >
+              Unlock
+            </Button>
+          )
+        }
+      />
+      {error && (availability === "failed" || session) ? (
+        <p className="text-destructive text-xs" role="alert">
           {error}
         </p>
       ) : null}
@@ -235,22 +237,22 @@ export function XChatConversationUnlock({
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Unlock XChat in this browser</DialogTitle>
+            <DialogTitle>Unlock messages</DialogTitle>
             <DialogDescription>
-              Your XChat PIN and private keys stay in browser memory. ReacherX
-              fetches ciphertext, then X&apos;s Chat XDK decrypts and verifies
-              it locally.
+              Enter your XChat PIN. It stays in this browser and is never sent
+              to ReacherX.
             </DialogDescription>
           </DialogHeader>
           <form
             className="space-y-3"
+            aria-busy={isUnlocking}
             onSubmit={(event) => {
               event.preventDefault();
               void handleUnlock();
             }}
           >
             <label className="space-y-1.5 text-sm font-medium">
-              <span>XChat PIN</span>
+              <span>PIN</span>
               <Input
                 type="password"
                 value={pin}
@@ -265,7 +267,7 @@ export function XChatConversationUnlock({
               id="xchat-panel-pin-privacy"
               className="text-muted-foreground text-xs leading-5"
             >
-              The PIN is never sent to ReacherX, X, analytics, or the Agent.
+              Your PIN never leaves this browser.
             </p>
             {error ? (
               <p className="text-destructive text-sm" role="alert">
@@ -275,19 +277,24 @@ export function XChatConversationUnlock({
             <DialogFooter>
               <Button
                 type="button"
+                size="xs"
                 variant="outline"
                 onClick={() => setOpen(false)}
                 disabled={isUnlocking}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isUnlocking || !pin.trim()}>
-                {isUnlocking ? "Unlocking…" : "Unlock XChat"}
+              <Button
+                type="submit"
+                size="xs"
+                disabled={isUnlocking || !pin.trim()}
+              >
+                Unlock
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-    </section>
+    </div>
   );
 }

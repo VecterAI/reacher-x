@@ -88,6 +88,14 @@ test("the X conversation panel mounts the shared XChat unlock and merge path", (
     "features/prospects/ui/components/XConversationPanel.tsx",
     "utf8"
   );
+  const unlockSource = readFileSync(
+    "features/prospects/ui/components/XChatConversationUnlock.tsx",
+    "utf8"
+  );
+  const agentUnlockSource = readFileSync(
+    "features/agent/ui/components/xchat-history/XChatUnlockCard.tsx",
+    "utf8"
+  );
 
   assert.match(source, /useXChatBrowserSession/);
   assert.match(source, /mergeXChatConversationMessages/);
@@ -96,4 +104,9 @@ test("the X conversation panel mounts the shared XChat unlock and merge path", (
     source,
     /Legacy X\/Twitter DM history is limited to the past 30/
   );
+  assert.match(unlockSource, /session && !open/);
+  assert.doesNotMatch(unlockSource, /No readable messages/);
+  assert.doesNotMatch(unlockSource, /Unlocking…/);
+  assert.doesNotMatch(agentUnlockSource, /No readable messages/);
+  assert.doesNotMatch(agentUnlockSource, /Unlocking…/);
 });

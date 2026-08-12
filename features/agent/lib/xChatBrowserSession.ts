@@ -112,6 +112,16 @@ function matchesSessionTarget(
 export function getXChatBrowserSession(
   target: XChatBrowserSessionTarget
 ): BrowserXChatSession | null {
+  if (
+    !target.prospectId &&
+    !target.viewerUserId &&
+    !target.participantUserId &&
+    !target.conversationId &&
+    !target.signingKeyVersion
+  ) {
+    return null;
+  }
+
   if (target.prospectId) {
     const sessionKey = sessionKeysByProspectId.get(target.prospectId);
     const session = sessionKey ? decryptedSessions.get(sessionKey) : undefined;
