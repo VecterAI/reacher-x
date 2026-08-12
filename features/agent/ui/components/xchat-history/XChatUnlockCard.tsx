@@ -1,13 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
-import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Dialog,
@@ -18,10 +16,13 @@ import {
   DialogTitle,
 } from "@/shared/ui/components/Dialog";
 import { Input } from "@/shared/ui/components/Input";
+import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
+import { LockIcon, LockOpenRightIcon } from "@/shared/ui/components/icons";
 import {
   decryptXChatInBrowser,
   hasUnlockedXChatSession,
-  type BrowserDecryptedXChatMessage,
+  lockXChatInBrowser,
+  useXChatBrowserSession,
   type XChatDecryptBundle,
 } from "@/features/agent/lib/xChatBrowserSession";
 import type { LockedXChatToolEvidence } from "@/features/agent/lib/xChatToolEvidence";
@@ -44,14 +45,20 @@ export function XChatUnlockCard({
   const streamAnalysis = useAction(api.chat.streamSharedXChatResponse);
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState("");
-  const [messages, setMessages] = useState<BrowserDecryptedXChatMessage[]>([]);
-  const [bundle, setBundle] = useState<XChatDecryptBundle | null>(null);
-  const [decryptionErrorCount, setDecryptionErrorCount] = useState(0);
+  const bundleRef = useRef<XChatDecryptBundle | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const prospectId = selectedContext?.prospectId ?? null;
+  const browserSession = useXChatBrowserSession({ prospectId });
+  const messages = browserSession?.messages ?? [];
+  const decryptionErrorCount = browserSession?.decryptionErrorCount ?? 0;
+
+  useEffect(() => {
+    bundleRef.current = null;
+  }, [prospectId]);
+
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) {
@@ -64,21 +71,22 @@ export function XChatUnlockCard({
     nextBundle: XChatDecryptBundle,
     nextPin: string
   ) => {
+    if (!prospectId) {
+      throw new Error(
+        "The selected prospect could not be resolved for this task."
+      );
+    }
     const decrypted = await decryptXChatInBrowser({
+      prospectId,
       bundle: nextBundle,
       pin: nextPin,
       getRealmAuthToken: async (realmId) =>
         await getRealmAuthToken({ realmId }),
     });
     setPin("");
-    setBundle(nextBundle);
-    setMessages(decrypted.messages);
-    setDecryptionErrorCount(decrypted.decryptionErrorCount);
-    if (decrypted.messages.length === 0) {
-      setError(
-        "XChat unlocked, but no verified text messages could be decrypted from this history window."
-      );
-    }
+    bundleRef.current = nextBundle;
+    setError(null);
+    return decrypted.messages.length;
   };
 
   const handleOpen = async () => {
@@ -87,12 +95,15 @@ export function XChatUnlockCard({
     if (!prospectId) {
       return;
     }
+    if (browserSession) {
+      return;
+    }
     setIsUnlocking(true);
     try {
       const nextBundle = (await getDecryptBundle({
         prospectId,
       })) as XChatDecryptBundle;
-      setBundle(nextBundle);
+      bundleRef.current = nextBundle;
       if (hasUnlockedXChatSession(nextBundle)) {
         await decryptBundle(nextBundle, "");
       }
@@ -100,7 +111,7 @@ export function XChatUnlockCard({
       setError(
         prepareError instanceof Error
           ? prepareError.message
-          : "XChat could not be prepared."
+          : "Couldn't prepare encrypted messages."
       );
     } finally {
       setIsUnlocking(false);
@@ -116,7 +127,7 @@ export function XChatUnlockCard({
     setError(null);
     try {
       const nextBundle =
-        bundle ??
+        bundleRef.current ??
         ((await getDecryptBundle({ prospectId })) as XChatDecryptBundle);
       await decryptBundle(nextBundle, pin);
     } catch (unlockError) {
@@ -124,7 +135,7 @@ export function XChatUnlockCard({
       setError(
         unlockError instanceof Error
           ? unlockError.message
-          : "XChat could not be unlocked."
+          : "Couldn't unlock messages."
       );
     } finally {
       setIsUnlocking(false);
@@ -132,14 +143,14 @@ export function XChatUnlockCard({
   };
 
   const handleShare = async () => {
-    if (!prospectId || !bundle || messages.length === 0) {
+    if (!prospectId || !browserSession || messages.length === 0) {
       return;
     }
     setIsSharing(true);
     setError(null);
     const sharedMessages = messages.slice(-MAX_SHARED_XCHAT_MESSAGES);
     const coverageComplete =
-      !bundle.hasMore &&
+      !browserSession.hasMore &&
       messages.length <= MAX_SHARED_XCHAT_MESSAGES &&
       decryptionErrorCount === 0;
     try {
@@ -149,23 +160,22 @@ export function XChatUnlockCard({
         prospectId: prospectId as Id<"prospects">,
         prompt,
       });
-      setMessages([]);
-      setBundle(null);
+      bundleRef.current = null;
       setOpen(false);
-      toast.success("XChat shared for this Agent response");
+      toast.success("Messages shared with the Agent");
       void streamAnalysis({
         threadId,
         promptMessageId: saved.messageId,
         context: {
           prospectId: prospectId as Id<"prospects">,
-          conversationId: bundle.conversationId,
+          conversationId: browserSession.conversationId,
           decryptedAt: getCurrentUTCTimestamp(),
           coverageComplete,
           messages: sharedMessages,
         },
       })
         .catch((streamError) => {
-          toast.error("The Agent could not analyze XChat", {
+          toast.error("The Agent couldn't analyze these messages", {
             description:
               streamError instanceof Error
                 ? streamError.message
@@ -178,61 +188,91 @@ export function XChatUnlockCard({
       setError(
         shareError instanceof Error
           ? shareError.message
-          : "XChat could not be shared with the Agent."
+          : "Couldn't share messages with the Agent."
       );
     }
   };
 
+  const handleLock = () => {
+    lockXChatInBrowser();
+    bundleRef.current = null;
+    setPin("");
+    setError(null);
+    setOpen(false);
+  };
+
+  const hasReadableMessages = messages.length > 0;
+  const statusLabel = browserSession
+    ? hasReadableMessages
+      ? `XChat unlocked · ${messages.length} ready to share`
+      : "XChat unlocked"
+    : `Encrypted messages · ${evidence.eventCount} found · ${evidence.inboundEventCount} received · ${evidence.outboundEventCount} sent`;
+
   return (
-    <section className="border-border bg-card rounded-lg border p-3">
-      <header className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-2">
-          <span className="bg-primary/10 text-primary mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md">
-            <LockKeyhole className="size-4" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h4 className="text-sm font-medium">Encrypted XChat found</h4>
-            <p className="text-muted-foreground mt-1 text-xs leading-5">
-              {evidence.eventCount} encrypted events:{" "}
-              {evidence.inboundEventCount} inbound and{" "}
-              {evidence.outboundEventCount} outbound.
-            </p>
-          </div>
-        </div>
-        <Badge variant="outline">XChat</Badge>
-      </header>
-      <div className="mt-3 flex justify-end">
-        <Button
-          type="button"
-          size="xs"
-          onClick={() => void handleOpen()}
-          disabled={!prospectId && selectedContext !== undefined}
-        >
-          Unlock and analyze
-        </Button>
-      </div>
+    <div className="space-y-2">
+      <InlineFeatureStrip
+        leading={
+          <>
+            <div className="border-border shrink-0 rounded-md border p-1">
+              {browserSession ? (
+                <LockOpenRightIcon
+                  className="text-foreground size-4 fill-current"
+                  aria-hidden="true"
+                />
+              ) : (
+                <LockIcon
+                  className="text-foreground size-4 fill-current"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+            <span className="min-w-0 truncate text-sm font-medium">
+              {statusLabel}
+            </span>
+          </>
+        }
+        trailing={
+          <Button
+            type="button"
+            size="xs"
+            onClick={() => void handleOpen()}
+            disabled={!prospectId && selectedContext !== undefined}
+          >
+            {browserSession ? "Review" : "Unlock"}
+          </Button>
+        }
+      />
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Unlock XChat in this browser</DialogTitle>
+            <DialogTitle>
+              {!browserSession
+                ? "Unlock messages"
+                : hasReadableMessages
+                  ? "Share unlocked messages"
+                  : "XChat unlocked"}
+            </DialogTitle>
             <DialogDescription>
-              Your XChat PIN and private keys stay in browser memory. ReacherX
-              fetches ciphertext, then X&apos;s Chat XDK decrypts and verifies
-              it locally.
+              {!browserSession
+                ? "Enter your XChat PIN. It stays in this browser and is never sent to ReacherX."
+                : hasReadableMessages
+                  ? `Share up to the latest ${MAX_SHARED_XCHAT_MESSAGES} messages with the Agent for this response.`
+                  : "The messages already visible in the thread remain available. This unlock did not add any additional XChat rows to share for this response."}
             </DialogDescription>
           </DialogHeader>
 
-          {messages.length === 0 ? (
+          {!browserSession ? (
             <form
               className="space-y-3"
+              aria-busy={isUnlocking}
               onSubmit={(event) => {
                 event.preventDefault();
                 void handleUnlock();
               }}
             >
               <label className="space-y-1.5 text-sm font-medium">
-                <span>XChat PIN</span>
+                <span>PIN</span>
                 <Input
                   type="password"
                   value={pin}
@@ -243,16 +283,11 @@ export function XChatUnlockCard({
                   aria-describedby="xchat-pin-privacy"
                 />
               </label>
-              {isUnlocking && !bundle ? (
-                <p className="text-muted-foreground text-sm" role="status">
-                  Preparing encrypted history…
-                </p>
-              ) : null}
               <p
                 id="xchat-pin-privacy"
                 className="text-muted-foreground text-xs leading-5"
               >
-                The PIN is never sent to ReacherX, X, analytics, or the Agent.
+                Your PIN never leaves this browser.
               </p>
               {error ? (
                 <p className="text-destructive text-sm" role="alert">
@@ -262,36 +297,33 @@ export function XChatUnlockCard({
               <DialogFooter>
                 <Button
                   type="button"
+                  size="xs"
                   variant="outline"
                   onClick={() => setOpen(false)}
                   disabled={isUnlocking}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isUnlocking || !pin.trim()}>
-                  {isUnlocking ? "Unlocking…" : "Unlock XChat"}
+                <Button
+                  type="submit"
+                  size="xs"
+                  disabled={isUnlocking || !pin.trim()}
+                >
+                  Unlock
                 </Button>
               </DialogFooter>
             </form>
-          ) : (
-            <div className="space-y-4">
-              <div className="bg-muted/40 flex items-start gap-2 rounded-md border p-3">
-                <ShieldCheck
-                  className="text-primary mt-0.5 size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                <p className="text-sm leading-5">
-                  {messages.length} verified text messages are ready. Sharing
-                  sends only the latest {MAX_SHARED_XCHAT_MESSAGES} messages to
-                  the Agent for this response.
-                </p>
-              </div>
-              <p className="text-muted-foreground text-xs leading-5">
-                The model provider will receive the shared text. ReacherX does
-                not store that plaintext in message context or raw-model
-                telemetry, although the Agent&apos;s resulting answer remains in
-                this task.
+          ) : !hasReadableMessages ? (
+            <div className="space-y-3">
+              <p className="text-muted-foreground text-sm" role="status">
+                The conversation is already visible above. This unlock only adds
+                encrypted XChat rows when they are available.
               </p>
+              {browserSession.hasMore ? (
+                <p className="text-muted-foreground text-xs leading-5">
+                  More encrypted history is available on X.
+                </p>
+              ) : null}
               {error ? (
                 <p className="text-destructive text-sm" role="alert">
                   {error}
@@ -300,6 +332,58 @@ export function XChatUnlockCard({
               <DialogFooter>
                 <Button
                   type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={handleLock}
+                >
+                  Lock
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <InlineFeatureStrip
+                leading={
+                  <>
+                    <div className="border-border shrink-0 rounded-md border p-1">
+                      <LockOpenRightIcon
+                        className="text-foreground size-4 fill-current"
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <span className="min-w-0 truncate text-sm font-medium">
+                      {messages.length} messages ready · Latest{" "}
+                      {MAX_SHARED_XCHAT_MESSAGES} shared
+                    </span>
+                  </>
+                }
+              />
+              <p className="text-muted-foreground text-xs leading-5">
+                Shared text goes to the model for this response. ReacherX does
+                not keep that plaintext.
+              </p>
+              {browserSession?.hasMore ? (
+                <p className="text-muted-foreground text-xs leading-5">
+                  More encrypted history is available on X.
+                </p>
+              ) : null}
+              {error ? (
+                <p className="text-destructive text-sm" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  size="xs"
                   variant="outline"
                   onClick={() => setOpen(false)}
                   disabled={isSharing}
@@ -308,8 +392,18 @@ export function XChatUnlockCard({
                 </Button>
                 <Button
                   type="button"
-                  onClick={() => void handleShare()}
+                  size="xs"
+                  variant="outline"
+                  onClick={handleLock}
                   disabled={isSharing}
+                >
+                  Lock
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  onClick={() => void handleShare()}
+                  disabled={isSharing || messages.length === 0}
                 >
                   {isSharing ? "Sharing…" : "Share with Agent"}
                 </Button>
@@ -318,6 +412,6 @@ export function XChatUnlockCard({
           )}
         </DialogContent>
       </Dialog>
-    </section>
+    </div>
   );
 }

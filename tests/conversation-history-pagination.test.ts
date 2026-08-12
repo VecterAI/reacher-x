@@ -68,6 +68,6 @@ test("conversation panels expose upward history loading and recovery copy", () =
   );
   assert.match(
     xSource,
-    /X\/Twitter provides conversation history from the past 30/
+    /Legacy X\/Twitter DM history is limited to the past 30/
   );
 });
