@@ -44,6 +44,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftSync";
 import { resolveOutreachTaskApprovalUiState } from "@/shared/lib/outreach/taskApprovalHelpers";
+import { resolveTaskDmComposerState } from "@/shared/lib/outreach/taskDmComposerHelpers";
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
 import type { XDmAttachmentSummary, XDmMessage } from "@/shared/lib/twitter/dm";
 import type {
@@ -130,41 +131,57 @@ export function XConversationPanel({
   );
   const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
   const approvePlan = useMutation(api.outreach.approvePlan);
-  const [currentDraftText, setCurrentDraftText] = React.useState("");
   const profileUrl = data?.prospect.profileUrl;
-  const lastServerDraftRef = React.useRef<string | undefined>(undefined);
-
-  React.useEffect(() => {
-    lastServerDraftRef.current = undefined;
-  }, [prospectId, actionRequestId]);
-
-  // Sync local draft only when the server/Convex draft value changes — never when the editor
-  // blurs (e.g. emoji popover), or we wipe typed text and the composer resets to stale draft.
-  React.useEffect(() => {
-    const serverDraft =
-      (isTaskBacked ? taskDraft?.content : data?.draftText) ?? "";
-    if (lastServerDraftRef.current === serverDraft) {
-      return;
-    }
-    lastServerDraftRef.current = serverDraft;
-    setCurrentDraftText(serverDraft);
-  }, [data?.draftText, isTaskBacked, taskDraft?.content]);
+  const taskComposerState = React.useMemo(
+    () =>
+      resolveTaskDmComposerState({
+        taskId,
+        taskMode,
+        taskStatus,
+        taskDraft,
+      }),
+    [taskDraft, taskId, taskMode, taskStatus]
+  );
+  const taskDraftForComposer = taskComposerState.draft;
+  const isTaskApprovalComposer = taskComposerState.behavior === "task-approval";
+  const serverDraft =
+    (isTaskBacked ? taskDraftForComposer?.content : data?.draftText) ?? "";
+  const draftSourceKey = isTaskBacked
+    ? taskComposerState.resetKey
+    : `${prospectId}:${actionRequestId ?? "live"}`;
+  const [localDraftState, setLocalDraftState] = React.useState<{
+    sourceKey: string;
+    serverValue: string;
+    text: string;
+  } | null>(null);
+  const currentDraftText =
+    localDraftState?.sourceKey === draftSourceKey &&
+    localDraftState.serverValue === serverDraft
+      ? localDraftState.text
+      : serverDraft;
 
   const initialMediaUploads = React.useMemo<ComposerInitialMediaUpload[]>(
     () =>
-      (taskDraft?.mediaUrls ?? []).map((url, index) => ({
+      (taskDraftForComposer?.mediaUrls ?? []).map((url, index) => ({
         id: `task-dm-media-${index}`,
         url,
         serverUrl: url,
         type:
-          (taskDraft?.mediaKinds?.[index] ?? "image") === "video"
+          (taskDraftForComposer?.mediaKinds?.[index] ?? "image") === "video"
             ? "video"
             : "image",
-        mediaKind: taskDraft?.mediaKinds?.[index] ?? "image",
-        description: taskDraft?.mediaDescriptions?.[index] ?? undefined,
+        mediaKind: taskDraftForComposer?.mediaKinds?.[index] ?? "image",
+        description:
+          taskDraftForComposer?.mediaDescriptions?.[index] ?? undefined,
       })),
-    [taskDraft?.mediaDescriptions, taskDraft?.mediaKinds, taskDraft?.mediaUrls]
+    [taskDraftForComposer]
   );
+  const visiblePanelDraftAttachments = isTaskBacked
+    ? undefined
+    : data?.draftAttachments;
+  const composerResetKey = isTaskBacked
+    ? taskComposerState.resetKey
+    : `${actionRequestId ?? "live"}:${actionRequestStatus ?? "none"}`;
 
   const resolvedTwitterUsername = React.useMemo(() => {
     const p = data?.prospect;
@@ -228,14 +245,14 @@ export function XConversationPanel({
 
   const draftSync = useDebouncedDraftSync({
     enabled: isTaskBacked
-      ? taskMode === "approval" &&
+      ? isTaskApprovalComposer &&
         Boolean(taskId) &&
         (taskStatus === "pending" || taskStatus === "executing")
       : Boolean(actionRequestId && data && isPendingApproval),
     value: currentDraftText,
-    persistedValue: (isTaskBacked ? taskDraft?.content : data?.draftText) ?? "",
+    persistedValue: serverDraft,
     onSave: async (nextValue) => {
-      if (isTaskBacked) {
+      if (isTaskApprovalComposer) {
         if (!taskId) {
           return;
         }
@@ -243,10 +260,13 @@ export function XConversationPanel({
           taskId: taskId as Id<"outreachTasks">,
           expectedType: "dm",
           content: nextValue,
-          mediaUrls: taskDraft?.mediaUrls,
-          mediaDescriptions: taskDraft?.mediaDescriptions,
-          mediaKinds: taskDraft?.mediaKinds,
+          mediaUrls: taskDraftForComposer?.mediaUrls,
+          mediaDescriptions: taskDraftForComposer?.mediaDescriptions,
+          mediaKinds: taskDraftForComposer?.mediaKinds,
         });
+        return;
+      }
+      if (isTaskBacked) {
         return;
       }
       if (!actionRequestId || !isPendingApproval) {
@@ -274,9 +294,8 @@ export function XConversationPanel({
     planStatus: taskPlanStatus,
   });
   const shouldDisableTaskSubmit =
-    isTaskBacked &&
-    (taskMode !== "approval" ||
-      (taskStatus !== "pending" && taskStatus !== "executing") ||
+    isTaskApprovalComposer &&
+    ((taskStatus !== "pending" && taskStatus !== "executing") ||
       (taskApprovalUi.submitBlockedByPlan &&
         !taskApprovalUi.planCanBeApproved));
 
@@ -291,31 +310,37 @@ export function XConversationPanel({
         const nextText = extractTextFromEditorState(content).trim();
         const resolvedMediaUrls = mediaUrls?.length
           ? mediaUrls
-          : isTaskBacked
-            ? taskDraft?.mediaUrls
-            : data?.draftAttachments
-                ?.map((attachment: XDmAttachmentSummary) => attachment.url)
-                .filter((url: string | undefined): url is string =>
-                  Boolean(url)
-                );
+          : isTaskApprovalComposer
+            ? taskDraftForComposer?.mediaUrls
+            : isTaskBacked
+              ? undefined
+              : data?.draftAttachments
+                  ?.map((attachment: XDmAttachmentSummary) => attachment.url)
+                  .filter((url: string | undefined): url is string =>
+                    Boolean(url)
+                  );
         const resolvedDescriptions = mediaDescriptions?.length
           ? mediaDescriptions
-          : isTaskBacked
-            ? taskDraft?.mediaDescriptions
-            : data?.draftAttachments?.map(
-                (attachment: XDmAttachmentSummary) => attachment.altText ?? ""
-              );
+          : isTaskApprovalComposer
+            ? taskDraftForComposer?.mediaDescriptions
+            : isTaskBacked
+              ? undefined
+              : data?.draftAttachments?.map(
+                  (attachment: XDmAttachmentSummary) => attachment.altText ?? ""
+                );
         const resolvedMediaKinds = mediaKinds?.length
           ? mediaKinds
-          : isTaskBacked
-            ? taskDraft?.mediaKinds
+          : isTaskApprovalComposer
+            ? taskDraftForComposer?.mediaKinds
             : undefined;
         if (!nextText && !(resolvedMediaUrls && resolvedMediaUrls.length > 0)) {
           return;
         }
-        if (isTaskBacked) {
+        if (isTaskApprovalComposer) {
+          if (!taskId) {
+            return;
+          }
           if (
-            taskMode === "approval" &&
             taskApprovalUi.submitBlockedByPlan &&
             taskApprovalUi.planCanBeApproved
           ) {
@@ -349,7 +374,11 @@ export function XConversationPanel({
           return;
         }
         await send(nextText, resolvedMediaUrls, resolvedDescriptions);
-        setCurrentDraftText("");
+        setLocalDraftState({
+          sourceKey: draftSourceKey,
+          serverValue: serverDraft,
+          text: "",
+        });
         toast.success("DM sent on X/Twitter");
       } catch (err) {
         toast.error("Failed to send DM", {
@@ -361,13 +390,15 @@ export function XConversationPanel({
       approvePlan,
       approveTaskWithEdits,
       data,
+      draftSourceKey,
+      isTaskApprovalComposer,
       isTaskBacked,
       send,
+      serverDraft,
       taskApprovalUi.planCanBeApproved,
       taskApprovalUi.submitBlockedByPlan,
-      taskDraft,
+      taskDraftForComposer,
       taskId,
-      taskMode,
       taskPlanId,
       updatePendingTaskDraft,
     ]
@@ -382,9 +413,8 @@ export function XConversationPanel({
   }, [cancel, isTaskBacked]);
 
   const shouldDisableComposer =
-    (!isTaskBacked &&
-      (!data || !data.eligibility.enabled || isSendingActionRequest)) ||
-    Boolean(taskMode === "posted");
+    !isTaskApprovalComposer &&
+    (!data || !data.eligibility.enabled || isSendingActionRequest);
   const inlineDraftStatus =
     draftSync.status === "saving" ? (
       <span className="text-muted-foreground text-xs">Saving</span>
@@ -398,7 +428,8 @@ export function XConversationPanel({
     ) : !isTaskBacked && isPendingApproval && isSendingActionRequest ? (
       <span className="text-muted-foreground text-xs">Sending</span>
     ) : null;
-  const shouldRenderDraftStatusSlot = isTaskBacked || isPendingApproval;
+  const shouldRenderDraftStatusSlot =
+    isTaskApprovalComposer || isPendingApproval;
   const draftStatusSlot =
     shouldRenderDraftStatusSlot && inlineDraftStatus
       ? inlineDraftStatus
@@ -623,9 +654,9 @@ export function XConversationPanel({
           </ScrollArea>
 
           <div className="bg-background shrink-0 px-4 pt-2 pb-4 backdrop-blur-xl">
-            {data?.draftAttachments?.length ? (
+            {visiblePanelDraftAttachments?.length ? (
               <div className="mb-3 grid gap-2">
-                {data.draftAttachments.map(
+                {visiblePanelDraftAttachments.map(
                   (attachment: XDmAttachmentSummary, index: number) => (
                     <div
                       key={`${attachment.url ?? "draft-attachment"}-${index}`}
@@ -645,7 +676,7 @@ export function XConversationPanel({
               </div>
             ) : null}
             <BaseComposer
-              key={`x-dm-composer:${prospectId}:${actionRequestId ?? "live"}:${actionRequestStatus ?? "none"}`}
+              key={`x-dm-composer:${prospectId}:${composerResetKey}`}
               currentUser={currentUser}
               initialContent={buildSerializedTextState(currentDraftText)}
               initialMediaUploads={initialMediaUploads}
@@ -653,9 +684,11 @@ export function XConversationPanel({
               maxLength={X_DM_TEXT_MAX}
               characterCountMode="raw"
               submitButtonText={
-                isTaskBacked ? taskApprovalUi.submitButtonText : "Send"
+                isTaskApprovalComposer
+                  ? taskApprovalUi.submitButtonText
+                  : "Send"
               }
-              submitButtonVariant={isTaskBacked ? "text" : "icon"}
+              submitButtonVariant={isTaskApprovalComposer ? "text" : "icon"}
               toolbarPlacement="bottom"
               showIdentityHeader={false}
               showMediaDescription={false}
@@ -691,7 +724,11 @@ export function XConversationPanel({
               }}
               className="rounded-xl border p-2"
               onContentChange={(content) => {
-                setCurrentDraftText(extractTextFromEditorState(content).trim());
+                setLocalDraftState({
+                  sourceKey: draftSourceKey,
+                  serverValue: serverDraft,
+                  text: extractTextFromEditorState(content).trim(),
+                });
               }}
               onEditorBlur={() => {
                 void draftSync.flushNow();

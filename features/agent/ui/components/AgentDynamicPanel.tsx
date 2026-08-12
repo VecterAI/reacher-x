@@ -458,6 +458,8 @@ export function AgentDynamicPanel({
   const taskReplySubmitButtonText =
     taskApprovalUi?.submitButtonText ?? "Approve reply";
   const isTaskBackedDmContext = taskPanelKind === "dm";
+  const isTaskBackedDmApprovalContext =
+    isTaskBackedDmContext && mode === "approval";
   const isLinkedInDmAction =
     actionPanelData?.actionKey === "linkedin_send_message" ||
     actionPanelData?.actionKey ===
@@ -920,15 +922,21 @@ export function AgentDynamicPanel({
             isTaskBackedDmContext ? taskPanelData?.taskStatus : undefined
           }
           taskMode={mode}
-          taskApprovalReady={isTaskBackedDmContext && taskPanelApprovalReady}
+          taskApprovalReady={
+            isTaskBackedDmApprovalContext && taskPanelApprovalReady
+          }
           taskPlanId={
-            isTaskBackedDmContext ? (taskPanelData?.planId ?? null) : null
+            isTaskBackedDmApprovalContext
+              ? (taskPanelData?.planId ?? null)
+              : null
           }
           taskPlanStatus={
-            isTaskBackedDmContext ? taskPanelData?.planStatus : undefined
+            isTaskBackedDmApprovalContext
+              ? taskPanelData?.planStatus
+              : undefined
           }
           taskDraft={
-            isTaskBackedDmContext
+            isTaskBackedDmApprovalContext
               ? (taskPanelData?.draft ?? undefined)
               : undefined
           }
@@ -950,15 +958,17 @@ export function AgentDynamicPanel({
           isTaskBackedDmContext ? taskPanelData?.taskStatus : undefined
         }
         taskMode={mode}
-        taskApprovalReady={isTaskBackedDmContext && taskPanelApprovalReady}
+        taskApprovalReady={
+          isTaskBackedDmApprovalContext && taskPanelApprovalReady
+        }
         taskPlanId={
-          isTaskBackedDmContext ? (taskPanelData?.planId ?? null) : null
+          isTaskBackedDmApprovalContext ? (taskPanelData?.planId ?? null) : null
         }
         taskPlanStatus={
-          isTaskBackedDmContext ? taskPanelData?.planStatus : undefined
+          isTaskBackedDmApprovalContext ? taskPanelData?.planStatus : undefined
         }
         taskDraft={
-          isTaskBackedDmContext
+          isTaskBackedDmApprovalContext
             ? (taskPanelData?.draft ?? undefined)
             : undefined
         }
