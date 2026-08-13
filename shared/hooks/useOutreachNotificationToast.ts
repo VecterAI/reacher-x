@@ -7,7 +7,14 @@
  * Per AGENT_CONTEXT.txt: Mirrors existing useReplyStatus pattern for consistency.
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type MouseEventHandler,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
 import { useConvex } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -16,6 +23,7 @@ import {
   getOutreachNotificationEventKey,
   getOutreachNotificationEventTimestamp,
 } from "@/shared/lib/notifications/outreachNotificationEvents";
+import { buildOutreachNotificationToastPlan } from "@/shared/lib/notifications/outreachNotificationToastPolicy";
 import { useAuth } from "./useAuth";
 import { useNotificationWorkspace } from "./useNotificationWorkspace";
 import { useQueryWithStatus } from "./useQueryWithStatus";
@@ -48,6 +56,20 @@ type OutreachNotificationSummary = Omit<
 };
 
 type NotificationToastVariant = "info" | "success" | "warning" | "error";
+
+type QueuedNotificationToast = {
+  key: string;
+  variant: NotificationToastVariant;
+  title: string;
+  description?: string;
+  action?: {
+    label: ReactNode;
+    onClick: MouseEventHandler<HTMLButtonElement>;
+  };
+};
+
+const OUTREACH_TOAST_DURATION_MS = 8000;
+const OUTREACH_TOAST_GAP_MS = 180;
 
 function getNotificationToastVariant(
   type: Doc<"outreachNotifications">["type"]
@@ -90,7 +112,7 @@ export function useOutreachNotificationToast() {
   );
 
   const notificationsQuery = useQueryWithStatus(
-    api.outreach.listNotifications,
+    api.outreach.listPendingNotifications,
     isAuthenticated && workspaceId
       ? { workspaceId: workspaceId as Id<"workspaces"> }
       : "skip"
@@ -104,6 +126,68 @@ export function useOutreachNotificationToast() {
   const shownNotifications = useRef<Set<string>>(new Set());
   const baselineWorkspaceRef = useRef<string | null>(null);
   const baselineInitializedRef = useRef(false);
+  const toastQueueRef = useRef<QueuedNotificationToast[]>([]);
+  const activeToastKeyRef = useRef<string | null>(null);
+  const nextToastTimerRef = useRef<number | null>(null);
+
+  const flushToastQueue = useCallback(() => {
+    if (activeToastKeyRef.current || toastQueueRef.current.length === 0) {
+      return;
+    }
+
+    const nextToast = toastQueueRef.current.shift();
+    if (!nextToast) return;
+
+    activeToastKeyRef.current = nextToast.key;
+    let hasAdvanced = false;
+
+    const advanceQueue = () => {
+      if (hasAdvanced || activeToastKeyRef.current !== nextToast.key) {
+        return;
+      }
+
+      hasAdvanced = true;
+      activeToastKeyRef.current = null;
+      nextToastTimerRef.current = window.setTimeout(() => {
+        nextToastTimerRef.current = null;
+        flushToastQueue();
+      }, OUTREACH_TOAST_GAP_MS);
+    };
+
+    toast[nextToast.variant](nextToast.title, {
+      id: nextToast.key,
+      description: nextToast.description,
+      duration: OUTREACH_TOAST_DURATION_MS,
+      action: nextToast.action,
+      onAutoClose: advanceQueue,
+      onDismiss: advanceQueue,
+    });
+  }, []);
+
+  const clearToastQueue = useCallback(() => {
+    toastQueueRef.current = [];
+
+    if (nextToastTimerRef.current !== null) {
+      window.clearTimeout(nextToastTimerRef.current);
+      nextToastTimerRef.current = null;
+    }
+
+    const activeToastKey = activeToastKeyRef.current;
+    activeToastKeyRef.current = null;
+    if (activeToastKey) {
+      toast.dismiss(activeToastKey);
+    }
+  }, []);
+
+  const enqueueToast = useCallback(
+    (queuedToast: QueuedNotificationToast) => {
+      toastQueueRef.current.push(queuedToast);
+      flushToastQueue();
+    },
+    [flushToastQueue]
+  );
+
+  useEffect(() => clearToastQueue, [clearToastQueue]);
 
   useEffect(() => {
     if (!isAuthenticated || isLoading || shellStateQuery.isPending) {
@@ -112,6 +196,7 @@ export function useOutreachNotificationToast() {
 
     const scopedWorkspaceId = workspaceId ?? null;
     if (baselineWorkspaceRef.current !== scopedWorkspaceId) {
+      clearToastQueue();
       baselineWorkspaceRef.current = scopedWorkspaceId;
       baselineInitializedRef.current = false;
       shownNotifications.current.clear();
@@ -140,11 +225,58 @@ export function useOutreachNotificationToast() {
       baselineInitializedRef.current = true;
     }
 
-    for (const notification of pending) {
+    const toastPlan = buildOutreachNotificationToastPlan(
+      pending,
+      shownNotifications.current
+    );
+
+    if (toastPlan.coalescedCount > 0) {
+      const unseenPending = pending.filter(
+        (notification) =>
+          !shownNotifications.current.has(
+            getOutreachNotificationEventKey(notification)
+          )
+      );
+
+      for (const notification of unseenPending) {
+        shownNotifications.current.add(
+          getOutreachNotificationEventKey(notification)
+        );
+      }
+
+      const firstNotification = unseenPending[0];
+      const lastNotification = unseenPending.at(-1);
+      const burstKey = [
+        "outreach-notification-burst",
+        scopedWorkspaceId,
+        firstNotification
+          ? getOutreachNotificationEventKey(firstNotification)
+          : "first",
+        lastNotification
+          ? getOutreachNotificationEventKey(lastNotification)
+          : "last",
+      ].join(":");
+
+      enqueueToast({
+        key: burstKey,
+        variant: "info",
+        title: `${toastPlan.coalescedCount} new notifications`,
+        description:
+          "Open Notifications to review the pending outreach updates.",
+        action: {
+          label: "View",
+          onClick: () => {
+            window.location.href = "/notifications";
+          },
+        },
+      });
+      return;
+    }
+
+    for (const notification of toastPlan.notifications) {
       const notificationEventKey =
         getOutreachNotificationEventKey(notification);
-      // Skip if already shown
-      if (shownNotifications.current.has(notificationEventKey)) continue;
+      shownNotifications.current.add(notificationEventKey);
 
       const targetHref =
         notification.targetHref ??
@@ -187,26 +319,22 @@ export function useOutreachNotificationToast() {
           }
         : undefined;
 
-      const commonOptions = {
-        id: notificationEventKey,
-        duration: 8000, // Auto-dismiss after 8s
-        action: toastAction,
-      };
-
       const variant = getNotificationToastVariant(notification.type);
-      toast[variant](notification.title, {
+      enqueueToast({
+        key: notificationEventKey,
+        variant,
+        title: notification.title,
         description: notification.message,
-        ...commonOptions,
+        action: toastAction,
       });
-
-      // Mark as shown
-      shownNotifications.current.add(notificationEventKey);
     }
   }, [
     isAuthenticated,
     isLoading,
     notifications,
     notificationsQuery.isSuccess,
+    clearToastQueue,
+    enqueueToast,
     shellStateQuery.isPending,
     workspaceId,
     workspaceSessionStartedAt,

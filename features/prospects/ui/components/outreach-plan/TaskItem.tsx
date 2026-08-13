@@ -13,6 +13,7 @@ import {
   type TwitterPostRef,
   type TwitterPostSummary,
 } from "@/shared/lib/twitter/contracts";
+import { CalendarClockIcon } from "@/shared/ui/components/icons";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pending",
@@ -26,9 +27,8 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Failed",
 };
 
-const SPINNER_VARIANT: Record<string, "spinner" | "pulse" | "clock"> = {
+const SPINNER_VARIANT: Record<string, "spinner" | "clock"> = {
   executing: "spinner",
-  waiting_connection: "pulse",
   scheduled: "clock",
 };
 
@@ -320,7 +320,18 @@ export function TaskItem({
                 isFailed && "border-destructive/50 text-destructive"
               )}
             >
-              {spinnerVariant ? (
+              {isWaitingConnection ? (
+                <span
+                  className="inline-flex items-center gap-1 text-xs"
+                  role="status"
+                >
+                  <CalendarClockIcon
+                    className="text-muted-foreground size-3.5 shrink-0 fill-current"
+                    aria-hidden
+                  />
+                  <span>{STATUS_LABELS[status] || status}</span>
+                </span>
+              ) : spinnerVariant ? (
                 <AsciiSpinnerText
                   text={STATUS_LABELS[status] || status}
                   variant={spinnerVariant}

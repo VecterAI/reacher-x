@@ -85,6 +85,7 @@ export function UseCaseProspectPage({
         disableMobileDrawer={true}
         className={cn(
           "h-full min-h-0 w-full shrink-0 overflow-hidden",
+          "md:border-border md:border-r",
           hasSubPanel && "hidden md:block md:max-w-lg"
         )}
       />

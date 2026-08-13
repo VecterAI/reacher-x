@@ -2,18 +2,16 @@
 
 import { useEffect, useState } from "react";
 
-type SpinnerVariant = "spinner" | "pulse" | "clock" | "ascii";
+type SpinnerVariant = "spinner" | "clock" | "ascii";
 
 const VARIANT_FRAMES: Record<SpinnerVariant, readonly string[]> = {
   spinner: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
-  pulse: ["·", "•", "●", "•", "·"],
   clock: ["◴", "◷", "◶", "◵"],
   ascii: ["|", "/", "-", "\\"],
 };
 
 const VARIANT_DEFAULT_INTERVAL: Record<SpinnerVariant, number> = {
   spinner: 40,
-  pulse: 200,
   clock: 250,
   ascii: 120,
 };
