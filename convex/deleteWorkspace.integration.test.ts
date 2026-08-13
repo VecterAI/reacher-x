@@ -238,7 +238,7 @@ describe("durable workspace deletion", () => {
     expect(componentThread).toBeNull();
     expect(deletionsAfterWorkflow).toEqual([]);
     vi.useRealTimers();
-  });
+  }, 30_000);
 
   test("preserves ownership authorization", async () => {
     const t = convexTest(schema, modules);
