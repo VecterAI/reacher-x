@@ -12,6 +12,7 @@ import {
 } from "../../contexts/TwitterProfileContext";
 import { useTwitterTimelineEngagementMerge } from "@/shared/hooks/useTwitterTimelineEngagementMerge";
 import { Button } from "@/shared/ui/components/Button";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import {
   Alert,
   AlertDescription,
@@ -144,16 +145,18 @@ function renderTimelineSection(args: {
         ) : null}
       </div>
 
-      {args.nextCursor ? (
-        <div className="p-4">
-          <Button
-            size="xs"
-            className="mx-auto block"
-            onClick={() => void args.loadMore(args.value)}
-          >
-            Load more
-          </Button>
-        </div>
+      {args.nextCursor && args.activeTab === args.value ? (
+        <InfiniteScrollTrigger
+          hasMore={Boolean(args.nextCursor)}
+          isLoading={args.loadingTab}
+          loadMoreError={Boolean(args.error && args.tweets.length > 0)}
+          onLoadMore={() => void args.loadMore(args.value)}
+          resultCount={args.tweets.length}
+          className="p-4"
+          loadingLabel={`Loading more ${title}`}
+          loadMoreLabel={`Load more ${title}`}
+          retryLabel={`Retry loading ${title}`}
+        />
       ) : null}
     </TabsContent>
   );

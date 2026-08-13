@@ -571,7 +571,7 @@ export const getDynamicThreadData = action({
   args: getDynamicThreadDataArgsValidator,
   handler: async (
     ctx,
-    { threadId }
+    { threadId, repliesCursor }
   ): Promise<{
     rootTweetId: string;
     matchedReplyTweetId?: string;
@@ -581,6 +581,7 @@ export const getDynamicThreadData = action({
   }> => {
     return await ctx.runAction(api.socialapi.getConversationContext, {
       rootTweetId: threadId,
+      repliesCursor,
     });
   },
 });

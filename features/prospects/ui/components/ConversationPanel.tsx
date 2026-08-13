@@ -16,6 +16,7 @@ import {
   PageContent,
 } from "@/features/webapp/ui/components";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import { usePanelStack } from "../../contexts/PanelStackContext";
 import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import type { Tweet as TweetType } from "@/features/threads/types";
@@ -112,8 +113,12 @@ export function ConversationPanel({
   const fetchConversation = useAction(api.socialapi.getDynamicThreadData);
   const fetchConversationRef = React.useRef(fetchConversation);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
   const [tweets, setTweets] = React.useState<TweetType[]>([]);
-  const [_error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [nextRepliesCursor, setNextRepliesCursor] = React.useState<
+    string | null
+  >(null);
   const mergedTweets = useTwitterTimelineEngagementMerge(tweets);
   const normalizedReplyTweetId = React.useMemo(
     () => replyTweetId?.trim() || replyTweetSummary?.ref.postId || "",
@@ -183,22 +188,44 @@ export function ConversationPanel({
     fetchConversationRef.current = fetchConversation;
   }, [fetchConversation]);
 
-  const loadConversation = React.useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await fetchConversationRef.current({
-        threadId,
-      });
-      setTweets(result.tweets as TweetType[]);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load conversation"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [threadId]);
+  const loadConversation = React.useCallback(
+    async (cursor?: string | null) => {
+      const isInitialLoad = !cursor;
+      if (isInitialLoad) {
+        setIsLoading(true);
+      } else {
+        setIsLoadingMore(true);
+      }
+
+      setError(null);
+      try {
+        const result = await fetchConversationRef.current({
+          threadId,
+          repliesCursor: cursor ?? undefined,
+        });
+        setTweets((currentTweets) =>
+          isInitialLoad
+            ? (result.tweets as TweetType[])
+            : dedupeAndSortConversationTweets([
+                ...currentTweets,
+                ...(result.tweets as TweetType[]),
+              ])
+        );
+        setNextRepliesCursor(result.repliesCursor ?? null);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to load conversation"
+        );
+      } finally {
+        if (isInitialLoad) {
+          setIsLoading(false);
+        } else {
+          setIsLoadingMore(false);
+        }
+      }
+    },
+    [threadId]
+  );
 
   React.useEffect(() => {
     void loadConversation();
@@ -235,6 +262,22 @@ export function ConversationPanel({
                     />
                   </article>
                 ))}
+                <InfiniteScrollTrigger
+                  hasMore={Boolean(nextRepliesCursor)}
+                  isLoading={isLoadingMore}
+                  loadMoreError={Boolean(
+                    nextRepliesCursor && error && !isLoadingMore
+                  )}
+                  onLoadMore={() => {
+                    if (nextRepliesCursor) {
+                      void loadConversation(nextRepliesCursor);
+                    }
+                  }}
+                  resultCount={conversationTweets.length}
+                  loadingLabel="Loading more replies"
+                  loadMoreLabel="Load more replies"
+                  retryLabel="Retry loading replies"
+                />
               </section>
             )}
           </PageContent>

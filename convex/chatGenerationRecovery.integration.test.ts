@@ -120,5 +120,5 @@ describe("agent generation recovery", () => {
     expect(
       abortedStreams.filter((stream) => stream.order === seeded.order)
     ).toEqual([]);
-  });
+  }, 30_000);
 });

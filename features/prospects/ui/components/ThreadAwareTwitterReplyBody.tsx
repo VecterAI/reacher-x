@@ -8,8 +8,7 @@ import type { Tweet as TweetType } from "@/features/threads/types";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 import { dedupeAndSortConversationTweets } from "@/features/prospects/lib/twitterConversation";
 import { mergeLocalEngagementIntoTweet } from "@/shared/lib/twitter/mergeViewerState";
-import { Button } from "@/shared/ui/components/Button";
-import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import { cn } from "@/shared/lib/utils";
 import { TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 
@@ -297,20 +296,17 @@ export function ThreadAwareTwitterReplyBody({
       ) : null}
 
       {showLoadMoreReplies && nextRepliesCursor ? (
-        <div className={cn("px-4 pt-2", loadMoreContainerClassName)}>
-          <Button
-            size="xs"
-            className="w-full"
-            onClick={() => void loadConversation(nextRepliesCursor)}
-            disabled={isLoadingConversation}
-          >
-            {isLoadingConversation ? (
-              <AsciiSpinnerText text="Loading" />
-            ) : (
-              "Load more"
-            )}
-          </Button>
-        </div>
+        <InfiniteScrollTrigger
+          hasMore={Boolean(nextRepliesCursor)}
+          isLoading={isLoadingConversation}
+          loadMoreError={Boolean(conversationError)}
+          onLoadMore={() => void loadConversation(nextRepliesCursor)}
+          resultCount={conversationTweets.length}
+          className={cn("px-4 pt-2", loadMoreContainerClassName)}
+          loadingLabel="Loading more replies"
+          loadMoreLabel="Load more replies"
+          retryLabel="Retry loading replies"
+        />
       ) : null}
     </>
   );

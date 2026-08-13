@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useConvex, useMutation } from "convex/react";
+import { useConvex, useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useNotificationWorkspace, useQueryWithStatus } from "@/shared/hooks";
+import { useNotificationWorkspace } from "@/shared/hooks";
 import {
   PageContent,
   PageHeader,
@@ -18,6 +18,7 @@ import { Button } from "@/shared/ui/components/Button";
 
 const NOTIFICATIONS_BODY_COLUMN_CLASS_NAME =
   "w-full min-w-0 md:w-[min(32rem,100%)] md:max-w-lg";
+const NOTIFICATIONS_PAGE_SIZE = 20;
 
 export default function NotificationsPage() {
   const router = useRouter();
@@ -30,21 +31,24 @@ export default function NotificationsPage() {
     shellStateQuery,
   } = useNotificationWorkspace();
 
-  const notificationsQuery = useQueryWithStatus(
+  const notificationsQuery = usePaginatedQuery(
     api.outreach.listNotifications,
     isNotificationWorkspaceReady && workspaceId
       ? { workspaceId: workspaceId as Id<"workspaces"> }
-      : "skip"
+      : "skip",
+    { initialNumItems: NOTIFICATIONS_PAGE_SIZE }
   );
-  const notifications = (
-    notificationsQuery.isSuccess ? notificationsQuery.data : []
-  ) as NotificationItem[];
+  const notifications = notificationsQuery.results as NotificationItem[];
   const markSeen = useMutation(api.outreach.markNotificationSeen);
   const dismissNotification = useMutation(api.outreach.dismissNotification);
 
   const isLoading =
     isNotificationWorkspaceLoading ||
-    (workspaceId !== null && notificationsQuery.isPending);
+    (workspaceId !== null && notificationsQuery.status === "LoadingFirstPage");
+  const notificationQueryError =
+    "error" in notificationsQuery && notificationsQuery.error instanceof Error
+      ? notificationsQuery.error
+      : null;
 
   const handleSelect = async (
     notification: NotificationItem,
@@ -128,13 +132,13 @@ export default function NotificationsPage() {
             <WorkspacePlanLimitAlert className="mx-4 mb-4" />
             {(notificationWorkspaceError ||
               shellStateQuery.isError ||
-              notificationsQuery.isError) && (
+              notificationQueryError) && (
               <div className="mx-4 mb-4 rounded-lg border border-dashed p-4 text-sm">
                 <p className="font-medium">Could not load notifications</p>
                 <p className="text-muted-foreground mt-1">
                   {notificationWorkspaceError?.message ||
                     shellStateQuery.error?.message ||
-                    notificationsQuery.error?.message ||
+                    notificationQueryError?.message ||
                     "Please try again."}
                 </p>
                 <Button
@@ -150,6 +154,11 @@ export default function NotificationsPage() {
             <NotificationsInbox
               notifications={notifications}
               isLoading={isLoading}
+              hasMore={notificationsQuery.status === "CanLoadMore"}
+              isLoadingMore={notificationsQuery.status === "LoadingMore"}
+              onLoadMore={() =>
+                notificationsQuery.loadMore(NOTIFICATIONS_PAGE_SIZE)
+              }
               onSelect={handleSelect}
               onDismiss={handleDismiss}
             />

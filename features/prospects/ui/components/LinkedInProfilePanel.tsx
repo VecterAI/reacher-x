@@ -27,6 +27,7 @@ import {
 } from "@/shared/ui/components/Avatar";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 import {
   DropdownMenu,
@@ -774,6 +775,7 @@ export function LinkedInProfilePanel({
 
     try {
       setLoadingMorePosts(true);
+      setPostsError(undefined);
       const result = (await (prospectId
         ? getLinkedInProfilePostsPage({
             prospectId,
@@ -1091,16 +1093,17 @@ export function LinkedInProfilePanel({
       </div>
 
       {nextPostsCursor ? (
-        <div className="p-4">
-          <Button
-            size="xs"
-            className="mx-auto block"
-            disabled={loadingMorePosts}
-            onClick={() => void handleLoadMorePosts()}
-          >
-            {loadingMorePosts ? "Loading..." : "Load more"}
-          </Button>
-        </div>
+        <InfiniteScrollTrigger
+          hasMore={Boolean(nextPostsCursor)}
+          isLoading={loadingMorePosts}
+          loadMoreError={Boolean(postsError && recentPosts.length > 0)}
+          onLoadMore={() => void handleLoadMorePosts()}
+          resultCount={mergedRecentPosts.length}
+          className="p-4"
+          loadingLabel="Loading more LinkedIn posts"
+          loadMoreLabel="Load more LinkedIn posts"
+          retryLabel="Retry loading LinkedIn posts"
+        />
       ) : null}
     </TabsContent>
   );
