@@ -2936,6 +2936,12 @@ export default defineSchema({
       "workspaceId",
       "eventUpdatedAt",
     ])
+    .index("by_user_workspace_status_event_updated_at", [
+      "userId",
+      "workspaceId",
+      "status",
+      "eventUpdatedAt",
+    ])
     .index("by_user_workspace_key", [
       "userId",
       "workspaceId",

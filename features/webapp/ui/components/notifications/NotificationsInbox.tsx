@@ -13,6 +13,7 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { Button } from "@/shared/ui/components/Button";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
@@ -670,6 +671,9 @@ export function NotificationsSkeleton() {
 interface NotificationsInboxProps {
   notifications: NotificationItem[];
   isLoading?: boolean;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
   onSelect: (
     notification: NotificationItem,
     rowNotifications: NotificationItem[]
@@ -680,6 +684,9 @@ interface NotificationsInboxProps {
 export function NotificationsInbox({
   notifications,
   isLoading = false,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
   onSelect,
   onDismiss,
 }: NotificationsInboxProps) {
@@ -687,6 +694,24 @@ export function NotificationsInbox({
     () => groupNotificationsByDay(notifications),
     [notifications]
   );
+
+  const renderNotifications = (day: keyof NotificationGroup) => {
+    const dayNotifications = groups[day];
+
+    return (
+      <>
+        {isLoading ? (
+          <NotificationsSkeleton />
+        ) : (
+          <NotificationsList
+            notifications={dayNotifications}
+            onSelect={onSelect}
+            onDismiss={onDismiss}
+          />
+        )}
+      </>
+    );
+  };
 
   return (
     <>
@@ -704,42 +729,26 @@ export function NotificationsInbox({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="today">
-          {isLoading ? (
-            <NotificationsSkeleton />
-          ) : (
-            <NotificationsList
-              notifications={groups.today}
-              onSelect={onSelect}
-              onDismiss={onDismiss}
-            />
-          )}
-        </TabsContent>
+        <TabsContent value="today">{renderNotifications("today")}</TabsContent>
 
         <TabsContent value="yesterday">
-          {isLoading ? (
-            <NotificationsSkeleton />
-          ) : (
-            <NotificationsList
-              notifications={groups.yesterday}
-              onSelect={onSelect}
-              onDismiss={onDismiss}
-            />
-          )}
+          {renderNotifications("yesterday")}
         </TabsContent>
 
-        <TabsContent value="older">
-          {isLoading ? (
-            <NotificationsSkeleton />
-          ) : (
-            <NotificationsList
-              notifications={groups.older}
-              onSelect={onSelect}
-              onDismiss={onDismiss}
-            />
-          )}
-        </TabsContent>
+        <TabsContent value="older">{renderNotifications("older")}</TabsContent>
       </Tabs>
+      {!isLoading && onLoadMore ? (
+        <InfiniteScrollTrigger
+          hasMore={hasMore}
+          isLoading={isLoadingMore}
+          onLoadMore={onLoadMore}
+          resultCount={notifications.length}
+          className="mx-4"
+          loadingLabel="Loading more notifications"
+          loadMoreLabel="Load more notifications"
+          retryLabel="Retry loading notifications"
+        />
+      ) : null}
     </>
   );
 }

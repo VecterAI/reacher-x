@@ -837,6 +837,7 @@ export const getTwitterProfileArgsValidator = v.object({
 
 export const getDynamicThreadDataArgsValidator = v.object({
   threadId: v.string(),
+  repliesCursor: v.optional(v.string()),
 });
 
 export const getConversationContextArgsValidator = v.object({

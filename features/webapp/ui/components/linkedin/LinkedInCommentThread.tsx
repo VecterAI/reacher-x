@@ -14,6 +14,7 @@ import type {
 } from "@/shared/lib/linkedin/comments";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { Button } from "@/shared/ui/components/Button";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -222,7 +223,12 @@ export function LinkedInCommentThread({
               ...result.topLevelComments,
               items: [
                 ...previous.topLevelComments.items,
-                ...result.topLevelComments.items,
+                ...result.topLevelComments.items.filter(
+                  (comment) =>
+                    !previous.topLevelComments.items.some(
+                      (previousComment) => previousComment.id === comment.id
+                    )
+                ),
               ],
             },
           };
@@ -817,12 +823,12 @@ export function LinkedInCommentThread({
             </Alert>
           ) : null}
 
-          {loading ? (
+          {loading && !thread ? (
             <div className="space-y-3">
               <Skeleton className="h-16 w-full rounded-[20px]" />
               <Skeleton className="h-20 w-full rounded-[20px]" />
             </div>
-          ) : error ? (
+          ) : error && !thread ? (
             <Alert>
               <AlertTitle>Could not load comments</AlertTitle>
               <AlertDescription className="space-y-3">
@@ -889,14 +895,18 @@ export function LinkedInCommentThread({
                           }
                           void loadRepliesForComment(comment.id);
                         }}
-                        onLoadMoreReplies={() => {
-                          if (replyState?.page?.cursor) {
-                            void loadRepliesForComment(
-                              comment.id,
-                              replyState.page.cursor
-                            );
-                          }
-                        }}
+                        onLoadMoreReplies={
+                          previewScenario
+                            ? undefined
+                            : () => {
+                                if (replyState?.page?.cursor) {
+                                  void loadRepliesForComment(
+                                    comment.id,
+                                    replyState.page.cursor
+                                  );
+                                }
+                              }
+                        }
                         onToggleReplyComposer={() =>
                           setOpenReplyComposerId((previous) =>
                             previous === comment.id ? null : comment.id
@@ -935,18 +945,22 @@ export function LinkedInCommentThread({
                 </div>
               ) : null}
 
-              {thread?.topLevelComments.cursor ? (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() =>
+              {thread?.topLevelComments.cursor && !previewScenario ? (
+                <InfiniteScrollTrigger
+                  hasMore={Boolean(thread.topLevelComments.cursor)}
+                  isLoading={loading}
+                  loadMoreError={Boolean(error)}
+                  onLoadMore={() =>
                     void loadThread({
                       cursor: thread.topLevelComments.cursor ?? undefined,
                     })
                   }
-                >
-                  Load more comments
-                </Button>
+                  resultCount={topLevelComments.length}
+                  className="pt-2"
+                  loadingLabel="Loading more comments"
+                  loadMoreLabel="Load more comments"
+                  retryLabel="Retry loading comments"
+                />
               ) : null}
             </>
           )}

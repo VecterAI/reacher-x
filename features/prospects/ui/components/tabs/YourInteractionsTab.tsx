@@ -10,6 +10,7 @@ import { useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/shared/ui/components/Button";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import {
@@ -169,7 +170,12 @@ export function YourInteractionsTab({
     !isPreview &&
     interactionsQuery.status === "LoadingFirstPage" &&
     interactions.length === 0;
-  const canLoadMore = !isPreview && interactionsQuery.status === "CanLoadMore";
+  const canLoadMore =
+    !isPreview &&
+    (interactionsQuery.status === "CanLoadMore" ||
+      interactionsQuery.status === "LoadingMore");
+  const isLoadingMore =
+    !isPreview && interactionsQuery.status === "LoadingMore";
 
   if (showInitialSkeleton) {
     return <YourInteractionsTabSkeleton />;
@@ -318,16 +324,17 @@ export function YourInteractionsTab({
         </div>
       )}
 
-      {canLoadMore ? (
-        <div className="px-4">
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={() => interactionsQuery.loadMore(INITIAL_PAGE_SIZE)}
-          >
-            Load more
-          </Button>
-        </div>
+      {!isPreview ? (
+        <InfiniteScrollTrigger
+          hasMore={canLoadMore}
+          isLoading={isLoadingMore}
+          onLoadMore={() => interactionsQuery.loadMore(INITIAL_PAGE_SIZE)}
+          resultCount={interactions.length}
+          className="mx-4"
+          loadingLabel="Loading more interactions"
+          loadMoreLabel="Load more interactions"
+          retryLabel="Retry loading interactions"
+        />
       ) : null}
     </section>
   );

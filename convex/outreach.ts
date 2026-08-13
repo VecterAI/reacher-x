@@ -3,6 +3,7 @@
 // Following existing patterns from prospects.ts
 
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import type { WorkflowId } from "@convex-dev/workflow";
 import { type QueryCtx, type MutationCtx } from "./_generated/server";
 import {
@@ -123,8 +124,6 @@ import {
 type PanelMode = "approval" | "posted";
 const outreachLogger = logger.withScope("Outreach");
 
-const DEFAULT_ACTIVITY_PAGE_SIZE = 20;
-const MAX_ACTIVITY_PAGE_SIZE = 100;
 const AUTH_FAILURE_CLASSES = new Set(["reauth_required", "scope_missing"]);
 const LINKEDIN_DM_TEXT_MAX = 8_000;
 const OUTREACH_TASK_TYPES = new Set<Doc<"outreachTasks">["type"]>([
@@ -418,11 +417,6 @@ function assertExpectedTaskType(
           : "This draft belongs to a DM task, not a reply task."
     );
   }
-}
-
-function toActivityPageSize(limit?: number): number {
-  const rawLimit = limit ?? DEFAULT_ACTIVITY_PAGE_SIZE;
-  return Math.min(MAX_ACTIVITY_PAGE_SIZE, Math.max(1, Math.floor(rawLimit)));
 }
 
 function parsePlanSnapshot(snapshot: unknown): OutreachPlanSnapshot | null {
@@ -773,11 +767,11 @@ export const getPlanById = query({
 export const getActivityLog = query({
   args: {
     prospectId: v.id("prospects"),
-    limit: v.optional(v.number()),
+    paginationOpts: paginationOptsValidator,
     type: v.optional(prospectActivityTypeValidator),
     search: v.optional(v.string()),
   },
-  handler: async (ctx, { prospectId, limit, type, search }) => {
+  handler: async (ctx, { prospectId, paginationOpts, type, search }) => {
     const user = await requireViewerUser(ctx);
     await requireOwnedProspect(ctx, prospectId, {
       user,
@@ -785,54 +779,24 @@ export const getActivityLog = query({
       notAuthorizedMessage: "Not authorized to view this prospect",
     });
 
-    const pageSize = toActivityPageSize(limit);
     const searchTerm = search?.trim() ?? "";
-
-    let pageActivities: Doc<"prospectActivityLog">[] = [];
-    let hasMore = false;
-
-    if (!type && !searchTerm) {
-      // No filters: indexed page fetch
-      const activitiesWithSentinel = await getProspectActivityLog(
-        ctx,
-        prospectId,
-        {
-          limit: pageSize + 1,
-        }
-      );
-      hasMore = activitiesWithSentinel.length > pageSize;
-      pageActivities = activitiesWithSentinel.slice(0, pageSize);
-    } else if (type && !searchTerm) {
-      // Type filter only: use by_prospect_type index
-      const activitiesWithSentinel = await getProspectActivityLog(
-        ctx,
-        prospectId,
-        {
-          limit: pageSize + 1,
-          type,
-        }
-      );
-      hasMore = activitiesWithSentinel.length > pageSize;
-      pageActivities = activitiesWithSentinel.slice(0, pageSize);
-    } else {
-      // Search (with or without type): bounded batch scan
-      const batchSize = Math.max(pageSize * 5, 100);
-      const source = type
-        ? getProspectActivityLog(ctx, prospectId, {
-            limit: batchSize,
-            type,
-          })
-        : getProspectActivityLog(ctx, prospectId, {
-            limit: batchSize,
-          });
-
-      const batch = await source;
-      const filtered = batch.filter((activity) =>
-        matchesActivitySearch(activity, searchTerm)
-      );
-      hasMore = filtered.length > pageSize || batch.length === batchSize;
-      pageActivities = filtered.slice(0, pageSize);
-    }
+    const activityQuery = type
+      ? ctx.db
+          .query("prospectActivityLog")
+          .withIndex("by_prospect_type", (q) =>
+            q.eq("prospectId", prospectId).eq("type", type)
+          )
+          .order("desc")
+      : ctx.db
+          .query("prospectActivityLog")
+          .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
+          .order("desc");
+    const paginatedActivities = await activityQuery.paginate(paginationOpts);
+    const pageActivities = searchTerm
+      ? paginatedActivities.page.filter((activity) =>
+          matchesActivitySearch(activity, searchTerm)
+        )
+      : paginatedActivities.page;
 
     const planSnapshotByActivityId = new Map<
       Id<"prospectActivityLog">,
@@ -891,7 +855,8 @@ export const getActivityLog = query({
     );
 
     return {
-      activities: pageActivities.map((activity) => {
+      ...paginatedActivities,
+      page: pageActivities.map((activity) => {
         if (activity.type !== "plan_created") {
           return {
             ...activity,
@@ -913,21 +878,69 @@ export const getActivityLog = query({
           plan: planId ? (planSnapshotByPlanId.get(planId) ?? null) : null,
         };
       }),
-      hasMore,
     };
   },
 });
 
 /**
  * List notifications for the current user (public).
- * Returns notifications grouped by day (using _creationTime).
+ * Returns a stable event-time cursor page for the notifications inbox.
  */
 export const listNotifications = query({
+  args: {
+    workspaceId: v.optional(v.id("workspaces")),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, { workspaceId, paginationOpts }) => {
+    const user = await requireViewerUser(ctx);
+
+    // Backward-compatible: if workspaceId isn't provided, use active default workspace.
+    let resolvedWorkspaceId = workspaceId;
+    if (!resolvedWorkspaceId) {
+      const defaultWorkspace = await getDefaultWorkspaceForUser(ctx, user._id);
+      resolvedWorkspaceId = defaultWorkspace?._id;
+    }
+
+    if (!resolvedWorkspaceId) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: paginationOpts.cursor ?? "",
+      };
+    }
+
+    await requireOwnedWorkspace(ctx, resolvedWorkspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to view this workspace",
+    });
+
+    // Order by the latest meaningful event, not only document creation. Keyed
+    // notifications are reused, so an updated older document must re-enter the
+    // live result set for its new event version to toast.
+    return await ctx.db
+      .query("outreachNotifications")
+      .withIndex("by_user_workspace_event_updated_at", (q) =>
+        q.eq("userId", user._id).eq("workspaceId", resolvedWorkspaceId)
+      )
+      .filter((q) => q.neq(q.field("status"), "dismissed"))
+      .order("desc")
+      .paginate(paginationOpts);
+  },
+});
+
+/**
+ * List pending notifications for the live toast monitor.
+ *
+ * The inbox uses cursor pagination, while the toast monitor intentionally
+ * stays a small pending-only query so newly-created approval/reply events can
+ * be detected without loading the entire notification history into the app.
+ */
+export const listPendingNotifications = query({
   args: { workspaceId: v.optional(v.id("workspaces")) },
   handler: async (ctx, { workspaceId }) => {
     const user = await requireViewerUser(ctx);
 
-    // Backward-compatible: if workspaceId isn't provided, use active default workspace.
     let resolvedWorkspaceId = workspaceId;
     if (!resolvedWorkspaceId) {
       const defaultWorkspace = await getDefaultWorkspaceForUser(ctx, user._id);
@@ -944,51 +957,16 @@ export const listNotifications = query({
       notAuthorizedMessage: "Not authorized to view this workspace",
     });
 
-    // Order by the latest meaningful event, not only document creation. Keyed
-    // notifications are reused, so an updated older document must re-enter the
-    // live result set for its new event version to toast.
-    const notifications = await ctx.db
+    return await ctx.db
       .query("outreachNotifications")
-      .withIndex("by_user_workspace_event_updated_at", (q) =>
-        q.eq("userId", user._id).eq("workspaceId", resolvedWorkspaceId)
+      .withIndex("by_user_workspace_status_event_updated_at", (q) =>
+        q
+          .eq("userId", user._id)
+          .eq("workspaceId", resolvedWorkspaceId)
+          .eq("status", "pending")
       )
-      .filter((q) => q.neq(q.field("status"), "dismissed"))
       .order("desc")
       .take(100);
-
-    return [...notifications].sort((a, b) => {
-      const aPending = a.status === "pending" ? 0 : 1;
-      const bPending = b.status === "pending" ? 0 : 1;
-      if (aPending !== bPending) {
-        return aPending - bPending;
-      }
-
-      const getTypePriority = (type: Doc<"outreachNotifications">["type"]) => {
-        switch (type) {
-          case "prospect_replied":
-            return 0;
-          case "ask_human":
-            return 1;
-          case "social_action_request":
-            return 2;
-          case "prospects_found":
-            return 3;
-          default:
-            return 4;
-        }
-      };
-
-      const typePriorityDiff =
-        getTypePriority(a.type) - getTypePriority(b.type);
-      const eventUpdatedDiff =
-        (b.eventUpdatedAt ?? b._creationTime) -
-        (a.eventUpdatedAt ?? a._creationTime);
-      if (eventUpdatedDiff !== 0) {
-        return eventUpdatedDiff;
-      }
-
-      return typePriorityDiff;
-    });
   },
 });
 

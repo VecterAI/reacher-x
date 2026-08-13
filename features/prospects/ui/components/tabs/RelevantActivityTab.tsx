@@ -7,7 +7,7 @@
 "use client";
 
 import * as React from "react";
-import { Button } from "@/shared/ui/components/Button";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import {
@@ -275,18 +275,18 @@ export function RelevantActivityTab({
         ))}
       </div>
 
-      {hasMore && !isInitialHydrationPending && (
-        <div className="p-4">
-          <Button
-            size="xs"
-            className="mx-auto block"
-            onClick={handleLoadMore}
-            disabled={isLoadingMore}
-          >
-            {isLoadingMore ? "Loading..." : "Load more"}
-          </Button>
-        </div>
-      )}
+      {!isInitialHydrationPending ? (
+        <InfiniteScrollTrigger
+          hasMore={hasMore}
+          isLoading={isLoadingMore}
+          onLoadMore={handleLoadMore}
+          resultCount={visiblePosts.length}
+          className="p-4"
+          loadingLabel="Loading more relevant activity"
+          loadMoreLabel="Load more relevant activity"
+          retryLabel="Retry loading relevant activity"
+        />
+      ) : null}
     </section>
   );
 }

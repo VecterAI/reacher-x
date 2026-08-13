@@ -28,7 +28,7 @@ import {
   TooltipTrigger,
 } from "@/shared/ui/components/Tooltip";
 import { SearchIcon, AddIcon } from "@/shared/ui/components/icons";
-import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import { ThreadCard, type ThreadData } from "./ThreadCard";
 import { ThreadCardSkeleton } from "./ThreadCardSkeleton";
 import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
@@ -367,22 +367,16 @@ export function HistoryPanel({
                   />
                 ))}
 
-                {hasMoreThreads && (
-                  <div className="px-4 pt-3 pb-4">
-                    <Button
-                      size="xs"
-                      className="w-full"
-                      onClick={() => threadsResult.loadMore(20)}
-                      disabled={isLoadingMoreThreads}
-                    >
-                      {isLoadingMoreThreads ? (
-                        <AsciiSpinnerText text="Loading" />
-                      ) : (
-                        "Load more"
-                      )}
-                    </Button>
-                  </div>
-                )}
+                <InfiniteScrollTrigger
+                  hasMore={hasMoreThreads}
+                  isLoading={isLoadingMoreThreads}
+                  onLoadMore={() => threadsResult.loadMore(20)}
+                  resultCount={displayedThreads.length}
+                  className="mx-4 pt-3 pb-4"
+                  loadingLabel="Loading more thread history"
+                  loadMoreLabel="Load more thread history"
+                  retryLabel="Retry loading thread history"
+                />
               </div>
             )}
           </ScrollArea>

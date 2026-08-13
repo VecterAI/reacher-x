@@ -8,11 +8,12 @@
  */
 
 import * as React from "react";
+import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
-import { Button } from "@/shared/ui/components/Button";
+import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import { Input } from "@/shared/ui/components/Input";
 import {
   Select,
@@ -174,14 +175,11 @@ export function ActivityLogTab({
 }: ActivityLogTabProps) {
   const { user } = useAuth();
   const { entitySingular, stageLabels } = useActiveUseCaseLabels();
-  const [limit, setLimit] = React.useState(ACTIVITIES_PER_PAGE);
-  const [loadingLimit, setLoadingLimit] = React.useState<number | null>(null);
   const [searchInput, setSearchInput] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<ActivityFilterType>("all");
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const normalizedSearch = debouncedSearch.trim();
   const selectedType = typeFilter === "all" ? undefined : typeFilter;
-  const cacheKey = `${selectedType ?? "all"}:${normalizedSearch.toLowerCase()}`;
   const entitySingularLower = entitySingular.toLowerCase();
   const isPreview = Array.isArray(previewActivities);
   const actionLabels = React.useMemo<Record<ActivityType, string>>(
@@ -214,42 +212,17 @@ export function ActivityLogTab({
     [stageLabels]
   );
 
-  const dataQuery = useQueryWithStatus(
+  const dataQuery = usePaginatedQuery(
     api.outreach.getActivityLog,
     isPreview
       ? "skip"
       : {
           prospectId: prospectId as Id<"prospects">,
-          limit,
           type: selectedType,
           search: normalizedSearch || undefined,
-        }
+        },
+    { initialNumItems: ACTIVITIES_PER_PAGE }
   );
-  const data = dataQuery.data;
-
-  const [cachedActivities, setCachedActivities] = React.useState<
-    ActivityRecord[]
-  >([]);
-  const [cachedHasMore, setCachedHasMore] = React.useState(false);
-  const [activeCacheKey, setActiveCacheKey] = React.useState(cacheKey);
-  const canUseCache = activeCacheKey === cacheKey;
-  const fallbackActivities = canUseCache ? cachedActivities : [];
-  const fallbackHasMore = canUseCache ? cachedHasMore : false;
-
-  React.useEffect(() => {
-    if (activeCacheKey === cacheKey) return;
-    setActiveCacheKey(cacheKey);
-    setCachedActivities([]);
-    setCachedHasMore(false);
-    setLimit(ACTIVITIES_PER_PAGE);
-    setLoadingLimit(null);
-  }, [activeCacheKey, cacheKey]);
-
-  React.useEffect(() => {
-    if (!dataQuery.isSuccess || !data) return;
-    setCachedActivities(data.activities as ActivityRecord[]);
-    setCachedHasMore(data.hasMore);
-  }, [data, dataQuery.isSuccess]);
 
   const filteredPreviewActivities = React.useMemo(() => {
     if (!previewActivities) {
@@ -272,53 +245,21 @@ export function ActivityLogTab({
     });
   }, [normalizedSearch, previewActivities, selectedType]);
 
-  const isLoadingMore =
-    !isPreview && loadingLimit !== null && dataQuery.isPending;
+  const isLoadingMore = !isPreview && dataQuery.status === "LoadingMore";
   const isInitialLoading =
-    !isPreview && dataQuery.isPending && fallbackActivities.length === 0;
+    !isPreview && dataQuery.status === "LoadingFirstPage";
 
   if (isInitialLoading) {
     return <ActivityLogSkeleton />;
   }
 
   const activities = (
-    isPreview
-      ? filteredPreviewActivities
-      : (data?.activities ?? fallbackActivities)
+    isPreview ? filteredPreviewActivities : dataQuery.results
   ) as ActivityRecord[];
-  const hasMore = isPreview ? false : (data?.hasMore ?? fallbackHasMore);
+  const hasMore =
+    !isPreview &&
+    (dataQuery.status === "CanLoadMore" || dataQuery.status === "LoadingMore");
   const hasFilters = typeFilter !== "all" || normalizedSearch.length > 0;
-
-  if (dataQuery.isError && fallbackActivities.length === 0) {
-    return (
-      <div className="px-4 py-4">
-        <ActivityLogFilters
-          searchInput={searchInput}
-          onSearchChange={setSearchInput}
-          typeFilter={typeFilter}
-          onTypeFilterChange={setTypeFilter}
-          options={activityFilterOptions}
-        />
-        <div className="rounded-lg border border-dashed p-6 text-center">
-          <p className="text-sm font-medium">Could not load activity</p>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {dataQuery.error.message || "Please try again."}
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={() => {
-              setLoadingLimit(null);
-              setLimit(ACTIVITIES_PER_PAGE);
-            }}
-          >
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   if (activities.length === 0) {
     return (
@@ -335,6 +276,18 @@ export function ActivityLogTab({
             ? "No activity matches your filters."
             : "No activity recorded yet."}
         </div>
+        {!isPreview ? (
+          <InfiniteScrollTrigger
+            hasMore={hasMore}
+            isLoading={isLoadingMore}
+            onLoadMore={() => dataQuery.loadMore(ACTIVITIES_PER_PAGE)}
+            resultCount={activities.length}
+            className="mt-4"
+            loadingLabel="Loading more activity"
+            loadMoreLabel="Load more activity"
+            retryLabel="Retry loading activity"
+          />
+        ) : null}
       </div>
     );
   }
@@ -372,12 +325,6 @@ export function ActivityLogTab({
   // Sort descending (newest first)
   entries.sort((a, b) => b.timestamp - a.timestamp);
 
-  const handleLoadMore = () => {
-    const newLimit = limit + ACTIVITIES_PER_PAGE;
-    setLoadingLimit(newLimit);
-    setLimit(newLimit);
-  };
-
   return (
     <div className="px-4 py-4">
       <ActivityLogFilters
@@ -387,15 +334,6 @@ export function ActivityLogTab({
         onTypeFilterChange={setTypeFilter}
         options={activityFilterOptions}
       />
-      {!isPreview && dataQuery.isError && (
-        <div className="mb-4 rounded-lg border border-dashed px-4 py-3 text-sm">
-          <p className="font-medium">Showing last available activity</p>
-          <p className="text-muted-foreground mt-1">
-            {dataQuery.error.message ||
-              "Live activity updates are unavailable."}
-          </p>
-        </div>
-      )}
       <Timeline>
         {entries.map((entry, index) => {
           let avatarUrl: string | undefined;
@@ -485,18 +423,18 @@ export function ActivityLogTab({
         })}
       </Timeline>
 
-      {hasMore && (
-        <div className="pt-4">
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={handleLoadMore}
-            disabled={isLoadingMore}
-          >
-            {isLoadingMore ? "Loading..." : "Load more"}
-          </Button>
-        </div>
-      )}
+      {!isPreview ? (
+        <InfiniteScrollTrigger
+          hasMore={hasMore}
+          isLoading={isLoadingMore}
+          onLoadMore={() => dataQuery.loadMore(ACTIVITIES_PER_PAGE)}
+          resultCount={activities.length}
+          className="mt-4"
+          loadingLabel="Loading more activity"
+          loadMoreLabel="Load more activity"
+          retryLabel="Retry loading activity"
+        />
+      ) : null}
     </div>
   );
 }
