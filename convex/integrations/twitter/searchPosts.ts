@@ -15,6 +15,7 @@ import { twitterSearchTypeValidator } from "../../validators";
 import {
   compactTwitterSearchPost,
   compactTwitterSearchResults,
+  normalizeTwitterSearchCursor,
   type TwitterPost,
 } from "../../lib/twitterSearchResultCore";
 export type {
@@ -29,7 +30,7 @@ const twitterSearchPostsLogger = logger.withScope("TwitterSearchPosts");
 
 /** socialapi.io search response */
 interface ApiResponse {
-  next_cursor?: string;
+  next_cursor?: unknown;
   tweets?: unknown[];
 }
 
@@ -226,11 +227,13 @@ export const searchInternal = internalAction({
 
     const data: ApiResponse = await response.json();
 
+    const nextCursor = normalizeTwitterSearchCursor(data.next_cursor);
+
     return {
       success: true,
       posts: compactTwitterSearchResults(data.tweets ?? []),
-      nextCursor: data.next_cursor,
-      hasMore: !!data.next_cursor,
+      nextCursor,
+      hasMore: nextCursor !== undefined,
     };
   },
 });
