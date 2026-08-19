@@ -21,6 +21,10 @@ import {
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { getWorkspaceUseCase } from "../../shared/lib/workspaceUseCases";
 import { getWideEventLogger } from "../lib/wideEventLogger";
+import {
+  resolveTwitterProspectingSearchMode,
+  type TwitterProspectingSearchMode,
+} from "../lib/twitterProspectingSearchCore";
 
 // ============================================================================
 // Schemas
@@ -36,8 +40,12 @@ const socialQueryItemSchema = z.object({
   sourceKeyword: z.string().optional(),
 });
 
+const twitterSocialQueryItemSchema = socialQueryItemSchema.extend({
+  searchMode: z.enum(["exact", "raw"]),
+});
+
 const socialQueriesSchema = z.object({
-  twitterQueries: z.array(socialQueryItemSchema).max(15),
+  twitterQueries: z.array(twitterSocialQueryItemSchema).max(15),
   linkedinPostQueries: z.array(socialQueryItemSchema).max(15),
   linkedinPeopleQueries: z.array(socialQueryItemSchema).max(15),
   reasoning: z.string(),
@@ -48,7 +56,9 @@ const modelRoutingValidator = v.union(
   v.literal("reasoning")
 );
 
-type GeneratedSocialQuery = z.infer<typeof socialQueryItemSchema>;
+type GeneratedSocialQuery = z.infer<typeof socialQueryItemSchema> & {
+  searchMode?: TwitterProspectingSearchMode;
+};
 type SocialQueriesObject = z.infer<typeof socialQueriesSchema>;
 type SocialQueryMetadata = {
   query: string;
@@ -57,6 +67,7 @@ type SocialQueryMetadata = {
   linkedinSurface?: "posts" | "people";
   linkedinSurfaceTargets?: Array<"posts" | "people">;
   queryStyle: "natural_phrase" | "professional_keyword" | "role_title";
+  twitterSearchMode?: TwitterProspectingSearchMode;
   legacyCompatibilitySource: boolean;
 };
 
@@ -112,42 +123,70 @@ function dedupeQueryItems(items: GeneratedSocialQuery[]) {
       sourceKeyword: item.sourceKeyword
         ? normalizeSearchText(item.sourceKeyword) || undefined
         : undefined,
+      ...(item.searchMode
+        ? {
+            searchMode: resolveTwitterProspectingSearchMode({
+              query,
+              requestedMode: item.searchMode,
+            }),
+          }
+        : {}),
     });
   }
 
   return deduped;
 }
 
-function normalizeSocialQueryItemPayload(value: unknown): unknown {
+function normalizeSocialQueryItemPayload(
+  value: unknown,
+  platform: "twitter" | "linkedin"
+): unknown {
   if (typeof value === "string") {
-    return { query: normalizeSocialQueryText(value) };
+    const query = normalizeSocialQueryText(value);
+    return platform === "twitter" ? { query, searchMode: "raw" } : { query };
   }
 
   if (!isRecord(value)) {
     return value;
   }
 
+  const query =
+    typeof value.query === "string"
+      ? normalizeSocialQueryText(value.query)
+      : value.query;
+
   return {
     ...value,
-    query:
-      typeof value.query === "string"
-        ? normalizeSocialQueryText(value.query)
-        : value.query,
+    query,
     sourceKeyword:
       typeof value.sourceKeyword === "string"
         ? normalizeSearchText(value.sourceKeyword)
         : value.sourceKeyword,
+    ...(platform === "twitter"
+      ? {
+          searchMode:
+            typeof query === "string"
+              ? resolveTwitterProspectingSearchMode({
+                  query,
+                  requestedMode: value.searchMode === "exact" ? "exact" : "raw",
+                })
+              : "raw",
+        }
+      : {}),
   };
 }
 
-function normalizeSocialQueryArrayPayload(value: unknown) {
+function normalizeSocialQueryArrayPayload(
+  value: unknown,
+  platform: "twitter" | "linkedin"
+) {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value
     .slice(0, MAX_SOCIAL_QUERY_ITEMS_PER_GROUP)
-    .map(normalizeSocialQueryItemPayload);
+    .map((item) => normalizeSocialQueryItemPayload(item, platform));
 }
 
 function normalizeSocialQueriesPayload(value: unknown): unknown {
@@ -157,12 +196,17 @@ function normalizeSocialQueriesPayload(value: unknown): unknown {
 
   return {
     ...value,
-    twitterQueries: normalizeSocialQueryArrayPayload(value.twitterQueries),
+    twitterQueries: normalizeSocialQueryArrayPayload(
+      value.twitterQueries,
+      "twitter"
+    ),
     linkedinPostQueries: normalizeSocialQueryArrayPayload(
-      value.linkedinPostQueries
+      value.linkedinPostQueries,
+      "linkedin"
     ),
     linkedinPeopleQueries: normalizeSocialQueryArrayPayload(
-      value.linkedinPeopleQueries
+      value.linkedinPeopleQueries,
+      "linkedin"
     ),
     reasoning:
       typeof value.reasoning === "string"
@@ -196,7 +240,9 @@ function buildKeywordFallbackSocialQueries(args: {
   );
 
   return {
-    twitterQueries: args.includeTwitter ? copyQueryItems(baseQueries) : [],
+    twitterQueries: args.includeTwitter
+      ? baseQueries.map((item) => ({ ...item, searchMode: "raw" as const }))
+      : [],
     linkedinPostQueries: args.includeLinkedIn
       ? copyQueryItems(baseQueries)
       : [],
@@ -278,6 +324,7 @@ function buildSocialQueryActionResult(args: {
         query: item.query,
         sourceKeyword: item.sourceKeyword,
         ...metadata,
+        twitterSearchMode: item.searchMode,
       });
     }
   };
@@ -613,14 +660,18 @@ Use this search framing: ${useCase.promptContext.searchIntent}
 
 **CRITICAL: CHARACTER LIMIT**
 Every query MUST be 40 characters or less. Count the characters before including each query.
-Queries longer than 40 characters will NOT return results on social platforms.
-Aim for 25-40 characters. Shorter is better for search matching.
+Queries are normalized to this operational limit before they are saved.
+Prefer 2-5 meaningful words. Shorter is better for search matching.
 
 Return three separate groups:
 1. twitterQueries
 - Natural first-person phrasing plus short role/profile/company/topic terms
 - Conversational pain, intent, recommendation, or help-seeking language
 - Profile-fit terms that can lead to seed accounts for expansion
+- For every Twitter query, return searchMode as either "exact" or "raw"
+- Use "exact" only for a coherent 2-5 word phrase that people plausibly write verbatim
+- Use "raw" for keyword combinations, broader intent, hashtags, operators, or sentence fragments
+- Never include quotation marks in query; the backend applies them only for validated exact searches
 
 2. linkedinPostQueries
 - Short professional or topical phrases
@@ -708,6 +759,8 @@ Return grouped queries that are net-new relative to the operational memory above
 
 When Twitter is requested:
 - generate a balanced mix of post-like first-person phrasing and short role, company, profile, or topical terms
+- set searchMode="exact" only for short phrases likely to appear verbatim
+- otherwise set searchMode="raw"; do not add quotation marks yourself
 
 When LinkedIn is requested:
 - generate linkedinPostQueries as short professional/topic phrases

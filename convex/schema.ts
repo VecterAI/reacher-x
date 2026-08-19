@@ -157,6 +157,7 @@ import {
   twitterReplyDiscoveryCandidateStatusValidator,
   twitterReplyDiscoveryScoreBreakdownValidator,
   socialQueryStyleValidator,
+  twitterProspectingSearchModeValidator,
   agentUsageSnapshotValidator,
   agentMessageAttachmentReferenceValidator,
   agentMessagePromptTextSourceValidator,
@@ -619,6 +620,7 @@ export default defineSchema({
     linkedinSurface: v.optional(linkedinSearchSurfaceValidator),
     linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
     queryStyle: v.optional(socialQueryStyleValidator),
+    twitterSearchMode: v.optional(twitterProspectingSearchModeValidator),
 
     // =========================================================================
     // Platform-specific search tracking (for social_query type)
@@ -2366,6 +2368,7 @@ export default defineSchema({
     linkedinSurface: v.optional(linkedinSearchSurfaceValidator),
     linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
     queryStyle: v.optional(socialQueryStyleValidator),
+    twitterSearchMode: v.optional(twitterProspectingSearchModeValidator),
     noveltyScore: v.optional(v.number()),
     status: queryCandidateStatusValidator,
     duplicateReason: v.optional(queryCandidateDuplicateReasonValidator),
