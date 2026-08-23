@@ -444,10 +444,7 @@ test("keyed failure notifications resurface as new events", () => {
   assert.match(notificationSource, /eventUpdatedAt: now/);
   assert.match(notificationSource, /existing\.eventVersion \?\? 0/);
   assert.match(outreachSource, /by_user_workspace_event_updated_at/);
-  assert.ok(
-    outreachSource.indexOf("const eventUpdatedDiff") <
-      outreachSource.indexOf("return typePriorityDiff")
-  );
+  assert.match(outreachSource, /\.order\("desc"\)/);
   assert.match(toastSource, /getOutreachNotificationEventKey/);
 
   const inboxSource = readFileSync(
