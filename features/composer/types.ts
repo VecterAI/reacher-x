@@ -63,8 +63,9 @@ export interface ComposerBaseProps {
     content: SerializedEditorState,
     mediaUrls?: string[],
     mediaDescriptions?: string[],
-    mediaKinds?: ComposerMediaKind[]
-  ) => void;
+    mediaKinds?: ComposerMediaKind[],
+    mediaUploads?: MediaUpload[]
+  ) => void | Promise<void>;
   onCancel?: () => void;
   onEditorBlur?: () => void;
   onEditorFocus?: () => void;
@@ -94,6 +95,9 @@ export interface ComposerInitialMediaUpload {
   fileName?: string;
   mimeType?: string;
   size?: number;
+  width?: number;
+  height?: number;
+  durationMs?: number;
   description?: string;
 }
 
@@ -125,7 +129,7 @@ export interface ReplyComposerProps extends ComposerBaseProps {
     mediaUrls?: string[],
     mediaDescriptions?: string[],
     mediaKinds?: ComposerMediaKind[]
-  ) => void;
+  ) => void | Promise<void>;
 }
 
 // Note composer specific types
@@ -137,7 +141,7 @@ export interface NoteComposerProps extends ComposerBaseProps {
     mediaUrls?: string[],
     mediaDescriptions?: string[],
     mediaKinds?: ComposerMediaKind[]
-  ) => void;
+  ) => void | Promise<void>;
 }
 
 // Media upload types
@@ -150,6 +154,9 @@ export interface MediaUpload {
   type: ComposerUploadType;
   mediaKind: ComposerMediaKind;
   size?: number;
+  width?: number;
+  height?: number;
+  durationMs?: number;
   progress: number;
   status: "uploading" | "completed" | "error";
   error?: string;

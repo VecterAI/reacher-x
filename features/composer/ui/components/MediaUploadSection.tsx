@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { Textarea } from "@/shared/ui/components/TextArea";
@@ -14,10 +14,10 @@ import {
   AddIcon,
   AutorenewIcon,
   CloseIcon,
+  DescriptionIcon,
   EditIcon,
   PictureAsPdfIcon,
 } from "@/shared/ui/components/icons";
-import { FileText } from "lucide-react";
 import {
   Attachment,
   AttachmentAction,
@@ -71,33 +71,9 @@ export function MediaUploadSection({
     autoResize();
   }, [draft, editingId]);
 
-  const allowedAspects = useMemo(
-    () =>
-      [
-        [16, 9],
-        [4, 3],
-        [1, 1],
-        [3, 4],
-      ] as Array<[number, number]>,
-    []
-  );
-
-  const chooseNearestAspect = useCallback(
-    (width: number, height: number) => {
-      const ratio = width / height;
-      let best: [number, number] = allowedAspects[0];
-      let bestDiff = Math.abs(best[0] / best[1] - ratio);
-      for (const [w, h] of allowedAspects) {
-        const diff = Math.abs(w / h - ratio);
-        if (diff < bestDiff) {
-          best = [w, h];
-          bestDiff = diff;
-        }
-      }
-      return `${best[0]} / ${best[1]}`;
-    },
-    [allowedAspects]
-  );
+  const formatIntrinsicAspect = useCallback((width: number, height: number) => {
+    return width > 0 && height > 0 ? `${width} / ${height}` : "16 / 9";
+  }, []);
 
   // Precompute aspect ratios even before upload.url is available
   useEffect(() => {
@@ -153,7 +129,7 @@ export function MediaUploadSection({
                 ? prev
                 : {
                     ...prev,
-                    [upload.id]: chooseNearestAspect(
+                    [upload.id]: formatIntrinsicAspect(
                       img.naturalWidth,
                       img.naturalHeight
                     ),
@@ -179,7 +155,7 @@ export function MediaUploadSection({
                 ? prev
                 : {
                     ...prev,
-                    [upload.id]: chooseNearestAspect(
+                    [upload.id]: formatIntrinsicAspect(
                       video.videoWidth,
                       video.videoHeight
                     ),
@@ -202,7 +178,7 @@ export function MediaUploadSection({
     return () => {
       cleanupFns.forEach((cleanup) => cleanup());
     };
-  }, [chooseNearestAspect, uploads]);
+  }, [formatIntrinsicAspect, uploads]);
 
   const handleDescriptionChange = (id: string, description: string) => {
     onAddDescription?.(id, description);
@@ -227,7 +203,7 @@ export function MediaUploadSection({
                     {upload.file.type.toLowerCase() === "application/pdf" ? (
                       <PictureAsPdfIcon className="fill-current" />
                     ) : (
-                      <FileText className="size-4" />
+                      <DescriptionIcon className="size-4 fill-current" />
                     )}
                   </AttachmentMedia>
                   <AttachmentContent>
@@ -251,7 +227,13 @@ export function MediaUploadSection({
               ) : (
                 <div
                   className="border-border relative w-full overflow-hidden rounded-md border"
-                  style={{ aspectRatio: aspectById[upload.id] ?? "16 / 9" }}
+                  style={{
+                    aspectRatio:
+                      aspectById[upload.id] ??
+                      (upload.width && upload.height
+                        ? `${upload.width} / ${upload.height}`
+                        : "16 / 9"),
+                  }}
                 >
                   {upload.type === "image" && upload.url ? (
                     upload.url.startsWith("blob:") ? (
@@ -284,7 +266,7 @@ export function MediaUploadSection({
                         const video = e.currentTarget as HTMLVideoElement;
                         setAspectById((prev) => ({
                           ...prev,
-                          [upload.id]: chooseNearestAspect(
+                          [upload.id]: formatIntrinsicAspect(
                             video.videoWidth,
                             video.videoHeight
                           ),
