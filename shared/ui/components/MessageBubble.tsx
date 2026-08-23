@@ -6,17 +6,17 @@ import { cn } from "@/shared/lib/utils";
 type BubbleGrouping = "first" | "middle" | "last" | "none";
 
 const groupedRadiusReceived: Record<BubbleGrouping, string> = {
-  none: "rounded-[20px]",
-  first: "rounded-[20px]",
-  middle: "rounded-[20px]",
-  last: "rounded-[20px]",
+  none: "rounded-[18px]",
+  first: "rounded-[18px] rounded-bl-md",
+  middle: "rounded-[18px] rounded-l-md",
+  last: "rounded-[18px] rounded-tl-md",
 };
 
 const groupedRadiusSent: Record<BubbleGrouping, string> = {
-  none: "rounded-[20px]",
-  first: "rounded-[20px]",
-  middle: "rounded-[20px]",
-  last: "rounded-[20px]",
+  none: "rounded-[18px]",
+  first: "rounded-[18px] rounded-br-md",
+  middle: "rounded-[18px] rounded-r-md",
+  last: "rounded-[18px] rounded-tr-md",
 };
 
 export interface MessageBubbleProps {
@@ -35,17 +35,11 @@ export function MessageBubble({
   children,
 }: MessageBubbleProps) {
   const isSent = variant === "sent";
-  const showTail = grouped === "none" || grouped === "last";
-  const tailBaseClassName =
-    "before:absolute before:bottom-0 before:h-[18px] before:content-[''] after:absolute after:bottom-0 after:h-[18px] after:bg-background after:content-['']";
-  const tailClassName = isSent
-    ? "before:-right-[7px] before:w-5 before:rounded-bl-[16px_14px] after:-right-[26px] after:w-[26px] after:rounded-bl-[10px]"
-    : "before:-left-[7px] before:w-5 before:rounded-br-2xl after:-left-[26px] after:w-[26px] after:rounded-br-[10px]";
 
   return (
     <div
       className={cn(
-        "relative max-w-[78%] px-5 py-2 text-[15px] leading-6",
+        "w-fit max-w-full min-w-0 px-3 py-2 text-sm leading-[1.45] wrap-break-word",
         isSent
           ? cn(
               "bg-foreground text-background self-end",
@@ -55,9 +49,6 @@ export function MessageBubble({
               "bg-muted text-foreground self-start",
               groupedRadiusReceived[grouped]
             ),
-        showTail ? tailBaseClassName : null,
-        showTail ? tailClassName : null,
-        showTail ? (isSent ? "before:bg-foreground" : "before:bg-muted") : null,
         className
       )}
     >

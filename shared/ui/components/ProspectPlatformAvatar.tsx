@@ -26,6 +26,7 @@ const BADGE: Record<
 
 export interface ProspectPlatformAvatarProps {
   platform?: ProspectPlatform;
+  badgeIcon?: React.ReactNode;
   badgeSize?: keyof typeof BADGE;
   className?: string;
   children: React.ReactNode;
@@ -34,6 +35,7 @@ export interface ProspectPlatformAvatarProps {
 /** Theme tokens only: `bg-muted` + `ring-border` on the disc, `ring-background` halo, `foreground` icons. */
 export function ProspectPlatformAvatar({
   platform,
+  badgeIcon,
   badgeSize = "sm",
   className,
   children,
@@ -57,15 +59,16 @@ export function ProspectPlatformAvatar({
               b.shell
             )}
           >
-            {platform === "twitter" ? (
-              <FilledTwitterIcon
-                className={cn("text-foreground shrink-0", b.icon)}
-              />
-            ) : (
-              <FilledLinkedinIcon
-                className={cn("text-foreground shrink-0", b.icon)}
-              />
-            )}
+            {badgeIcon ??
+              (platform === "twitter" ? (
+                <FilledTwitterIcon
+                  className={cn("text-foreground shrink-0", b.icon)}
+                />
+              ) : (
+                <FilledLinkedinIcon
+                  className={cn("text-foreground shrink-0", b.icon)}
+                />
+              ))}
           </span>
         </span>
       ) : null}
