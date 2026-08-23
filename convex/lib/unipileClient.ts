@@ -167,21 +167,32 @@ export type UnipileChat = {
 
 export type UnipileMessage = {
   id: string;
-  message_id: string;
+  /** Legacy webhook alias; message-list responses use `id`. */
+  message_id?: string;
   account_id: string;
   chat_id: string;
   provider_id?: string;
+  /** Provider response relation for a quoted/replied-to message. */
+  parent?: string;
   sender_id?: string;
   sender_attendee_id?: string;
   text?: string | null;
   timestamp: string;
   is_sender?: number;
   seen?: number;
+  seen_at?: string;
+  read_at?: string;
   delivered?: number;
+  delivered_at?: string;
   edited?: number;
+  edited_at?: string;
   deleted?: number;
+  deleted_at?: string;
   is_event?: number;
-  event_type?: number;
+  event_type?: string | number;
+  event_metadata?: Record<string, unknown>;
+  reactions?: Array<Record<string, unknown>> | Record<string, unknown>;
+  seen_by?: Array<Record<string, unknown>> | Record<string, unknown>;
   message_type?:
     | "MESSAGE"
     | "INVITATION"
@@ -191,7 +202,15 @@ export type UnipileMessage = {
     | "INMAIL_ACCEPT";
   attachments?: Array<Record<string, unknown>>;
   quoted?: {
+    provider_id?: string;
     message_id?: string;
+    id?: string;
+    text?: string;
+    sender_id?: string;
+    sender_name?: string;
+    sender?: Record<string, unknown>;
+    is_sender?: number;
+    attachments?: Array<Record<string, unknown>>;
   } | null;
 };
 
@@ -799,6 +818,23 @@ export async function listLinkedInChatMessages(args: {
   return (await listLinkedInChatMessagesPage(args)).items;
 }
 
+/** Download one provider message attachment through Unipile's SDK route. */
+export async function getLinkedInMessageAttachment(args: {
+  accountId: string;
+  messageId: string;
+  attachmentId: string;
+}): Promise<Blob> {
+  return await withUnipileErrorHandling(async () => {
+    return await getUnipileClient().messaging.getMessageAttachment(
+      {
+        message_id: args.messageId,
+        attachment_id: args.attachmentId,
+      },
+      { extra_params: { account_id: args.accountId } }
+    );
+  });
+}
+
 export async function startLinkedInChat(args: {
   accountId: string;
   attendeeProviderId: string;
@@ -828,50 +864,71 @@ export async function sendLinkedInChatMessage(args: {
   accountId: string;
   text?: string;
   quoteId?: string;
+  quoteProviderId?: string;
   mediaUrls?: string[];
 }) {
   const attachments = await loadRemoteAttachments(args.mediaUrls);
 
-  if (args.quoteId?.trim()) {
-    const formData = new FormData();
-    formData.set("account_id", args.accountId);
-    if (args.text?.trim()) {
-      formData.set("text", args.text.trim());
-    }
-    formData.set("quote_id", args.quoteId.trim());
-    for (const mediaUrl of args.mediaUrls ?? []) {
-      await appendRemoteFile(formData, "attachments", mediaUrl);
-    }
-
-    return await requestUnipile<{ message_id?: string | null }>(
-      `/api/v1/chats/${encodeURIComponent(args.chatId)}/messages`,
-      {
-        method: "POST",
-        body: formData,
-      }
+  if (!args.text?.trim() && attachments.length === 0) {
+    throw new Error(
+      "LinkedIn message requires text or at least one attachment."
     );
   }
 
-  return await withUnipileErrorHandling(async () => {
-    if (!args.text?.trim() && attachments.length === 0) {
-      throw new Error(
-        "LinkedIn message requires text or at least one attachment."
-      );
+  const send = async (quoteId?: string) =>
+    await withUnipileErrorHandling(
+      async () =>
+        await getUnipileClient().messaging.sendMessage(
+          {
+            chat_id: args.chatId,
+            text: args.text?.trim() ?? "",
+            ...(attachments.length > 0 ? { attachments } : {}),
+          },
+          {
+            extra_params: {
+              account_id: args.accountId,
+              ...(quoteId ? { quote_id: quoteId } : {}),
+            },
+          }
+        )
+    );
+
+  const quoteId = args.quoteId?.trim();
+  if (!quoteId) {
+    return await send();
+  }
+
+  try {
+    return await send(quoteId);
+  } catch (error) {
+    const providerQuoteId = args.quoteProviderId?.trim();
+    const failure = getUnipileFailure(error);
+    if (
+      !providerQuoteId ||
+      providerQuoteId === quoteId ||
+      failure.classification !== "unprocessable"
+    ) {
+      throw error;
     }
 
-    return await getUnipileClient().messaging.sendMessage(
-      {
-        chat_id: args.chatId,
-        text: args.text?.trim() ?? "",
-        ...(attachments.length > 0 ? { attachments } : {}),
-      },
-      {
-        extra_params: {
-          account_id: args.accountId,
-        },
-      }
-    );
-  });
+    // V1 documents the Unipile message id, but some LinkedIn message kinds
+    // accept only the native provider id. A 422 confirms no message was sent,
+    // so this fallback cannot duplicate delivery.
+    return await send(providerQuoteId);
+  }
+}
+
+export async function setLinkedInMessageReaction(args: {
+  messageId: string;
+  reaction: string;
+}) {
+  return await requestUnipile<Record<string, unknown>>(
+    `/api/v1/messages/${encodeURIComponent(args.messageId)}/reaction`,
+    {
+      method: "POST",
+      json: { reaction: args.reaction },
+    }
+  );
 }
 
 export async function sendLinkedInInvitation(args: {

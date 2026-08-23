@@ -1,9 +1,42 @@
 import { describe, expect, test } from "vitest";
 import {
+  findXWebhookForEnvironment,
   findMatchingXActivitySubscription,
   getXActivitySubscriptionHealth,
   isDuplicateXActivitySubscriptionError,
 } from "./xActivityReconciliationCore";
+
+describe("X Activity webhook environment isolation", () => {
+  test("returns only an exact deployment URL match", () => {
+    expect(
+      findXWebhookForEnvironment(
+        [
+          {
+            id: "webhook-1",
+            url: "https://dev.example.com/x-webhook",
+            valid: true,
+          },
+        ],
+        "https://dev.example.com/x-webhook"
+      )
+    ).toMatchObject({ id: "webhook-1" });
+  });
+
+  test("rejects a webhook owned by another deployment", () => {
+    expect(() =>
+      findXWebhookForEnvironment(
+        [
+          {
+            id: "webhook-1",
+            url: "https://prod.example.com/x-webhook",
+            valid: true,
+          },
+        ],
+        "https://dev.example.com/x-webhook"
+      )
+    ).toThrow("different deployment");
+  });
+});
 
 describe("X Activity subscription reconciliation", () => {
   const identity = {

@@ -2,6 +2,39 @@ import { v } from "convex/values";
 import { WORKSPACE_NAME_CONSTRAINTS } from "../shared/lib/utils/validation/validation";
 import { WORKSPACE_USE_CASE_KEYS } from "../shared/lib/workspaceUseCases";
 import { SETUP_PREVIEW_REVIEW_MODES } from "./lib/setupPreviewCore";
+import { LINKEDIN_MESSAGE_REACTIONS } from "../shared/lib/linkedin/messageReaction";
+
+const [firstLinkedInMessageReaction, ...remainingLinkedInMessageReactions] =
+  LINKEDIN_MESSAGE_REACTIONS;
+
+export const linkedinMessageReactionValidator = v.union(
+  v.literal(firstLinkedInMessageReaction),
+  ...remainingLinkedInMessageReactions.map((reaction) => v.literal(reaction))
+);
+
+export const linkedinMessageReactionResultValidator = v.union(
+  v.object({ success: v.literal(true) }),
+  v.object({
+    success: v.literal(false),
+    code: v.union(
+      v.literal("account_reconnect_required"),
+      v.literal("conversation_unavailable"),
+      v.literal("feature_unavailable"),
+      v.literal("message_unavailable"),
+      v.literal("provider_unavailable"),
+      v.literal("rate_limited"),
+      v.literal("unknown")
+    ),
+    message: v.string(),
+    retryable: v.boolean(),
+    recovery: v.union(
+      v.literal("none"),
+      v.literal("reconnect"),
+      v.literal("refresh"),
+      v.literal("retry")
+    ),
+  })
+);
 
 // ============================================================================
 // ICP (Ideal Customer Profile) Validator - Shared
@@ -527,6 +560,43 @@ export const platformConversationDirectionValidator = v.union(
   v.literal("received")
 );
 
+export const outboundMessageStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("sending"),
+  v.literal("sent"),
+  v.literal("failed")
+);
+
+export const outboundMessageMediaMetadataValidator = v.object({
+  width: v.optional(v.number()),
+  height: v.optional(v.number()),
+  durationMs: v.optional(v.number()),
+  mimeType: v.optional(v.string()),
+  fileSize: v.optional(v.number()),
+});
+
+export const outboundMessageOperationValidator = v.object({
+  operationId: v.id("outboundMessageOperations"),
+  clientRequestId: v.string(),
+  prospectId: v.id("prospects"),
+  platform: platformConversationPlatformValidator,
+  conversationId: v.optional(v.string()),
+  text: v.string(),
+  mediaUrls: v.optional(v.array(v.string())),
+  mediaDescriptions: v.optional(v.array(v.string())),
+  mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
+  mediaFileNames: v.optional(v.array(v.string())),
+  mediaMetadata: v.optional(v.array(outboundMessageMediaMetadataValidator)),
+  quoteId: v.optional(v.string()),
+  status: outboundMessageStatusValidator,
+  attemptCount: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  sentAt: v.optional(v.number()),
+  providerMessageId: v.optional(v.string()),
+  errorMessage: v.optional(v.string()),
+});
+
 export const prospectInteractionHistoryPlatformValidator = v.union(
   v.literal("all"),
   v.literal("twitter"),
@@ -611,19 +681,189 @@ export const xChatEncryptedEventValidator = v.object({
   encodedEvent: v.string(),
 });
 
-export const xChatBrowserDecryptBundleValidator = v.object({
-  viewerUserId: v.string(),
-  participantUserId: v.string(),
+export const xChatBrowserDecryptBundleValidator = v.union(
+  v.object({
+    availability: v.literal("unavailable"),
+    reason: v.literal("not_configured"),
+  }),
+  v.object({
+    availability: v.literal("blocked"),
+    reason: v.literal("xchat_access_denied"),
+  }),
+  v.object({
+    availability: v.literal("available"),
+    viewerUserId: v.string(),
+    participantUserId: v.string(),
+    conversationId: v.string(),
+    signingKeyVersion: v.string(),
+    juiceboxConfig: v.string(),
+    signingKeys: v.array(xChatSigningKeyValidator),
+    events: v.array(xChatEncryptedEventValidator),
+    eventPagesFetched: v.number(),
+    nextCursor: v.optional(v.string()),
+    hasMore: v.boolean(),
+  })
+);
+
+/** A short-lived URL for opaque XChat ciphertext; plaintext never crosses Convex. */
+export const xChatEncryptedMediaValidator = v.union(
+  v.object({
+    availability: v.literal("available"),
+    url: v.string(),
+    size: v.number(),
+    expiresAt: v.number(),
+  }),
+  v.object({
+    availability: v.literal("unavailable"),
+    reason: v.literal("not_found"),
+  })
+);
+
+export const xChatEncryptedMediaUploadResultValidator = v.object({
+  mediaHashKey: v.string(),
+});
+
+export const platformConversationMediaUrlValidator = v.object({
+  url: v.string(),
+  contentType: v.string(),
+  fileName: v.optional(v.string()),
+  size: v.number(),
+  encrypted: v.boolean(),
+  expiresAt: v.number(),
+});
+
+export const xChatEventPageValidator = v.object({
   conversationId: v.string(),
-  signingKeyVersion: v.string(),
-  juiceboxConfig: v.string(),
-  signingKeys: v.array(xChatSigningKeyValidator),
   events: v.array(xChatEncryptedEventValidator),
-  eventPagesFetched: v.number(),
+  nextCursor: v.optional(v.string()),
   hasMore: v.boolean(),
 });
 
+/** Ciphertext-only realtime events delivered by X Activity webhooks. */
+export const xChatRealtimeEventPageValidator = v.union(
+  v.null(),
+  v.object({
+    conversationId: v.string(),
+    events: v.array(xChatEncryptedEventValidator),
+  })
+);
+
+export const xChatEncryptedSendResultValidator = v.object({
+  success: v.literal(true),
+  conversationId: v.string(),
+  messageId: v.string(),
+  deduplicated: v.boolean(),
+});
+
+export const xChatSendOperationStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("sending"),
+  v.literal("sent")
+);
+
+export const xChatSendStoredOperationValidator = v.object({
+  operationId: v.id("xChatSendOperations"),
+  userId: v.id("users"),
+  prospectId: v.id("prospects"),
+  clientRequestId: v.string(),
+  conversationId: v.string(),
+  messageId: v.string(),
+  encodedMessageCreateEvent: v.string(),
+  encodedMessageEventSignature: v.string(),
+  status: xChatSendOperationStatusValidator,
+  leaseExpiresAt: v.optional(v.number()),
+  attemptCount: v.number(),
+  expiresAt: v.number(),
+});
+
+export const xChatSendLeaseResultValidator = v.union(
+  v.object({
+    kind: v.literal("sent"),
+    operationId: v.id("xChatSendOperations"),
+    messageId: v.string(),
+  }),
+  v.object({
+    kind: v.literal("in_progress"),
+    operationId: v.id("xChatSendOperations"),
+    retryAt: v.number(),
+  }),
+  v.object({
+    kind: v.literal("acquired"),
+    operationId: v.id("xChatSendOperations"),
+    messageId: v.string(),
+    encodedMessageCreateEvent: v.string(),
+    encodedMessageEventSignature: v.string(),
+    existed: v.boolean(),
+  })
+);
+
+export const unifiedPlatformIdValidator = v.union(
+  v.literal("twitter"),
+  v.literal("linkedin"),
+  v.literal("reddit"),
+  v.literal("threads"),
+  v.literal("bluesky")
+);
+
+export const unifiedAuthorValidator = v.object({
+  id: v.optional(v.string()),
+  handle: v.optional(v.string()),
+  name: v.optional(v.string()),
+  avatarUrl: v.optional(v.string()),
+  profileUrl: v.optional(v.string()),
+  headline: v.optional(v.string()),
+  type: v.optional(v.string()),
+});
+
+export const unifiedMediaValidator = v.object({
+  id: v.optional(v.string()),
+  type: v.union(v.literal("image"), v.literal("video"), v.literal("link")),
+  url: v.optional(v.string()),
+  unavailable: v.optional(v.boolean()),
+  width: v.optional(v.number()),
+  height: v.optional(v.number()),
+  posterUrl: v.optional(v.string()),
+  title: v.optional(v.string()),
+  description: v.optional(v.string()),
+  faviconUrl: v.optional(v.string()),
+});
+
+export const unifiedPostValidator = v.object({
+  id: v.string(),
+  platform: unifiedPlatformIdValidator,
+  url: v.optional(v.string()),
+  author: unifiedAuthorValidator,
+  text: v.string(),
+  createdAt: v.number(),
+  metrics: v.optional(
+    v.object({
+      reactions: v.optional(v.number()),
+      comments: v.optional(v.number()),
+      reposts: v.optional(v.number()),
+      quotes: v.optional(v.number()),
+      views: v.optional(v.number()),
+    })
+  ),
+  media: v.optional(v.array(unifiedMediaValidator)),
+  activity: v.optional(
+    v.object({
+      type: v.union(v.literal("like"), v.literal("repost")),
+      actor: unifiedAuthorValidator,
+    })
+  ),
+  raw: v.optional(v.any()),
+});
+
+export const platformConversationAttachmentVariantValidator = v.object({
+  url: v.string(),
+  mimeType: v.optional(v.string()),
+  bitrate: v.optional(v.number()),
+  width: v.optional(v.number()),
+  height: v.optional(v.number()),
+});
+
 export const platformConversationAttachmentValidator = v.object({
+  id: v.optional(v.string()),
   mediaKey: v.optional(v.string()),
   type: v.string(),
   url: v.optional(v.string()),
@@ -631,6 +871,66 @@ export const platformConversationAttachmentValidator = v.object({
   altText: v.optional(v.string()),
   width: v.optional(v.number()),
   height: v.optional(v.number()),
+  fileName: v.optional(v.string()),
+  mimeType: v.optional(v.string()),
+  fileSize: v.optional(v.number()),
+  durationMs: v.optional(v.number()),
+  variants: v.optional(v.array(platformConversationAttachmentVariantValidator)),
+  isGif: v.optional(v.boolean()),
+  isVoiceNote: v.optional(v.boolean()),
+  unavailable: v.optional(v.boolean()),
+  urlExpiresAt: v.optional(v.string()),
+  linkedinPostUrl: v.optional(v.string()),
+});
+
+export const platformConversationSharedPostValidator = v.object({
+  id: v.string(),
+  url: v.string(),
+  text: v.optional(v.string()),
+  authorId: v.optional(v.string()),
+  authorHandle: v.optional(v.string()),
+  authorName: v.optional(v.string()),
+  authorAvatarUrl: v.optional(v.string()),
+  createdAt: v.optional(v.string()),
+  media: v.optional(v.array(platformConversationAttachmentValidator)),
+});
+
+export const platformConversationQuotedMessageValidator = v.object({
+  id: v.string(),
+  text: v.optional(v.string()),
+  senderName: v.optional(v.string()),
+  direction: v.optional(v.union(v.literal("sent"), v.literal("received"))),
+  attachmentType: v.optional(v.string()),
+  attachments: v.optional(v.array(platformConversationAttachmentValidator)),
+  sharedPost: v.optional(platformConversationSharedPostValidator),
+});
+
+export const platformConversationReactionValidator = v.object({
+  emoji: v.string(),
+  count: v.number(),
+  reactedByViewer: v.optional(v.boolean()),
+});
+
+export const platformConversationSeenByValidator = v.object({
+  userId: v.optional(v.string()),
+  attendeeId: v.optional(v.string()),
+  senderName: v.optional(v.string()),
+  seenAt: v.optional(v.number()),
+});
+
+export const platformConversationEventMetadataValidator = v.object({
+  providerEventType: v.optional(v.string()),
+  eventLabel: v.optional(v.string()),
+  actorUserId: v.optional(v.string()),
+  actorName: v.optional(v.string()),
+  targetMessageId: v.optional(v.string()),
+});
+
+export const platformConversationMessageLookupValidator = v.object({
+  messageId: v.string(),
+  providerMessageId: v.optional(v.string()),
+  text: v.optional(v.string()),
+  attachments: v.optional(v.array(platformConversationAttachmentValidator)),
 });
 
 export const xActivityEventTypeValidator = v.union(
@@ -667,6 +967,15 @@ export const platformConversationMessageTypeValidator = v.union(
   v.literal("INMAIL_DECLINE"),
   v.literal("INMAIL_REPLY"),
   v.literal("INMAIL_ACCEPT")
+);
+
+export const platformConversationRevisionValidator = v.union(
+  v.null(),
+  v.object({
+    updatedAt: v.number(),
+    latestMessageId: v.optional(v.string()),
+    latestMessageAt: v.optional(v.number()),
+  })
 );
 
 export const xActivitySubscriptionStatusValidator = v.union(
@@ -1658,6 +1967,11 @@ export const linkedinProfileIdentityValidator = v.object({
   profileUrl: v.optional(v.string()),
   providerId: v.optional(v.string()),
   username: v.optional(v.string()),
+});
+
+export const linkedinDmPostPreviewArgsValidator = v.object({
+  prospectId: v.id("prospects"),
+  postUrl: v.string(),
 });
 
 export const unipileAccountSourceStatusValidator = v.union(

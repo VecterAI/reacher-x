@@ -60,7 +60,7 @@ test("date boundaries stop pagination without returning older messages", () => {
     {
       nextCursor: undefined,
       hasMore: false,
-      boundary: "x_30_day_limit",
+      boundary: "complete",
     }
   );
 });

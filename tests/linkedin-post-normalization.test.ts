@@ -75,6 +75,140 @@ test("raw qualification-source posts receive a stable internal LinkedIn model", 
   assert.equal(post?.raw, rawPost);
 });
 
+test("Unipile post attachments normalize into renderable LinkedIn media", () => {
+  const rawPost = {
+    provider: "LINKEDIN" as const,
+    id: "Ux6-quoted-post",
+    share_url:
+      "https://www.linkedin.com/feed/update/urn:li:activity:7493715921715445760",
+    text: "A rich quoted post",
+    author: { name: "Muhammad Salman" },
+    attachments: [
+      {
+        type: "image",
+        url: "https://media.licdn.com/dms/image/v2/image.jpg",
+        size: { width: 1200, height: 675 },
+        alt_text: "Product image",
+      },
+      {
+        type: "video",
+        url: "https://media.licdn.com/dms/video/v2/video.mp4",
+        preview_url: "https://media.licdn.com/dms/image/v2/video-poster.jpg",
+        width: 1920,
+        height: 1080,
+      },
+      {
+        type: "gif",
+        url: "https://media.licdn.com/dms/image/v2/animated.gif",
+      },
+      {
+        type: "document",
+        url: "https://www.linkedin.com/documents/reacherx-pitch-deck",
+        file_name: "pitch-deck.pdf",
+      },
+    ],
+  };
+
+  const post = normalizeLinkedInPost(rawPost);
+
+  assert.equal(post?.id, rawPost.id);
+  assert.equal(post?.url, rawPost.share_url);
+  assert.deepEqual(post?.media, [
+    {
+      type: "image",
+      url: "https://media.licdn.com/dms/image/v2/image.jpg",
+      width: 1200,
+      height: 675,
+      description: "Product image",
+    },
+    {
+      type: "video",
+      url: "https://media.licdn.com/dms/video/v2/video.mp4",
+      width: 1920,
+      height: 1080,
+      posterUrl: "https://media.licdn.com/dms/image/v2/video-poster.jpg",
+    },
+    {
+      type: "image",
+      url: "https://media.licdn.com/dms/image/v2/animated.gif",
+    },
+    {
+      type: "link",
+      url: "https://www.linkedin.com/documents/reacherx-pitch-deck",
+      title: "pitch-deck.pdf",
+    },
+  ]);
+  assert.equal(post?.raw, rawPost);
+});
+
+test("LinkedIn attachment normalization retains unavailable media shells and deduplicates URLs", () => {
+  const imageUrl = "https://media.licdn.com/dms/image/v2/shared-image.jpg";
+  const post = normalizeLinkedInPost({
+    platform: "linkedin",
+    id: "urn:li:activity:7493715921715445760",
+    raw: {
+      attachments: [
+        { type: "image", url: imageUrl },
+        {
+          type: "image",
+          url: "https://media.licdn.com/dms/image/v2/expired-image.jpg",
+          unavailable: true,
+        },
+        {
+          type: "video",
+          url: "https://media.licdn.com/dms/video/v2/failed-video.mp4",
+          availability: { status: "failed" },
+        },
+        { type: "image", url: "javascript:alert('unsafe')" },
+        {
+          type: "future_attachment_type",
+          url: "https://www.linkedin.com/posts/fallback-link",
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(post?.media, [
+    { type: "image", url: imageUrl },
+    { type: "image", unavailable: true },
+    { type: "video", unavailable: true },
+    { type: "image", unavailable: true },
+    {
+      type: "link",
+      url: "https://www.linkedin.com/posts/fallback-link",
+    },
+  ]);
+});
+
+test("Unipile quoted posts keep URL-less unavailable media placeholder-capable", () => {
+  const post = normalizeLinkedInPost({
+    provider: "LINKEDIN",
+    id: "Ux6-unavailable-quoted-post",
+    share_url:
+      "https://www.linkedin.com/feed/update/urn:li:activity:7493715921715445760",
+    attachments: [
+      {
+        id: "unavailable-video",
+        type: "video",
+        unavailable: true,
+        file_name: "recording.mp4",
+        alt_text: "A recording no longer supplied by LinkedIn",
+      },
+    ],
+  });
+
+  assert.deepEqual(post?.media, [
+    {
+      id: "unavailable-video",
+      type: "video",
+      unavailable: true,
+      title: "recording.mp4",
+      description: "A recording no longer supplied by LinkedIn",
+    },
+  ]);
+  assert.equal(post?.media?.[0] && "url" in post.media[0], false);
+});
+
 test("LinkdAPI activity headers preserve the prospect's relationship to a post", () => {
   const rawPost = {
     urn: "urn:li:activity:789",

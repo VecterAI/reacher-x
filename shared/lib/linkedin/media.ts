@@ -30,6 +30,25 @@ export function isLinkedInCdnImageUrl(url: string): boolean {
   );
 }
 
+/**
+ * LinkedIn message attachments are downloaded through the authenticated
+ * provider route and briefly served from Convex storage. Those URLs have no
+ * image extension, but they are still trusted first-party image responses.
+ */
+export function isRenderableLinkedInImageUrl(url: string): boolean {
+  if (isLinkedInCdnImageUrl(url)) {
+    return true;
+  }
+
+  const parsed = parseUrl(url);
+  if (!parsed || parsed.protocol !== "https:") {
+    return false;
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  return hostname === "convex.cloud" || hostname.endsWith(".convex.cloud");
+}
+
 export function normalizeLinkedInMediaType(
   rawType: string | undefined,
   url: string | undefined
@@ -54,8 +73,8 @@ export function normalizeLinkedInMediaType(
   }
 
   if (type === "image" || type === "photo") {
-    return isLinkedInCdnImageUrl(url) ? "image" : "link";
+    return isRenderableLinkedInImageUrl(url) ? "image" : "link";
   }
 
-  return isLinkedInCdnImageUrl(url) ? "image" : "link";
+  return isRenderableLinkedInImageUrl(url) ? "image" : "link";
 }

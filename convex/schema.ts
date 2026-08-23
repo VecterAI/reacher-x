@@ -116,10 +116,17 @@ import {
   twitterConversationParticipantValidator,
   prospectContactSourceValidator,
   platformConversationAttachmentValidator,
+  platformConversationEventMetadataValidator,
   platformConversationDirectionValidator,
   platformConversationEventTypeValidator,
   platformConversationMessageTypeValidator,
   platformConversationPlatformValidator,
+  outboundMessageStatusValidator,
+  outboundMessageMediaMetadataValidator,
+  platformConversationQuotedMessageValidator,
+  platformConversationReactionValidator,
+  platformConversationSharedPostValidator,
+  platformConversationSeenByValidator,
   linkedinSearchSurfaceValidator,
   linkedinAccountStatusValidator,
   unipileAccountSourceStatusValidator,
@@ -131,6 +138,7 @@ import {
   xActivitySubscriptionStatusValidator,
   xDmEligibilityReasonCodeValidator,
   xDmPanelWarningCodeValidator,
+  xChatSendOperationStatusValidator,
   conversationHistoryBoundaryValidator,
   xSubscriptionTypeValidator,
   socialQueryMonitorPurposeValidator,
@@ -1121,9 +1129,16 @@ export default defineSchema({
     readAt: v.optional(v.number()),
     deliveredAt: v.optional(v.number()),
     quotedMessageId: v.optional(v.string()),
+    quotedMessage: v.optional(platformConversationQuotedMessageValidator),
+    sharedPost: v.optional(platformConversationSharedPostValidator),
+    reactions: v.optional(v.array(platformConversationReactionValidator)),
+    editedAt: v.optional(v.number()),
+    deletedAt: v.optional(v.number()),
+    seenBy: v.optional(v.array(platformConversationSeenByValidator)),
     messageType: v.optional(platformConversationMessageTypeValidator),
     isEvent: v.optional(v.boolean()),
     sourceEventType: v.optional(platformConversationEventTypeValidator),
+    eventMetadata: v.optional(platformConversationEventMetadataValidator),
     updatedAt: v.number(),
   })
     .index("by_user_conversation_created_at", [
@@ -1136,8 +1151,145 @@ export default defineSchema({
       "conversationId",
       "messageId",
     ])
+    .index("by_user_conversation_direction_created_at", [
+      "userId",
+      "conversationId",
+      "direction",
+      "createdAtMs",
+    ])
     .index("by_workspace", ["workspaceId"])
     .index("by_prospect_created_at", ["prospectId", "createdAtMs"]),
+
+  /**
+   * Durable client-authored DM intent. Provider I/O runs asynchronously after
+   * this row is committed, so the composer never waits on X or LinkedIn.
+   */
+  outboundMessageOperations: defineTable({
+    userId: v.id("users"),
+    workspaceId: v.id("workspaces"),
+    prospectId: v.id("prospects"),
+    platform: platformConversationPlatformValidator,
+    clientRequestId: v.string(),
+    conversationId: v.optional(v.string()),
+    text: v.string(),
+    mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
+    mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
+    mediaFileNames: v.optional(v.array(v.string())),
+    mediaMetadata: v.optional(v.array(outboundMessageMediaMetadataValidator)),
+    quoteId: v.optional(v.string()),
+    actionRequestId: v.optional(v.id("agentActionRequests")),
+    status: outboundMessageStatusValidator,
+    attemptCount: v.number(),
+    leaseId: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    providerMessageId: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    sentAt: v.optional(v.number()),
+    expiresAt: v.number(),
+  })
+    .index("by_user_and_client_request_id", ["userId", "clientRequestId"])
+    .index("by_user_and_prospect_and_platform_and_created_at", [
+      "userId",
+      "prospectId",
+      "platform",
+      "createdAt",
+    ])
+    .index("by_user_and_prospect_and_platform_and_status_and_created_at", [
+      "userId",
+      "prospectId",
+      "platform",
+      "status",
+      "createdAt",
+    ])
+    .index("by_workspace", ["workspaceId"])
+    .index("by_prospect", ["prospectId"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  /**
+   * Short-lived provider media cached in Convex storage. XChat rows contain
+   * ciphertext; LinkedIn rows contain provider attachment bytes. URLs are
+   * issued only after an authenticated ownership check, and every row has a
+   * scheduled storage cleanup at `expiresAt`.
+   */
+  platformConversationMediaCache: defineTable({
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    platform: platformConversationPlatformValidator,
+    conversationId: v.string(),
+    cacheKey: v.string(),
+    providerMessageId: v.optional(v.string()),
+    attachmentId: v.string(),
+    storageId: v.id("_storage"),
+    contentType: v.string(),
+    fileName: v.optional(v.string()),
+    size: v.number(),
+    encrypted: v.boolean(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_user_and_cache_key", ["userId", "cacheKey"])
+    .index("by_expires_at", ["expiresAt"])
+    .index("by_prospect", ["prospectId"]),
+
+  /**
+   * Ciphertext-only idempotency ledger for browser-encrypted XChat sends.
+   * Stable SDK message IDs and byte-identical encrypted payloads are retained
+   * briefly so ambiguous provider responses can be retried without minting a
+   * second encrypted event. Plaintext and key material never enter this table.
+   */
+  xChatSendOperations: defineTable({
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    clientRequestId: v.string(),
+    conversationId: v.string(),
+    messageId: v.string(),
+    encodedMessageCreateEvent: v.string(),
+    encodedMessageEventSignature: v.string(),
+    status: xChatSendOperationStatusValidator,
+    leaseId: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    attemptCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    sentAt: v.optional(v.number()),
+    expiresAt: v.number(),
+  })
+    .index("by_user_id_and_client_request_id", ["userId", "clientRequestId"])
+    .index("by_user_id_and_message_id", ["userId", "messageId"])
+    .index("by_expires_at", ["expiresAt"])
+    .index("by_prospect_id", ["prospectId"]),
+
+  /**
+   * Short-lived ciphertext delivered directly by X Activity. Open panels
+   * subscribe to these rows and decrypt them in browser memory, avoiding a
+   * rate-limited REST history request for every new XChat message.
+   */
+  xChatRealtimeEvents: defineTable({
+    userId: v.id("users"),
+    workspaceId: v.optional(v.id("workspaces")),
+    prospectId: v.id("prospects"),
+    conversationId: v.string(),
+    eventId: v.string(),
+    senderId: v.optional(v.string()),
+    createdAtMs: v.optional(v.number()),
+    encodedEvent: v.string(),
+    receivedAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_user_conversation_event", [
+      "userId",
+      "conversationId",
+      "eventId",
+    ])
+    .index("by_user_prospect_received_at", [
+      "userId",
+      "prospectId",
+      "receivedAt",
+    ])
+    .index("by_expires_at", ["expiresAt"]),
 
   xWebhooks: defineTable({
     webhookId: v.string(),

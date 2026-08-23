@@ -7,6 +7,7 @@ import type {
 } from "../platforms/types";
 import { parseIsoToTimestamp } from "../utils/time/timeUtils";
 import { resolveLinkedInPostReference } from "./comments";
+import { normalizeLinkedInMediaType } from "./media";
 
 type LooseRecord = Record<string, unknown>;
 
@@ -24,6 +25,32 @@ function getNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
+}
+
+function getFirstString(
+  value: LooseRecord,
+  keys: readonly string[]
+): string | undefined {
+  for (const key of keys) {
+    const candidate = getString(value[key]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function getFirstNumber(
+  value: LooseRecord,
+  keys: readonly string[]
+): number | undefined {
+  for (const key of keys) {
+    const candidate = getNumber(value[key]);
+    if (typeof candidate === "number") {
+      return candidate;
+    }
+  }
+  return undefined;
 }
 
 function getTimestamp(value: unknown): number | undefined {
@@ -157,6 +184,232 @@ export function getLinkedInActivityTimestamp(
   }
 }
 
+export function isRenderableLinkedInMediaUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function isUnavailableAttachment(value: LooseRecord): boolean {
+  if (
+    value.unavailable === true ||
+    value.is_unavailable === true ||
+    value.isUnavailable === true
+  ) {
+    return true;
+  }
+
+  const availability = isRecord(value.availability)
+    ? value.availability
+    : undefined;
+  const status =
+    getFirstString(availability ?? value, ["status"]) ??
+    getFirstString(value, ["availability_status", "availabilityStatus"]);
+
+  return /^(?:unavailable|failed|expired|not_available)$/iu.test(status ?? "");
+}
+
+function inferAttachmentMediaType(value: LooseRecord): string | undefined {
+  const declaredType = getFirstString(value, [
+    "type",
+    "attachment_type",
+    "attachmentType",
+    "media_type",
+    "mediaType",
+  ]);
+  if (declaredType) {
+    return declaredType;
+  }
+
+  const mimeType = getFirstString(value, [
+    "mime_type",
+    "mimeType",
+    "mimetype",
+    "content_type",
+    "contentType",
+  ])?.toLowerCase();
+  if (mimeType?.startsWith("video/")) {
+    return "video";
+  }
+  if (mimeType?.startsWith("image/")) {
+    return "image";
+  }
+  if (mimeType === "application/pdf") {
+    return "document";
+  }
+  return undefined;
+}
+
+function getUnipileAttachmentUrl(value: LooseRecord): string | undefined {
+  return getFirstString(value, [
+    "url",
+    "media_url",
+    "mediaUrl",
+    "download_url",
+    "downloadUrl",
+    "file_url",
+    "fileUrl",
+  ]);
+}
+
+function getUnipileAttachmentMetadata(value: LooseRecord) {
+  const id = getFirstString(value, [
+    "id",
+    "attachment_id",
+    "attachmentId",
+    "media_key",
+    "mediaKey",
+  ]);
+  const dimensions = isRecord(value.dimensions)
+    ? value.dimensions
+    : isRecord(value.size)
+      ? value.size
+      : undefined;
+  const width =
+    getFirstNumber(value, ["width"]) ??
+    getFirstNumber(dimensions ?? value, ["width"]);
+  const height =
+    getFirstNumber(value, ["height"]) ??
+    getFirstNumber(dimensions ?? value, ["height"]);
+  const title = getFirstString(value, [
+    "title",
+    "file_name",
+    "fileName",
+    "name",
+  ]);
+  const description = getFirstString(value, [
+    "description",
+    "alt_text",
+    "altText",
+  ]);
+
+  return {
+    ...(id ? { id } : {}),
+    ...(typeof width === "number" ? { width } : {}),
+    ...(typeof height === "number" ? { height } : {}),
+    ...(title ? { title } : {}),
+    ...(description ? { description } : {}),
+  };
+}
+
+function getUnavailableAttachmentMediaType(
+  value: LooseRecord
+): UnifiedMedia["type"] {
+  const type = inferAttachmentMediaType(value)?.toLowerCase();
+  if (type === "video" || type === "animated_gif") {
+    return "video";
+  }
+  if (
+    type === "image" ||
+    type === "photo" ||
+    type === "gif" ||
+    type === "sticker"
+  ) {
+    return "image";
+  }
+  return "link";
+}
+
+function hasUnipileAttachmentIdentity(value: LooseRecord): boolean {
+  return Boolean(
+    inferAttachmentMediaType(value) ??
+    getFirstString(value, [
+      "id",
+      "attachment_id",
+      "attachmentId",
+      "media_key",
+      "mediaKey",
+      "file_name",
+      "fileName",
+      "name",
+      "title",
+    ])
+  );
+}
+
+function normalizeUnavailableUnipileAttachment(
+  value: LooseRecord
+): UnifiedMedia | undefined {
+  if (!isUnavailableAttachment(value) && !hasUnipileAttachmentIdentity(value)) {
+    return undefined;
+  }
+
+  return {
+    type: getUnavailableAttachmentMediaType(value),
+    unavailable: true,
+    ...getUnipileAttachmentMetadata(value),
+  };
+}
+
+function normalizeUnipileAttachment(value: unknown): UnifiedMedia | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const url = getUnipileAttachmentUrl(value);
+  if (
+    isUnavailableAttachment(value) ||
+    !url ||
+    !isRenderableLinkedInMediaUrl(url)
+  ) {
+    return normalizeUnavailableUnipileAttachment(value);
+  }
+
+  const type = normalizeLinkedInMediaType(inferAttachmentMediaType(value), url);
+  if (!type) {
+    return undefined;
+  }
+
+  const posterUrl = getFirstString(value, [
+    "poster_url",
+    "posterUrl",
+    "preview_url",
+    "previewUrl",
+    "thumbnail_url",
+    "thumbnailUrl",
+  ]);
+
+  return {
+    type,
+    url,
+    ...getUnipileAttachmentMetadata(value),
+    ...(posterUrl && isRenderableLinkedInMediaUrl(posterUrl)
+      ? { posterUrl }
+      : {}),
+  };
+}
+
+function normalizeUnipileAttachments(
+  value: unknown
+): UnifiedMedia[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const media: UnifiedMedia[] = [];
+  const mediaUrls = new Set<string>();
+
+  for (const item of value) {
+    const normalizedMedia = normalizeUnipileAttachment(item);
+    if (!normalizedMedia) {
+      continue;
+    }
+    if (normalizedMedia.unavailable) {
+      media.push(normalizedMedia);
+      continue;
+    }
+    if (!mediaUrls.has(normalizedMedia.url)) {
+      mediaUrls.add(normalizedMedia.url);
+      media.push(normalizedMedia);
+    }
+  }
+
+  return media.length > 0 ? media : undefined;
+}
+
 function normalizeMedia(value: unknown): UnifiedMedia[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -195,14 +448,19 @@ export function isLinkedInPostLike(value: unknown): boolean {
   }
 
   const raw = isRecord(value.raw) ? value.raw : value;
+  const provider = getString(value.provider) ?? getString(raw.provider);
   return Boolean(
     value.platform === "linkedin" ||
     getString(value.postID) ||
     getString(value.postURL) ||
+    getString(value.share_url) ||
     getString(value.urn)?.startsWith("urn:li:") ||
     getString(raw.postID) ||
     getString(raw.postURL) ||
+    getString(raw.share_url) ||
     getString(raw.urn)?.startsWith("urn:li:") ||
+    (provider?.toUpperCase() === "LINKEDIN" &&
+      Boolean(getString(value.id) ?? getString(raw.id))) ||
     isRecord(raw.postedAt) ||
     isRecord(raw.engagements)
   );
@@ -231,13 +489,16 @@ export function normalizeLinkedInPost(
   });
   const canonicalMedia = normalizeMedia(value.media);
   const providerMedia = normalizeMedia(raw.mediaContent);
+  const unipileAttachmentMedia = normalizeUnipileAttachments(raw.attachments);
 
   return {
     id: reference.resolvedPostId ?? options?.fallbackId ?? "",
     platform: "linkedin",
     url:
       getString(value.url) ??
+      getString(value.share_url) ??
       getString(raw.postURL) ??
+      getString(raw.share_url) ??
       reference.permalink ??
       options?.fallbackUrl,
     author: {
@@ -272,7 +533,7 @@ export function normalizeLinkedInPost(
         getNumber(engagements?.repostsCount) ??
         getNumber(raw.repost_counter),
     },
-    media: canonicalMedia ?? providerMedia,
+    media: canonicalMedia ?? providerMedia ?? unipileAttachmentMedia,
     activity: normalizeLinkedInActivity(value),
     raw,
   };

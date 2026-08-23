@@ -12,6 +12,7 @@ import {
   getLinkedInPost,
   getLinkedInFailure,
   getLinkedInOwnProfile,
+  getLinkedInMessageAttachment,
   getLinkedInUserProfile,
   listLinkedInAccounts,
   listLinkedInPostComments,
@@ -20,6 +21,7 @@ import {
   reactToLinkedInPost,
   commentOnLinkedInPost,
   sendLinkedInChatMessage,
+  setLinkedInMessageReaction,
   sendLinkedInInvitation,
   startLinkedInChat,
   type LinkedInOwnProfile,
@@ -27,9 +29,15 @@ import {
   type LinkedInUnipileComment,
   type LinkedInUnipileAccount,
   type UnipileChat,
-  type UnipileMessage,
   normalizeLinkedInReactionType,
 } from "./lib/unipileClient";
+import {
+  assertCacheableProviderMedia,
+  buildPlatformConversationMediaCacheKey,
+  PLATFORM_CONVERSATION_MEDIA_CACHE_TTL_MS,
+  resolveUnipileMediaMessageId,
+  sanitizeProviderMediaFileName,
+} from "./lib/platformConversationMediaCore";
 import {
   applyConversationHistorySince,
   buildConversationHistoryPageMetadata,
@@ -45,6 +53,7 @@ import type {
   LinkedInConversationMessage,
   LinkedInConversationPanelContext,
 } from "../shared/lib/linkedin/conversation";
+import { LINKEDIN_DM_TEXT_MAX } from "../shared/lib/linkedin/conversation";
 import type {
   LinkedInCommentPage,
   LinkedInCommentSort,
@@ -70,6 +79,15 @@ import type {
 import type { LinkedInProfile as LinkdApiLinkedInProfile } from "./integrations/linkedin/getProfile";
 import type { LinkedInContactInfo } from "./integrations/linkedin/getProfile";
 import type { LinkedInCompany } from "./integrations/linkedin/getCompany";
+
+type PlatformConversationMediaUrlResult = {
+  url: string;
+  contentType: string;
+  fileName?: string;
+  size: number;
+  encrypted: boolean;
+  expiresAt: number;
+};
 import type { LinkedInProfilePost } from "./integrations/linkedin/getProfilePosts";
 import { requestLinkdApiData } from "./integrations/linkedin/linkdapiClient";
 import {
@@ -77,9 +95,19 @@ import {
   getNextStyleSourceVersion,
 } from "./lib/styleSourceCore";
 import {
+  linkedinMessageReactionResultValidator,
+  linkedinMessageReactionValidator,
+  linkedinDmPostPreviewArgsValidator,
   linkedinProfileIdentityValidator,
+  platformConversationMediaUrlValidator,
   twitterMediaKindValidator,
+  unifiedPostValidator,
 } from "./validators";
+import type { LinkedInMessageReactionResult } from "../shared/lib/linkedin/messageReaction";
+import {
+  getLinkedInMessageReactionFailureResult,
+  resolveLinkedInMessageReactionTarget,
+} from "./lib/linkedinMessageReactionCore";
 import {
   getMediaCapabilityErrorMessage,
   type ResolvedOutreachMedia,
@@ -93,9 +121,15 @@ import {
 } from "./lib/linkedinWebhookCore";
 import { getNestedRecord } from "./lib/typeGuards";
 import {
+  hydrateLinkedInConversationReplyPreviews,
+  normalizeLinkedInWebhookMessageMetadata,
+  normalizeUnipileConversationMessages,
+} from "./lib/linkedinConversationNormalizationCore";
+import {
   getCurrentUTCTimestamp,
   parseIsoToTimestamp,
 } from "../shared/lib/utils/time/timeUtils";
+import { inferAttachmentMediaKind } from "../shared/lib/utils/media/inferAttachmentMediaKind";
 
 async function getAccessibleDefaultWorkspaceForUserAction(
   ctx: any,
@@ -112,7 +146,6 @@ async function getAccessibleDefaultWorkspaceForUserAction(
 const ACCOUNT_SYNC_STALE_MS = 60_000;
 const ACCOUNT_BACKGROUND_SYNC_COOLDOWN_MS = 15_000;
 const LINKEDIN_WEBHOOK_PATH = "/unipile-webhook";
-const LINKEDIN_DM_TEXT_MAX = 8_000;
 type LinkedInPanelWarningCode = NonNullable<
   LinkedInConversationPanelContext["warning"]
 >["code"];
@@ -173,6 +206,7 @@ type SendLinkedInMessageResult = {
   success: true;
   conversationId?: string;
   messageId?: string;
+  quotedMessageId?: string;
   messages: LinkedInConversationMessage[];
 };
 
@@ -411,9 +445,14 @@ function toUnifiedLinkedInPost(
 
   const post = record as unknown as UnifiedPost;
   if (post.platform === "linkedin" && typeof post.id === "string") {
+    const normalizedPost = normalizeLinkedInPost(record, {
+      fallbackId: fallbackPostId ?? post.id,
+      fallbackUrl: post.url,
+    });
     return {
       ...post,
       id: fallbackPostId ?? post.id,
+      media: post.media ?? normalizedPost?.media,
       raw: isObjectRecord(post.raw)
         ? {
             ...post.raw,
@@ -433,6 +472,10 @@ function toUnifiedLinkedInPost(
   const resolved = resolveLinkedInPostReference({
     explicitPostId: fallbackPostId,
     postData: record,
+  });
+  const normalizedPost = normalizeLinkedInPost(record, {
+    fallbackId: resolved.resolvedPostId ?? fallbackPostId,
+    fallbackUrl: resolved.permalink,
   });
 
   return {
@@ -481,7 +524,7 @@ function toUnifiedLinkedInPost(
                     "number"
                 ? ((raw.postedAt as Record<string, unknown>)
                     .timestamp as number)
-                : Date.now(),
+                : getCurrentUTCTimestamp(),
     metrics: {
       reactions:
         typeof metricsRecord?.totalReactions === "number"
@@ -502,6 +545,7 @@ function toUnifiedLinkedInPost(
             ? (raw.repost_counter as number)
             : undefined,
     },
+    media: normalizedPost?.media,
     raw: {
       ...raw,
       ...(fallbackSocialId ? { social_id: fallbackSocialId } : {}),
@@ -1555,53 +1599,6 @@ function buildLinkedInCompanyProfileData(args: {
   };
 }
 
-function normalizeAttachment(
-  attachment: Record<string, unknown>
-): LinkedInConversationAttachmentSummary {
-  return {
-    type: typeof attachment.type === "string" ? attachment.type : "attachment",
-    url: typeof attachment.url === "string" ? attachment.url : undefined,
-    previewUrl: typeof attachment.url === "string" ? attachment.url : undefined,
-    width:
-      typeof attachment.size === "object" &&
-      attachment.size &&
-      typeof (attachment.size as Record<string, unknown>).width === "number"
-        ? ((attachment.size as Record<string, unknown>).width as number)
-        : undefined,
-    height:
-      typeof attachment.size === "object" &&
-      attachment.size &&
-      typeof (attachment.size as Record<string, unknown>).height === "number"
-        ? ((attachment.size as Record<string, unknown>).height as number)
-        : undefined,
-  };
-}
-
-function normalizeMessage(
-  message: UnipileMessage
-): LinkedInConversationMessage {
-  return {
-    id: message.message_id || message.id,
-    conversationId: message.chat_id,
-    senderUserId: message.sender_id,
-    senderAttendeeId: message.sender_attendee_id,
-    text: message.text ?? "",
-    createdAt: message.timestamp,
-    direction: message.is_sender === 1 ? "sent" : "received",
-    attachments: Array.isArray(message.attachments)
-      ? message.attachments
-          .filter(
-            (attachment): attachment is Record<string, unknown> =>
-              Boolean(attachment) && typeof attachment === "object"
-          )
-          .map(normalizeAttachment)
-      : undefined,
-    deliveredAt: message.delivered === 1 ? message.timestamp : undefined,
-    messageType: message.message_type,
-    isEvent: message.is_event === 1,
-  };
-}
-
 type LinkedInConversationHistoryPage = {
   messages: LinkedInConversationMessage[];
   history: ConversationHistoryPageMetadata;
@@ -1619,9 +1616,9 @@ async function loadLinkedInConversationHistoryPage(args: {
     cursor: args.cursor,
     limit: args.limit,
   });
-  const normalized = page.items
-    .map(normalizeMessage)
-    .sort((left, right) => toMs(left.createdAt) - toMs(right.createdAt));
+  const normalized = normalizeUnipileConversationMessages(page.items).sort(
+    (left, right) => toMs(left.createdAt) - toMs(right.createdAt)
+  );
   const { items: messages, reachedSince } = applyConversationHistorySince(
     normalized,
     args.sinceMs
@@ -1650,7 +1647,7 @@ async function loadLinkedInConversationHistoryPage(args: {
 function toStoredMessages(messages: LinkedInConversationMessage[]) {
   return messages.map((message) => ({
     messageId: message.id,
-    providerMessageId: undefined,
+    providerMessageId: message.providerMessageId,
     direction: message.direction,
     senderUserId: message.senderUserId,
     senderAttendeeId: message.senderAttendeeId,
@@ -1660,6 +1657,35 @@ function toStoredMessages(messages: LinkedInConversationMessage[]) {
     attachments: message.attachments,
     readAt: message.readAt ? toMs(message.readAt) : undefined,
     deliveredAt: message.deliveredAt ? toMs(message.deliveredAt) : undefined,
+    quotedMessageId: message.quotedMessageId,
+    quotedMessage: message.quotedMessage,
+    sharedPost: message.sharedPost,
+    reactions: message.reactions,
+    editedAt: message.editedAt ? toMs(message.editedAt) : undefined,
+    deletedAt: message.deletedAt ? toMs(message.deletedAt) : undefined,
+    seenBy: message.seenBy?.map((receipt) => ({
+      userId: receipt.userId,
+      attendeeId: receipt.attendeeId,
+      senderName: receipt.senderName,
+      seenAt: receipt.seenAt ? toMs(receipt.seenAt) : undefined,
+    })),
+    sourceEventType: message.sourceEventType as
+      | "dm.sent"
+      | "dm.received"
+      | "dm.read"
+      | "chat.sent"
+      | "chat.received"
+      | "chat.conversation_join"
+      | "message_received"
+      | "message_sent"
+      | "message_read"
+      | "message_reaction"
+      | "message_edited"
+      | "message_deleted"
+      | "message_delivered"
+      | "new_relation"
+      | undefined,
+    eventMetadata: message.eventMetadata,
     messageType: message.messageType,
     isEvent: message.isEvent,
   }));
@@ -1669,6 +1695,7 @@ function toCachedMessages(snapshot: any): LinkedInConversationMessage[] {
   const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
   return messages.map((message: any) => ({
     id: message.messageId,
+    providerMessageId: message.providerMessageId,
     conversationId: message.conversationId,
     senderUserId: message.senderUserId,
     senderAttendeeId: message.senderAttendeeId,
@@ -1684,6 +1711,31 @@ function toCachedMessages(snapshot: any): LinkedInConversationMessage[] {
       typeof message.deliveredAt === "number"
         ? new Date(message.deliveredAt).toISOString()
         : undefined,
+    quotedMessageId: message.quotedMessageId,
+    quotedMessage: message.quotedMessage,
+    sharedPost: message.sharedPost,
+    reactions: message.reactions,
+    editedAt:
+      typeof message.editedAt === "number"
+        ? new Date(message.editedAt).toISOString()
+        : undefined,
+    deletedAt:
+      typeof message.deletedAt === "number"
+        ? new Date(message.deletedAt).toISOString()
+        : undefined,
+    seenBy: Array.isArray(message.seenBy)
+      ? message.seenBy.map((receipt: any) => ({
+          userId: receipt.userId,
+          attendeeId: receipt.attendeeId,
+          senderName: receipt.senderName,
+          seenAt:
+            typeof receipt.seenAt === "number"
+              ? new Date(receipt.seenAt).toISOString()
+              : undefined,
+        }))
+      : undefined,
+    sourceEventType: message.sourceEventType,
+    eventMetadata: message.eventMetadata,
     messageType: message.messageType,
     isEvent: message.isEvent,
   }));
@@ -1801,21 +1853,6 @@ function getWebhookParticipantProfileUrl(
   }
 
   return undefined;
-}
-
-function normalizeWebhookAttachments(
-  payload: any
-): LinkedInConversationAttachmentSummary[] | undefined {
-  const attachments = getWebhookArray(payload, "attachments").filter(
-    (attachment): attachment is Record<string, unknown> =>
-      Boolean(attachment) && typeof attachment === "object"
-  );
-
-  if (attachments.length === 0) {
-    return undefined;
-  }
-
-  return attachments.map(normalizeAttachment);
 }
 
 async function persistConversationSnapshot(
@@ -1979,6 +2016,7 @@ function buildBasePanelContext(args: {
       hasMore: args.cachedSnapshot?.conversation?.historyHasMore === true,
       boundary: args.cachedSnapshot?.conversation?.historyBoundary,
     },
+    disabledFeatures: args.cachedSnapshot?.conversation?.disabledFeatures,
     draftText: args.draftText,
     draftAttachments: args.draftAttachments,
     actionRequestId: args.actionRequestId,
@@ -2370,7 +2408,9 @@ async function scheduleLinkedInStyleBackfillIfNeeded(
 }
 
 function buildDraftAttachments(
-  mediaUrls?: string[]
+  mediaUrls?: string[],
+  mediaKinds?: Array<"image" | "video" | "gif" | "file">,
+  mediaFileNames?: string[]
 ): LinkedInConversationAttachmentSummary[] | undefined {
   if (!Array.isArray(mediaUrls) || mediaUrls.length === 0) {
     return undefined;
@@ -2379,11 +2419,96 @@ function buildDraftAttachments(
     .filter(
       (url): url is string => typeof url === "string" && url.trim().length > 0
     )
-    .map((url) => ({
-      type: "attachment",
-      url,
-      previewUrl: url,
-    }));
+    .map((url, index) => {
+      const kind = mediaKinds?.[index] ?? inferAttachmentMediaKind({ url });
+      return {
+        type: kind ?? "file",
+        url,
+        previewUrl: url,
+        fileName: mediaFileNames?.[index],
+        ...(kind === "gif" ? { isGif: true } : {}),
+      };
+    });
+}
+
+function preserveCachedAttachmentMetadata(
+  message: LinkedInConversationMessage,
+  cachedMessage?: LinkedInConversationMessage
+): LinkedInConversationMessage {
+  if (!message.attachments?.length || !cachedMessage?.attachments?.length) {
+    return message;
+  }
+  return {
+    ...message,
+    attachments: message.attachments.map((attachment, index) => {
+      const cachedAttachment = cachedMessage.attachments?.[index];
+      if (!cachedAttachment) return attachment;
+      const providerTypeIsGeneric =
+        !attachment.type ||
+        attachment.type === "attachment" ||
+        attachment.type === "file";
+      return {
+        ...attachment,
+        type:
+          providerTypeIsGeneric && cachedAttachment.type
+            ? cachedAttachment.type
+            : attachment.type,
+        fileName: cachedAttachment.fileName ?? attachment.fileName,
+        altText: attachment.altText ?? cachedAttachment.altText,
+        mimeType: attachment.mimeType ?? cachedAttachment.mimeType,
+        isGif: attachment.isGif ?? cachedAttachment.isGif,
+      };
+    }),
+  };
+}
+
+type LinkedInOutboundAttachmentMetadata = {
+  providerMessageId: string;
+  mediaDescriptions?: string[];
+  mediaKinds?: Array<"image" | "video" | "gif" | "file">;
+  mediaFileNames?: string[];
+  mediaMetadata?: Array<{
+    width?: number;
+    height?: number;
+    durationMs?: number;
+    mimeType?: string;
+    fileSize?: number;
+  }>;
+};
+
+function applyOutboundAttachmentMetadata(
+  message: LinkedInConversationMessage,
+  metadata?: LinkedInOutboundAttachmentMetadata
+): LinkedInConversationMessage {
+  if (!metadata || !message.attachments?.length) return message;
+  return {
+    ...message,
+    attachments: message.attachments.map((attachment, index) => {
+      const kind = metadata.mediaKinds?.[index];
+      const mediaMetadata = metadata.mediaMetadata?.[index];
+      const providerTypeIsGeneric =
+        !attachment.type ||
+        attachment.type === "attachment" ||
+        attachment.type === "file";
+      return {
+        ...attachment,
+        type:
+          kind && providerTypeIsGeneric
+            ? kind === "gif"
+              ? "image"
+              : kind
+            : attachment.type,
+        fileName: metadata.mediaFileNames?.[index] ?? attachment.fileName,
+        altText: metadata.mediaDescriptions?.[index] ?? attachment.altText,
+        isGif: kind === "gif" ? true : attachment.isGif,
+        width: mediaMetadata?.width ?? attachment.width,
+        height: mediaMetadata?.height ?? attachment.height,
+        durationMs: mediaMetadata?.durationMs ?? attachment.durationMs,
+        mimeType: mediaMetadata?.mimeType ?? attachment.mimeType,
+        fileSize: mediaMetadata?.fileSize ?? attachment.fileSize,
+      };
+    }),
+  };
 }
 
 function getLinkedInActionUnavailableMessage(status: LinkedInConnectionStatus) {
@@ -2509,10 +2634,13 @@ async function sendLinkedInMessageForUser(
     conversationId?: string;
     text: string;
     mediaUrls?: string[];
+    mediaKinds?: Array<"image" | "video" | "gif" | "file">;
+    mediaFileNames?: string[];
+    quoteId?: string;
     actionRequestId?: Id<"agentActionRequests">;
   }
 ): Promise<SendLinkedInMessageResult> {
-  const startedAt = Date.now();
+  const startedAt = getCurrentUTCTimestamp();
   const prospect = await getOwnedLinkedInProspectForUser(
     ctx,
     args.userId,
@@ -2527,6 +2655,7 @@ async function sendLinkedInMessageForUser(
     args.userId
   );
   const trimmedText = args.text.trim();
+  const quoteId = args.quoteId?.trim() || undefined;
   const mediaUrls = (args.mediaUrls ?? []).filter(
     (url): url is string => typeof url === "string" && url.trim().length > 0
   );
@@ -2546,6 +2675,9 @@ async function sendLinkedInMessageForUser(
     }
   );
   const cachedMessages = toCachedMessages(cachedSnapshot);
+  const quotedMessage = quoteId
+    ? cachedMessages.find((message) => message.id === quoteId)
+    : undefined;
   const conversationId: string | undefined =
     args.conversationId ?? cachedSnapshot?.conversation?.conversationId;
   const eligibility = buildEligibility({
@@ -2576,9 +2708,16 @@ async function sendLinkedInMessageForUser(
       chatId: effectiveConversationId,
       accountId: storedAccount.accountId,
       text: trimmedText || undefined,
+      quoteId,
+      quoteProviderId: quotedMessage?.providerMessageId,
       mediaUrls,
     });
   } else {
+    if (quoteId) {
+      throw new Error(
+        "A LinkedIn reply requires an existing conversation and quoted message."
+      );
+    }
     if (!prospectIdentity.providerId) {
       throw new Error(
         "This LinkedIn prospect is missing a provider id needed to start a new conversation."
@@ -2602,9 +2741,24 @@ async function sendLinkedInMessageForUser(
           id: createdMessageId,
           conversationId: effectiveConversationId,
           text: trimmedText,
-          createdAt: new Date().toISOString(),
+          createdAt: new Date(getCurrentUTCTimestamp()).toISOString(),
           direction: "sent" as const,
-          attachments: buildDraftAttachments(mediaUrls),
+          quotedMessageId: quoteId,
+          quotedMessage: quotedMessage
+            ? {
+                id: quotedMessage.id,
+                text: quotedMessage.text,
+                direction: quotedMessage.direction,
+                attachmentType: quotedMessage.attachments?.[0]?.type,
+                attachments: quotedMessage.attachments,
+                sharedPost: quotedMessage.sharedPost,
+              }
+            : undefined,
+          attachments: buildDraftAttachments(
+            mediaUrls,
+            args.mediaKinds,
+            args.mediaFileNames
+          ),
         }
       : null;
   const messages = optimisticMessage
@@ -2648,7 +2802,7 @@ async function sendLinkedInMessageForUser(
             actionKey: request.actionKey,
             toolSlug: request.toolSlug,
             toolVersion: request.toolVersion,
-            completedAt: Date.now(),
+            completedAt: getCurrentUTCTimestamp(),
             targetUserId: prospectIdentity.providerId,
             postedTextPreview: trimmedText || undefined,
           },
@@ -2673,7 +2827,7 @@ async function sendLinkedInMessageForUser(
       prospectId: args.prospectId,
       title: "Message sent on LinkedIn",
       message: trimmedText || "LinkedIn message sent.",
-      notificationKey: `outreach-sent:linkedin:${args.prospectId}:${createdMessageId ?? Date.now()}`,
+      notificationKey: `outreach-sent:linkedin:${args.prospectId}:${createdMessageId ?? getCurrentUTCTimestamp()}`,
       targetHref: `/agent?prospectId=${encodeURIComponent(String(args.prospectId))}`,
       contextPlatform: "linkedin",
     });
@@ -2697,6 +2851,7 @@ async function sendLinkedInMessageForUser(
     success: true as const,
     conversationId: effectiveConversationId,
     messageId: createdMessageId,
+    quotedMessageId: quoteId,
     messages,
   };
 }
@@ -2780,6 +2935,46 @@ async function resolveProspectLinkedInPanelContext(
     const page = await loadLinkedInConversationHistoryPage({
       chatId: chat.id,
     });
+    const outboundMetadata = (await ctx.runQuery(
+      internal.outboundMessageOperations.listSentMetadataInternal,
+      {
+        userId,
+        prospectId: prospect._id,
+        platform: "linkedin",
+      }
+    )) as LinkedInOutboundAttachmentMetadata[];
+    const outboundMetadataByMessageId = new Map(
+      outboundMetadata.map((operation) => [
+        operation.providerMessageId,
+        operation,
+      ])
+    );
+    const cachedMessageById = new Map(
+      toCachedMessages(cachedSnapshot).map((message) => [message.id, message])
+    );
+    const messages = hydrateLinkedInConversationReplyPreviews(
+      page.messages.map((message) => {
+        const cachedMessage = cachedMessageById.get(message.id);
+        const messageWithCachedMetadata = preserveCachedAttachmentMetadata(
+          message,
+          cachedMessage
+        );
+        const messageWithAttachmentMetadata = applyOutboundAttachmentMetadata(
+          messageWithCachedMetadata,
+          outboundMetadataByMessageId.get(message.id) ??
+            (message.providerMessageId
+              ? outboundMetadataByMessageId.get(message.providerMessageId)
+              : undefined)
+        );
+        if (!cachedMessage) return messageWithAttachmentMetadata;
+        return {
+          ...messageWithAttachmentMetadata,
+          quotedMessageId:
+            message.quotedMessageId ?? cachedMessage.quotedMessageId,
+          quotedMessage: message.quotedMessage ?? cachedMessage.quotedMessage,
+        };
+      })
+    );
 
     const eligibility = buildEligibility({
       status: connectionStatus,
@@ -2794,7 +2989,7 @@ async function resolveProspectLinkedInPanelContext(
       chat,
       prospectIdentity,
       eligibility,
-      messages: page.messages,
+      messages,
       history: page.history,
       historyOldestLoadedAt: page.oldestLoadedAt,
     });
@@ -2806,8 +3001,9 @@ async function resolveProspectLinkedInPanelContext(
       participantProviderId:
         chat.attendee_provider_id ?? prospectIdentity.providerId,
       participantHeadline: prospectIdentity.title,
+      disabledFeatures: chat.disabledFeatures,
       eligibility,
-      messages: page.messages,
+      messages,
       history: page.history,
     };
   } catch (error) {
@@ -3598,6 +3794,209 @@ export const getLinkedInProfilePostsPage = action({
           )
         : [],
       nextCursor: typeof page?.nextCursor === "string" ? page.nextCursor : null,
+    };
+  },
+});
+
+/**
+ * Resolves the native preview attached to a LinkedIn DM. LinkedIn post pages
+ * do not reliably expose Open Graph metadata, so message previews must use the
+ * authenticated provider post lookup instead of the generic link renderer.
+ */
+export const getLinkedInDmPostPreview = action({
+  args: linkedinDmPostPreviewArgsValidator,
+  returns: v.union(v.null(), unifiedPostValidator),
+  handler: async (ctx, args): Promise<UnifiedPost | null> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) return null;
+
+    const reference = resolveLinkedInPostReference({
+      postData: { platform: "linkedin", url: args.postUrl },
+    });
+    if (!reference.resolvedPostId) return null;
+
+    const storedAccount = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      { userId }
+    );
+    if (!storedAccount || storedAccount.status !== "connected") return null;
+
+    try {
+      const post = await getLinkedInPost({
+        accountId: storedAccount.accountId,
+        postId: reference.resolvedPostId,
+      });
+      return toUnifiedLinkedInPost(
+        post,
+        reference.resolvedPostId,
+        reference.socialId
+      );
+    } catch (error) {
+      console.warn(
+        "[LinkedIn] Could not resolve DM post preview",
+        getLinkedInFailure(error).classification
+      );
+      return null;
+    }
+  },
+});
+
+/**
+ * Resolve one inbound LinkedIn message attachment after checking prospect,
+ * conversation, message, and attachment ownership. Provider bytes are cached
+ * briefly in Convex storage so expiring/provider-only URLs never enter the
+ * durable conversation model.
+ */
+export const getLinkedInConversationAttachment = action({
+  args: {
+    prospectId: v.id("prospects"),
+    messageId: v.string(),
+    attachmentId: v.string(),
+  },
+  returns: platformConversationMediaUrlValidator,
+  handler: async (ctx, args): Promise<PlatformConversationMediaUrlResult> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("LinkedIn prospect not found or not authorized.");
+    }
+
+    const snapshot: any = await ctx.runQuery(
+      internal.platformConversations.getConversationSnapshotInternal,
+      {
+        userId,
+        platform: "linkedin",
+        prospectId: args.prospectId,
+        messageLimit: 1,
+      }
+    );
+    const conversationId = snapshot?.conversation?.conversationId;
+    if (typeof conversationId !== "string" || !conversationId.trim()) {
+      throw new Error("LinkedIn conversation is not available.");
+    }
+    const message = await ctx.runQuery(
+      internal.platformConversations.getConversationMessageInternal,
+      {
+        userId,
+        conversationId,
+        messageId: args.messageId.trim(),
+      }
+    );
+    const attachment = Array.isArray(message?.attachments)
+      ? message.attachments.find(
+          (candidate: LinkedInConversationAttachmentSummary) =>
+            candidate.id === args.attachmentId.trim()
+        )
+      : undefined;
+    if (!message || !attachment) {
+      throw new Error("LinkedIn message attachment was not found.");
+    }
+    const providerMessageId = resolveUnipileMediaMessageId(message);
+
+    const storedAccount = await getConnectedLinkedInAccountOrThrow(ctx, userId);
+    if (snapshot.conversation.accountId !== storedAccount.accountId) {
+      throw new Error("LinkedIn conversation account does not match.");
+    }
+
+    const cacheKey = buildPlatformConversationMediaCacheKey({
+      platform: "linkedin",
+      conversationId,
+      providerMessageId,
+      attachmentId: args.attachmentId,
+    });
+    const now = getCurrentUTCTimestamp();
+    const cached: {
+      storageId: Id<"_storage">;
+      contentType: string;
+      fileName?: string;
+      size: number;
+      encrypted: boolean;
+      expiresAt: number;
+    } | null = await ctx.runQuery(
+      internal.platformConversationMedia.getCachedMediaInternal,
+      { userId, cacheKey, now }
+    );
+    if (cached) {
+      const url: string | null = await ctx.storage.getUrl(cached.storageId);
+      if (url) {
+        return {
+          url,
+          contentType: cached.contentType,
+          fileName: cached.fileName,
+          size: cached.size,
+          encrypted: cached.encrypted,
+          expiresAt: cached.expiresAt,
+        };
+      }
+    }
+
+    const blob = await getLinkedInMessageAttachment({
+      accountId: storedAccount.accountId,
+      messageId: providerMessageId,
+      attachmentId: args.attachmentId.trim(),
+    });
+    assertCacheableProviderMedia({ size: blob.size });
+    const contentType =
+      blob.type.trim().toLowerCase() ||
+      attachment.mimeType?.trim().toLowerCase() ||
+      "application/octet-stream";
+    const fileName = sanitizeProviderMediaFileName(attachment.fileName);
+    const storageId = await ctx.storage.store(
+      blob.type ? blob : new Blob([blob], { type: contentType })
+    );
+    const expiresAt = now + PLATFORM_CONVERSATION_MEDIA_CACHE_TTL_MS;
+    let stored: {
+      storageId: Id<"_storage">;
+      contentType: string;
+      fileName?: string;
+      size: number;
+      encrypted: boolean;
+      expiresAt: number;
+    };
+    try {
+      stored = await ctx.runMutation(
+        internal.platformConversationMedia.storeCachedMediaInternal,
+        {
+          userId,
+          prospectId: args.prospectId,
+          platform: "linkedin",
+          conversationId,
+          cacheKey,
+          providerMessageId,
+          attachmentId: args.attachmentId.trim(),
+          storageId,
+          contentType,
+          fileName,
+          size: blob.size,
+          encrypted: false,
+          expiresAt,
+        }
+      );
+    } catch (error) {
+      await ctx.storage.delete(storageId);
+      throw error;
+    }
+
+    const url: string | null = await ctx.storage.getUrl(stored.storageId);
+    if (!url) {
+      throw new Error("LinkedIn attachment cache URL is unavailable.");
+    }
+    return {
+      url,
+      contentType: stored.contentType,
+      fileName: stored.fileName,
+      size: stored.size,
+      encrypted: stored.encrypted,
+      expiresAt: stored.expiresAt,
     };
   },
 });
@@ -4968,6 +5367,9 @@ export const sendLinkedInMessage = action({
     conversationId: v.optional(v.string()),
     text: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
+    mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
+    mediaFileNames: v.optional(v.array(v.string())),
+    quoteId: v.optional(v.string()),
     actionRequestId: v.optional(v.id("agentActionRequests")),
   },
   handler: async (ctx, args): Promise<SendLinkedInMessageResult> => {
@@ -4978,8 +5380,93 @@ export const sendLinkedInMessage = action({
       conversationId: args.conversationId,
       text: args.text,
       mediaUrls: args.mediaUrls,
+      mediaKinds: args.mediaKinds,
+      mediaFileNames: args.mediaFileNames,
+      quoteId: args.quoteId,
       actionRequestId: args.actionRequestId,
     });
+  },
+});
+
+export const reactToLinkedInMessage = action({
+  args: {
+    prospectId: v.id("prospects"),
+    messageId: v.string(),
+    reaction: linkedinMessageReactionValidator,
+  },
+  returns: linkedinMessageReactionResultValidator,
+  handler: async (ctx, args): Promise<LinkedInMessageReactionResult> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      return {
+        success: false,
+        code: "conversation_unavailable",
+        message:
+          "This LinkedIn conversation is no longer available. Refresh it and try again.",
+        retryable: false,
+        recovery: "refresh",
+      };
+    }
+
+    const account = await getConnectedLinkedInAccountOrThrow(ctx, userId);
+    if (!account.accountId) {
+      throw new Error("LinkedIn account is not available.");
+    }
+    const snapshot: any = await ctx.runQuery(
+      internal.platformConversations.getConversationSnapshotInternal,
+      {
+        userId,
+        platform: "linkedin",
+        prospectId: args.prospectId,
+        messageLimit: 1,
+      }
+    );
+    const conversationReadiness = resolveLinkedInMessageReactionTarget({
+      connectedAccountId: account.accountId,
+      conversation: snapshot?.conversation,
+      message: { messageId: args.messageId },
+    });
+    if (!conversationReadiness.success) {
+      return conversationReadiness.result;
+    }
+    const message = await ctx.runQuery(
+      internal.platformConversations.getConversationMessageInternal,
+      {
+        userId,
+        conversationId: conversationReadiness.target.conversationId,
+        messageId: args.messageId.trim(),
+      }
+    );
+    const resolvedTarget = resolveLinkedInMessageReactionTarget({
+      connectedAccountId: account.accountId,
+      conversation: snapshot?.conversation,
+      message,
+    });
+    if (!resolvedTarget.success) {
+      return resolvedTarget.result;
+    }
+
+    try {
+      await setLinkedInMessageReaction({
+        messageId: resolvedTarget.target.messageId,
+        reaction: args.reaction,
+      });
+      return { success: true };
+    } catch (error) {
+      const failure = getLinkedInFailure(error);
+      console.error("[LinkedIn] Could not add message reaction", {
+        classification: failure.classification,
+        retryable: failure.retryable,
+        status: failure.status,
+        type: failure.type,
+      });
+      return getLinkedInMessageReactionFailureResult(failure);
+    }
   },
 });
 
@@ -4990,6 +5477,9 @@ export const sendLinkedInMessageInternal = internalAction({
     conversationId: v.optional(v.string()),
     text: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
+    mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
+    mediaFileNames: v.optional(v.array(v.string())),
+    quoteId: v.optional(v.string()),
     actionRequestId: v.optional(v.id("agentActionRequests")),
   },
   handler: async (ctx, args): Promise<SendLinkedInMessageResult> => {
@@ -5004,6 +5494,7 @@ export const sendLinkedInMessageForOutreachInternal = internalAction({
     conversationId: v.optional(v.string()),
     text: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
+    quoteId: v.optional(v.string()),
   },
   returns: v.union(
     v.object({
@@ -5525,6 +6016,7 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
     }
 
     if (event === "message_read") {
+      const webhookMetadata = normalizeLinkedInWebhookMessageMetadata(payload);
       const readAtMs = toMs(getWebhookString(payload, "timestamp", "read_at"));
       await ctx.runMutation(
         internal.platformConversations.markConversationMessagesReadInternal,
@@ -5532,6 +6024,12 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
           userId: linkedAccount.userId,
           conversationId,
           readAt: readAtMs || getCurrentUTCTimestamp(),
+          seenBy: webhookMetadata.seenBy?.map((receipt) => ({
+            userId: receipt.userId,
+            attendeeId: receipt.attendeeId,
+            senderName: receipt.senderName,
+            seenAt: receipt.seenAt ? toMs(receipt.seenAt) : undefined,
+          })),
         }
       );
       return { processed: true as const };
@@ -5587,8 +6085,12 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
     const timestamp =
       getWebhookString(payload, "timestamp") ??
       getWebhookString(webhookMessage, "timestamp", "created_at");
-    const attachments = normalizeWebhookAttachments(payload);
+    const webhookMetadata = normalizeLinkedInWebhookMessageMetadata(payload);
+    const attachments = webhookMetadata.attachments;
     const providerMessageId = getWebhookString(payload, "provider_id");
+    const webhookIncludesReactionSnapshot =
+      Array.isArray(payload?.reactions) ||
+      Array.isArray(webhookMessage?.reactions);
     const knownMessage = existingSnapshot?.messages?.find(
       (message: any) =>
         message.messageId === messageId ||
@@ -5686,14 +6188,45 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
             createdAt: timestamp,
             createdAtMs: toMs(timestamp) || getCurrentUTCTimestamp(),
             attachments,
-            deliveredAt:
-              event === "message_delivered"
+            deliveredAt: webhookMetadata.deliveredAt
+              ? toMs(webhookMetadata.deliveredAt)
+              : event === "message_delivered"
                 ? toMs(timestamp) || getCurrentUTCTimestamp()
                 : undefined,
-            readAt:
-              event === "message_read"
+            readAt: webhookMetadata.readAt
+              ? toMs(webhookMetadata.readAt)
+              : event === "message_read"
                 ? toMs(timestamp) || getCurrentUTCTimestamp()
                 : undefined,
+            quotedMessageId:
+              webhookMetadata.quotedMessageId ?? knownMessage?.quotedMessageId,
+            quotedMessage:
+              webhookMetadata.quotedMessage ?? knownMessage?.quotedMessage,
+            // A documented `message_reaction` webhook contains only the
+            // changed emoji and actor, not the message's authoritative
+            // reaction array. Do not replace a cached aggregate with that
+            // partial event; the visible-panel refresh reads the full message
+            // snapshot from Unipile shortly afterwards.
+            reactions:
+              event === "message_reaction" && !webhookIncludesReactionSnapshot
+                ? knownMessage?.reactions
+                : (webhookMetadata.reactions ?? knownMessage?.reactions),
+            editedAt: webhookMetadata.editedAt
+              ? toMs(webhookMetadata.editedAt)
+              : event === "message_edited"
+                ? toMs(timestamp) || getCurrentUTCTimestamp()
+                : undefined,
+            deletedAt: webhookMetadata.deletedAt
+              ? toMs(webhookMetadata.deletedAt)
+              : event === "message_deleted"
+                ? toMs(timestamp) || getCurrentUTCTimestamp()
+                : undefined,
+            seenBy: webhookMetadata.seenBy?.map((receipt) => ({
+              userId: receipt.userId,
+              attendeeId: receipt.attendeeId,
+              senderName: receipt.senderName,
+              seenAt: receipt.seenAt ? toMs(receipt.seenAt) : undefined,
+            })),
             messageType: existingSnapshot?.messages?.find(
               (message: any) => message.messageId === messageId
             )?.messageType,
@@ -5704,7 +6237,20 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
                   (message: any) => message.messageId === messageId
                 )?.isEvent
               ),
-            sourceEventType: event as any,
+            sourceEventType: event as
+              | "message_received"
+              | "message_sent"
+              | "message_reaction"
+              | "message_edited"
+              | "message_deleted"
+              | "message_delivered"
+              | "new_relation",
+            eventMetadata: {
+              ...webhookMetadata.eventMetadata,
+              providerEventType: event,
+              targetMessageId:
+                webhookMetadata.eventMetadata?.targetMessageId ?? messageId,
+            },
           },
         ],
       }

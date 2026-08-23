@@ -20,6 +20,7 @@ import {
   validateXWebhook,
 } from "./lib/xActivity";
 import {
+  findXWebhookForEnvironment,
   findMatchingXActivitySubscription,
   getXActivitySubscriptionHealth,
   isDuplicateXActivitySubscriptionError,
@@ -28,10 +29,11 @@ import {
   extractActivityCreatedPost,
   matchesTwitterManualReplyRecovery,
 } from "./lib/outreachRecoveryCore";
-import { normalizeDmMessages } from "./lib/xDm";
+import { normalizeDmMessages, resolveDmMessageUrls } from "./lib/xDm";
 import { decryptXSecret } from "./lib/xdkCrypto";
 import { getXProviderContextForUser } from "./lib/xdkAuth";
 import { getDmEventsByConversationId } from "./lib/xdkTwitterProvider";
+import { normalizeXChatConversationId } from "./lib/xChatMediaCore";
 import {
   getCurrentUTCTimestamp,
   parseIsoToTimestamp,
@@ -66,6 +68,7 @@ function extractConversationId(
   payload: Record<string, unknown>
 ): string | undefined {
   const message = asRecord(payload.message);
+  const event = asRecord(payload.event);
   const conversation = asRecord(payload.conversation);
   return (
     asString(payload.dm_conversation_id) ??
@@ -80,6 +83,8 @@ function extractConversationId(
     asString(message?.conversationId) ??
     asString(message?.chat_id) ??
     asString(message?.chatId) ??
+    asString(event?.conversation_id) ??
+    asString(event?.conversationId) ??
     asString(conversation?.id)
   );
 }
@@ -88,6 +93,7 @@ function extractMessageId(
   payload: Record<string, unknown>
 ): string | undefined {
   const message = asRecord(payload.message);
+  const event = asRecord(payload.event);
   return (
     asString(payload.id) ??
     asString(payload.message_id) ??
@@ -96,7 +102,25 @@ function extractMessageId(
     asString(payload.eventId) ??
     asString(message?.id) ??
     asString(message?.message_id) ??
-    asString(message?.messageId)
+    asString(message?.messageId) ??
+    asString(event?.id) ??
+    asString(event?.message_id) ??
+    asString(event?.messageId)
+  );
+}
+
+function extractEncodedEvent(
+  payload: Record<string, unknown>
+): string | undefined {
+  const message = asRecord(payload.message);
+  const event = asRecord(payload.event);
+  return (
+    asString(payload.encoded_event) ??
+    asString(payload.encodedEvent) ??
+    asString(message?.encoded_event) ??
+    asString(message?.encodedEvent) ??
+    asString(event?.encoded_event) ??
+    asString(event?.encodedEvent)
   );
 }
 
@@ -147,6 +171,8 @@ type NormalizedDmActivityEvent = {
   text?: string;
   createdAt?: string;
   senderUserId?: string;
+  encodedEvent?: string;
+  payload: Record<string, unknown>;
 };
 
 type NormalizedPostActivityEvent = {
@@ -205,21 +231,60 @@ function normalizeWebhookEvents(
       continue;
     }
     const normalizedPayload = asRecord(envelope.payload) ?? envelope;
+    const conversationId = extractConversationId(normalizedPayload);
     normalized.push({
       kind: "dm",
       eventType: eventType as XDmActivityEventType,
       filteredUserId: extractFilteredUserId(envelope),
       subscriptionId:
         asString(envelope.subscription_id) ?? asString(envelope.subscriptionId),
-      conversationId: extractConversationId(normalizedPayload),
+      conversationId:
+        conversationId && eventType.startsWith("chat.")
+          ? normalizeXChatConversationId(conversationId)
+          : conversationId,
       messageId: extractMessageId(normalizedPayload),
       text: extractMessageText(normalizedPayload),
       createdAt: extractMessageCreatedAt(normalizedPayload),
       senderUserId: extractSenderUserId(normalizedPayload),
+      encodedEvent: extractEncodedEvent(normalizedPayload),
+      payload: normalizedPayload,
     });
   }
 
   return normalized;
+}
+
+function normalizeActivityDmMessage(event: NormalizedDmActivityEvent) {
+  const nestedMessage = asRecord(event.payload.message);
+  const data = {
+    ...event.payload,
+    ...nestedMessage,
+    id: event.messageId ?? nestedMessage?.id ?? event.payload.id,
+    dm_conversation_id:
+      event.conversationId ??
+      nestedMessage?.dm_conversation_id ??
+      event.payload.dm_conversation_id,
+    sender_id:
+      event.senderUserId ?? nestedMessage?.sender_id ?? event.payload.sender_id,
+    created_at:
+      event.createdAt ?? nestedMessage?.created_at ?? event.payload.created_at,
+    text: event.text ?? nestedMessage?.text ?? event.payload.text,
+  };
+  return normalizeDmMessages(
+    { ...event.payload, data: [data] },
+    event.filteredUserId
+  )[0];
+}
+
+function toStoredSeenBy(
+  seenBy: ReturnType<typeof normalizeActivityDmMessage>["seenBy"]
+) {
+  return seenBy?.map((receipt) => ({
+    userId: receipt.userId,
+    attendeeId: receipt.attendeeId,
+    senderName: receipt.senderName,
+    seenAt: receipt.seenAt ? parseIsoToTimestamp(receipt.seenAt) : undefined,
+  }));
 }
 
 async function resolveUserIdForEvent(
@@ -282,7 +347,9 @@ async function syncConversationSnapshot(
       maxResults: 25,
     }
   );
-  const messages = normalizeDmMessages(response, provider.xUserId);
+  const messages = await resolveDmMessageUrls(
+    normalizeDmMessages(response, provider.xUserId)
+  );
   const participant =
     messages
       .filter((message) => message.senderUserId !== provider.xUserId)
@@ -324,7 +391,22 @@ async function syncConversationSnapshot(
         readAt: message.readAt
           ? parseIsoToTimestamp(message.readAt)
           : undefined,
+        deliveredAt: message.deliveredAt
+          ? parseIsoToTimestamp(message.deliveredAt)
+          : undefined,
+        quotedMessageId: message.quotedMessageId,
+        quotedMessage: message.quotedMessage,
+        sharedPost: message.sharedPost,
+        reactions: message.reactions,
+        editedAt: message.editedAt
+          ? parseIsoToTimestamp(message.editedAt)
+          : undefined,
+        deletedAt: message.deletedAt
+          ? parseIsoToTimestamp(message.deletedAt)
+          : undefined,
+        seenBy: toStoredSeenBy(message.seenBy),
         sourceEventType: args.sourceEventType,
+        eventMetadata: message.eventMetadata,
       })),
     }
   );
@@ -376,16 +458,42 @@ async function persistNormalizedDmActivityEvent(
   const createdAt = args.event.createdAt;
   const createdAtMs =
     (createdAt ? parseIsoToTimestamp(createdAt) : undefined) ?? now;
+  const richMessage = normalizeActivityDmMessage(args.event);
   const messages = args.event.messageId
     ? [
         {
           messageId: args.event.messageId,
           direction,
-          senderUserId: args.event.senderUserId,
-          text: args.event.text,
-          createdAt,
+          senderUserId: args.event.senderUserId ?? richMessage?.senderUserId,
+          text: args.event.text ?? richMessage?.text,
+          createdAt: createdAt ?? richMessage?.createdAt,
           createdAtMs,
+          attachments: richMessage?.attachments,
+          readAt: richMessage?.readAt
+            ? parseIsoToTimestamp(richMessage.readAt)
+            : undefined,
+          deliveredAt: richMessage?.deliveredAt
+            ? parseIsoToTimestamp(richMessage.deliveredAt)
+            : undefined,
+          quotedMessageId: richMessage?.quotedMessageId,
+          quotedMessage: richMessage?.quotedMessage,
+          sharedPost: richMessage?.sharedPost,
+          reactions: richMessage?.reactions,
+          editedAt: richMessage?.editedAt
+            ? parseIsoToTimestamp(richMessage.editedAt)
+            : undefined,
+          deletedAt: richMessage?.deletedAt
+            ? parseIsoToTimestamp(richMessage.deletedAt)
+            : undefined,
+          seenBy: toStoredSeenBy(richMessage?.seenBy),
           sourceEventType: args.event.eventType,
+          eventMetadata: {
+            ...richMessage?.eventMetadata,
+            providerEventType: args.event.eventType,
+            targetMessageId:
+              richMessage?.eventMetadata?.targetMessageId ??
+              args.event.messageId,
+          },
         },
       ]
     : [];
@@ -431,29 +539,10 @@ async function ensureWebhookAndSubscriptions(args: {
 }): Promise<{ webhookId: string; authMode: "app" | "user" }> {
   const webhookUrl = getXWebhookCallbackUrl();
   const remoteWebhooks = await listXWebhooks();
-  let webhook = remoteWebhooks.find(
-    (candidate) => candidate.url === webhookUrl
-  );
-
-  // Pay-per-use X/Twitter apps allow a single webhook. Reuse the existing one when the
-  // exact URL is already registered, or when create would exceed the limit.
-  if (!webhook && remoteWebhooks.length === 1) {
-    webhook = remoteWebhooks[0];
-  }
+  let webhook = findXWebhookForEnvironment(remoteWebhooks, webhookUrl);
 
   if (!webhook) {
-    try {
-      webhook = await createXWebhook(webhookUrl);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (
-        !message.toLowerCase().includes("webhooklimitexceeded") ||
-        remoteWebhooks.length === 0
-      ) {
-        throw error;
-      }
-      webhook = remoteWebhooks[0];
-    }
+    webhook = await createXWebhook(webhookUrl);
   }
 
   if (!webhook) {
@@ -588,9 +677,12 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
       {}
     );
     const validLocalWebhookIds = new Set(
-      localWebhooks
-        .filter((webhook: { valid: boolean }) => webhook.valid)
-        .map((webhook: { webhookId: string }) => webhook.webhookId)
+      localWebhooks.flatMap(
+        (webhook: { valid: boolean; url: string; webhookId: string }) =>
+          webhook.valid && webhook.url === getXWebhookCallbackUrl()
+            ? [webhook.webhookId]
+            : []
+      )
     );
     const localSubscriptions = await ctx.runQuery(
       internal.platformConversations.listXActivitySubscriptionsForUserInternal,
@@ -1103,6 +1195,27 @@ export const handleWebhookPayloadInternal = internalAction({
           userId,
           event,
         });
+
+        if (
+          isEncryptedChatEvent &&
+          event.messageId &&
+          event.encodedEvent &&
+          conversation?.prospectId
+        ) {
+          await ctx.runMutation(internal.xChatRealtimeEvents.upsertInternal, {
+            userId,
+            workspaceId: conversation.workspaceId,
+            prospectId: conversation.prospectId,
+            conversationId: event.conversationId,
+            eventId: event.messageId,
+            senderId: event.senderUserId,
+            createdAtMs: event.createdAt
+              ? parseIsoToTimestamp(event.createdAt)
+              : undefined,
+            encodedEvent: event.encodedEvent,
+            receivedAt: getCurrentUTCTimestamp(),
+          });
+        }
 
         if (isIncomingMessage && !existingMessage && conversation?.prospectId) {
           const inboundMessage = event.messageId

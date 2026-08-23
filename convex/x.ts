@@ -1,6 +1,6 @@
 "use node";
 
-import { v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import { action, internalAction } from "./lib/functionBuilders";
 import { api, components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -16,6 +16,7 @@ import {
   buildDraftDmAttachments,
   mergeDmMessages,
   normalizeDmMessages,
+  resolveDmMessageUrls,
 } from "./lib/xDm";
 import {
   executeCuratedTwitterAction,
@@ -23,6 +24,8 @@ import {
   getDmEvents,
   getDmEventsByConversationId,
   getXChatBrowserDecryptBundle,
+  getXChatEncryptedEventPage,
+  getXChatEncryptedMedia as fetchXChatEncryptedMedia,
   getXChatConversationHistoryEvidence,
   getXChatRealmAuthTokenForUser,
   getHydratedConversationByThreadId,
@@ -30,8 +33,22 @@ import {
   getHydratedPostsByIds,
   getHydratedProfileByUsername,
   getHydratedTimelinePage,
+  hasXChatEncryptedMessage,
   getXExecutionFailure,
+  submitEncryptedXChatMessage,
+  uploadEncryptedXChatMedia,
+  XChatConfigurationError,
+  XChatProviderRequestError,
 } from "./lib/xdkTwitterProvider";
+import {
+  assertMatchingEncryptedXChatSendOperation,
+  normalizeEncryptedXChatSendPayload,
+} from "./lib/xChatSendCore";
+import {
+  assertCacheableProviderMedia,
+  buildPlatformConversationMediaCacheKey,
+  PLATFORM_CONVERSATION_MEDIA_CACHE_TTL_MS,
+} from "./lib/platformConversationMediaCore";
 import {
   applyConversationHistorySince,
   buildConversationHistoryPageMetadata,
@@ -50,6 +67,12 @@ import { getTwitterViewerStatesForUser } from "./lib/twitterViewerStateService";
 import {
   userTimelineModeValidator,
   xChatBrowserDecryptBundleValidator,
+  xChatEncryptedMediaValidator,
+  xChatEncryptedMediaUploadResultValidator,
+  xChatEncryptedSendResultValidator,
+  xChatSendLeaseResultValidator,
+  xChatSendStoredOperationValidator,
+  xChatEventPageValidator,
   xChatConversationHistoryEvidenceValidator,
 } from "./validators";
 import { getTwitterPostRef } from "../shared/lib/twitter/contracts";
@@ -81,6 +104,50 @@ import {
 import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
 
 const xLogger = logger.withScope("X/Twitter");
+
+type XChatEncryptedMediaResult = Infer<typeof xChatEncryptedMediaValidator>;
+
+type XChatEncryptedSendResult = Infer<typeof xChatEncryptedSendResultValidator>;
+type XChatSendLeaseResult = Infer<typeof xChatSendLeaseResultValidator>;
+type XChatSendStoredOperation = Infer<typeof xChatSendStoredOperationValidator>;
+
+async function runXChatClientRequest<T>(
+  operation: () => Promise<T>
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throwXChatClientRequestError(error);
+  }
+}
+
+function throwXChatClientRequestError(error: unknown): never {
+  if (error instanceof XChatConfigurationError) {
+    throw new ConvexError({
+      code:
+        error.code === "keys_unavailable"
+          ? "XCHAT_KEYS_UNAVAILABLE"
+          : "XCHAT_BACKUP_UNAVAILABLE",
+      message: error.message,
+    });
+  }
+  if (error instanceof XChatProviderRequestError) {
+    throw new ConvexError({
+      code:
+        error.details.code === "rate_limited"
+          ? "XCHAT_RATE_LIMITED"
+          : error.details.code === "xchat_access_denied"
+            ? "XCHAT_ACCESS_DENIED"
+            : "XCHAT_PROVIDER_ERROR",
+      message: error.details.message,
+      status: error.details.status,
+      retryAt: error.details.retryAt ?? null,
+      limit: error.details.limit ?? null,
+      remaining: error.details.remaining ?? null,
+    });
+  }
+  throw error;
+}
 
 async function getAccessibleDefaultWorkspaceForUserAction(
   ctx: any,
@@ -343,7 +410,9 @@ async function loadXDmConversationHistoryPage(args: {
       paginationToken: args.cursor,
     }
   );
-  const normalized = normalizeDmMessages(response, args.provider.xUserId);
+  const normalized = await resolveDmMessageUrls(
+    normalizeDmMessages(response, args.provider.xUserId)
+  );
   const { items: messages, reachedSince } = applyConversationHistorySince(
     normalized,
     args.sinceMs
@@ -379,6 +448,42 @@ function toStoredConversationMessages(messages: XDmMessage[]) {
     createdAtMs: toCreatedAtMs(message.createdAt),
     attachments: message.attachments,
     readAt: message.readAt ? parseIsoToTimestamp(message.readAt) : undefined,
+    deliveredAt: message.deliveredAt
+      ? parseIsoToTimestamp(message.deliveredAt)
+      : undefined,
+    quotedMessageId: message.quotedMessageId,
+    quotedMessage: message.quotedMessage,
+    sharedPost: message.sharedPost,
+    reactions: message.reactions,
+    editedAt: message.editedAt
+      ? parseIsoToTimestamp(message.editedAt)
+      : undefined,
+    deletedAt: message.deletedAt
+      ? parseIsoToTimestamp(message.deletedAt)
+      : undefined,
+    seenBy: message.seenBy?.map((receipt) => ({
+      userId: receipt.userId,
+      attendeeId: receipt.attendeeId,
+      senderName: receipt.senderName,
+      seenAt: receipt.seenAt ? parseIsoToTimestamp(receipt.seenAt) : undefined,
+    })),
+    sourceEventType: message.sourceEventType as
+      | "dm.sent"
+      | "dm.received"
+      | "dm.read"
+      | "chat.sent"
+      | "chat.received"
+      | "chat.conversation_join"
+      | "message_received"
+      | "message_sent"
+      | "message_read"
+      | "message_reaction"
+      | "message_edited"
+      | "message_deleted"
+      | "message_delivered"
+      | "new_relation"
+      | undefined,
+    eventMetadata: message.eventMetadata,
   }));
 }
 
@@ -396,6 +501,35 @@ function toCachedDmMessages(snapshot: any): XDmMessage[] {
       typeof message.readAt === "number"
         ? new Date(message.readAt).toISOString()
         : undefined,
+    deliveredAt:
+      typeof message.deliveredAt === "number"
+        ? new Date(message.deliveredAt).toISOString()
+        : undefined,
+    quotedMessageId: message.quotedMessageId,
+    quotedMessage: message.quotedMessage,
+    sharedPost: message.sharedPost,
+    reactions: message.reactions,
+    editedAt:
+      typeof message.editedAt === "number"
+        ? new Date(message.editedAt).toISOString()
+        : undefined,
+    deletedAt:
+      typeof message.deletedAt === "number"
+        ? new Date(message.deletedAt).toISOString()
+        : undefined,
+    seenBy: Array.isArray(message.seenBy)
+      ? message.seenBy.map((receipt: any) => ({
+          userId: receipt.userId,
+          attendeeId: receipt.attendeeId,
+          senderName: receipt.senderName,
+          seenAt:
+            typeof receipt.seenAt === "number"
+              ? new Date(receipt.seenAt).toISOString()
+              : undefined,
+        }))
+      : undefined,
+    sourceEventType: message.sourceEventType,
+    eventMetadata: message.eventMetadata,
   }));
 }
 
@@ -934,9 +1068,53 @@ async function resolveProspectDmPanelContext(
     draftAttachments: options?.draftAttachments,
     actionRequestId: options?.actionRequestId,
   });
+  const resolvedCachedMessages = await resolveDmMessageUrls(
+    baseContext.messages
+  );
+  const resolvedCachedBaseContext =
+    resolvedCachedMessages === baseContext.messages
+      ? baseContext
+      : {
+          ...baseContext,
+          messages: resolvedCachedMessages,
+        };
+
+  // Older cached events can no longer be re-fetched from X after its legacy
+  // history window expires. Persist a successful bounded URL expansion once so
+  // reopening a fresh panel never regresses to a t.co-only message body.
+  if (
+    resolvedCachedMessages !== baseContext.messages &&
+    resolvedCachedBaseContext.conversationId
+  ) {
+    try {
+      await persistDmConversationSnapshot(ctx, {
+        userId,
+        prospect,
+        conversationId: resolvedCachedBaseContext.conversationId,
+        participantUserId:
+          resolvedCachedBaseContext.participantUserId ??
+          cachedSnapshot?.conversation?.participantUserId,
+        participantUsername:
+          resolvedCachedBaseContext.participantUsername ??
+          cachedSnapshot?.conversation?.participantUsername,
+        participantName: cachedSnapshot?.conversation?.participantName,
+        participantAvatarUrl:
+          cachedSnapshot?.conversation?.participantAvatarUrl,
+        participantVerified: cachedSnapshot?.conversation?.participantVerified,
+        eligibility: resolvedCachedBaseContext.eligibility,
+        messages: resolvedCachedMessages,
+      });
+    } catch (error) {
+      logger.warn("Unable to persist resolved cached X/Twitter DM URLs", {
+        error: error instanceof Error ? error.message : String(error),
+        userId,
+        prospectId,
+      });
+    }
+  }
 
   if (!prospectIdentity.username || !connectionStatus.xUserId) {
-    return baseContext;
+    return resolvedCachedBaseContext;
   }
   if (
     !connectionStatus.isConnected ||
@@ -944,19 +1122,19 @@ async function resolveProspectDmPanelContext(
       (scope) => scope === "dm.read" || scope === "dm.write"
     )
   ) {
-    return baseContext;
+    return resolvedCachedBaseContext;
   }
   const dmSubscriptions = await ctx.runAction(
     internal.xActivity.ensureDmActivitySubscriptionsForUserInternal,
     { userId }
   );
   const resolvedBaseContext = dmSubscriptions.ensured
-    ? baseContext.warning?.code === "activity_degraded"
-      ? { ...baseContext, warning: undefined }
-      : baseContext
+    ? resolvedCachedBaseContext.warning?.code === "activity_degraded"
+      ? { ...resolvedCachedBaseContext, warning: undefined }
+      : resolvedCachedBaseContext
     : {
-        ...baseContext,
-        warning: baseContext.warning ?? {
+        ...resolvedCachedBaseContext,
+        warning: resolvedCachedBaseContext.warning ?? {
           code: "activity_degraded" as const,
           message:
             "Realtime X/Twitter DM updates are temporarily degraded. Live history reads still work, but new messages may arrive late.",
@@ -2214,7 +2392,454 @@ export const getXChatDecryptBundle = action({
       provider,
       identity.username
     );
-    return await getXChatBrowserDecryptBundle(provider, profileUserId);
+    try {
+      return await getXChatBrowserDecryptBundle(provider, profileUserId);
+    } catch (error) {
+      if (
+        error instanceof XChatProviderRequestError &&
+        error.details.code === "xchat_access_denied"
+      ) {
+        return {
+          availability: "blocked" as const,
+          reason: "xchat_access_denied" as const,
+        };
+      }
+      throwXChatClientRequestError(error);
+    }
+  },
+});
+
+/**
+ * Fetch exactly one encrypted page. An empty cursor rechecks the newest page;
+ * a provider cursor walks backward one page. Public keys are not re-fetched.
+ */
+export const getXChatEventPage = action({
+  args: {
+    prospectId: v.id("prospects"),
+    cursor: v.optional(v.string()),
+  },
+  returns: xChatEventPageValidator,
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedTwitterProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("X prospect not found or not authorized.");
+    }
+    const identity = resolveProspectTwitterIdentity(
+      prospect as Record<string, unknown>
+    );
+    if (!identity.username) {
+      throw new Error("This prospect does not have a usable X username.");
+    }
+    const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+      userId,
+      requiredScopes: ["tweet.read", "users.read", "dm.read"],
+    });
+    const { profileUserId } = await getHydratedProfileByUsername(
+      provider,
+      identity.username
+    );
+    return await runXChatClientRequest(() =>
+      getXChatEncryptedEventPage(
+        provider,
+        profileUserId,
+        args.cursor?.trim() || undefined
+      )
+    );
+  },
+});
+
+/**
+ * Move browser-encrypted XChat media ciphertext from temporary Convex storage
+ * into X's encrypted media store. Plain media bytes never cross this boundary.
+ */
+export const uploadXChatEncryptedMedia = action({
+  args: {
+    prospectId: v.id("prospects"),
+    conversationId: v.string(),
+    storageId: v.id("_storage"),
+  },
+  returns: xChatEncryptedMediaUploadResultValidator,
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    try {
+      const prospect = await getOwnedTwitterProspectForUser(
+        ctx,
+        userId,
+        args.prospectId
+      );
+      if (!prospect) {
+        throw new Error("X prospect not found or not authorized.");
+      }
+      const identity = resolveProspectTwitterIdentity(
+        prospect as Record<string, unknown>
+      );
+      if (!identity.username) {
+        throw new Error("This prospect does not have a usable X username.");
+      }
+      const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+        userId,
+        requiredScopes: [
+          "tweet.read",
+          "users.read",
+          "dm.read",
+          "dm.write",
+          "media.write",
+        ],
+      });
+      const { profileUserId } = await getHydratedProfileByUsername(
+        provider,
+        identity.username
+      );
+      const expectedConversationId = computeOneToOneDmConversationId(
+        provider.xUserId,
+        profileUserId
+      );
+      const suppliedConversationId = args.conversationId
+        .trim()
+        .replaceAll(":", "-");
+      if (suppliedConversationId !== expectedConversationId) {
+        throw new Error("XChat conversation does not match this prospect.");
+      }
+
+      const blob = await ctx.storage.get(args.storageId);
+      if (!blob || blob.size <= 0 || blob.size > 100 * 1024 * 1024) {
+        throw new Error("Encrypted XChat media must be between 1 byte and 100 MB.");
+      }
+      const ciphertext = new Uint8Array(await blob.arrayBuffer());
+      try {
+        const mediaHashKey = await runXChatClientRequest(() =>
+          uploadEncryptedXChatMedia(
+            provider,
+            expectedConversationId,
+            ciphertext
+          )
+        );
+        return { mediaHashKey };
+      } finally {
+        ciphertext.fill(0);
+      }
+    } finally {
+      await ctx.runMutation(
+        internal.xChatSendOperations.deleteTemporaryEncryptedMediaInternal,
+        { storageId: args.storageId }
+      );
+    }
+  },
+});
+
+/**
+ * Submit the opaque, signed payload produced by chat-xdk in the unlocked
+ * browser. Plaintext, PINs, conversation keys, and private keys are forbidden
+ * from this server boundary.
+ */
+export const submitXChatEncryptedMessage = action({
+  args: {
+    prospectId: v.id("prospects"),
+    clientRequestId: v.string(),
+    conversationId: v.string(),
+    messageId: v.string(),
+    encodedMessageCreateEvent: v.string(),
+    encodedMessageEventSignature: v.string(),
+  },
+  returns: xChatEncryptedSendResultValidator,
+  handler: async (ctx, args): Promise<XChatEncryptedSendResult> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedTwitterProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("X prospect not found or not authorized.");
+    }
+    const identity = resolveProspectTwitterIdentity(
+      prospect as Record<string, unknown>
+    );
+    if (!identity.username) {
+      throw new Error("This prospect does not have a usable X username.");
+    }
+    const suppliedConversationId = args.conversationId
+      .trim()
+      .replaceAll(":", "-");
+    const payload = normalizeEncryptedXChatSendPayload(args);
+    const existingOperation: XChatSendStoredOperation | null =
+      await ctx.runQuery(
+        internal.xChatSendOperations.getXChatSendOperationInternal,
+        { userId, clientRequestId: payload.clientRequestId }
+      );
+    if (existingOperation?.status === "sent") {
+      assertMatchingEncryptedXChatSendOperation(existingOperation, {
+        ...payload,
+        prospectId: args.prospectId,
+        conversationId: suppliedConversationId,
+      });
+      return {
+        success: true as const,
+        conversationId: existingOperation.conversationId,
+        messageId: existingOperation.messageId,
+        deduplicated: true,
+      };
+    }
+
+    const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+      userId,
+      requiredScopes: ["tweet.read", "users.read", "dm.write"],
+    });
+    const { profileUserId } = await getHydratedProfileByUsername(
+      provider,
+      identity.username
+    );
+    const expectedConversationId = computeOneToOneDmConversationId(
+      provider.xUserId,
+      profileUserId
+    );
+    if (suppliedConversationId !== expectedConversationId) {
+      throw new Error("XChat conversation does not match this prospect.");
+    }
+
+    const leaseId = globalThis.crypto.randomUUID();
+    const now = getCurrentUTCTimestamp();
+    const lease: XChatSendLeaseResult = await ctx.runMutation(
+      internal.xChatSendOperations.acquireXChatSendLeaseInternal,
+      {
+        userId,
+        prospectId: args.prospectId,
+        clientRequestId: payload.clientRequestId,
+        conversationId: expectedConversationId,
+        messageId: payload.messageId,
+        encodedMessageCreateEvent: payload.encodedMessageCreateEvent,
+        encodedMessageEventSignature: payload.encodedMessageEventSignature,
+        leaseId,
+        now,
+      }
+    );
+    if (lease.kind === "sent") {
+      return {
+        success: true as const,
+        conversationId: expectedConversationId,
+        messageId: lease.messageId,
+        deduplicated: true,
+      };
+    }
+    if (lease.kind === "in_progress") {
+      throw new ConvexError({
+        code: "XCHAT_SEND_IN_PROGRESS",
+        message: "This encrypted XChat message is already being sent.",
+        retryAt: lease.retryAt,
+      });
+    }
+
+    if (
+      lease.existed &&
+      (await runXChatClientRequest(() =>
+        hasXChatEncryptedMessage(provider, profileUserId, lease.messageId)
+      ))
+    ) {
+      await ctx.runMutation(
+        internal.xChatSendOperations.markXChatSendSentInternal,
+        {
+          operationId: lease.operationId,
+          expectedMessageId: lease.messageId,
+          now: getCurrentUTCTimestamp(),
+        }
+      );
+      return {
+        success: true as const,
+        conversationId: expectedConversationId,
+        messageId: lease.messageId,
+        deduplicated: true,
+      };
+    }
+
+    try {
+      await submitEncryptedXChatMessage(provider, expectedConversationId, {
+        messageId: lease.messageId,
+        encodedMessageCreateEvent: lease.encodedMessageCreateEvent,
+        encodedMessageEventSignature: lease.encodedMessageEventSignature,
+      });
+    } catch (sendError) {
+      let providerHasMessage = false;
+      try {
+        providerHasMessage = await hasXChatEncryptedMessage(
+          provider,
+          profileUserId,
+          lease.messageId
+        );
+      } catch {
+        // The exact same SDK message ID and encrypted payload remain persisted;
+        // a later retry can safely re-confirm or replay them.
+      }
+      if (providerHasMessage) {
+        await ctx.runMutation(
+          internal.xChatSendOperations.markXChatSendSentInternal,
+          {
+            operationId: lease.operationId,
+            expectedMessageId: lease.messageId,
+            now: getCurrentUTCTimestamp(),
+          }
+        );
+        return {
+          success: true as const,
+          conversationId: expectedConversationId,
+          messageId: lease.messageId,
+          deduplicated: true,
+        };
+      }
+      await ctx.runMutation(
+        internal.xChatSendOperations.releaseXChatSendLeaseInternal,
+        {
+          operationId: lease.operationId,
+          leaseId,
+          now: getCurrentUTCTimestamp(),
+        }
+      );
+      return await runXChatClientRequest(async () => {
+        throw sendError;
+      });
+    }
+
+    await ctx.runMutation(
+      internal.xChatSendOperations.markXChatSendSentInternal,
+      {
+        operationId: lease.operationId,
+        expectedMessageId: lease.messageId,
+        now: getCurrentUTCTimestamp(),
+      }
+    );
+    return {
+      success: true as const,
+      conversationId: expectedConversationId,
+      messageId: lease.messageId,
+      deduplicated: lease.existed,
+    };
+  },
+});
+
+/**
+ * Return one encrypted XChat attachment for an authenticated prospect through
+ * a short-lived storage URL. The browser pairs it with the already-unlocked
+ * conversation key and keeps the resulting plaintext in a revocable object URL.
+ */
+export const getXChatEncryptedMedia = action({
+  args: {
+    prospectId: v.id("prospects"),
+    mediaHashKey: v.string(),
+  },
+  returns: xChatEncryptedMediaValidator,
+  handler: async (ctx, args): Promise<XChatEncryptedMediaResult> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedTwitterProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("X prospect not found or not authorized.");
+    }
+    const identity = resolveProspectTwitterIdentity(
+      prospect as Record<string, unknown>
+    );
+    if (!identity.username) {
+      throw new Error("This prospect does not have a usable X username.");
+    }
+    const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+      userId,
+      requiredScopes: ["tweet.read", "users.read", "dm.read"],
+    });
+    const { profileUserId } = await getHydratedProfileByUsername(
+      provider,
+      identity.username
+    );
+    const conversationId = computeOneToOneDmConversationId(
+      provider.xUserId,
+      profileUserId
+    );
+    const cacheKey = buildPlatformConversationMediaCacheKey({
+      platform: "twitter",
+      conversationId,
+      attachmentId: args.mediaHashKey,
+    });
+    const now = getCurrentUTCTimestamp();
+    const cached: {
+      storageId: Id<"_storage">;
+      size: number;
+      expiresAt: number;
+    } | null = await ctx.runQuery(
+      internal.platformConversationMedia.getCachedMediaInternal,
+      { userId, cacheKey, now }
+    );
+    if (cached) {
+      const url: string | null = await ctx.storage.getUrl(cached.storageId);
+      if (url) {
+        return {
+          availability: "available",
+          url,
+          size: cached.size,
+          expiresAt: cached.expiresAt,
+        };
+      }
+    }
+
+    let ciphertext: Blob;
+    try {
+      ciphertext = await fetchXChatEncryptedMedia(
+        provider,
+        conversationId,
+        args.mediaHashKey
+      );
+    } catch (error) {
+      if (
+        error instanceof XChatProviderRequestError &&
+        error.details.status === 404
+      ) {
+        return { availability: "unavailable", reason: "not_found" };
+      }
+      throwXChatClientRequestError(error);
+    }
+    assertCacheableProviderMedia({ size: ciphertext.size });
+    const storageId = await ctx.storage.store(ciphertext);
+    const expiresAt = now + PLATFORM_CONVERSATION_MEDIA_CACHE_TTL_MS;
+    let stored: {
+      storageId: Id<"_storage">;
+      size: number;
+      expiresAt: number;
+    };
+    try {
+      stored = await ctx.runMutation(
+        internal.platformConversationMedia.storeCachedMediaInternal,
+        {
+          userId,
+          prospectId: args.prospectId,
+          platform: "twitter",
+          conversationId,
+          cacheKey,
+          attachmentId: args.mediaHashKey.trim(),
+          storageId,
+          contentType: "application/octet-stream",
+          size: ciphertext.size,
+          encrypted: true,
+          expiresAt,
+        }
+      );
+    } catch (error) {
+      await ctx.storage.delete(storageId);
+      throw error;
+    }
+    const url: string | null = await ctx.storage.getUrl(stored.storageId);
+    if (!url) {
+      throw new Error("XChat encrypted media cache URL is unavailable.");
+    }
+    return {
+      availability: "available",
+      url,
+      size: stored.size,
+      expiresAt: stored.expiresAt,
+    };
   },
 });
 
@@ -2230,7 +2855,9 @@ export const getXChatRealmAuthToken = action({
       userId,
       requiredScopes: ["tweet.read", "users.read", "dm.read"],
     });
-    return await getXChatRealmAuthTokenForUser(provider, args.realmId);
+    return await runXChatClientRequest(() =>
+      getXChatRealmAuthTokenForUser(provider, args.realmId)
+    );
   },
 });
 

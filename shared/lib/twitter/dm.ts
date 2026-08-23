@@ -22,6 +22,7 @@ export interface XDmParticipantSummary {
 }
 
 export interface XDmAttachmentSummary {
+  id?: string;
   mediaKey?: string;
   type: string;
   url?: string;
@@ -29,10 +30,78 @@ export interface XDmAttachmentSummary {
   altText?: string;
   width?: number;
   height?: number;
+  fileName?: string;
+  mimeType?: string;
+  fileSize?: number;
+  durationMs?: number;
+  variants?: XDmAttachmentVariant[];
+  isGif?: boolean;
+  isVoiceNote?: boolean;
+  unavailable?: boolean;
+  urlExpiresAt?: string;
+  linkedinPostUrl?: string;
+}
+
+export interface XDmAttachmentVariant {
+  url: string;
+  mimeType?: string;
+  bitrate?: number;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * A post shared inside a DM. The fields deliberately mirror the minimum data
+ * needed to render immediately, while allowing the house post-card hydration
+ * path to enrich the author and media later.
+ */
+export interface XDmSharedPost {
+  id: string;
+  url: string;
+  text?: string;
+  authorId?: string;
+  authorHandle?: string;
+  authorName?: string;
+  authorAvatarUrl?: string;
+  createdAt?: string;
+  media?: XDmAttachmentSummary[];
+}
+
+export interface XDmQuotedMessage {
+  id: string;
+  text?: string;
+  senderName?: string;
+  direction?: "sent" | "received";
+  attachmentType?: string;
+  attachments?: XDmAttachmentSummary[];
+  sharedPost?: XDmSharedPost;
+}
+
+export interface XDmReaction {
+  emoji: string;
+  count: number;
+  reactedByViewer?: boolean;
+}
+
+export interface XDmSeenBy {
+  userId?: string;
+  attendeeId?: string;
+  senderName?: string;
+  seenAt?: string;
+}
+
+export interface XDmEventMetadata {
+  providerEventType?: string;
+  eventLabel?: string;
+  actorUserId?: string;
+  actorName?: string;
+  targetMessageId?: string;
 }
 
 export interface XDmMessage {
   id: string;
+  /** XChat sequence identifier used for encrypted replies and reactions. */
+  sequenceId?: string;
   conversationId: string;
   senderUserId?: string;
   text: string;
@@ -41,6 +110,20 @@ export interface XDmMessage {
   attachments?: XDmAttachmentSummary[];
   sender?: XDmParticipantSummary;
   readAt?: string;
+  deliveredAt?: string;
+  quotedMessageId?: string;
+  quotedMessage?: XDmQuotedMessage;
+  sharedPost?: XDmSharedPost;
+  reactions?: XDmReaction[];
+  editedAt?: string;
+  deletedAt?: string;
+  seenBy?: XDmSeenBy[];
+  sourceEventType?: string;
+  eventMetadata?: XDmEventMetadata;
+  /** Client-only delivery state for optimistic and failed outbound rows. */
+  deliveryStatus?: "queued" | "sending" | "sent" | "failed";
+  deliveryError?: string;
+  outboundClientRequestId?: string;
 }
 
 export interface XDmProspectSummary {
