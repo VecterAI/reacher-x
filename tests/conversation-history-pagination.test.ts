@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { mergeConversationHistoryMessages } from "../features/prospects/lib/conversationHistoryHelpers";
+import {
+  mergeConversationHistoryMessages,
+  reconcileConversationHistoryRefresh,
+} from "../features/prospects/lib/conversationHistoryHelpers";
 
 test("conversation pages merge without duplicates in chronological order", () => {
   const current = [
@@ -26,6 +29,58 @@ test("conversation pages merge without duplicates in chronological order", () =>
   assert.equal(merged[1]?.text, "current");
 });
 
+test("newest-page refresh preserves loaded history and its continuation cursor", () => {
+  const current = {
+    conversationId: "conversation-1",
+    messages: [
+      { id: "1", createdAt: "2026-08-10T10:00:00.000Z", text: "older" },
+      { id: "2", createdAt: "2026-08-10T11:00:00.000Z", text: "stale" },
+    ],
+    history: { hasMore: true, nextCursor: "older-cursor" },
+  };
+  const refreshed = {
+    conversationId: "conversation-1",
+    messages: [
+      { id: "2", createdAt: "2026-08-10T11:00:00.000Z", text: "fresh" },
+      { id: "3", createdAt: "2026-08-10T12:00:00.000Z", text: "new" },
+    ],
+    history: { hasMore: true, nextCursor: "newest-page-cursor" },
+  };
+
+  const result = reconcileConversationHistoryRefresh(current, refreshed);
+
+  assert.deepEqual(
+    result?.messages.map((message) => [message.id, message.text]),
+    [
+      ["1", "older"],
+      ["2", "fresh"],
+      ["3", "new"],
+    ]
+  );
+  assert.equal(result?.history.nextCursor, "older-cursor");
+});
+
+test("a refresh for a different conversation never merges transcripts", () => {
+  const result = reconcileConversationHistoryRefresh(
+    {
+      conversationId: "old",
+      messages: [{ id: "1", text: "old" }],
+      history: { hasMore: true, nextCursor: "old-cursor" },
+    },
+    {
+      conversationId: "new",
+      messages: [{ id: "2", text: "new" }],
+      history: { hasMore: false },
+    }
+  );
+
+  assert.deepEqual(
+    result?.messages.map((message) => message.id),
+    ["2"]
+  );
+  assert.equal(result?.history.hasMore, false);
+});
+
 test("both conversation hooks request exactly one bounded older page", () => {
   for (const file of [
     "features/prospects/hooks/useProspectDmPanel.ts",
@@ -41,26 +96,36 @@ test("both conversation hooks request exactly one bounded older page", () => {
   }
 });
 
-test("conversation panels expose upward history loading and recovery copy", () => {
+test("conversation panels share upward history loading and recovery", () => {
   for (const file of [
     "features/prospects/ui/components/XConversationPanel.tsx",
     "features/prospects/ui/components/LinkedInConversationPanel.tsx",
   ]) {
     const source = readFileSync(file, "utf8");
 
-    assert.match(source, /<ConversationHistoryPagination/);
-    assert.match(source, /Could not load earlier messages\. Try again\./);
+    assert.match(source, /<ConversationMessageViewport/);
+    assert.match(source, /loadOlderError/);
   }
 
-  const paginationSource = readFileSync(
-    "features/prospects/ui/components/ConversationHistoryPagination.tsx",
+  const viewportSource = readFileSync(
+    "features/prospects/ui/components/ConversationMessageViewport.tsx",
     "utf8"
   );
-  assert.match(paginationSource, /<InfiniteScrollTrigger/);
-  assert.match(paginationSource, /hasMore=\{hasMore\}/);
-  assert.match(paginationSource, /showKeyboardFallback=\{false\}/);
-  assert.doesNotMatch(paginationSource, /<Button/);
-  assert.doesNotMatch(paginationSource, /userScrolledUp|canScroll/);
+  assert.match(viewportSource, /defaultScrollPosition="end"/);
+  assert.match(viewportSource, /preserveScrollOnPrepend/);
+  assert.match(viewportSource, /Retry earlier messages/);
+  assert.match(viewportSource, /new IntersectionObserver/);
+  assert.match(viewportSource, /requestedHistoryKeyRef/);
+  assert.doesNotMatch(viewportSource, /new ResizeObserver/);
+
+  for (const file of [
+    "features/prospects/hooks/useProspectDmPanel.ts",
+    "features/prospects/hooks/useProspectLinkedInPanel.ts",
+  ]) {
+    const source = readFileSync(file, "utf8");
+    assert.match(source, /reconcileConversationHistoryRefresh/);
+    assert.doesNotMatch(source, /PanelCache|panelCache|dmPanelCache/);
+  }
 
   const xSource = readFileSync(
     "features/prospects/ui/components/XConversationPanel.tsx",

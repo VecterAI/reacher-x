@@ -116,22 +116,15 @@ test("circular spinners use the primary color without local overrides", () => {
 });
 
 test("conversation history opens at the latest page and preserves scroll position", () => {
-  const historyPaginationSource = readSource(
-    "features/prospects/ui/components/ConversationHistoryPagination.tsx"
+  const conversationViewportSource = readSource(
+    "features/prospects/ui/components/ConversationMessageViewport.tsx"
   );
 
-  assert.match(
-    historyPaginationSource,
-    /viewport\.scrollTop = viewport\.scrollHeight/
-  );
-  assert.match(
-    historyPaginationSource,
-    /viewport\.scrollHeight - pendingAnchor\.scrollHeight/
-  );
-  assert.match(historyPaginationSource, /direction="start"/);
-  assert.match(historyPaginationSource, /Loading earlier messages/);
-  assert.doesNotMatch(historyPaginationSource, /<Button/);
-  assert.doesNotMatch(historyPaginationSource, /userScrolledUp|canScroll/);
+  assert.match(conversationViewportSource, /defaultScrollPosition="end"/);
+  assert.match(conversationViewportSource, /preserveScrollOnPrepend/);
+  assert.match(conversationViewportSource, /scrollToEnd/);
+  assert.match(conversationViewportSource, /Loading earlier messages/);
+  assert.match(conversationViewportSource, /Retry earlier messages/);
 });
 
 test("Agent history loads at the start edge with a circular spinner", () => {

@@ -124,27 +124,13 @@ import { Button, buttonVariants } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Spinner } from "@/shared/ui/components/Spinner";
 import { Markdown } from "@/shared/ui/components/Markdown";
+import { FileVisualIcon } from "@/shared/ui/components/FileVisualIcon";
 import { cn, extractTextFromEditorState } from "@/shared/lib/utils";
 import { inferAttachmentMediaKind } from "@/shared/lib/utils/media/inferAttachmentMediaKind";
-import { inferFileVisualKind } from "@/shared/lib/utils/media/inferFileVisualKind";
 import {
   isLinkedInMessageDocumentMimeType,
   LINKEDIN_MESSAGE_DOCUMENT_ACCEPT,
 } from "@/shared/lib/utils/media/linkedinMessageAttachmentTypes";
-import {
-  Copy,
-  Check,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Circle,
-  X,
-  FileCode2,
-  FileImage,
-  FileSpreadsheet,
-  FileText,
-  FileVideo,
-} from "lucide-react";
 import { toast } from "sonner";
 import {
   useState,
@@ -178,6 +164,14 @@ import {
   ArrowBackIcon,
   MoreHorizIcon,
   MailIcon,
+  XChatIcon,
+  CheckIcon,
+  CheckCircleIcon,
+  CloseIcon,
+  ContentCopyIcon,
+  ErrorIcon,
+  ProgressActivityIcon,
+  RadioButtonUncheckedIcon,
   PersonIcon,
   ChangeHistoryIcon,
   OpenInNewIcon,
@@ -358,16 +352,20 @@ function getAgentArtifactStableKey(artifact: AgentArtifactEnvelope): string {
 function getProgressStatusIcon(status: ProgressStep["status"]) {
   switch (status) {
     case "completed":
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      return (
+        <CheckCircleIcon className="h-4 w-4 fill-current text-green-500" />
+      );
     case "failed":
-      return <XCircle className="h-4 w-4 text-red-500" />;
+      return <ErrorIcon className="h-4 w-4 fill-current text-red-500" />;
     case "running":
       // Persisted tool results are historical snapshots, not a live workflow
       // subscription. Keep this static so old chat cards never imply work is
       // currently running.
-      return <Circle className="h-4 w-4 text-blue-500" />;
+      return <RadioButtonUncheckedIcon className="h-4 w-4 text-blue-500" />;
     default:
-      return <Circle className="text-muted-foreground h-4 w-4" />;
+      return (
+        <RadioButtonUncheckedIcon className="text-muted-foreground h-4 w-4" />
+      );
   }
 }
 
@@ -617,9 +615,9 @@ function ToolCallMarker({
               <span className="shimmer font-mono">Running</span>
             ) : null}
             {isError ? (
-              <XCircle className="text-destructive size-4" />
+              <ErrorIcon className="text-destructive size-4 fill-current" />
             ) : showsPendingState ? (
-              <Loader2 className="size-4 animate-spin" />
+              <ProgressActivityIcon className="size-4 animate-spin" />
             ) : null}
           </span>
         ) : null}
@@ -652,9 +650,9 @@ function ToolCallGroup({
         className="text-xs font-medium"
         leftIcon={
           hasError ? (
-            <XCircle className="text-destructive size-3.5" />
+            <ErrorIcon className="text-destructive size-3.5 fill-current" />
           ) : hasPending ? (
-            <Loader2 className="text-primary size-3.5 animate-spin" />
+            <ProgressActivityIcon className="text-primary size-3.5 animate-spin" />
           ) : (
             <ChangeHistoryIcon className="text-primary size-3.5 fill-current" />
           )
@@ -1058,9 +1056,9 @@ function ReasoningSection({
                   <StepsTrigger
                     leftIcon={
                       isStreaming ? (
-                        <Loader2 className="size-3.5 animate-spin" />
+                        <ProgressActivityIcon className="size-3.5 animate-spin" />
                       ) : (
-                        <CheckCircle2 className="text-muted-foreground size-3.5" />
+                        <CheckCircleIcon className="text-muted-foreground size-3.5 fill-current" />
                       )
                     }
                   >
@@ -1152,7 +1150,11 @@ function CopyButton({ text }: { text: string }) {
         onClick={handleCopy}
         className="text-muted-foreground hover:text-foreground"
       >
-        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        {copied ? (
+          <CheckIcon className="h-3 w-3 fill-current" />
+        ) : (
+          <ContentCopyIcon className="h-3 w-3 fill-current" />
+        )}
       </Button>
     </MessageAction>
   );
@@ -1227,31 +1229,6 @@ function inferDisplayAttachmentMediaKind(
   });
 }
 
-function getDisplayAttachmentIcon(
-  attachment: Pick<DisplayAttachment, "fileName" | "mediaUrl" | "mimeType">
-) {
-  const visualKind = inferFileVisualKind({
-    fileName: attachment.fileName,
-    mimeType: attachment.mimeType,
-    url: attachment.mediaUrl,
-  });
-
-  if (visualKind === "video") {
-    return <FileVideo className="size-4" />;
-  }
-  if (visualKind === "image") {
-    return <FileImage className="size-4" />;
-  }
-  if (visualKind === "spreadsheet") {
-    return <FileSpreadsheet className="size-4" />;
-  }
-  if (visualKind === "code") {
-    return <FileCode2 className="size-4" />;
-  }
-
-  return <FileText className="size-4" />;
-}
-
 function AgentAttachmentList({
   attachments,
   variant = "composer",
@@ -1308,9 +1285,13 @@ function AgentAttachmentList({
               />
             </>
           ) : attachment.status === "uploading" ? (
-            <Loader2 className="size-3.5 animate-spin" />
+            <ProgressActivityIcon className="size-3.5 animate-spin" />
           ) : (
-            getDisplayAttachmentIcon(attachment)
+            <FileVisualIcon
+              fileName={attachment.fileName}
+              mimeType={attachment.mimeType}
+              url={attachment.mediaUrl}
+            />
           )}
         </AttachmentMedia>
         <AttachmentContent>
@@ -1330,7 +1311,7 @@ function AgentAttachmentList({
               title={`Remove ${attachment.fileName}`}
               onClick={attachment.onRemove}
             >
-              <X className="size-3.5" />
+              <CloseIcon className="size-3.5 fill-current" />
             </AttachmentAction>
           </AttachmentActions>
         ) : null}
@@ -2087,7 +2068,11 @@ function ChatHeader({
                               : undefined
                           }
                         >
-                          <MailIcon className="fill-current" aria-hidden />
+                          {resolvedDmPlatform === "linkedin" ? (
+                            <MailIcon className="fill-current" aria-hidden />
+                          ) : (
+                            <XChatIcon aria-hidden />
+                          )}
                           {resolvedDmPlatform === "linkedin"
                             ? "Message on LinkedIn"
                             : "DM on X/Twitter"}

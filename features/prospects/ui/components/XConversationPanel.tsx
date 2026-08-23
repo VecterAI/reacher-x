@@ -1,11 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { useMutation } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { SerializedEditorState } from "lexical";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { PageContent } from "@/features/webapp/ui/components/page/PageContent";
 import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
@@ -15,10 +14,11 @@ import {
   DM_COMPOSER_CONTENT_EDITABLE_CLASS,
   DM_COMPOSER_PLACEHOLDER_CLASS,
 } from "@/features/composer/ui/dmComposerClasses";
-import { formatDmMessageTime } from "../../lib/formatDmMessageTime";
 import { mergeXChatConversationMessages } from "../../lib/xChatConversationMessages";
+import { getOutboundMessageMediaMetadata } from "../../lib/outboundMessageOperations";
+import { createRevisionRefreshCoordinator } from "../../lib/revisionRefreshCoordinator";
 import { useProspectDmPanel } from "../../hooks/useProspectDmPanel";
-import { ConversationHistoryPagination } from "./ConversationHistoryPagination";
+import { ConversationMessageViewport } from "./ConversationMessageViewport";
 import { XChatConversationUnlock } from "./XChatConversationUnlock";
 import { XDmConversationMenu } from "./XDmConversationMenu";
 import { Button } from "@/shared/ui/components/Button";
@@ -27,15 +27,14 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/shared/ui/components/Alert";
-import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Spinner } from "@/shared/ui/components/Spinner";
+import { MessageScrollerItem } from "@/shared/ui/components/MessageScroller";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
-import { MessageBubble } from "@/shared/ui/components/MessageBubble";
 import { cn } from "@/shared/lib/utils";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
@@ -46,13 +45,34 @@ import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftS
 import { resolveOutreachTaskApprovalUiState } from "@/shared/lib/outreach/taskApprovalHelpers";
 import { resolveTaskDmComposerState } from "@/shared/lib/outreach/taskDmComposerHelpers";
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
-import type { XDmAttachmentSummary, XDmMessage } from "@/shared/lib/twitter/dm";
+import type { XDmAttachmentSummary } from "@/shared/lib/twitter/dm";
 import type {
   ComposerInitialMediaUpload,
   ComposerMediaKind,
+  MediaUpload,
 } from "@/features/composer/types";
-import { XDmAttachmentGallery } from "./XDmAttachmentGallery";
-import { useXChatBrowserSession } from "@/features/agent/lib/xChatBrowserSession";
+import {
+  appendXChatEventPageInBrowser,
+  bindPreparedXChatMessageInBrowser,
+  confirmXChatReactionInBrowser,
+  confirmXChatTextMessageInBrowser,
+  failPendingXChatTextMessageInBrowser,
+  getPendingXChatMessageForRetry,
+  publishPendingXChatTextMessageInBrowser,
+  getXChatRateLimitState,
+  getXChatBrowserSession,
+  prepareXChatEncryptedMediaInBrowser,
+  prepareXChatMediaMessageInBrowser,
+  prepareXChatReactionInBrowser,
+  preparePersistedXChatReplyMessageInBrowser,
+  preparePersistedXChatTextMessageInBrowser,
+  publishPreparingXChatMessageInBrowser,
+  useXChatBrowserSession,
+  useXChatBrowserSessionState,
+} from "@/features/agent/lib/xChatBrowserSession";
+import { ConversationMessageList } from "./conversation-message/ConversationMessageList";
+import { ConversationComposerReplyTarget } from "./conversation-message/ConversationReplyPreview";
+import type { RichConversationMessage } from "./conversation-message/types";
 
 export interface XConversationPanelProps {
   prospectId: string;
@@ -82,6 +102,14 @@ export interface XConversationPanelProps {
   className?: string;
 }
 
+function isEncryptedXChatMessage(message: RichConversationMessage) {
+  return message.id.startsWith("xchat:");
+}
+
+function canReactToEncryptedXChatMessage(message: RichConversationMessage) {
+  return isEncryptedXChatMessage(message) && Boolean(message.sequenceId);
+}
+
 export function XConversationPanel({
   prospectId,
   actionRequestId,
@@ -101,6 +129,7 @@ export function XConversationPanel({
   const router = useRouter();
   const { currentUser } = useViewerXComposerIdentity();
   const isTaskBacked = Boolean(taskId);
+  const xChatSessionState = useXChatBrowserSessionState(prospectId);
   const {
     data,
     loading,
@@ -110,22 +139,95 @@ export function XConversationPanel({
     error,
     loadOlder,
     send,
+    retrySend,
     cancel,
     actionRequestStatus,
     isPendingApproval,
     isSendingActionRequest,
+    conversationRevisionKey,
+    conversationRevisionLoaded,
+    conversationRevisionLatestMessageId,
   } = useProspectDmPanel({
     prospectId,
     actionRequestId,
     enabled: Boolean(prospectId),
+    refreshContextOnRevision: xChatSessionState.status !== "unlocked",
   });
   const xChatSession = useXChatBrowserSession({
     prospectId,
     participantUserId: data?.participantUserId,
   });
+  const [scrollToLatestRequest, setScrollToLatestRequest] = React.useState(0);
+  const [replyingTo, setReplyingTo] =
+    React.useState<RichConversationMessage | null>(null);
+  const [xChatOlderLoadState, setXChatOlderLoadState] = React.useState<{
+    prospectId: string;
+    requestId: number;
+    status: "idle" | "loading" | "error";
+  }>({ prospectId, requestId: 0, status: "idle" });
+  const xChatLoadRequestRef = React.useRef(0);
+  const xChatNewestRefreshCoordinatorRef = React.useRef<ReturnType<
+    typeof createRevisionRefreshCoordinator
+  > | null>(null);
+  const observedXChatRevisionRef = React.useRef<{
+    prospectId: string;
+    revision: string | null;
+  } | null>(null);
+  const appliedRealtimeEventPageRef = React.useRef<{
+    prospectId: string;
+    key: string;
+  } | null>(null);
+  const isLoadingOlderXChat =
+    xChatOlderLoadState.prospectId === prospectId &&
+    xChatOlderLoadState.status === "loading";
+  const loadOlderXChatError =
+    xChatOlderLoadState.prospectId === prospectId &&
+    xChatOlderLoadState.status === "error";
   const updatePendingActionRequestDraft = useMutation(
     api.socialActions.updatePendingActionRequestDraft
   );
+  const submitXChatEncryptedMessage = useAction(
+    api.x.submitXChatEncryptedMessage
+  );
+  const xChatSendTailsRef = React.useRef(new Map<string, Promise<void>>());
+  const submitXChatMessageInOrder = React.useCallback(
+    (payload: {
+      prospectId: Id<"prospects">;
+      clientRequestId: string;
+      conversationId: string;
+      messageId: string;
+      encodedMessageCreateEvent: string;
+      encodedMessageEventSignature: string;
+    }) => {
+      const queueKey = String(payload.prospectId);
+      const previous = xChatSendTailsRef.current.get(queueKey);
+      const request = (previous ?? Promise.resolve())
+        .catch(() => undefined)
+        .then(() => submitXChatEncryptedMessage(payload));
+      const tail = request.then(
+        () => undefined,
+        () => undefined
+      );
+      xChatSendTailsRef.current.set(queueKey, tail);
+      void tail.then(() => {
+        if (xChatSendTailsRef.current.get(queueKey) === tail) {
+          xChatSendTailsRef.current.delete(queueKey);
+        }
+      });
+      return request;
+    },
+    [submitXChatEncryptedMessage]
+  );
+  const generateXChatEncryptedMediaUploadUrl = useMutation(
+    api.xChatSendOperations.generateEncryptedMediaUploadUrl
+  );
+  const uploadXChatEncryptedMedia = useAction(api.x.uploadXChatEncryptedMedia);
+  const getXChatEventPage = useAction(api.x.getXChatEventPage);
+  const realtimeXChatEventPage = useQuery(
+    api.xChatRealtimeEvents.getForProspect,
+    prospectId ? { prospectId: prospectId as Id<"prospects"> } : "skip"
+  );
+  const getXChatEncryptedMedia = useAction(api.x.getXChatEncryptedMedia);
   const updatePendingTaskDraft = useMutation(
     api.outreach.updatePendingTaskDraft
   );
@@ -199,6 +301,15 @@ export function XConversationPanel({
     () => mergeXChatConversationMessages(data?.messages ?? [], xChatSession),
     [data?.messages, xChatSession]
   );
+  const isXChatUnlocked =
+    xChatSessionState.status === "unlocked" && Boolean(xChatSession);
+  const shouldGateConversation =
+    data?.eligibility.enabled !== false &&
+    xChatSessionState.status !== "unavailable" &&
+    !isXChatUnlocked;
+  const isInitialXChatCheck =
+    xChatSessionState.status === "unknown" ||
+    xChatSessionState.status === "checking";
 
   const renderedMessages = React.useMemo(() => {
     if (!messagesWithXChat.length) {
@@ -242,6 +353,225 @@ export function XConversationPanel({
       };
     });
   }, [messagesWithXChat, taskMode, taskPosted]);
+
+  const handleLoadOlder = React.useCallback(async () => {
+    if (xChatSession?.hasMore) {
+      if (!xChatSession.nextCursor || isLoadingOlderXChat) return;
+      const requestId = ++xChatLoadRequestRef.current;
+      setXChatOlderLoadState({
+        prospectId,
+        requestId,
+        status: "loading",
+      });
+      try {
+        const page = await getXChatEventPage({
+          prospectId: prospectId as Id<"prospects">,
+          cursor: xChatSession.nextCursor,
+        });
+        await appendXChatEventPageInBrowser({
+          prospectId,
+          page,
+          getEncryptedMedia: async (mediaHashKey) =>
+            await getXChatEncryptedMedia({
+              prospectId: prospectId as Id<"prospects">,
+              mediaHashKey,
+            }),
+        });
+      } catch (loadError) {
+        console.warn(
+          "[XConversationPanel] Unable to load older XChat messages",
+          loadError instanceof Error ? loadError.message : String(loadError)
+        );
+        setXChatOlderLoadState((current) =>
+          current.requestId === requestId && current.prospectId === prospectId
+            ? { ...current, status: "error" }
+            : current
+        );
+      } finally {
+        setXChatOlderLoadState((current) =>
+          current.requestId === requestId &&
+          current.prospectId === prospectId &&
+          current.status === "loading"
+            ? { ...current, status: "idle" }
+            : current
+        );
+      }
+      return;
+    }
+    await loadOlder();
+  }, [
+    getXChatEncryptedMedia,
+    getXChatEventPage,
+    isLoadingOlderXChat,
+    loadOlder,
+    prospectId,
+    xChatSession,
+  ]);
+
+  const refreshNewestXChatPage = React.useCallback(async () => {
+    const page = await getXChatEventPage({
+      prospectId: prospectId as Id<"prospects">,
+    });
+    await appendXChatEventPageInBrowser({
+      prospectId,
+      page,
+      pagination: "newest",
+      getEncryptedMedia: async (mediaHashKey) =>
+        await getXChatEncryptedMedia({
+          prospectId: prospectId as Id<"prospects">,
+          mediaHashKey,
+        }),
+    });
+  }, [getXChatEncryptedMedia, getXChatEventPage, prospectId]);
+
+  const realtimeEventPageKey = realtimeXChatEventPage
+    ? `${realtimeXChatEventPage.conversationId}:${realtimeXChatEventPage.events.length}:${realtimeXChatEventPage.events.at(-1)?.id ?? "unknown"}`
+    : null;
+  const realtimeEventCoversRevision = Boolean(
+    conversationRevisionLatestMessageId &&
+    realtimeXChatEventPage?.events.some(
+      (event) => event.id === conversationRevisionLatestMessageId
+    )
+  );
+  const decryptedSessionCoversRevision = Boolean(
+    conversationRevisionLatestMessageId &&
+    xChatSession?.loadedEventIds?.includes(conversationRevisionLatestMessageId)
+  );
+
+  React.useEffect(() => {
+    if (
+      !isXChatUnlocked ||
+      !realtimeXChatEventPage ||
+      realtimeXChatEventPage.events.length === 0 ||
+      !realtimeEventPageKey
+    ) {
+      return;
+    }
+    const applied = appliedRealtimeEventPageRef.current;
+    if (
+      applied?.prospectId === prospectId &&
+      applied.key === realtimeEventPageKey
+    ) {
+      return;
+    }
+    appliedRealtimeEventPageRef.current = {
+      prospectId,
+      key: realtimeEventPageKey,
+    };
+    void appendXChatEventPageInBrowser({
+      prospectId,
+      page: {
+        ...realtimeXChatEventPage,
+        hasMore: false,
+      },
+      pagination: "newest",
+      getEncryptedMedia: async (mediaHashKey) =>
+        await getXChatEncryptedMedia({
+          prospectId: prospectId as Id<"prospects">,
+          mediaHashKey,
+        }),
+    }).catch((realtimeError) => {
+      if (
+        appliedRealtimeEventPageRef.current?.prospectId === prospectId &&
+        appliedRealtimeEventPageRef.current.key === realtimeEventPageKey
+      ) {
+        appliedRealtimeEventPageRef.current = null;
+      }
+      console.warn(
+        "[XConversationPanel] Unable to apply realtime XChat event",
+        realtimeError instanceof Error
+          ? realtimeError.message
+          : String(realtimeError)
+      );
+      if (conversationRevisionKey) {
+        xChatNewestRefreshCoordinatorRef.current?.request(
+          conversationRevisionKey
+        );
+      }
+    });
+  }, [
+    conversationRevisionKey,
+    getXChatEncryptedMedia,
+    isXChatUnlocked,
+    prospectId,
+    realtimeEventPageKey,
+    realtimeXChatEventPage,
+  ]);
+
+  React.useEffect(() => {
+    const coordinator = createRevisionRefreshCoordinator({
+      refresh: refreshNewestXChatPage,
+      canRefresh: () => Boolean(getXChatBrowserSession({ prospectId })),
+      getRetryAt: (refreshError) =>
+        getXChatRateLimitState(refreshError)?.retryAt,
+      onError: (refreshError) => {
+        console.warn(
+          "[XConversationPanel] Unable to refresh XChat messages",
+          refreshError instanceof Error
+            ? refreshError.message
+            : String(refreshError)
+        );
+      },
+    });
+    xChatNewestRefreshCoordinatorRef.current = coordinator;
+    return () => {
+      coordinator.dispose();
+      if (xChatNewestRefreshCoordinatorRef.current === coordinator) {
+        xChatNewestRefreshCoordinatorRef.current = null;
+      }
+    };
+  }, [prospectId, refreshNewestXChatPage]);
+
+  React.useEffect(() => {
+    if (!conversationRevisionLoaded) return;
+    const previous = observedXChatRevisionRef.current;
+    if (!previous || previous.prospectId !== prospectId) {
+      observedXChatRevisionRef.current = {
+        prospectId,
+        revision: conversationRevisionKey,
+      };
+      // If the reactive revision first resolves after unlock, the decrypt
+      // bundle may predate it. Queue one deduplicated newest-page refresh.
+      if (
+        isXChatUnlocked &&
+        conversationRevisionKey &&
+        !realtimeEventCoversRevision &&
+        !decryptedSessionCoversRevision
+      ) {
+        xChatNewestRefreshCoordinatorRef.current?.request(
+          conversationRevisionKey
+        );
+      }
+      return;
+    }
+
+    if (
+      previous.revision === conversationRevisionKey ||
+      !conversationRevisionKey
+    ) {
+      return;
+    }
+    // Keep the last observed revision while locked. When unlock completes this
+    // effect runs again and requests the revision that arrived during unlock.
+    if (!isXChatUnlocked) return;
+
+    observedXChatRevisionRef.current = {
+      prospectId,
+      revision: conversationRevisionKey,
+    };
+    if (!realtimeEventCoversRevision && !decryptedSessionCoversRevision) {
+      xChatNewestRefreshCoordinatorRef.current?.request(
+        conversationRevisionKey
+      );
+    }
+  }, [
+    conversationRevisionKey,
+    conversationRevisionLoaded,
+    decryptedSessionCoversRevision,
+    isXChatUnlocked,
+    prospectId,
+    realtimeEventCoversRevision,
+  ]);
 
   const draftSync = useDebouncedDraftSync({
     enabled: isTaskBacked
@@ -304,8 +634,11 @@ export function XConversationPanel({
       content: SerializedEditorState,
       mediaUrls?: string[],
       mediaDescriptions?: string[],
-      mediaKinds?: ComposerMediaKind[]
+      mediaKinds?: ComposerMediaKind[],
+      mediaUploads?: MediaUpload[]
     ) => {
+      const replyTarget = replyingTo;
+      let didClearReplyTarget = false;
       try {
         const nextText = extractTextFromEditorState(content).trim();
         const resolvedMediaUrls = mediaUrls?.length
@@ -333,10 +666,19 @@ export function XConversationPanel({
           : isTaskApprovalComposer
             ? taskDraftForComposer?.mediaKinds
             : undefined;
-        if (!nextText && !(resolvedMediaUrls && resolvedMediaUrls.length > 0)) {
+        if (
+          !nextText &&
+          !(resolvedMediaUrls && resolvedMediaUrls.length > 0) &&
+          !mediaUploads?.length
+        ) {
           return;
         }
         if (isTaskApprovalComposer) {
+          if (isXChatUnlocked) {
+            throw new Error(
+              "Encrypted XChat task approval is not supported yet. Send this message from the direct XChat composer instead."
+            );
+          }
           if (!taskId) {
             return;
           }
@@ -373,17 +715,206 @@ export function XConversationPanel({
           });
           return;
         }
-        await send(nextText, resolvedMediaUrls, resolvedDescriptions);
+        if (isXChatUnlocked) {
+          if (replyTarget) {
+            setReplyingTo(null);
+            didClearReplyTarget = true;
+          }
+          let encryptedMessage;
+          const selectedMedia = mediaUploads?.[0];
+          let pendingMessageId: string | undefined;
+          let pendingMediaClientRequestId: string | undefined;
+          let preparedAttachmentMetadata:
+            | {
+                width?: number;
+                height?: number;
+                durationMs?: number;
+              }
+            | undefined;
+          if (selectedMedia) {
+            const pending = publishPreparingXChatMessageInBrowser({
+              prospectId,
+              text: nextText,
+              attachments: [
+                {
+                  id: selectedMedia.id,
+                  type: selectedMedia.mediaKind,
+                  url: selectedMedia.url,
+                  previewUrl: selectedMedia.url,
+                  fileName: selectedMedia.file.name,
+                  mimeType: selectedMedia.file.type,
+                  fileSize: selectedMedia.file.size,
+                  width: selectedMedia.width,
+                  height: selectedMedia.height,
+                  durationMs: selectedMedia.durationMs,
+                  isGif: selectedMedia.mediaKind === "gif",
+                },
+              ],
+              quotedMessage: replyTarget
+                ? {
+                    id: replyTarget.id,
+                    text: replyTarget.text,
+                    direction: replyTarget.direction,
+                    attachmentType: replyTarget.attachments?.[0]?.type,
+                    attachments: replyTarget.attachments,
+                  }
+                : undefined,
+            });
+            pendingMessageId = pending.messageId;
+            pendingMediaClientRequestId = pending.clientRequestId;
+            setScrollToLatestRequest((request) => request + 1);
+          }
+          try {
+            if (selectedMedia) {
+              const encryptedMedia = await prepareXChatEncryptedMediaInBrowser({
+                prospectId,
+                file: selectedMedia.file,
+              });
+              preparedAttachmentMetadata = {
+                width: encryptedMedia.width || selectedMedia.width,
+                height: encryptedMedia.height || selectedMedia.height,
+                durationMs: selectedMedia.durationMs,
+              };
+              try {
+                const uploadUrl = await generateXChatEncryptedMediaUploadUrl({
+                  prospectId: prospectId as Id<"prospects">,
+                });
+                const uploadBuffer = new ArrayBuffer(
+                  encryptedMedia.ciphertext.byteLength
+                );
+                new Uint8Array(uploadBuffer).set(encryptedMedia.ciphertext);
+                let uploadResponse: Response;
+                try {
+                  uploadResponse = await fetch(uploadUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/octet-stream" },
+                    body: new Blob([uploadBuffer]),
+                  });
+                } finally {
+                  new Uint8Array(uploadBuffer).fill(0);
+                }
+                if (!uploadResponse.ok) {
+                  throw new Error("Encrypted XChat media upload failed.");
+                }
+                const uploaded = (await uploadResponse.json()) as {
+                  storageId?: string;
+                };
+                if (!uploaded.storageId) {
+                  throw new Error(
+                    "Encrypted XChat media upload was incomplete."
+                  );
+                }
+                const { mediaHashKey } = await uploadXChatEncryptedMedia({
+                  prospectId: prospectId as Id<"prospects">,
+                  conversationId: encryptedMedia.conversationId,
+                  storageId: uploaded.storageId as Id<"_storage">,
+                });
+                const { ciphertext: _ciphertext, ...mediaDescriptor } =
+                  encryptedMedia;
+                encryptedMessage = prepareXChatMediaMessageInBrowser({
+                  prospectId,
+                  text: nextText,
+                  mediaHashKey,
+                  media: mediaDescriptor,
+                  clientRequestId: pendingMediaClientRequestId,
+                  replyToMessageId: replyTarget?.id,
+                  replyToSequenceId: replyTarget?.sequenceId,
+                });
+              } finally {
+                encryptedMedia.ciphertext.fill(0);
+              }
+              bindPreparedXChatMessageInBrowser({
+                prospectId,
+                preparingMessageId: pendingMessageId!,
+                message: encryptedMessage,
+                attachmentMetadata: preparedAttachmentMetadata,
+              });
+              pendingMessageId = encryptedMessage.messageId;
+            } else {
+              encryptedMessage = replyTarget
+                ? await preparePersistedXChatReplyMessageInBrowser({
+                    prospectId,
+                    text: nextText,
+                    replyToMessageId: replyTarget.id,
+                    replyToSequenceId: replyTarget.sequenceId,
+                  })
+                : await preparePersistedXChatTextMessageInBrowser({
+                    prospectId,
+                    text: nextText,
+                  });
+              publishPendingXChatTextMessageInBrowser({
+                prospectId,
+                message: encryptedMessage,
+                text: nextText,
+                quotedMessage: replyTarget
+                  ? {
+                      id: replyTarget.id,
+                      text: replyTarget.text,
+                      direction: replyTarget.direction,
+                      attachmentType: replyTarget.attachments?.[0]?.type,
+                      attachments: replyTarget.attachments,
+                    }
+                  : undefined,
+              });
+              pendingMessageId = encryptedMessage.messageId;
+              setScrollToLatestRequest((request) => request + 1);
+            }
+            await submitXChatMessageInOrder({
+              prospectId: prospectId as Id<"prospects">,
+              ...encryptedMessage,
+            });
+          } catch (error) {
+            if (pendingMessageId) {
+              failPendingXChatTextMessageInBrowser({
+                prospectId,
+                messageId: pendingMessageId,
+                errorMessage:
+                  error instanceof Error ? error.message : "Please try again.",
+              });
+            }
+            throw error;
+          }
+          confirmXChatTextMessageInBrowser({
+            prospectId,
+            message: encryptedMessage,
+            text: nextText,
+          });
+          if (selectedMedia) {
+            await refreshNewestXChatPage();
+          }
+          setLocalDraftState({
+            sourceKey: draftSourceKey,
+            serverValue: serverDraft,
+            text: "",
+          });
+          return;
+        }
+        const sendRequest = send(
+          nextText,
+          resolvedMediaUrls,
+          resolvedDescriptions,
+          resolvedMediaKinds,
+          mediaUploads?.map((upload) => upload.file.name),
+          getOutboundMessageMediaMetadata(mediaUploads)
+        );
+        // Move to the live edge before the provider response appends the row.
+        // MessageScroller then keeps following that self-initiated update.
+        setScrollToLatestRequest((request) => request + 1);
+        await sendRequest;
         setLocalDraftState({
           sourceKey: draftSourceKey,
           serverValue: serverDraft,
           text: "",
         });
-        toast.success("DM sent on X/Twitter");
       } catch (err) {
+        if (didClearReplyTarget && replyTarget) {
+          setReplyingTo((current) => current ?? replyTarget);
+        }
         toast.error("Failed to send DM", {
           description: err instanceof Error ? err.message : "Please try again.",
         });
+        // BaseComposer preserves editor/media state when submission rejects.
+        throw err;
       }
     },
     [
@@ -393,8 +924,15 @@ export function XConversationPanel({
       draftSourceKey,
       isTaskApprovalComposer,
       isTaskBacked,
+      isXChatUnlocked,
+      generateXChatEncryptedMediaUploadUrl,
+      prospectId,
+      refreshNewestXChatPage,
+      replyingTo,
       send,
       serverDraft,
+      submitXChatMessageInOrder,
+      uploadXChatEncryptedMedia,
       taskApprovalUi.planCanBeApproved,
       taskApprovalUi.submitBlockedByPlan,
       taskDraftForComposer,
@@ -402,6 +940,93 @@ export function XConversationPanel({
       taskPlanId,
       updatePendingTaskDraft,
     ]
+  );
+
+  const handleXChatReaction = React.useCallback(
+    async (message: RichConversationMessage, emoji: string) => {
+      if (!isXChatUnlocked || !message.sequenceId) return;
+      const remove = Boolean(
+        message.reactions?.find((reaction) => reaction.emoji === emoji)
+          ?.reactedByViewer
+      );
+      try {
+        const encryptedReaction = prepareXChatReactionInBrowser({
+          prospectId,
+          targetMessageSequenceId: message.sequenceId,
+          emoji,
+          remove,
+        });
+        await submitXChatEncryptedMessage({
+          prospectId: prospectId as Id<"prospects">,
+          ...encryptedReaction,
+        });
+        confirmXChatReactionInBrowser({
+          prospectId,
+          targetMessageSequenceId: message.sequenceId,
+          emoji,
+          remove,
+        });
+      } catch (reactionError) {
+        toast.error("Could not update XChat reaction", {
+          description:
+            reactionError instanceof Error
+              ? reactionError.message
+              : "Please try again.",
+        });
+      }
+    },
+    [isXChatUnlocked, prospectId, submitXChatEncryptedMessage]
+  );
+
+  const handleRetrySend = React.useCallback(
+    async (message: RichConversationMessage) => {
+      if (!message.outboundClientRequestId) return;
+      try {
+        if (message.id.startsWith("xchat:") && isXChatUnlocked) {
+          const prepared = getPendingXChatMessageForRetry({
+            prospectId,
+            clientRequestId: message.outboundClientRequestId,
+          });
+          if (!prepared) {
+            throw new Error(
+              "This encrypted retry expired. Check X before sending it again."
+            );
+          }
+          publishPendingXChatTextMessageInBrowser({
+            prospectId,
+            message: prepared,
+            text: message.text,
+          });
+          try {
+            await submitXChatMessageInOrder({
+              prospectId: prospectId as Id<"prospects">,
+              ...prepared,
+            });
+            confirmXChatTextMessageInBrowser({
+              prospectId,
+              message: prepared,
+              text: message.text,
+            });
+          } catch (error) {
+            failPendingXChatTextMessageInBrowser({
+              prospectId,
+              messageId: prepared.messageId,
+              errorMessage:
+                error instanceof Error ? error.message : "Please try again.",
+            });
+            throw error;
+          }
+          return;
+        }
+        await retrySend(message.outboundClientRequestId);
+      } catch (error) {
+        toast.error("Could not retry DM", {
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        });
+      }
+    },
+    [isXChatUnlocked, prospectId, retrySend, submitXChatMessageInOrder]
   );
 
   const handleCancelDraft = React.useCallback(async () => {
@@ -456,8 +1081,8 @@ export function XConversationPanel({
           title={data?.prospect.displayName ?? "X/Twitter DM"}
           titleLeading={
             data ? (
-              <ProspectPlatformAvatar platform="twitter" badgeSize="sm">
-                <Avatar className="ring-border size-8 shrink-0 ring-1">
+              <ProspectPlatformAvatar platform="twitter" badgeSize="xs">
+                <Avatar className="ring-border size-7 shrink-0 ring-1">
                   <AvatarImage
                     src={data.prospect.avatarUrl}
                     alt={data.prospect.displayName}
@@ -481,276 +1106,293 @@ export function XConversationPanel({
           actions={headerActions}
         />
         <div className="flex min-h-0 flex-1 flex-col">
-          <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-4">
-            <PageContent className="space-y-4 px-4 py-4">
-              {loading ? (
-                <div
-                  role="status"
-                  aria-label="Loading X/Twitter conversation"
-                  className="flex min-h-48 items-center justify-center"
+          <XChatConversationUnlock
+            prospectId={prospectId}
+            participantUserId={data?.participantUserId}
+            className={cn(
+              (!data || !shouldGateConversation || isInitialXChatCheck) &&
+                "hidden"
+            )}
+          />
+          {loading || (data && isInitialXChatCheck) ? (
+            <div
+              role="status"
+              aria-label="Loading X/Twitter conversation"
+              className="flex min-h-48 flex-1 items-center justify-center"
+            >
+              <Spinner variant="circle" className="size-5" />
+            </div>
+          ) : error ? (
+            <div className="m-4 rounded-[20px] border px-4 py-3 text-sm">
+              <p className="font-medium">
+                Could not load X/Twitter conversation
+              </p>
+              <p className="text-muted-foreground mt-1">{error}</p>
+            </div>
+          ) : data ? (
+            shouldGateConversation ? null : (
+              <>
+                {isRefreshing ? (
+                  <span className="sr-only" aria-live="polite">
+                    Refreshing conversation
+                  </span>
+                ) : null}
+                <ConversationMessageViewport
+                  conversationKey={`${prospectId}:${data.conversationId ?? "pending"}`}
+                  messageCount={renderedMessages.length}
+                  historyRequestKey={
+                    xChatSession?.hasMore
+                      ? xChatSession.nextCursor
+                      : data.history?.nextCursor
+                  }
+                  hasMore={
+                    data.eligibility.enabled &&
+                    (xChatSession?.hasMore === true ||
+                      data.history?.hasMore === true)
+                  }
+                  isLoadingOlder={isLoadingOlder || isLoadingOlderXChat}
+                  loadOlderError={loadOlderError || loadOlderXChatError}
+                  onLoadOlder={() => void handleLoadOlder()}
+                  scrollToLatestRequest={scrollToLatestRequest}
                 >
-                  <Spinner variant="circle" className="size-5" />
-                </div>
-              ) : error ? (
-                <div className="rounded-[20px] border px-4 py-3 text-sm">
-                  <p className="font-medium">
-                    Could not load X/Twitter conversation
-                  </p>
-                  <p className="text-muted-foreground mt-1">{error}</p>
-                </div>
-              ) : data ? (
-                <>
-                  {data.warning ? (
-                    <Alert>
-                      <AlertTitle>Limited live sync</AlertTitle>
-                      <AlertDescription>
-                        {data.warning.message}
-                      </AlertDescription>
-                    </Alert>
-                  ) : null}
-                  {isRefreshing ? (
-                    <span className="sr-only" aria-live="polite">
-                      Refreshing conversation
-                    </span>
-                  ) : null}
-                  <XChatConversationUnlock
-                    prospectId={prospectId}
-                    participantUserId={data.participantUserId}
-                  />
                   {data.history?.boundary === "x_30_day_limit" &&
                   !data.history.hasMore ? (
-                    <p className="text-muted-foreground text-center text-xs">
-                      Legacy X/Twitter DM history is limited to the past 30
-                      days.
-                    </p>
+                    <MessageScrollerItem messageId="legacy-history-boundary">
+                      <p className="text-muted-foreground mb-4 text-center text-xs">
+                        Legacy X/Twitter DM history is limited to the past 30
+                        days.
+                      </p>
+                    </MessageScrollerItem>
                   ) : null}
-                  {loadOlderError ? (
-                    <p
-                      role="alert"
-                      className="text-muted-foreground text-center text-xs"
-                    >
-                      Could not load earlier messages. Try again.
-                    </p>
-                  ) : null}
-                  <ConversationHistoryPagination
-                    conversationKey={`${prospectId}:${data.conversationId ?? "pending"}`}
-                    messageCount={data.messages.length}
-                    hasMore={
-                      data.eligibility.enabled && data.history?.hasMore === true
-                    }
-                    isLoading={isLoadingOlder}
-                    loadMoreError={loadOlderError}
-                    onLoadMore={() => void loadOlder()}
-                  />
                   {renderedMessages.length === 0 ? (
-                    <div className="mx-auto flex w-full max-w-sm flex-col items-center px-4 pt-6 text-center">
-                      <ProspectPlatformAvatar platform="twitter" badgeSize="lg">
-                        <Avatar className="ring-border size-12 shrink-0 ring-1">
-                          <AvatarImage
-                            src={data.prospect.avatarUrl}
-                            alt={data.prospect.displayName}
-                          />
-                          <AvatarFallback>
-                            {data.prospect.displayName.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                      </ProspectPlatformAvatar>
-                      <div className="mt-2 min-w-0">
-                        <div className="flex min-w-0 items-center justify-center gap-0.5 overflow-hidden">
-                          <h2
-                            className="text-foreground truncate text-sm font-medium"
-                            title={data.prospect.displayName}
-                          >
-                            {data.prospect.displayName}
-                          </h2>
-                          {data.prospect.verified ? (
-                            <NewReleasesIcon
-                              className="mr-0.5 size-3.5 shrink-0 fill-current"
-                              aria-hidden="true"
+                    <MessageScrollerItem messageId="conversation-empty">
+                      <div className="mx-auto flex w-full max-w-sm flex-col items-center px-4 pt-6 text-center">
+                        <ProspectPlatformAvatar
+                          platform="twitter"
+                          badgeSize="lg"
+                        >
+                          <Avatar className="ring-border size-12 shrink-0 ring-1">
+                            <AvatarImage
+                              src={data.prospect.avatarUrl}
+                              alt={data.prospect.displayName}
                             />
+                            <AvatarFallback>
+                              {data.prospect.displayName
+                                .charAt(0)
+                                .toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                        </ProspectPlatformAvatar>
+                        <div className="mt-2 min-w-0">
+                          <div className="flex min-w-0 items-center justify-center gap-0.5 overflow-hidden">
+                            <h2
+                              className="text-foreground truncate text-sm font-medium"
+                              title={data.prospect.displayName}
+                            >
+                              {data.prospect.displayName}
+                            </h2>
+                            {data.prospect.verified ? (
+                              <NewReleasesIcon
+                                className="mr-0.5 size-3.5 shrink-0 fill-current"
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                          </div>
+                          {data.prospect.title ? (
+                            <p className="text-muted-foreground mt-0.5 text-sm">
+                              {data.prospect.title}
+                            </p>
                           ) : null}
                         </div>
-                        {data.prospect.title ? (
-                          <p className="text-muted-foreground mt-0.5 text-sm">
-                            {data.prospect.title}
-                          </p>
+                        {onViewTwitterProfile && resolvedTwitterUsername ? (
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            className="mt-2"
+                            onClick={() =>
+                              onViewTwitterProfile(resolvedTwitterUsername)
+                            }
+                          >
+                            View X/Twitter profile
+                          </Button>
                         ) : null}
                       </div>
-                      {onViewTwitterProfile && resolvedTwitterUsername ? (
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          className="mt-2"
-                          onClick={() =>
-                            onViewTwitterProfile(resolvedTwitterUsername)
-                          }
-                        >
-                          View X/Twitter profile
-                        </Button>
-                      ) : null}
-                    </div>
+                    </MessageScrollerItem>
                   ) : (
-                    <div className="flex flex-col gap-4">
-                      {renderedMessages.map((message: XDmMessage) => (
-                        <div
-                          key={message.id}
-                          className={cn(
-                            "flex flex-col gap-2",
-                            message.direction === "sent"
-                              ? "items-end"
-                              : "items-start"
-                          )}
-                        >
-                          {message.attachments?.length ? (
-                            <XDmAttachmentGallery
-                              attachments={message.attachments}
-                            />
-                          ) : null}
-                          {message.text ? (
-                            <MessageBubble variant={message.direction}>
-                              <div className="wrap-break-word whitespace-pre-wrap">
-                                {message.text}
-                              </div>
-                            </MessageBubble>
-                          ) : null}
-                          {message.createdAt ? (
-                            <div className="text-muted-foreground px-1 text-xs">
-                              {formatDmMessageTime(message.createdAt)}
-                              {message.direction === "sent" && message.readAt
-                                ? " · Read"
-                                : ""}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
+                    <ConversationMessageList
+                      scrollerItems
+                      prospectId={prospectId}
+                      messages={renderedMessages}
+                      platform="twitter"
+                      participantAvatarUrl={data.prospect.avatarUrl}
+                      participantName={data.prospect.displayName}
+                      onReply={isXChatUnlocked ? setReplyingTo : undefined}
+                      canReplyToMessage={isEncryptedXChatMessage}
+                      onReactionClick={
+                        isXChatUnlocked ? handleXChatReaction : undefined
+                      }
+                      canReactToMessage={canReactToEncryptedXChatMessage}
+                      onRetry={handleRetrySend}
+                    />
                   )}
                   {!data.eligibility.enabled ? (
-                    <Alert>
-                      <AlertTitle>DM unavailable</AlertTitle>
-                      <AlertDescription className="space-y-3">
-                        <p>{data.eligibility.reasonLabel}</p>
-                        {data.eligibility.reasonCode === "missing_connection" ||
-                        data.eligibility.reasonCode === "missing_scopes" ? (
-                          <div>
-                            <Button
-                              size="xs"
-                              onClick={() =>
-                                router.push("/settings/connected-accounts")
-                              }
-                            >
-                              {data.eligibility.reasonCode === "missing_scopes"
-                                ? "Reconnect account"
-                                : "Connect account"}
-                            </Button>
-                          </div>
-                        ) : null}
-                      </AlertDescription>
-                    </Alert>
+                    <MessageScrollerItem messageId="conversation-unavailable">
+                      <Alert className="mt-2">
+                        <AlertTitle>DM unavailable</AlertTitle>
+                        <AlertDescription className="space-y-3">
+                          <p>{data.eligibility.reasonLabel}</p>
+                          {data.eligibility.reasonCode ===
+                            "missing_connection" ||
+                          data.eligibility.reasonCode === "missing_scopes" ? (
+                            <div>
+                              <Button
+                                size="xs"
+                                onClick={() =>
+                                  router.push("/settings/connected-accounts")
+                                }
+                              >
+                                {data.eligibility.reasonCode ===
+                                "missing_scopes"
+                                  ? "Reconnect account"
+                                  : "Connect account"}
+                              </Button>
+                            </div>
+                          ) : null}
+                        </AlertDescription>
+                      </Alert>
+                    </MessageScrollerItem>
                   ) : null}
-                </>
-              ) : null}
-            </PageContent>
-          </ScrollArea>
+                </ConversationMessageViewport>
+              </>
+            )
+          ) : null}
 
-          <div className="bg-background shrink-0 px-4 pt-2 pb-4 backdrop-blur-xl">
-            {visiblePanelDraftAttachments?.length ? (
-              <div className="mb-3 grid gap-2">
-                {visiblePanelDraftAttachments.map(
-                  (attachment: XDmAttachmentSummary, index: number) => (
-                    <div
-                      key={`${attachment.url ?? "draft-attachment"}-${index}`}
-                      className="bg-muted/30 border-border overflow-hidden rounded-2xl border"
-                    >
-                      {attachment.previewUrl || attachment.url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={attachment.previewUrl ?? attachment.url}
-                          alt={attachment.altText ?? "Draft DM attachment"}
-                          className="block h-auto w-full object-cover"
-                        />
-                      ) : null}
-                    </div>
-                  )
-                )}
-              </div>
-            ) : null}
-            <BaseComposer
-              key={`x-dm-composer:${prospectId}:${composerResetKey}`}
-              currentUser={currentUser}
-              initialContent={buildSerializedTextState(currentDraftText)}
-              initialMediaUploads={initialMediaUploads}
-              placeholder="Type here."
-              maxLength={X_DM_TEXT_MAX}
-              characterCountMode="raw"
-              submitButtonText={
-                isTaskApprovalComposer
-                  ? taskApprovalUi.submitButtonText
-                  : "Send"
-              }
-              submitButtonVariant={isTaskApprovalComposer ? "text" : "icon"}
-              toolbarPlacement="bottom"
-              showIdentityHeader={false}
-              showMediaDescription={false}
-              showMediaUpload
-              maxAttachments={1}
-              disabled={shouldDisableComposer}
-              submitDisabled={shouldDisableTaskSubmit}
-              toolbarConfig={{
-                showBold: false,
-                showItalic: false,
-                showEmoji: true,
-                showMedia: true,
-              }}
-              showAvatar={false}
-              editorAreaClassName="min-h-10 text-sm"
-              contentEditableClassName={DM_COMPOSER_CONTENT_EDITABLE_CLASS}
-              composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
-              inlineAutocompleteContext={{
-                surfaceLabel: "x_dm_composer",
-                platform: "twitter",
-                prospectId,
-                maxLength: X_DM_TEXT_MAX,
-                characterCountMode: "raw",
-              }}
-              entityMentions={{
-                prospectId,
-                attachmentDestination: {
+          {data && !shouldGateConversation ? (
+            <div className="bg-background shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-xl">
+              {replyingTo ? (
+                <div className="mb-2">
+                  <ConversationComposerReplyTarget
+                    quote={{
+                      id: replyingTo.id,
+                      text: replyingTo.text,
+                      direction: replyingTo.direction,
+                      senderName:
+                        replyingTo.direction === "sent"
+                          ? "You"
+                          : data.prospect.displayName,
+                      attachmentType: replyingTo.attachments?.[0]?.type,
+                      attachments: replyingTo.attachments,
+                      sharedPost: replyingTo.sharedPost,
+                    }}
+                    participantName={data.prospect.displayName}
+                    onDismiss={() => setReplyingTo(null)}
+                  />
+                </div>
+              ) : null}
+              {visiblePanelDraftAttachments?.length ? (
+                <div className="mb-3 grid gap-2">
+                  {visiblePanelDraftAttachments.map(
+                    (attachment: XDmAttachmentSummary, index: number) => (
+                      <div
+                        key={`${attachment.url ?? "draft-attachment"}-${index}`}
+                        className="bg-muted/30 border-border overflow-hidden rounded-2xl border"
+                      >
+                        {attachment.previewUrl || attachment.url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={attachment.previewUrl ?? attachment.url}
+                            alt={attachment.altText ?? "Draft DM attachment"}
+                            className="block h-auto w-full object-cover"
+                          />
+                        ) : null}
+                      </div>
+                    )
+                  )}
+                </div>
+              ) : null}
+              <BaseComposer
+                key={`x-dm-composer:${prospectId}:${composerResetKey}`}
+                currentUser={currentUser}
+                initialContent={buildSerializedTextState(currentDraftText)}
+                initialMediaUploads={initialMediaUploads}
+                placeholder="Type here."
+                maxLength={X_DM_TEXT_MAX}
+                characterCountMode="raw"
+                submitButtonText={
+                  isTaskApprovalComposer
+                    ? taskApprovalUi.submitButtonText
+                    : "Send"
+                }
+                submitButtonVariant={isTaskApprovalComposer ? "text" : "icon"}
+                submitOnEnter={!isTaskApprovalComposer}
+                submitMode={isTaskApprovalComposer ? "confirmed" : "optimistic"}
+                toolbarPlacement="bottom"
+                showIdentityHeader={false}
+                showMediaDescription={false}
+                showMediaUpload
+                deferMediaUpload={isXChatUnlocked}
+                allowedMediaKinds={["image", "gif", "video"]}
+                maxAttachments={1}
+                disabled={shouldDisableComposer}
+                submitDisabled={shouldDisableTaskSubmit}
+                toolbarConfig={{
+                  showBold: false,
+                  showItalic: false,
+                  showEmoji: true,
+                  showMedia: true,
+                }}
+                showAvatar={false}
+                editorAreaClassName="min-h-10 text-sm"
+                contentEditableClassName={DM_COMPOSER_CONTENT_EDITABLE_CLASS}
+                composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
+                inlineAutocompleteContext={{
+                  surfaceLabel: "x_dm_composer",
                   platform: "twitter",
-                  surface: "dm",
-                },
-                remoteAllowedKinds: ["prospect", "post", "attachment"],
-                personTextMode: "handle",
-              }}
-              className="rounded-xl border p-2"
-              onContentChange={(content) => {
-                setLocalDraftState({
-                  sourceKey: draftSourceKey,
-                  serverValue: serverDraft,
-                  text: extractTextFromEditorState(content).trim(),
-                });
-              }}
-              onEditorBlur={() => {
-                void draftSync.flushNow();
-              }}
-              onSubmit={handleSend}
-              beforeCounterSlot={draftStatusSlot}
-              submitToolbarStart={
-                !isTaskBacked && isPendingApproval ? (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      type="button"
-                      onClick={handleCancelDraft}
-                    >
-                      Cancel
-                    </Button>
-                  </>
-                ) : undefined
-              }
-            />
-          </div>
+                  prospectId,
+                  maxLength: X_DM_TEXT_MAX,
+                  characterCountMode: "raw",
+                }}
+                entityMentions={{
+                  prospectId,
+                  attachmentDestination: {
+                    platform: "twitter",
+                    surface: "dm",
+                  },
+                  remoteAllowedKinds: isXChatUnlocked
+                    ? ["prospect", "post"]
+                    : ["prospect", "post", "attachment"],
+                  personTextMode: "handle",
+                }}
+                className="rounded-xl border p-2"
+                onContentChange={(content) => {
+                  setLocalDraftState({
+                    sourceKey: draftSourceKey,
+                    serverValue: serverDraft,
+                    text: extractTextFromEditorState(content).trim(),
+                  });
+                }}
+                onEditorBlur={() => {
+                  void draftSync.flushNow();
+                }}
+                onSubmit={handleSend}
+                beforeCounterSlot={draftStatusSlot}
+                submitToolbarStart={
+                  !isTaskBacked && isPendingApproval ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        type="button"
+                        onClick={handleCancelDraft}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  ) : undefined
+                }
+              />
+            </div>
+          ) : null}
         </div>
       </PageLayout>
     </aside>

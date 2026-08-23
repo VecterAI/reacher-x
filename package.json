@@ -99,6 +99,7 @@
     "geist": "^1.7.2",
     "hls-video-element": "^1.5.11",
     "hls.js": "^1.6.16",
+    "input-otp": "^1.4.2",
     "juicebox-sdk": "0.3.0",
     "lexical": "^0.45.0",
     "lucide-react": "^1.20.0",

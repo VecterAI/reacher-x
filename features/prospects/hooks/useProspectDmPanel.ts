@@ -12,13 +12,21 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type {
   XDmAttachmentSummary,
+  XDmMessage,
   XDmPanelContext,
 } from "@/shared/lib/twitter/dm";
-import { mergeConversationHistoryMessages } from "../lib/conversationHistoryHelpers";
+import {
+  mergeConversationHistoryMessages,
+  reconcileConversationHistoryRefresh,
+} from "../lib/conversationHistoryHelpers";
+import type { ComposerMediaKind } from "@/features/composer/types";
+import {
+  mergeOutboundMessageOperations,
+  type OutboundMessageMediaMetadata,
+} from "../lib/outboundMessageOperations";
+import { useOutboundMessageQueue } from "./useOutboundMessageQueue";
 
-const dmPanelCache = new Map<string, XDmPanelContext | null>();
 const dmPanelInflight = new Map<string, Promise<XDmPanelContext | null>>();
-
 function isLikelyConnectionFailure(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /connection lost|Connection lost|failed to fetch|network|NetworkError|ECONNRESET|ETIMEDOUT|in flight/i.test(
@@ -30,13 +38,27 @@ export function useProspectDmPanel(args: {
   prospectId?: string;
   actionRequestId?: string | null;
   enabled?: boolean;
+  refreshContextOnRevision?: boolean;
 }) {
-  const { prospectId, actionRequestId, enabled = true } = args;
+  const {
+    prospectId,
+    actionRequestId,
+    enabled = true,
+    refreshContextOnRevision = true,
+  } = args;
   const getDmPanelContext = useAction(api.x.getDmPanelContext);
   const getDmConversationHistoryPage = useAction(
     api.x.getDmConversationHistoryPage
   );
-  const sendDmMessage = useAction(api.x.sendDmMessage);
+  const {
+    operations: outboundOperations,
+    enqueue: enqueueOutboundMessage,
+    retry: retryOutboundMessage,
+  } = useOutboundMessageQueue({
+    prospectId,
+    platform: "twitter",
+    enabled,
+  });
   const cancelActionRequest = useMutation(
     api.socialActions.cancelActionRequest
   );
@@ -46,67 +68,85 @@ export function useProspectDmPanel(args: {
       ? { actionRequestId: actionRequestId as Id<"agentActionRequests"> }
       : "skip"
   );
+  const conversationRevision = useQuery(
+    api.platformConversations.getTwitterConversationRevision,
+    enabled && prospectId
+      ? { prospectId: prospectId as Id<"prospects"> }
+      : "skip"
+  );
   const getDmPanelContextRef = useRef(getDmPanelContext);
   const dataRef = useRef<XDmPanelContext | null>(null);
   const activeCacheKeyRef = useRef("");
+  const conversationRevisionRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     getDmPanelContextRef.current = getDmPanelContext;
   }, [getDmPanelContext]);
 
-  const [data, setData] = useState<XDmPanelContext | null>(null);
+  const [storedData, setData] = useState<XDmPanelContext | null>(null);
   const [loading, setLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
-  const [loadOlderError, setLoadOlderError] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [statusOverride, setStatusOverride] = useState<string | null>(null);
+  const [storedLoadOlderError, setLoadOlderError] = useState(false);
+  const [storedError, setError] = useState<string | null>(null);
+  const [statusOverride, setStatusOverride] = useState<{
+    cacheKey: string;
+    status: string;
+  } | null>(null);
   const cacheKey = `${prospectId ?? ""}:${actionRequestId ?? ""}`;
+  const stateBelongsToCurrentPanel = activeCacheKeyRef.current === cacheKey;
+  const data = stateBelongsToCurrentPanel ? storedData : null;
+  const loadOlderError = stateBelongsToCurrentPanel
+    ? storedLoadOlderError
+    : false;
+  const error = stateBelongsToCurrentPanel ? storedError : null;
 
   useEffect(() => {
     activeCacheKeyRef.current = cacheKey;
+    conversationRevisionRef.current = undefined;
+    dataRef.current = null;
   }, [cacheKey]);
 
-  useEffect(() => {
-    dataRef.current = data;
-  }, [data]);
-
-  useEffect(() => {
-    setStatusOverride(null);
-  }, [prospectId, actionRequestId]);
-
   const refetch = useCallback(async () => {
+    const requestCacheKey = cacheKey;
     setIsLoadingOlder(false);
     setLoadOlderError(false);
     if (!enabled || !prospectId) {
+      dataRef.current = null;
       setData(null);
       setError(null);
       setLoading(false);
       setIsRefreshing(false);
       return null;
     }
-    if (dmPanelCache.has(cacheKey)) {
+    const hasVisibleData = dataRef.current !== null;
+    const commitResult = (result: XDmPanelContext | null) => {
+      if (activeCacheKeyRef.current !== requestCacheKey) {
+        return;
+      }
+      const nextData = reconcileConversationHistoryRefresh(
+        dataRef.current,
+        result
+      );
+      dataRef.current = nextData;
       startTransition(() => {
-        setData(dmPanelCache.get(cacheKey) ?? null);
+        setData(nextData);
         setError(null);
       });
-    }
-    const hasVisibleData =
-      dmPanelCache.has(cacheKey) || dataRef.current !== null;
+    };
     const existingRequest = dmPanelInflight.get(cacheKey);
     if (existingRequest) {
       setLoading(!hasVisibleData);
       setIsRefreshing(hasVisibleData);
       try {
         const result = await existingRequest;
-        startTransition(() => {
-          setData(result);
-          setError(null);
-        });
+        commitResult(result);
         return result;
       } finally {
-        setLoading(false);
-        setIsRefreshing(false);
+        if (activeCacheKeyRef.current === requestCacheKey) {
+          setLoading(false);
+          setIsRefreshing(false);
+        }
       }
     }
 
@@ -125,11 +165,7 @@ export function useProspectDmPanel(args: {
           });
           dmPanelInflight.set(cacheKey, request);
           result = await request;
-          dmPanelCache.set(cacheKey, result);
-          startTransition(() => {
-            setData(result);
-            setError(null);
-          });
+          commitResult(result);
           return result;
         } catch (err) {
           lastErr = err;
@@ -141,7 +177,8 @@ export function useProspectDmPanel(args: {
           break;
         }
       }
-      if (!hasVisibleData) {
+      if (!hasVisibleData && activeCacheKeyRef.current === requestCacheKey) {
+        dataRef.current = null;
         startTransition(() => {
           setData(null);
           setError(
@@ -152,14 +189,46 @@ export function useProspectDmPanel(args: {
       return null;
     } finally {
       dmPanelInflight.delete(cacheKey);
-      setLoading(false);
-      setIsRefreshing(false);
+      if (activeCacheKeyRef.current === requestCacheKey) {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [actionRequestId, cacheKey, enabled, prospectId]);
 
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  const conversationRevisionKey = conversationRevision
+    ? `${conversationRevision.updatedAt}:${conversationRevision.latestMessageId ?? ""}:${conversationRevision.latestMessageAt ?? ""}`
+    : null;
+  const conversationRevisionLoaded = conversationRevision !== undefined;
+
+  useEffect(() => {
+    if (!conversationRevisionLoaded) {
+      return;
+    }
+
+    const previousRevision = conversationRevisionRef.current;
+    conversationRevisionRef.current = conversationRevisionKey;
+
+    if (
+      previousRevision === undefined ||
+      previousRevision === conversationRevisionKey ||
+      dataRef.current === null ||
+      !refreshContextOnRevision
+    ) {
+      return;
+    }
+
+    void refetch();
+  }, [
+    conversationRevisionKey,
+    conversationRevisionLoaded,
+    refetch,
+    refreshContextOnRevision,
+  ]);
 
   const loadOlder = useCallback(async () => {
     const requestCacheKey = cacheKey;
@@ -200,7 +269,6 @@ export function useProspectDmPanel(args: {
         history: page.history,
       };
       dataRef.current = nextData;
-      dmPanelCache.set(cacheKey, nextData);
       startTransition(() => setData(nextData));
       return page;
     } catch {
@@ -215,14 +283,24 @@ export function useProspectDmPanel(args: {
     }
   }, [cacheKey, getDmConversationHistoryPage, isLoadingOlder, prospectId]);
 
-  const actionRequestStatus = statusOverride ?? liveDraft?.status ?? null;
+  const currentStatusOverride =
+    statusOverride?.cacheKey === cacheKey ? statusOverride.status : null;
+  const actionRequestStatus =
+    currentStatusOverride === "executing" &&
+    liveDraft?.status &&
+    liveDraft.status !== "pending_approval"
+      ? liveDraft.status
+      : (currentStatusOverride ?? liveDraft?.status ?? null);
   const isPendingApproval = actionRequestStatus === "pending_approval";
 
   const send = useCallback(
     async (
       text: string,
       mediaUrls?: string[],
-      mediaDescriptions?: string[]
+      mediaDescriptions?: string[],
+      mediaKinds?: ComposerMediaKind[],
+      mediaFileNames?: string[],
+      mediaMetadata?: OutboundMessageMediaMetadata[]
     ) => {
       if (!prospectId) {
         throw new Error("Missing prospect.");
@@ -232,58 +310,43 @@ export function useProspectDmPanel(args: {
           ? (actionRequestId as Id<"agentActionRequests">)
           : undefined;
       if (activeActionRequestId) {
-        setStatusOverride("executing");
+        setStatusOverride({ cacheKey, status: "executing" });
       }
-      const result = await sendDmMessage({
-        prospectId: prospectId as Id<"prospects">,
-        conversationId: data?.conversationId,
-        text,
-        mediaUrls,
-        mediaDescriptions,
-        actionRequestId: activeActionRequestId,
-      });
-      const nextMessages = Array.isArray(result?.messages)
-        ? (result.messages as XDmPanelContext["messages"])
-        : (dataRef.current?.messages ?? []);
-      const nextConversationId =
-        nextMessages.at(-1)?.conversationId ?? dataRef.current?.conversationId;
-      const nextData = dataRef.current
-        ? {
-            ...dataRef.current,
-            conversationId: nextConversationId,
-            messages: nextMessages,
-            draftText: "",
-            draftAttachments: undefined,
-          }
-        : null;
-
-      startTransition(() => {
-        setData(nextData);
-        setError(null);
-      });
-
-      if (nextData) {
-        dmPanelCache.set(cacheKey, nextData);
-      } else {
-        dmPanelCache.delete(cacheKey);
+      try {
+        return await enqueueOutboundMessage({
+          conversationId: data?.conversationId,
+          text,
+          mediaUrls,
+          mediaDescriptions,
+          mediaKinds,
+          mediaFileNames,
+          mediaMetadata,
+          actionRequestId: activeActionRequestId,
+        });
+      } catch (error) {
+        if (activeActionRequestId) setStatusOverride(null);
+        throw error;
       }
-
-      if (activeActionRequestId) {
-        setStatusOverride("completed");
-      }
-
-      void refetch();
-      return result;
     },
     [
       actionRequestStatus,
       actionRequestId,
       cacheKey,
       data?.conversationId,
+      enqueueOutboundMessage,
       prospectId,
-      refetch,
-      sendDmMessage,
     ]
+  );
+
+  const retrySend = useCallback(
+    async (clientRequestId: string) => {
+      const operation = outboundOperations.find(
+        (item) => item.clientRequestId === clientRequestId
+      );
+      if (!operation) throw new Error("Message is no longer available.");
+      return await retryOutboundMessage(operation);
+    },
+    [outboundOperations, retryOutboundMessage]
   );
 
   const cancel = useCallback(async () => {
@@ -293,19 +356,30 @@ export function useProspectDmPanel(args: {
     const result = await cancelActionRequest({
       actionRequestId: actionRequestId as Id<"agentActionRequests">,
     });
-    setStatusOverride("cancelled");
-    dmPanelCache.delete(cacheKey);
+    setStatusOverride({ cacheKey, status: "cancelled" });
     return result;
   }, [actionRequestId, cacheKey, cancelActionRequest]);
 
+  const dataWithOutbound = data
+    ? {
+        ...data,
+        messages: mergeOutboundMessageOperations(
+          data.messages,
+          outboundOperations,
+          data.conversationId ?? `outbound:twitter:${prospectId ?? ""}`
+        ) as XDmMessage[],
+      }
+    : data;
+
   const mergedData =
-    data && liveDraft && isPendingApproval
+    dataWithOutbound && liveDraft && isPendingApproval
       ? {
-          ...data,
+          ...dataWithOutbound,
           draftText: liveDraft.draftText,
           draftAttachments:
-            data.draftAttachments?.length || liveDraft.mediaUrls.length === 0
-              ? data.draftAttachments
+            dataWithOutbound.draftAttachments?.length ||
+            liveDraft.mediaUrls.length === 0
+              ? dataWithOutbound.draftAttachments
               : liveDraft.mediaUrls.map(
                   (url: string, index: number): XDmAttachmentSummary => ({
                     type: "media",
@@ -314,15 +388,15 @@ export function useProspectDmPanel(args: {
                   })
                 ),
         }
-      : data
+      : dataWithOutbound
         ? {
-            ...data,
-            draftText: isPendingApproval ? data.draftText : "",
+            ...dataWithOutbound,
+            draftText: isPendingApproval ? dataWithOutbound.draftText : "",
             draftAttachments: isPendingApproval
-              ? data.draftAttachments
+              ? dataWithOutbound.draftAttachments
               : undefined,
           }
-        : data;
+        : dataWithOutbound;
 
   return {
     data: mergedData,
@@ -334,10 +408,15 @@ export function useProspectDmPanel(args: {
     refetch,
     loadOlder,
     send,
+    retrySend,
     cancel,
     actionRequestStatus,
     isPendingApproval,
     isSendingActionRequest:
       actionRequestStatus === "approved" || actionRequestStatus === "executing",
+    conversationRevisionKey,
+    conversationRevisionLoaded,
+    conversationRevisionLatestMessageId:
+      conversationRevision?.latestMessageId ?? null,
   };
 }

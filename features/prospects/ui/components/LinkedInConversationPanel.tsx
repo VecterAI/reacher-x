@@ -5,7 +5,6 @@ import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import type { SerializedEditorState } from "lexical";
 import { toast } from "sonner";
-import { PageContent } from "@/features/webapp/ui/components/page/PageContent";
 import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
@@ -16,22 +15,23 @@ import {
   DM_COMPOSER_PLACEHOLDER_CLASS,
 } from "@/features/composer/ui/dmComposerClasses";
 import { useProspectLinkedInPanel } from "../../hooks/useProspectLinkedInPanel";
-import { ConversationHistoryPagination } from "./ConversationHistoryPagination";
+import { enrichLinkedInReplyTargetFromAttachmentCache } from "../../hooks/useLinkedInConversationAttachment";
+import { getOutboundMessageMediaMetadata } from "../../lib/outboundMessageOperations";
+import { ConversationMessageViewport } from "./ConversationMessageViewport";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
 } from "@/shared/ui/components/Alert";
-import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Spinner } from "@/shared/ui/components/Spinner";
+import { MessageScrollerItem } from "@/shared/ui/components/MessageScroller";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
-import { MessageBubble } from "@/shared/ui/components/MessageBubble";
 import { cn } from "@/shared/lib/utils";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
 import {
@@ -56,15 +56,20 @@ import {
 import type {
   ComposerInitialMediaUpload,
   ComposerMediaKind,
+  MediaUpload,
 } from "@/features/composer/types";
 import type {
   LinkedInConversationAttachmentSummary,
   LinkedInConversationPanelContext,
-  LinkedInConversationMessage,
+} from "@/shared/lib/linkedin/conversation";
+import {
+  isLinkedInConversationFeatureDisabled,
+  LINKEDIN_DM_TEXT_MAX,
 } from "@/shared/lib/linkedin/conversation";
 import { resolveLinkedInRecoveryAction } from "@/shared/lib/linkedin/recovery";
-
-const LINKEDIN_DM_TEXT_MAX = 8000;
+import { ConversationMessageList } from "./conversation-message/ConversationMessageList";
+import { ConversationComposerReplyTarget } from "./conversation-message/ConversationReplyPreview";
+import type { RichConversationMessage } from "./conversation-message/types";
 
 export interface LinkedInConversationPanelProps {
   prospectId: string;
@@ -88,22 +93,6 @@ export interface LinkedInConversationPanelProps {
   previewData?: LinkedInConversationPanelContext;
 }
 
-function formatMessageTime(timestamp?: string) {
-  if (!timestamp) {
-    return "";
-  }
-
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return date.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function isVisualAttachment(type?: string) {
   return type === "img" || type === "image" || type === "video";
 }
@@ -124,6 +113,7 @@ export function LinkedInConversationPanel({
   className,
   previewData,
 }: LinkedInConversationPanelProps) {
+  const [scrollToLatestRequest, setScrollToLatestRequest] = React.useState(0);
   const router = useRouter();
   const { currentUser } = useViewerXComposerIdentity();
   const isTaskBacked = Boolean(taskId);
@@ -137,10 +127,12 @@ export function LinkedInConversationPanel({
     error,
     loadOlder,
     send,
+    retrySend,
+    reactToMessage,
+    pendingReactionMessageIds,
     cancel,
     actionRequestStatus,
     isPendingApproval,
-    isSendingMessage,
     isSendingActionRequest,
     refetch,
   } = useProspectLinkedInPanel({
@@ -189,6 +181,16 @@ export function LinkedInConversationPanel({
     localDraftState.serverValue === serverDraft
       ? localDraftState.text
       : serverDraft;
+  const [replyingTo, setReplyingTo] =
+    React.useState<RichConversationMessage | null>(null);
+  const handleReply = React.useCallback(
+    (message: RichConversationMessage) => {
+      setReplyingTo(
+        enrichLinkedInReplyTargetFromAttachmentCache({ message, prospectId })
+      );
+    },
+    [prospectId]
+  );
   const messagingRecoveryAction = resolveLinkedInRecoveryAction(
     resolvedData?.eligibility.reasonCode
   );
@@ -307,7 +309,8 @@ export function LinkedInConversationPanel({
       content: SerializedEditorState,
       mediaUrls?: string[],
       mediaDescriptions?: string[],
-      mediaKinds?: ComposerMediaKind[]
+      mediaKinds?: ComposerMediaKind[],
+      completedUploads?: MediaUpload[]
     ) => {
       try {
         const nextText = extractTextFromEditorState(content).trim();
@@ -383,16 +386,36 @@ export function LinkedInConversationPanel({
           return;
         }
 
-        await send(nextText, resolvedMediaUrls, resolvedDescriptions);
-        setLocalDraftState({
-          sourceKey: draftSourceKey,
-          serverValue: serverDraft,
-          text: "",
-        });
+        const replyTarget = replyingTo;
+        setReplyingTo(null);
+        try {
+          const sendRequest = send(
+            nextText,
+            resolvedMediaUrls,
+            resolvedDescriptions,
+            resolvedMediaKinds,
+            completedUploads?.map((upload) => upload.file.name),
+            getOutboundMessageMediaMetadata(completedUploads),
+            replyTarget?.id
+          );
+          setScrollToLatestRequest((request) => request + 1);
+          await sendRequest;
+          setLocalDraftState({
+            sourceKey: draftSourceKey,
+            serverValue: serverDraft,
+            text: "",
+          });
+        } catch (error) {
+          if (replyTarget) {
+            setReplyingTo((current) => current ?? replyTarget);
+          }
+          throw error;
+        }
       } catch (err) {
         toast.error("Failed to send LinkedIn message", {
           description: err instanceof Error ? err.message : "Please try again.",
         });
+        throw err;
       }
     },
     [
@@ -402,6 +425,7 @@ export function LinkedInConversationPanel({
       isTaskApprovalComposer,
       isTaskBacked,
       resolvedData,
+      replyingTo,
       send,
       serverDraft,
       taskApprovalUi.planCanBeApproved,
@@ -421,13 +445,43 @@ export function LinkedInConversationPanel({
     toast.success("Draft cancelled");
   }, [cancel, isTaskBacked]);
 
+  const handleReaction = React.useCallback(
+    async (message: RichConversationMessage, emoji: string) => {
+      try {
+        await reactToMessage(message.id, emoji);
+      } catch (reactionError) {
+        toast.error("Could not add LinkedIn reaction", {
+          description:
+            reactionError instanceof Error
+              ? reactionError.message
+              : "Please try again.",
+        });
+      }
+    },
+    [reactToMessage]
+  );
+
+  const handleRetrySend = React.useCallback(
+    async (message: RichConversationMessage) => {
+      if (!message.outboundClientRequestId) return;
+      try {
+        await retrySend(message.outboundClientRequestId);
+      } catch (error) {
+        toast.error("Could not retry LinkedIn message", {
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        });
+      }
+    },
+    [retrySend]
+  );
+
   const shouldDisableComposer =
     isPreview ||
     (!isTaskApprovalComposer &&
       (!resolvedData ||
         !resolvedData.eligibility.enabled ||
-        isSendingActionRequest ||
-        isSendingMessage));
+        isSendingActionRequest));
   const inlineDraftStatus =
     draftSync.status === "saving" ? (
       <span className="text-muted-foreground text-xs">Saving</span>
@@ -497,8 +551,8 @@ export function LinkedInConversationPanel({
           title={resolvedData?.prospect.displayName ?? "LinkedIn messages"}
           titleLeading={
             resolvedData ? (
-              <ProspectPlatformAvatar platform="linkedin" badgeSize="sm">
-                <Avatar className="ring-border size-8 shrink-0 ring-1">
+              <ProspectPlatformAvatar platform="linkedin" badgeSize="xs">
+                <Avatar className="ring-border size-7 shrink-0 ring-1">
                   <AvatarImage
                     src={resolvedData.prospect.avatarUrl}
                     alt={resolvedData.prospect.displayName}
@@ -514,74 +568,67 @@ export function LinkedInConversationPanel({
           actions={headerActions}
         />
         <div className="flex min-h-0 flex-1 flex-col">
-          <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-4">
-            <PageContent className="space-y-4 px-4 py-4">
-              {resolvedLoading ? (
-                <div
-                  role="status"
-                  aria-label="Loading LinkedIn conversation"
-                  className="flex min-h-48 items-center justify-center"
-                >
-                  <Spinner variant="circle" className="size-5" />
+          {resolvedLoading ? (
+            <div
+              role="status"
+              aria-label="Loading LinkedIn conversation"
+              className="flex min-h-48 flex-1 items-center justify-center"
+            >
+              <Spinner variant="circle" className="size-5" />
+            </div>
+          ) : resolvedError ? (
+            <Alert className="m-4">
+              <AlertTitle>Could not load LinkedIn messages</AlertTitle>
+              <AlertDescription className="space-y-3">
+                <p>{resolvedError}</p>
+                <div>
+                  <Button size="xs" onClick={() => void refetch()}>
+                    Retry
+                  </Button>
                 </div>
-              ) : resolvedError ? (
-                <Alert>
-                  <AlertTitle>Could not load LinkedIn messages</AlertTitle>
-                  <AlertDescription className="space-y-3">
-                    <p>{resolvedError}</p>
-                    <div>
-                      <Button size="xs" onClick={() => void refetch()}>
-                        Retry
-                      </Button>
-                    </div>
-                  </AlertDescription>
-                </Alert>
-              ) : resolvedData ? (
-                <>
-                  {resolvedData.warning ? (
-                    <Alert>
-                      <AlertTitle>Limited live sync</AlertTitle>
-                      <AlertDescription className="space-y-3">
-                        <p>{resolvedData.warning.message}</p>
-                        {warningRecoveryAction ? (
-                          <div>
-                            <Button
-                              size="xs"
-                              onClick={() =>
-                                router.push(warningRecoveryAction.href)
-                              }
-                            >
-                              {warningRecoveryAction.label}
-                            </Button>
-                          </div>
-                        ) : null}
-                      </AlertDescription>
-                    </Alert>
-                  ) : null}
-                  {isRefreshing ? (
-                    <span className="sr-only" aria-live="polite">
-                      Refreshing conversation
-                    </span>
-                  ) : null}
-                  {!isPreview && loadOlderError ? (
-                    <p
-                      role="alert"
-                      className="text-muted-foreground text-center text-xs"
-                    >
-                      Could not load earlier messages. Try again.
-                    </p>
-                  ) : null}
-                  {!isPreview ? (
-                    <ConversationHistoryPagination
-                      conversationKey={`${prospectId}:${resolvedData.conversationId ?? "pending"}`}
-                      messageCount={resolvedData.messages.length}
-                      hasMore={resolvedData.history?.hasMore === true}
-                      isLoading={isLoadingOlder}
-                      loadMoreError={loadOlderError}
-                      onLoadMore={() => void loadOlder()}
-                    />
-                  ) : null}
-                  {resolvedData.messages.length === 0 ? (
+              </AlertDescription>
+            </Alert>
+          ) : resolvedData ? (
+            <>
+              {resolvedData.warning ? (
+                <div className="shrink-0 px-4 pt-3">
+                  <Alert>
+                    <AlertTitle>Limited live sync</AlertTitle>
+                    <AlertDescription className="space-y-3">
+                      <p>{resolvedData.warning.message}</p>
+                      {warningRecoveryAction ? (
+                        <div>
+                          <Button
+                            size="xs"
+                            onClick={() =>
+                              router.push(warningRecoveryAction.href)
+                            }
+                          >
+                            {warningRecoveryAction.label}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              ) : null}
+              {isRefreshing ? (
+                <span className="sr-only" aria-live="polite">
+                  Refreshing conversation
+                </span>
+              ) : null}
+              <ConversationMessageViewport
+                conversationKey={`${prospectId}:${resolvedData.conversationId ?? "pending"}`}
+                messageCount={resolvedData.messages.length}
+                historyRequestKey={resolvedData.history?.nextCursor}
+                hasMore={!isPreview && resolvedData.history?.hasMore === true}
+                isLoadingOlder={!isPreview && isLoadingOlder}
+                loadOlderError={!isPreview && loadOlderError}
+                onLoadOlder={() => void loadOlder()}
+                scrollToLatestRequest={scrollToLatestRequest}
+              >
+                {resolvedData.messages.length === 0 ? (
+                  <MessageScrollerItem messageId="conversation-empty">
                     <div className="mx-auto flex w-full max-w-sm flex-col items-center px-4 pt-6 text-center">
                       <ProspectPlatformAvatar
                         platform="linkedin"
@@ -623,81 +670,41 @@ export function LinkedInConversationPanel({
                         </Button>
                       ) : null}
                     </div>
-                  ) : (
-                    <div className="flex flex-col gap-4">
-                      {resolvedData.messages.map(
-                        (message: LinkedInConversationMessage) => (
-                          <div
-                            key={message.id}
-                            className={cn(
-                              "flex flex-col gap-1",
-                              message.direction === "sent"
-                                ? "items-end"
-                                : "items-start"
-                            )}
-                          >
-                            <MessageBubble variant={message.direction}>
-                              <div className="flex flex-col gap-2">
-                                {message.attachments?.length ? (
-                                  <div className="grid gap-2">
-                                    {message.attachments.map(
-                                      (
-                                        attachment: LinkedInConversationAttachmentSummary,
-                                        index: number
-                                      ) => (
-                                        <div
-                                          key={`${attachment.url ?? attachment.type}-${index}`}
-                                          className="bg-muted/30 order-1 overflow-hidden rounded-2xl border"
-                                        >
-                                          {isVisualAttachment(
-                                            attachment.type
-                                          ) &&
-                                          (attachment.previewUrl ||
-                                            attachment.url) ? (
-                                            // eslint-disable-next-line @next/next/no-img-element
-                                            <img
-                                              src={
-                                                attachment.previewUrl ??
-                                                attachment.url
-                                              }
-                                              alt={
-                                                attachment.altText ??
-                                                "LinkedIn attachment"
-                                              }
-                                              className="h-auto w-full object-cover"
-                                            />
-                                          ) : (
-                                            <div className="text-muted-foreground px-3 py-2 text-sm">
-                                              {attachment.type || "Attachment"}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )
-                                    )}
-                                  </div>
-                                ) : null}
-                                {message.text ? (
-                                  <div className="order-2 wrap-break-word whitespace-pre-wrap">
-                                    {message.text}
-                                  </div>
-                                ) : null}
-                              </div>
-                            </MessageBubble>
-                            {message.createdAt ? (
-                              <div className="text-muted-foreground px-1 text-xs">
-                                {formatMessageTime(message.createdAt)}
-                                {message.direction === "sent" && message.readAt
-                                  ? " · Read"
-                                  : ""}
-                              </div>
-                            ) : null}
-                          </div>
-                        )
-                      )}
-                    </div>
-                  )}
-                  {!resolvedData.eligibility.enabled ? (
-                    <Alert>
+                  </MessageScrollerItem>
+                ) : (
+                  <ConversationMessageList
+                    scrollerItems
+                    prospectId={prospectId}
+                    messages={resolvedData.messages}
+                    platform="linkedin"
+                    participantAvatarUrl={resolvedData.prospect.avatarUrl}
+                    participantName={resolvedData.prospect.displayName}
+                    onReply={
+                      isLinkedInConversationFeatureDisabled(
+                        resolvedData.disabledFeatures,
+                        "reply"
+                      )
+                        ? undefined
+                        : handleReply
+                    }
+                    onReactionClick={
+                      isPreview ||
+                      isLinkedInConversationFeatureDisabled(
+                        resolvedData.disabledFeatures,
+                        "reaction"
+                      )
+                        ? undefined
+                        : handleReaction
+                    }
+                    isReactionPending={(message) =>
+                      pendingReactionMessageIds.has(message.id)
+                    }
+                    onRetry={isPreview ? undefined : handleRetrySend}
+                  />
+                )}
+                {!resolvedData.eligibility.enabled ? (
+                  <MessageScrollerItem messageId="conversation-unavailable">
+                    <Alert className="mt-2">
                       <AlertTitle>Messaging unavailable</AlertTitle>
                       <AlertDescription className="space-y-3">
                         <p>{resolvedData.eligibility.reasonLabel}</p>
@@ -715,13 +722,34 @@ export function LinkedInConversationPanel({
                         ) : null}
                       </AlertDescription>
                     </Alert>
-                  ) : null}
-                </>
-              ) : null}
-            </PageContent>
-          </ScrollArea>
+                  </MessageScrollerItem>
+                ) : null}
+              </ConversationMessageViewport>
+            </>
+          ) : null}
 
-          <div className="bg-background shrink-0 px-4 pt-2 pb-4 backdrop-blur-xl">
+          <div className="bg-background shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-xl">
+            {replyingTo ? (
+              <div className="mb-2">
+                <ConversationComposerReplyTarget
+                  quote={{
+                    id: replyingTo.id,
+                    text: replyingTo.text,
+                    direction: replyingTo.direction,
+                    senderName:
+                      replyingTo.direction === "sent"
+                        ? "You"
+                        : (resolvedData?.prospect.displayName ??
+                          "Original message"),
+                    attachmentType: replyingTo.attachments?.[0]?.type,
+                    attachments: replyingTo.attachments,
+                    sharedPost: replyingTo.sharedPost,
+                  }}
+                  participantName={resolvedData?.prospect.displayName}
+                  onDismiss={() => setReplyingTo(null)}
+                />
+              </div>
+            ) : null}
             {visiblePanelDraftAttachments?.length ? (
               <div className="mb-3 grid gap-2">
                 {visiblePanelDraftAttachments.map(
@@ -765,6 +793,8 @@ export function LinkedInConversationPanel({
                   : "Send"
               }
               submitButtonVariant={isTaskApprovalComposer ? "text" : "icon"}
+              submitOnEnter={!isTaskApprovalComposer}
+              submitMode={isTaskApprovalComposer ? "confirmed" : "optimistic"}
               toolbarPlacement="bottom"
               showIdentityHeader={false}
               showMediaDescription={false}

@@ -36,6 +36,7 @@ import {
   ContentCopyIcon,
   ChangeHistoryIcon,
   MailIcon,
+  XChatIcon,
 } from "@/shared/ui/components/icons";
 import { toast } from "sonner";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
@@ -374,7 +375,11 @@ export function ProspectProfileHeader({
                     : undefined
               }
             >
-              <MailIcon className="fill-current" />
+              {platform === "linkedin" ? (
+                <MailIcon className="fill-current" />
+              ) : (
+                <XChatIcon />
+              )}
               {platform === "linkedin"
                 ? "Message on LinkedIn"
                 : "DM on X/Twitter"}
