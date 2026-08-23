@@ -3,7 +3,7 @@
 import { Button, buttonVariants } from "@/shared/ui/components/Button";
 import { cn } from "@/shared/lib/utils";
 import { type VariantProps } from "class-variance-authority";
-import { ChevronDown } from "lucide-react";
+import { KeyboardArrowDownIcon } from "@/shared/ui/components/icons";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 
 export type ScrollButtonProps = {
@@ -40,7 +40,7 @@ function ScrollButton({
         }
       }}
     >
-      <ChevronDown className="h-5 w-5" />
+      <KeyboardArrowDownIcon className="h-5 w-5 fill-current" />
     </Button>
   );
 }

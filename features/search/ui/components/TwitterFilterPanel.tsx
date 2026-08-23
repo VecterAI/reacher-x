@@ -73,7 +73,6 @@ import {
   DrawerTrigger,
 } from "@/shared/ui/components/Drawer";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
-import { Check } from "lucide-react";
 
 interface TwitterFilterPanelProps {
   filters: FilterState;
@@ -783,9 +782,9 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                                         }}
                                       >
                                         @{u}
-                                        <Check
+                                        <CheckIcon
                                           className={cn(
-                                            "ml-auto h-4 w-4",
+                                            "ml-auto h-4 w-4 fill-current",
                                             selected
                                               ? "opacity-100"
                                               : "opacity-0"

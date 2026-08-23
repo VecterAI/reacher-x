@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { useQueryWithStatus } from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
@@ -15,6 +14,7 @@ import {
 } from "@/shared/ui/components/Card";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
+import { CheckIcon } from "@/shared/ui/components/icons";
 import {
   type BillingPeriod,
   type OnboardingPlanTierConfig,
@@ -171,8 +171,8 @@ function PlanTierCard({
         <ul className="space-y-2 text-sm">
           {featureLines.map((line) => (
             <li key={line} className="flex gap-2">
-              <Check
-                className="text-foreground mt-0.5 size-4 shrink-0"
+              <CheckIcon
+                className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
                 aria-hidden
               />
               <span>{line}</span>

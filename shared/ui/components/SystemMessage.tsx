@@ -3,7 +3,7 @@
 import { Button } from "@/shared/ui/components/Button";
 import { cn } from "@/shared/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
-import { AlertCircle, AlertTriangle, Info } from "lucide-react";
+import { ErrorIcon, InfoIcon, WarningIcon } from "@/shared/ui/components/icons";
 import React from "react";
 
 const systemMessageVariants = cva(
@@ -85,11 +85,11 @@ export function SystemMessage({
 
     switch (variant) {
       case "error":
-        return <AlertCircle className="size-4" />;
+        return <ErrorIcon className="size-4 fill-current" />;
       case "warning":
-        return <AlertTriangle className="size-4" />;
+        return <WarningIcon className="size-4 fill-current" />;
       default:
-        return <Info className="size-4" />;
+        return <InfoIcon className="size-4 fill-current" />;
     }
   };
 

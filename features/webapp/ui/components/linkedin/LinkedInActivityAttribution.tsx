@@ -1,8 +1,8 @@
 "use client";
 
-import { Repeat2, ThumbsUp } from "lucide-react";
 import type { UnifiedPostActivity } from "@/shared/lib/platforms/types";
 import { cn } from "@/shared/lib/utils";
+import { RepeatIcon, ThumbUpIcon } from "@/shared/ui/components/icons";
 import {
   Avatar,
   AvatarFallback,
@@ -62,9 +62,15 @@ export function LinkedInActivityAttribution({
       </p>
 
       {activity.type === "like" ? (
-        <ThumbsUp className="size-4 shrink-0" aria-hidden="true" />
+        <ThumbUpIcon
+          className="size-4 shrink-0 fill-current"
+          aria-hidden="true"
+        />
       ) : (
-        <Repeat2 className="size-4 shrink-0" aria-hidden="true" />
+        <RepeatIcon
+          className="size-4 shrink-0 fill-current"
+          aria-hidden="true"
+        />
       )}
     </div>
   );

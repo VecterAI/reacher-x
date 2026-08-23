@@ -6,7 +6,6 @@
 "use client";
 
 import * as React from "react";
-import { PhoneIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import {
   formatUrlDisplayText,
@@ -21,6 +20,7 @@ import { Button } from "@/shared/ui/components/Button";
 import AnimatedPercent from "@/shared/ui/components/AnimatedPercent";
 import Link from "next/link";
 import {
+  CallIcon,
   HandshakeIcon,
   MailIcon,
   LocationOnIcon,
@@ -334,7 +334,7 @@ export function ProspectDetailsCard({
       ) : null}
 
       {phone ? (
-        <DetailRow icon={<PhoneIcon className="size-4" />} label="Phone">
+        <DetailRow icon={<CallIcon className="size-4" />} label="Phone">
           <div>
             <a
               href={`tel:${buildTelHref(phone)}`}

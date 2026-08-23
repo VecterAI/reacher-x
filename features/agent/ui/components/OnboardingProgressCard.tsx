@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { X } from "lucide-react";
+import { CloseIcon } from "@/shared/ui/components/icons";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
@@ -295,7 +295,7 @@ export function OnboardingProgressCard({
               onClick={onClose}
               aria-label="Close dialog"
             >
-              <X className="size-4" />
+              <CloseIcon className="size-4 fill-current" />
             </Button>
           ) : headerMessage === "Setting up your workspace..." ? (
             <div className="w-8 shrink-0" />

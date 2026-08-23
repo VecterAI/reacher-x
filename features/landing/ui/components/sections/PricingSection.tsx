@@ -3,7 +3,6 @@
 import React, { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
-import { Check } from "lucide-react";
 
 import * as SelectPrimitive from "@radix-ui/react-select";
 
@@ -243,8 +242,8 @@ function TierCard({
         <ul className="space-y-2 text-sm">
           {tier.features.map((feature) => (
             <li key={feature} className="flex gap-2">
-              <Check
-                className="text-foreground mt-0.5 size-4 shrink-0"
+              <CheckIcon
+                className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
                 aria-hidden
               />
               <span>{resolvePricingFeatureCopy(feature, useCaseKey)}</span>

@@ -11,7 +11,6 @@
 "use client";
 
 import * as React from "react";
-import { Check, X } from "lucide-react";
 import { ActivePlanSection } from "@/features/billing/ui/components/ActivePlanSection";
 import { BillingSection } from "@/features/billing/ui/components/BillingSection";
 import { SubscriptionHistorySection } from "@/features/billing/ui/components/SubscriptionHistorySection";
@@ -39,7 +38,11 @@ import {
   CardTitle,
 } from "@/shared/ui/components/Card";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
-import { ArrowBackIcon } from "@/shared/ui/components/icons";
+import {
+  ArrowBackIcon,
+  CheckIcon,
+  CloseIcon,
+} from "@/shared/ui/components/icons";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 
 // ---------------------------------------------------------------------------
@@ -174,8 +177,8 @@ function PlanTierCard({
         <ul className="space-y-2 text-sm">
           {tier.features.map((line) => (
             <li key={line} className="flex gap-2">
-              <Check
-                className="text-foreground mt-0.5 size-4 shrink-0"
+              <CheckIcon
+                className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
                 aria-hidden
               />
               <span>{line}</span>
@@ -376,7 +379,7 @@ export function DemoPlansPage() {
               onClick={closeUpgradePanel}
               aria-label="Close upgrade panel"
             >
-              <X className="size-4" />
+              <CloseIcon className="size-4 fill-current" />
             </Button>
             <span className="text-sm font-medium">Upgrade</span>
           </div>

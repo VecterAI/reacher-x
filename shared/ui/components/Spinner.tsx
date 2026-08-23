@@ -1,26 +1,34 @@
-import {
-  LoaderCircleIcon,
-  LoaderIcon,
-  LoaderPinwheelIcon,
-  type LucideProps,
-} from "lucide-react";
+import type { SVGProps } from "react";
 import { cn } from "@/shared/lib/utils";
+import { ProgressActivityIcon } from "@/shared/ui/components/icons";
 
 type SpinnerVariantProps = Omit<SpinnerProps, "variant">;
 
-const Default = ({ className, ...props }: SpinnerVariantProps) => (
-  <LoaderIcon className={cn("animate-spin", className)} {...props} />
-);
-
-const Circle = ({ className, ...props }: SpinnerVariantProps) => (
-  <LoaderCircleIcon
-    className={cn(className, "text-primary animate-spin")}
+const Default = ({ className, size, ...props }: SpinnerVariantProps) => (
+  <ProgressActivityIcon
+    className={cn("animate-spin", className)}
+    width={size ?? 16}
+    height={size ?? 16}
     {...props}
   />
 );
 
-const Pinwheel = ({ className, ...props }: SpinnerVariantProps) => (
-  <LoaderPinwheelIcon className={cn("animate-spin", className)} {...props} />
+const Circle = ({ className, size, ...props }: SpinnerVariantProps) => (
+  <ProgressActivityIcon
+    className={cn(className, "text-primary animate-spin")}
+    width={size ?? 16}
+    height={size ?? 16}
+    {...props}
+  />
+);
+
+const Pinwheel = ({ className, size, ...props }: SpinnerVariantProps) => (
+  <ProgressActivityIcon
+    className={cn("animate-spin", className)}
+    width={size ?? 16}
+    height={size ?? 16}
+    {...props}
+  />
 );
 
 const CircleFilled = ({
@@ -30,15 +38,17 @@ const CircleFilled = ({
 }: SpinnerVariantProps) => (
   <div className="relative" style={{ width: size, height: size }}>
     <div className="absolute inset-0 rotate-180">
-      <LoaderCircleIcon
+      <ProgressActivityIcon
         className={cn("animate-spin", className, "text-foreground opacity-20")}
-        size={size}
+        width={size}
+        height={size}
         {...props}
       />
     </div>
-    <LoaderCircleIcon
+    <ProgressActivityIcon
       className={cn("relative animate-spin", className)}
-      size={size}
+      width={size}
+      height={size}
       {...props}
     />
   </div>
@@ -241,7 +251,8 @@ const Infinite = ({ size = 24, ...props }: SpinnerVariantProps) => (
   </svg>
 );
 
-export type SpinnerProps = LucideProps & {
+export type SpinnerProps = SVGProps<SVGSVGElement> & {
+  size?: number | string;
   variant?:
     | "default"
     | "circle"

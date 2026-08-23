@@ -11,9 +11,9 @@ import {
   ChangeHistoryIcon,
   CheckCircleIcon,
   ErrorIcon,
+  KeyboardArrowDownIcon,
 } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils";
-import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 
 export type ToolPart = {
@@ -120,9 +120,9 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
       trailing={
         <div className="flex shrink-0 items-center gap-2">
           {canExpand ? (
-            <ChevronDown
+            <KeyboardArrowDownIcon
               className={cn(
-                "text-muted-foreground h-4 w-4 transition-transform",
+                "text-muted-foreground h-4 w-4 fill-current transition-transform",
                 isOpen && "rotate-180"
               )}
             />

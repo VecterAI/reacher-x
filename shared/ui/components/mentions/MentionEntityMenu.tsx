@@ -2,12 +2,10 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { CircleUserRoundIcon, MessageSquareText } from "lucide-react";
 import type {
   MentionEntityKind,
   MentionEntitySearchResult,
 } from "@/shared/lib/mentions/mentionEntities";
-import { inferFileVisualKind } from "@/shared/lib/utils/media/inferFileVisualKind";
 import { cn } from "@/shared/lib/utils";
 import {
   Avatar,
@@ -15,26 +13,20 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { AttachmentMedia } from "@/shared/ui/components/Attachment";
+import { FileVisualIcon } from "@/shared/ui/components/FileVisualIcon";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/shared/ui/components/ToggleGroup";
 import {
-  AudioFileIcon,
+  AccountCircleIcon,
   ChangeHistoryIcon,
   CheckBoxOutlineBlankIcon,
-  CodeIcon,
-  DraftIcon,
-  FolderZipIcon,
-  ImageIcon,
+  ForumIcon,
   LinkedinIcon,
   NewReleasesIcon,
-  PictureAsPdfIcon,
-  TableIcon,
-  TransitionSlideIcon,
   TwitterIcon,
-  VideoLibraryIcon,
 } from "@/shared/ui/components/icons";
 
 export type MentionEntityFilter = "all" | MentionEntityKind;
@@ -107,41 +99,13 @@ function getMentionEntityIcon(kind: MentionEntitySearchResult["kind"]) {
         />
       );
     case "post":
-      return <MessageSquareText className="size-4" aria-hidden="true" />;
+      return <ForumIcon className="size-4 fill-current" aria-hidden="true" />;
     case "prospect":
     case "attachment":
     default:
-      return <CircleUserRoundIcon className="size-4" aria-hidden="true" />;
-  }
-}
-
-function getAttachmentIcon(entity: MentionEntitySearchResult) {
-  const visualKind = inferFileVisualKind({
-    fileName: entity.label,
-    mimeType: entity.attachmentMimeType,
-    url: entity.attachmentUrl,
-  });
-
-  switch (visualKind) {
-    case "archive":
-      return <FolderZipIcon className="size-4 fill-current" />;
-    case "audio":
-      return <AudioFileIcon className="size-4 fill-current" />;
-    case "code":
-      return <CodeIcon className="size-4 fill-current" />;
-    case "image":
-      return <ImageIcon className="size-4 fill-current" />;
-    case "pdf":
-      return <PictureAsPdfIcon className="size-4 fill-current" />;
-    case "presentation":
-      return <TransitionSlideIcon className="size-4 fill-current" />;
-    case "spreadsheet":
-      return <TableIcon className="size-4 fill-current" />;
-    case "video":
-      return <VideoLibraryIcon className="size-4 fill-current" />;
-    case "document":
-    default:
-      return <DraftIcon className="size-4 fill-current" />;
+      return (
+        <AccountCircleIcon className="size-4 fill-current" aria-hidden="true" />
+      );
   }
 }
 
@@ -183,7 +147,11 @@ function MentionEntityVisual({
             unoptimized
           />
         ) : (
-          getAttachmentIcon(entity)
+          <FileVisualIcon
+            fileName={entity.label}
+            mimeType={entity.attachmentMimeType}
+            url={entity.attachmentUrl}
+          />
         )}
       </AttachmentMedia>
     );

@@ -21,7 +21,10 @@ import {
 } from "@/shared/ui/components/Timeline";
 import { Button } from "@/shared/ui/components/Button";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+} from "@/shared/ui/components/icons";
 
 export type PipelineStage =
   | "new"
@@ -104,7 +107,7 @@ export function PipelineTimeline({
             onClick={handleScrollLeft}
             aria-label="Scroll left"
           >
-            <ChevronLeft className="size-4" />
+            <ChevronLeftIcon className="size-4" />
           </Button>
           <Button
             variant="ghost"
@@ -112,7 +115,7 @@ export function PipelineTimeline({
             onClick={handleScrollRight}
             aria-label="Scroll right"
           >
-            <ChevronRight className="size-4" />
+            <ChevronRightIcon className="size-4 fill-current" />
           </Button>
         </div>
       </div>
