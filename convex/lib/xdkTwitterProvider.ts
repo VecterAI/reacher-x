@@ -18,6 +18,17 @@ import {
   type XChatPublicKeyRecord,
   type XChatSigningKey,
 } from "./xChatDecryptBundleCore";
+import {
+  normalizeXChatConversationId,
+  normalizeXChatMediaHashKey,
+  readXChatEncryptedMediaBlob,
+  toXChatConversationEventId,
+  toXChatConversationPathId,
+} from "./xChatMediaCore";
+import {
+  parseXChatProviderError,
+  type XChatProviderErrorDetails,
+} from "./xChatProviderErrorCore";
 import { MAX_AGENT_PROVIDER_HISTORY_PAGES } from "./prospectInteractionHistoryCore";
 import type {
   Entities,
@@ -60,6 +71,29 @@ export interface XProviderContext {
   xUserId: string;
   username?: string;
   connectedAccountId?: string;
+}
+
+export class XChatProviderRequestError extends Error {
+  readonly details: XChatProviderErrorDetails;
+
+  constructor(details: XChatProviderErrorDetails) {
+    super(details.message);
+    this.name = "XChatProviderRequestError";
+    this.details = details;
+  }
+}
+
+export class XChatConfigurationError extends Error {
+  readonly code: "keys_unavailable" | "backup_unavailable";
+
+  constructor(
+    code: "keys_unavailable" | "backup_unavailable",
+    message: string
+  ) {
+    super(message);
+    this.name = "XChatConfigurationError";
+    this.code = code;
+  }
 }
 
 export interface TwitterActionExecutionResult {
@@ -904,7 +938,7 @@ export async function getHydratedConversationByThreadId(
     threadId,
     conversationId,
     tweets,
-    fetchedAt: Date.now(),
+    fetchedAt: getCurrentUTCTimestamp(),
   };
 }
 
@@ -1739,8 +1773,15 @@ export async function getDmEvents(
       "dm_conversation_id",
       "attachments",
       "referenced_tweets",
+      "urls",
     ],
-    expansions: ["sender_id", "attachments.media_keys"],
+    expansions: [
+      "sender_id",
+      "attachments.media_keys",
+      "referenced_tweets.id",
+      "referenced_tweets.id.author_id",
+      "referenced_tweets.id.attachments.media_keys",
+    ],
     userFields: [
       "id",
       "name",
@@ -1760,6 +1801,15 @@ export async function getDmEvents(
       "alt_text",
       "duration_ms",
       "variants",
+    ],
+    tweetFields: [
+      "id",
+      "text",
+      "author_id",
+      "created_at",
+      "attachments",
+      "entities",
+      "referenced_tweets",
     ],
   });
 }
@@ -1782,8 +1832,15 @@ export async function getDmEventsByConversationId(
         "dm_conversation_id",
         "attachments",
         "referenced_tweets",
+        "urls",
       ],
-      expansions: ["sender_id", "attachments.media_keys"],
+      expansions: [
+        "sender_id",
+        "attachments.media_keys",
+        "referenced_tweets.id",
+        "referenced_tweets.id.author_id",
+        "referenced_tweets.id.attachments.media_keys",
+      ],
       userFields: [
         "id",
         "name",
@@ -1803,6 +1860,15 @@ export async function getDmEventsByConversationId(
         "alt_text",
         "duration_ms",
         "variants",
+      ],
+      tweetFields: [
+        "id",
+        "text",
+        "author_id",
+        "created_at",
+        "attachments",
+        "entities",
+        "referenced_tweets",
       ],
     }
   );
@@ -1838,8 +1904,13 @@ async function getXChatJson(
   );
   const rawBody = await response.text();
   if (!response.ok) {
-    throw new Error(
-      `XChat history request failed (${response.status} ${response.statusText}).`
+    throw new XChatProviderRequestError(
+      parseXChatProviderError({
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        rawBody,
+      })
     );
   }
 
@@ -1858,6 +1929,50 @@ async function getXChatJson(
     }
     throw new Error("XChat history returned invalid JSON.");
   }
+}
+
+/**
+ * Fetch one XChat attachment as opaque ciphertext. The browser performs the
+ * only decryption step after the user has unlocked their local key material.
+ * This deliberately bypasses the generated JSON client because the endpoint
+ * returns application/octet-stream.
+ */
+export async function getXChatEncryptedMedia(
+  context: XProviderContext,
+  conversationId: string,
+  mediaHashKey: string
+): Promise<Blob> {
+  const accessToken = context.client.accessToken?.trim();
+  if (!accessToken) {
+    throw new Error(
+      "XChat media is unavailable because the user token is missing."
+    );
+  }
+
+  const pathConversationId = toXChatConversationPathId(conversationId);
+  const normalizedMediaHashKey = normalizeXChatMediaHashKey(mediaHashKey);
+  const response = await fetch(
+    `https://api.x.com/2/chat/media/${encodeURIComponent(pathConversationId)}/${encodeURIComponent(normalizedMediaHashKey)}`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/octet-stream",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+  if (!response.ok) {
+    const rawBody = await response.text();
+    throw new XChatProviderRequestError(
+      parseXChatProviderError({
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        rawBody,
+      })
+    );
+  }
+  return await readXChatEncryptedMediaBlob(response);
 }
 
 function getXChatPageBudget(maxPages?: number): number {
@@ -1968,7 +2083,8 @@ export async function getXChatConversationHistoryEvidence(
   };
 }
 
-export type XChatBrowserDecryptBundle = {
+export type XChatBrowserDecryptBundleAvailable = {
+  availability: "available";
   viewerUserId: string;
   participantUserId: string;
   conversationId: string;
@@ -1977,6 +2093,19 @@ export type XChatBrowserDecryptBundle = {
   signingKeys: XChatSigningKey[];
   events: XChatEncryptedEvent[];
   eventPagesFetched: number;
+  nextCursor?: string;
+  hasMore: boolean;
+};
+
+export type XChatBrowserDecryptBundle =
+  | { availability: "unavailable"; reason: "not_configured" }
+  | { availability: "blocked"; reason: "xchat_access_denied" }
+  | XChatBrowserDecryptBundleAvailable;
+
+export type XChatEncryptedEventPage = {
+  conversationId: string;
+  events: XChatEncryptedEvent[];
+  nextCursor?: string;
   hasMore: boolean;
 };
 
@@ -2051,42 +2180,56 @@ export async function getXChatBrowserDecryptBundle(
   context: XProviderContext,
   participantUserId: string
 ): Promise<XChatBrowserDecryptBundle> {
-  const [viewerKeyRecords, participantKeyRecords] = await Promise.all([
+  // Capability is the combination of conversation evidence and account key
+  // state. An empty participant-event page alone is not enough: a configured
+  // XChat account can have a brand-new empty conversation. Provider failures
+  // are intentionally allowed to propagate and must never be reclassified as
+  // legacy capability.
+  // The project-enabled X API surface exposes the per-user public-key route.
+  // Read both participants concurrently with the bounded event page. Do not
+  // use the similarly named batch route: it is not provisioned for every
+  // Pay Per Use project and X reports that mismatch as a misleading 403.
+  const [page, viewerKeyRecords, participantKeyRecords] = await Promise.all([
+    getXChatEncryptedEventPage(context, participantUserId),
     getXChatPublicKeyRecords(context, context.xUserId),
     getXChatPublicKeyRecords(context, participantUserId),
   ]);
+  if (viewerKeyRecords.length === 0) {
+    if (page.events.length === 0) {
+      return { availability: "unavailable", reason: "not_configured" };
+    }
+    throw new XChatConfigurationError(
+      "keys_unavailable",
+      "XChat encryption keys are unavailable for this encrypted conversation."
+    );
+  }
   const ownerRecord = getLatestXChatOwnerRecord(viewerKeyRecords);
   if (!ownerRecord) {
-    throw new Error(
-      "XChat encryption keys are not configured for this account."
+    if (page.events.length === 0) {
+      return { availability: "unavailable", reason: "not_configured" };
+    }
+    throw new XChatConfigurationError(
+      "backup_unavailable",
+      "XChat secure key backup is unavailable for this encrypted conversation."
     );
   }
   const juiceboxConfig = buildSanitizedXChatJuiceboxConfig(ownerRecord);
   if (!juiceboxConfig) {
-    throw new Error("XChat secure key backup is unavailable for this account.");
-  }
-
-  const events: XChatEncryptedEvent[] = [];
-  let cursor: string | undefined;
-  let eventPageHasMore = false;
-  let eventPagesFetched = 0;
-  do {
-    const payload = await getXChatJson(
-      context,
-      `/2/chat/conversations/${encodeURIComponent(participantUserId)}/events`,
-      getXChatEventContinuationParams(cursor)
+    if (page.events.length === 0) {
+      return { availability: "unavailable", reason: "not_configured" };
+    }
+    throw new XChatConfigurationError(
+      "backup_unavailable",
+      "XChat secure key backup is unavailable for this encrypted conversation."
     );
-    eventPagesFetched += 1;
-    const page = normalizeXChatEncryptedEventPage(payload);
-    events.push(...page.events);
-    cursor = page.nextCursor;
-    eventPageHasMore = page.hasMore;
-  } while (cursor && eventPagesFetched < MAX_AGENT_PROVIDER_HISTORY_PAGES);
+  }
+  const events = page.events;
 
   const conversationId =
     events.find((event) => event.conversationId)?.conversationId ??
     computeDirectXChatConversationId(context.xUserId, participantUserId);
   return {
+    availability: "available",
     viewerUserId: context.xUserId,
     participantUserId,
     conversationId,
@@ -2108,9 +2251,182 @@ export async function getXChatBrowserDecryptBundle(
       })
     ),
     events,
-    eventPagesFetched,
-    hasMore: Boolean(cursor) || eventPageHasMore,
+    eventPagesFetched: 1,
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
   };
+}
+
+/** One bounded XChat page: no public-key refetch and no implicit pagination. */
+export async function getXChatEncryptedEventPage(
+  context: XProviderContext,
+  participantUserId: string,
+  cursor?: string
+): Promise<XChatEncryptedEventPage> {
+  const payload = await getXChatJson(
+    context,
+    `/2/chat/conversations/${encodeURIComponent(participantUserId)}/events`,
+    getXChatEventContinuationParams(cursor)
+  );
+  const page = normalizeXChatEncryptedEventPage(payload);
+  const events = page.events.map((event) =>
+    event.conversationId
+      ? {
+          ...event,
+          conversationId: normalizeXChatConversationId(event.conversationId),
+        }
+      : event
+  );
+  return {
+    conversationId:
+      events.find((event) => event.conversationId)?.conversationId ??
+      computeDirectXChatConversationId(context.xUserId, participantUserId),
+    events,
+    nextCursor: page.nextCursor,
+    hasMore: Boolean(page.nextCursor) || page.hasMore,
+  };
+}
+
+export async function submitEncryptedXChatMessage(
+  context: XProviderContext,
+  conversationId: string,
+  payload: {
+    messageId: string;
+    encodedMessageCreateEvent: string;
+    encodedMessageEventSignature: string;
+  }
+): Promise<unknown> {
+  try {
+    return await context.client.chat.sendMessage(
+      toXChatConversationPathId(conversationId),
+      payload
+    );
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new XChatProviderRequestError(
+        parseXChatProviderError({
+          status: error.status,
+          statusText: error.statusText,
+          headers: error.headers,
+          rawBody: JSON.stringify(error.data ?? {}),
+        })
+      );
+    }
+    throw error;
+  }
+}
+
+const XCHAT_MEDIA_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
+
+export function parseXChatMediaUploadInitializeResponse(value: unknown): {
+  sessionId: string;
+  mediaHashKey: string;
+} {
+  const root = isRecord(value) ? value : undefined;
+  const data = isRecord(root?.data) ? root.data : root;
+  const sessionId = asString(
+    data?.sessionId ??
+      data?.session_id ??
+      data?.id ??
+      data?.uploadId ??
+      data?.upload_id ??
+      data?.resumeId ??
+      data?.resume_id
+  );
+  const mediaHashKey = asString(data?.mediaHashKey ?? data?.media_hash_key);
+
+  if (!sessionId) {
+    throw new Error("XChat media upload did not return a session ID.");
+  }
+  if (!mediaHashKey) {
+    throw new Error("XChat media upload did not return a media hash key.");
+  }
+
+  return { sessionId, mediaHashKey };
+}
+
+export function buildXChatMediaUploadAppendRequest(
+  conversationId: string,
+  mediaHashKey: string,
+  chunk: Uint8Array,
+  segmentIndex: number
+) {
+  return {
+    conversationId,
+    media: Buffer.from(chunk).toString("base64"),
+    mediaHashKey,
+    segmentIndex,
+  };
+}
+
+/** Upload already-encrypted browser bytes. This function never receives plaintext. */
+export async function uploadEncryptedXChatMedia(
+  context: XProviderContext,
+  conversationId: string,
+  ciphertext: Uint8Array
+): Promise<string> {
+  const eventConversationId = toXChatConversationEventId(conversationId);
+  try {
+    const initialized = await context.client.chat.mediaUploadInitialize({
+      conversationId: eventConversationId,
+      totalBytes: ciphertext.byteLength,
+    });
+    const { sessionId: uploadId, mediaHashKey: initializedMediaHashKey } =
+      parseXChatMediaUploadInitializeResponse(initialized);
+
+    let partCount = 0;
+    for (
+      let offset = 0;
+      offset < ciphertext.byteLength;
+      offset += XCHAT_MEDIA_UPLOAD_CHUNK_BYTES
+    ) {
+      const chunk = ciphertext.subarray(
+        offset,
+        Math.min(offset + XCHAT_MEDIA_UPLOAD_CHUNK_BYTES, ciphertext.byteLength)
+      );
+      await context.client.chat.mediaUploadAppend(
+        uploadId,
+        buildXChatMediaUploadAppendRequest(
+          eventConversationId,
+          initializedMediaHashKey,
+          chunk,
+          partCount
+        )
+      );
+      partCount += 1;
+    }
+
+    await context.client.chat.mediaUploadFinalize(uploadId, {
+      conversationId: eventConversationId,
+      ...(initializedMediaHashKey
+        ? { mediaHashKey: initializedMediaHashKey }
+        : {}),
+      numParts: String(partCount),
+    });
+    return initializedMediaHashKey;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new XChatProviderRequestError(
+        parseXChatProviderError({
+          status: error.status,
+          statusText: error.statusText,
+          headers: error.headers,
+          rawBody: JSON.stringify(error.data ?? {}),
+        })
+      );
+    }
+    throw error;
+  }
+}
+
+/** Confirm a possibly response-lost send from exactly one newest event page. */
+export async function hasXChatEncryptedMessage(
+  context: XProviderContext,
+  participantUserId: string,
+  messageId: string
+): Promise<boolean> {
+  const page = await getXChatEncryptedEventPage(context, participantUserId);
+  return page.events.some((event) => event.id === messageId);
 }
 
 /** Resolve one short-lived realm token only when the browser SDK asks for it. */

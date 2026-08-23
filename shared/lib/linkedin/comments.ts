@@ -138,7 +138,7 @@ export function extractLinkedInCanonicalPostIdFromUrl(url?: string | null) {
     return undefined;
   }
 
-  const activityMatch = trimmed.match(/activity:(\d+)/i);
+  const activityMatch = trimmed.match(/activity(?::|-)(\d+)/i);
   if (activityMatch?.[1]) {
     return activityMatch[1];
   }
@@ -153,6 +153,39 @@ export function extractLinkedInCanonicalPostIdFromUrl(url?: string | null) {
     return `urn:li:share:${shareMatch[1]}`;
   }
 
+  return undefined;
+}
+
+export function isLinkedInPostUrl(value?: string | null): boolean {
+  const candidate = getString(value);
+  if (!candidate) {
+    return false;
+  }
+  try {
+    const url = new URL(candidate);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./u, "");
+    return (
+      hostname === "linkedin.com" &&
+      (url.pathname.startsWith("/posts/") ||
+        url.pathname.startsWith("/feed/update/"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Find the first canonical LinkedIn post URL embedded in message text. */
+export function findLinkedInPostUrl(text?: string | null): string | undefined {
+  if (!text) {
+    return undefined;
+  }
+  const matches = text.match(/https?:\/\/[^\s<>"']+/giu) ?? [];
+  for (const match of matches) {
+    const candidate = match.replace(/[),.;!?]+$/u, "");
+    if (isLinkedInPostUrl(candidate)) {
+      return candidate;
+    }
+  }
   return undefined;
 }
 

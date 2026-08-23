@@ -38,9 +38,9 @@ export interface UnifiedAuthor {
   type?: string;
 }
 
-export interface UnifiedMedia {
+interface UnifiedMediaMetadata {
+  id?: string;
   type: "image" | "video" | "link";
-  url: string;
   // Optional display hints
   width?: number;
   height?: number;
@@ -49,6 +49,23 @@ export interface UnifiedMedia {
   description?: string; // for link cards
   faviconUrl?: string; // for link cards
 }
+
+/** Media with a provider-supplied URL that can be rendered directly. */
+export interface AvailableUnifiedMedia extends UnifiedMediaMetadata {
+  url: string;
+  unavailable?: false;
+}
+
+/**
+ * Provider identified the attachment but did not supply a safe, viewable URL.
+ * Render a local unavailable-media shell instead of attempting a fabricated URL.
+ */
+export interface UnavailableUnifiedMedia extends UnifiedMediaMetadata {
+  unavailable: true;
+  url?: never;
+}
+
+export type UnifiedMedia = AvailableUnifiedMedia | UnavailableUnifiedMedia;
 
 export type UnifiedPostActivityType = "like" | "repost";
 

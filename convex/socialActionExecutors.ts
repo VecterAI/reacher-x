@@ -475,6 +475,10 @@ export const executeActionRequestInternal = internalAction({
                     : undefined,
                 text: draftText ?? "",
                 mediaUrls,
+                quoteId:
+                  typeof argsSnapshot.quoteId === "string"
+                    ? argsSnapshot.quoteId
+                    : undefined,
               }
             );
             postedText = draftText ?? undefined;

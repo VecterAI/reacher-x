@@ -51,6 +51,14 @@ export async function deleteWorkspaceCascade(
     await ctx.db.delete(m._id);
   }
 
+  const outboundOperations = await ctx.db
+    .query("outboundMessageOperations")
+    .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+    .collect();
+  await Promise.all(
+    outboundOperations.map((operation) => ctx.db.delete(operation._id))
+  );
+
   for (const prospectId of prospectIds) {
     const threads = await ctx.db
       .query("prospectThreads")

@@ -1,22 +1,36 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./lib/functionBuilders";
+import { internalMutation, internalQuery, query } from "./lib/functionBuilders";
+import { internal } from "./_generated/api";
 import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
-import { mergeConversationAttachments } from "./lib/xDm";
+import {
+  mergeConversationAttachments,
+  mergeConversationQuotedMessage,
+  mergeConversationSharedPost,
+} from "./lib/xDm";
 import {
   platformConversationAttachmentValidator,
   conversationHistoryBoundaryValidator,
   platformConversationDirectionValidator,
+  platformConversationEventMetadataValidator,
   platformConversationEventTypeValidator,
   platformConversationMessageTypeValidator,
+  platformConversationMessageLookupValidator,
   platformConversationPlatformValidator,
+  platformConversationQuotedMessageValidator,
+  platformConversationReactionValidator,
+  platformConversationRevisionValidator,
+  platformConversationSharedPostValidator,
+  platformConversationSeenByValidator,
   xActivityEventTypeValidator,
   xDmEligibilityReasonCodeValidator,
   xDmPanelWarningCodeValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { normalizeConversationHistoryPageLimit } from "./lib/conversationHistoryPaginationCore";
+import { requireUser } from "./lib/accessHelpers";
 
 const DEFAULT_CONVERSATION_SNAPSHOT_MESSAGE_LIMIT = 25;
+const READ_RECEIPT_UPDATE_BATCH_SIZE = 50;
 
 function sortMessagesByTime<T extends { createdAtMs: number }>(
   messages: T[]
@@ -33,6 +47,70 @@ function pickOptionalPatchValue<T extends object, K extends keyof T>(
 ): T[K] {
   return Object.prototype.hasOwnProperty.call(args, key) ? args[key] : fallback;
 }
+
+/**
+ * Reactive revision for the current user's cached X conversation. The full
+ * provider-backed panel remains an action, while this small indexed query lets
+ * an open panel observe webhook writes without exposing another user's data.
+ */
+export const getTwitterConversationRevision = query({
+  args: {
+    prospectId: v.id("prospects"),
+  },
+  returns: platformConversationRevisionValidator,
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const conversation = await ctx.db
+      .query("platformConversations")
+      .withIndex("by_user_prospect_platform", (q) =>
+        q
+          .eq("userId", user._id)
+          .eq("prospectId", args.prospectId)
+          .eq("platform", "twitter")
+      )
+      .first();
+
+    if (!conversation) {
+      return null;
+    }
+
+    return {
+      updatedAt: conversation.updatedAt,
+      latestMessageId: conversation.latestMessageId,
+      latestMessageAt: conversation.latestMessageAt,
+    };
+  },
+});
+
+/** Reactive revision for an open LinkedIn panel, updated by webhook writes. */
+export const getLinkedInConversationRevision = query({
+  args: {
+    prospectId: v.id("prospects"),
+  },
+  returns: platformConversationRevisionValidator,
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const conversation = await ctx.db
+      .query("platformConversations")
+      .withIndex("by_user_prospect_platform", (q) =>
+        q
+          .eq("userId", user._id)
+          .eq("prospectId", args.prospectId)
+          .eq("platform", "linkedin")
+      )
+      .first();
+
+    if (!conversation) {
+      return null;
+    }
+
+    return {
+      updatedAt: conversation.updatedAt,
+      latestMessageId: conversation.latestMessageId,
+      latestMessageAt: conversation.latestMessageAt,
+    };
+  },
+});
 
 export const getConversationSnapshotInternal = internalQuery({
   args: {
@@ -107,8 +185,9 @@ export const getConversationMessageInternal = internalQuery({
     conversationId: v.string(),
     messageId: v.string(),
   },
+  returns: v.union(v.null(), platformConversationMessageLookupValidator),
   handler: async (ctx, args) => {
-    return await ctx.db
+    const message = await ctx.db
       .query("platformConversationMessages")
       .withIndex("by_user_conversation_message", (q) =>
         q
@@ -117,6 +196,14 @@ export const getConversationMessageInternal = internalQuery({
           .eq("messageId", args.messageId)
       )
       .first();
+    return message
+      ? {
+          messageId: message.messageId,
+          providerMessageId: message.providerMessageId,
+          text: message.text,
+          attachments: message.attachments,
+        }
+      : null;
   },
 });
 
@@ -171,9 +258,16 @@ export const upsertConversationSnapshotInternal = internalMutation({
         readAt: v.optional(v.number()),
         deliveredAt: v.optional(v.number()),
         quotedMessageId: v.optional(v.string()),
+        quotedMessage: v.optional(platformConversationQuotedMessageValidator),
+        sharedPost: v.optional(platformConversationSharedPostValidator),
+        reactions: v.optional(v.array(platformConversationReactionValidator)),
+        editedAt: v.optional(v.number()),
+        deletedAt: v.optional(v.number()),
+        seenBy: v.optional(v.array(platformConversationSeenByValidator)),
         messageType: v.optional(platformConversationMessageTypeValidator),
         isEvent: v.optional(v.boolean()),
         sourceEventType: v.optional(platformConversationEventTypeValidator),
+        eventMetadata: v.optional(platformConversationEventMetadataValidator),
       })
     ),
   },
@@ -325,10 +419,25 @@ export const upsertConversationSnapshotInternal = internalMutation({
         ),
         readAt: message.readAt ?? existingMessage?.readAt,
         deliveredAt: message.deliveredAt ?? existingMessage?.deliveredAt,
-        quotedMessageId: message.quotedMessageId,
-        messageType: message.messageType,
-        isEvent: message.isEvent,
-        sourceEventType: message.sourceEventType,
+        quotedMessageId:
+          message.quotedMessageId ?? existingMessage?.quotedMessageId,
+        quotedMessage: mergeConversationQuotedMessage(
+          message.quotedMessage,
+          existingMessage?.quotedMessage
+        ),
+        sharedPost: mergeConversationSharedPost(
+          message.sharedPost,
+          existingMessage?.sharedPost
+        ),
+        reactions: message.reactions ?? existingMessage?.reactions,
+        editedAt: message.editedAt ?? existingMessage?.editedAt,
+        deletedAt: message.deletedAt ?? existingMessage?.deletedAt,
+        seenBy: message.seenBy ?? existingMessage?.seenBy,
+        messageType: message.messageType ?? existingMessage?.messageType,
+        isEvent: message.isEvent ?? existingMessage?.isEvent,
+        sourceEventType:
+          message.sourceEventType ?? existingMessage?.sourceEventType,
+        eventMetadata: message.eventMetadata ?? existingMessage?.eventMetadata,
         updatedAt: now,
       };
 
@@ -362,43 +471,77 @@ export const markConversationMessagesReadInternal = internalMutation({
     userId: v.id("users"),
     conversationId: v.string(),
     readAt: v.number(),
+    seenBy: v.optional(v.array(platformConversationSeenByValidator)),
+    cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const messages = await ctx.db
+    const page = await ctx.db
       .query("platformConversationMessages")
-      .withIndex("by_user_conversation_created_at", (q) =>
-        q.eq("userId", args.userId).eq("conversationId", args.conversationId)
+      .withIndex("by_user_conversation_direction_created_at", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("conversationId", args.conversationId)
+          .eq("direction", "sent")
       )
-      .collect();
-
-    for (const message of messages) {
-      if (message.direction !== "sent") {
-        continue;
-      }
-      if (typeof message.readAt === "number" && message.readAt >= args.readAt) {
-        continue;
-      }
-      await ctx.db.patch(message._id, {
-        readAt: args.readAt,
-        updatedAt: getCurrentUTCTimestamp(),
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: READ_RECEIPT_UPDATE_BATCH_SIZE,
       });
+    const now = getCurrentUTCTimestamp();
+    const staleMessages = page.page.filter(
+      (message) =>
+        typeof message.readAt !== "number" || message.readAt < args.readAt
+    );
+
+    await Promise.all(
+      staleMessages.map((message) =>
+        ctx.db.patch(message._id, {
+          readAt: args.readAt,
+          seenBy: args.seenBy ?? message.seenBy,
+          updatedAt: now,
+        })
+      )
+    );
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.platformConversations.markConversationMessagesReadInternal,
+        {
+          userId: args.userId,
+          conversationId: args.conversationId,
+          readAt: args.readAt,
+          seenBy: args.seenBy,
+          cursor: page.continueCursor,
+        }
+      );
     }
 
-    const conversation = await ctx.db
-      .query("platformConversations")
-      .withIndex("by_user_conversation", (q) =>
-        q.eq("userId", args.userId).eq("conversationId", args.conversationId)
-      )
-      .first();
+    if (!args.cursor) {
+      const conversation = await ctx.db
+        .query("platformConversations")
+        .withIndex("by_user_conversation", (q) =>
+          q.eq("userId", args.userId).eq("conversationId", args.conversationId)
+        )
+        .first();
 
-    if (conversation) {
-      await ctx.db.patch(conversation._id, {
-        lastReadAt: args.readAt,
-        updatedAt: getCurrentUTCTimestamp(),
-      });
+      if (
+        conversation &&
+        (typeof conversation.lastReadAt !== "number" ||
+          conversation.lastReadAt < args.readAt)
+      ) {
+        await ctx.db.patch(conversation._id, {
+          lastReadAt: args.readAt,
+          updatedAt: now,
+        });
+      }
     }
 
-    return { success: true };
+    return {
+      success: true,
+      processedCount: staleMessages.length,
+      hasMore: !page.isDone,
+    };
   },
 });
 

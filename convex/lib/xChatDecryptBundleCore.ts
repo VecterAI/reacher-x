@@ -52,7 +52,7 @@ function readFiniteNumber(value: unknown): number | undefined {
 
 export function normalizeXChatPublicKeyRecords(
   payload: unknown,
-  userId: string
+  fallbackUserId?: string
 ): XChatPublicKeyRecord[] {
   const root = isRecord(payload) ? payload : undefined;
   if (!Array.isArray(root?.data)) {
@@ -63,6 +63,8 @@ export function normalizeXChatPublicKeyRecords(
     if (!isRecord(value)) {
       return [];
     }
+    const userId =
+      readStringProperty(value, "userId", "user_id") ?? fallbackUserId;
     const publicKeyVersion =
       readStringProperty(value, "publicKeyVersion", "public_key_version") ??
       readStringProperty(value, "version", "version");
@@ -82,6 +84,7 @@ export function normalizeXChatPublicKeyRecords(
       "identity_public_key_signature"
     );
     if (
+      !userId ||
       !publicKeyVersion ||
       !identityPublicKey ||
       !publicKey ||
@@ -179,7 +182,7 @@ export function normalizeXChatEncryptedEventPage(payload: unknown): {
   hasMore: boolean;
 } {
   const root = isRecord(payload) ? payload : undefined;
-  const events = Array.isArray(root?.data)
+  const messageEvents = Array.isArray(root?.data)
     ? root.data.flatMap((value) => {
         if (!isRecord(value)) {
           return [];
@@ -213,6 +216,29 @@ export function normalizeXChatEncryptedEventPage(payload: unknown): {
         ];
       })
     : [];
+  // XChat sends the signed key-change envelopes separately from message data.
+  // decryptEvents must receive both; otherwise it cannot recover the specific
+  // conversation key later referenced by an attachment's keyVersion.
+  const meta = isRecord(root?.meta) ? root.meta : undefined;
+  const keyEventPayload = meta
+    ? readProperty(meta, "conversationKeyEvents", "conversation_key_events")
+    : undefined;
+  const keyEvents = Array.isArray(keyEventPayload)
+    ? keyEventPayload.flatMap((value) => {
+        if (typeof value !== "string" || !value.trim()) {
+          return [];
+        }
+        return [{ encodedEvent: value.trim() }];
+      })
+    : [];
+  const seenEncodedEvents = new Set<string>();
+  const events = [...keyEvents, ...messageEvents].filter((event) => {
+    if (seenEncodedEvents.has(event.encodedEvent)) {
+      return false;
+    }
+    seenEncodedEvents.add(event.encodedEvent);
+    return true;
+  });
   const nextCursor = getProviderPageCursor(payload);
   return {
     events,

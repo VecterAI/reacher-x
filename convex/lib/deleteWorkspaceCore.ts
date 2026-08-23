@@ -39,6 +39,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
       attachmentStats,
       conversationMessages,
       conversations,
+      outboundOperations,
       socialMonitors,
       replyCandidates,
       conversationSeeds,
@@ -104,6 +105,10 @@ export const sweepWorkspaceRowsInternal = internalMutation({
         .take(n),
       ctx.db
         .query("platformConversations")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", w))
+        .take(n),
+      ctx.db
+        .query("outboundMessageOperations")
         .withIndex("by_workspace", (q) => q.eq("workspaceId", w))
         .take(n),
       ctx.db
@@ -246,6 +251,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
     deleted += await deleteDocuments(ctx, attachmentStats);
     deleted += await deleteDocuments(ctx, conversationMessages);
     deleted += await deleteDocuments(ctx, conversations);
+    deleted += await deleteDocuments(ctx, outboundOperations);
     deleted += await deleteDocuments(ctx, socialMonitors);
     deleted += await deleteDocuments(ctx, replyCandidates);
     deleted += await deleteDocuments(ctx, conversationSeeds);
@@ -607,6 +613,7 @@ export const deleteProspectBatchInternal = internalMutation({
       syncStates,
       messages,
       conversations,
+      outboundOperations,
       contexts,
       requests,
       providerEvents,
@@ -639,6 +646,10 @@ export const deleteProspectBatchInternal = internalMutation({
         )
         .take(n),
       ctx.db
+        .query("outboundMessageOperations")
+        .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
+        .take(n),
+      ctx.db
         .query("agentMessageContexts")
         .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
         .take(n),
@@ -665,6 +676,7 @@ export const deleteProspectBatchInternal = internalMutation({
       syncStates.length +
       messages.length +
       conversations.length +
+      outboundOperations.length +
       contexts.length +
       requests.length +
       providerEvents.length +
@@ -676,6 +688,7 @@ export const deleteProspectBatchInternal = internalMutation({
       deleted += await deleteDocuments(ctx, syncStates);
       deleted += await deleteDocuments(ctx, messages);
       deleted += await deleteDocuments(ctx, conversations);
+      deleted += await deleteDocuments(ctx, outboundOperations);
       deleted += await deleteDocuments(ctx, contexts);
       deleted += await deleteDocuments(ctx, requests);
       deleted += await deleteDocuments(ctx, providerEvents);

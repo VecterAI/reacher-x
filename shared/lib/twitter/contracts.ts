@@ -229,6 +229,29 @@ export function buildTwitterPostUrl(input: {
   return `https://x.com/${handle}/status/${input.postId}`;
 }
 
+export function extractTwitterPostIdFromUrl(
+  value?: string | null
+): string | undefined {
+  if (!value) return undefined;
+
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname
+      .toLowerCase()
+      .replace(/^(?:www|mobile)\./u, "");
+    if (hostname !== "x.com" && hostname !== "twitter.com") {
+      return undefined;
+    }
+
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const statusIndex = segments.findIndex((segment) => segment === "status");
+    const postId = statusIndex >= 0 ? segments[statusIndex + 1] : undefined;
+    return postId && /^\d+$/u.test(postId) ? postId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function getTwitterPostId(value: unknown): string | undefined {
   if (!isRecord(value)) {
     return undefined;

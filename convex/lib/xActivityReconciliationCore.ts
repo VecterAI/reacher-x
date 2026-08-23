@@ -6,6 +6,33 @@ export type XActivitySubscriptionCandidate<TEvent extends string = string> = {
   tag?: string;
 };
 
+export type XWebhookCandidate = {
+  id: string;
+  url: string;
+  valid: boolean;
+};
+
+/**
+ * A webhook registered for another deployment must never be reported as this
+ * deployment's realtime channel. Shared app credentials would otherwise make
+ * dev look healthy while every event is delivered to production.
+ */
+export function findXWebhookForEnvironment(
+  webhooks: XWebhookCandidate[],
+  expectedUrl: string
+): XWebhookCandidate | undefined {
+  const exactMatch = webhooks.find((webhook) => webhook.url === expectedUrl);
+  if (exactMatch) {
+    return exactMatch;
+  }
+  if (webhooks.length > 0) {
+    throw new Error(
+      "X Activity is registered for a different deployment. Use a dedicated X app and webhook for this environment."
+    );
+  }
+  return undefined;
+}
+
 export type XActivitySubscriptionCapability = "dm" | "post";
 export type XActivitySubscriptionHealthStatus =
   | "unknown"
