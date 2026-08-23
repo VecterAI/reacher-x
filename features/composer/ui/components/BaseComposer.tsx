@@ -9,7 +9,10 @@ import {
   isLikelyToHaveOpenGraph,
 } from "@/shared/lib/utils";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
-import { LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES } from "@/shared/lib/utils/media/linkedinMessageAttachmentTypes";
+import {
+  LINKEDIN_MESSAGE_DOCUMENT_ACCEPT,
+  LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES,
+} from "@/shared/lib/utils/media/linkedinMessageAttachmentTypes";
 import CharacterCounter from "@/shared/ui/components/CharacterCounter";
 import {
   Avatar,
@@ -50,6 +53,10 @@ import {
   COMPOSER_PREVIEW_PLACEHOLDER_CLASS,
 } from "@/features/composer/ui/dmComposerClasses";
 import { buildInitialMediaUploadFromMentionEntity } from "../../lib/entityMentions";
+import {
+  readBrowserMediaMetadata,
+  withBrowserMediaMetadata,
+} from "../../lib/browserMediaMetadata";
 import { useWorkspace } from "@/shared/hooks";
 
 function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
@@ -65,6 +72,9 @@ function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
       left.type !== right.type ||
       left.mediaKind !== right.mediaKind ||
       left.size !== right.size ||
+      left.width !== right.width ||
+      left.height !== right.height ||
+      left.durationMs !== right.durationMs ||
       left.progress !== right.progress ||
       left.status !== right.status ||
       left.error !== right.error ||
@@ -79,6 +89,18 @@ function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
   }
 
   return true;
+}
+
+function revokeComposerObjectUrl(url?: string) {
+  if (url?.startsWith("blob:")) {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function getAttachmentLimitError(maxAttachments: number): string {
+  return maxAttachments === 1
+    ? "Only one attachment is allowed."
+    : `Maximum ${maxAttachments} attachments are allowed.`;
 }
 
 function inferMediaKindFromMimeType(
@@ -166,6 +188,9 @@ function buildInitialMediaUpload(
     type: attachment.type,
     mediaKind,
     size: attachment.size,
+    width: attachment.width,
+    height: attachment.height,
+    durationMs: attachment.durationMs,
     progress: 100,
     status: "completed",
     description: attachment.description,
@@ -178,6 +203,10 @@ interface BaseComposerProps extends ComposerBaseProps {
   submitButtonText?: string;
   /** Text label vs DM-style up-arrow control. */
   submitButtonVariant?: "text" | "icon";
+  /** Enter submits; Shift+Enter keeps its native newline behavior. */
+  submitOnEnter?: boolean;
+  /** Reset immediately after accepting durable work instead of awaiting it. */
+  submitMode?: "confirmed" | "optimistic";
   /** Action row above (default) or below the editor (DM layout). */
   toolbarPlacement?: "top" | "bottom";
   /** When false, hide avatar + name row (e.g. X DM inline composer). */
@@ -200,6 +229,8 @@ interface BaseComposerProps extends ComposerBaseProps {
   showMediaDescription?: boolean;
   /** When true, keep editing enabled but disable submit affordance. */
   submitDisabled?: boolean;
+  /** Keep selected files in browser memory for an encrypted submit flow. */
+  deferMediaUpload?: boolean;
 }
 
 export function BaseComposer({
@@ -220,6 +251,8 @@ export function BaseComposer({
   toolbarConfig,
   submitButtonText = "Post",
   submitButtonVariant = "text",
+  submitOnEnter = false,
+  submitMode = "confirmed",
   toolbarPlacement = "top",
   showIdentityHeader = true,
   showAvatar = true,
@@ -239,6 +272,7 @@ export function BaseComposer({
   submitToolbarStart,
   showMediaDescription = true,
   submitDisabled = false,
+  deferMediaUpload = false,
   onContentChange,
   onSubmit,
   onEditorBlur,
@@ -267,6 +301,10 @@ export function BaseComposer({
   );
   const allowVideoUpload = useMemo(
     () => allowedMediaKindsSet.has("video"),
+    [allowedMediaKindsSet]
+  );
+  const allowFileUpload = useMemo(
+    () => allowedMediaKindsSet.has("file"),
     [allowedMediaKindsSet]
   );
   const imageAccept = useMemo(() => {
@@ -308,6 +346,7 @@ export function BaseComposer({
   const [mediaUploads, setMediaUploads] = useState<MediaUpload[]>(
     resolvedInitialMediaUploads
   );
+  const mediaUploadsRef = useRef(mediaUploads);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
@@ -337,6 +376,19 @@ export function BaseComposer({
   const prevInitialSerializedRef = useRef<string>(serializedInitialContent);
   const prevInitialMediaSerializedRef = useRef<string>(
     serializedInitialMediaUploads
+  );
+
+  useEffect(() => {
+    mediaUploadsRef.current = mediaUploads;
+  }, [mediaUploads]);
+
+  useEffect(
+    () => () => {
+      for (const upload of mediaUploadsRef.current) {
+        revokeComposerObjectUrl(upload.url);
+      }
+    },
+    []
   );
 
   // Convex actions
@@ -394,7 +446,7 @@ export function BaseComposer({
         (upload) => upload.status !== "error"
       );
       if (currentActiveUploads.length >= maxAttachments) {
-        toast.error(`Maximum ${maxAttachments} attachments are allowed.`);
+        toast.error(getAttachmentLimitError(maxAttachments));
         return;
       }
 
@@ -452,7 +504,7 @@ export function BaseComposer({
         (upload) => upload.status !== "error"
       );
       if (currentActiveUploads.length >= maxAttachments) {
-        return `Maximum ${maxAttachments} attachments are allowed.`;
+        return getAttachmentLimitError(maxAttachments);
       }
 
       return getComposerSelectionError(
@@ -671,7 +723,7 @@ export function BaseComposer({
 
   const handleMediaUpload = useCallback(
     async (files: FileList | File[]) => {
-      if (!workspace?._id) {
+      if (!deferMediaUpload && !workspace?._id) {
         toast.error("Attachment unavailable", {
           description: "Select a workspace before uploading an attachment.",
         });
@@ -680,7 +732,7 @@ export function BaseComposer({
 
       const fileArray = Array.isArray(files) ? files : Array.from(files);
 
-      // Count current active (non-error) attachments for the 4-item cap
+      // Count current active attachments against this composer's limit.
       const currentActiveCount = mediaUploads.filter(
         (u) => u.status !== "error"
       ).length;
@@ -757,7 +809,7 @@ export function BaseComposer({
             mediaKind,
             progress: 0,
             status: "error",
-            error: "Maximum 4 attachments are allowed.",
+            error: getAttachmentLimitError(MAX_ATTACHMENTS),
           });
           continue;
         }
@@ -769,8 +821,8 @@ export function BaseComposer({
           type: validation.kind,
           mediaKind,
           size: file.size,
-          progress: 0,
-          status: "uploading",
+          progress: deferMediaUpload ? 100 : 0,
+          status: deferMediaUpload ? "completed" : "uploading",
           url: URL.createObjectURL(file),
         });
       }
@@ -780,6 +832,28 @@ export function BaseComposer({
         ...prev.filter((u) => u.status !== "error"),
         ...prepared,
       ]);
+
+      for (const upload of prepared) {
+        if (upload.status === "error" || upload.type === "file") continue;
+        void readBrowserMediaMetadata(upload.file, upload.type).then(
+          (metadata) => {
+            if (!metadata.width || !metadata.height) return;
+            setMediaUploads((current) =>
+              current.map((item) =>
+                item.id === upload.id ? { ...item, ...metadata } : item
+              )
+            );
+          }
+        );
+      }
+
+      if (deferMediaUpload) {
+        return;
+      }
+
+      if (!workspace?._id) {
+        return;
+      }
 
       // Upload each valid file to the server
       for (const upload of prepared) {
@@ -912,6 +986,7 @@ export function BaseComposer({
     },
     [
       generateUploadUrl,
+      deferMediaUpload,
       MAX_ATTACHMENTS,
       processUploadedMedia,
       mediaUploads,
@@ -922,7 +997,11 @@ export function BaseComposer({
   );
 
   const handleRemoveMedia = useCallback((id: string) => {
-    setMediaUploads((prev) => prev.filter((upload) => upload.id !== id));
+    setMediaUploads((prev) => {
+      const removed = prev.find((upload) => upload.id === id);
+      revokeComposerObjectUrl(removed?.url);
+      return prev.filter((upload) => upload.id !== id);
+    });
   }, []);
 
   const handleRemovePreview = useCallback(() => {
@@ -947,48 +1026,116 @@ export function BaseComposer({
   );
 
   const handleSubmit = useCallback(async () => {
-    if (isSubmitting) return;
+    if ((submitMode === "confirmed" && isSubmitting) || interactionDisabled) {
+      return;
+    }
 
     const hasCompletedMedia = mediaUploads.some(
-      (u) => u.status === "completed" && !!u.serverUrl
+      (u) =>
+        u.status === "completed" &&
+        (Boolean(u.serverUrl) || (deferMediaUpload && u.file.size > 0))
     );
     const hasContent = !!content;
-    if (!hasContent && !hasCompletedMedia) return;
+    const hasUploadingMedia = mediaUploads.some(
+      (upload) => upload.status === "uploading"
+    );
+    const contentLength = content
+      ? characterCountMode === "x_post"
+        ? getXPostWeightedLength(extractTextFromEditorState(content))
+        : extractTextFromEditorState(content).length
+      : 0;
+    if (
+      submitDisabled ||
+      hasUploadingMedia ||
+      contentLength > maxLength ||
+      (!hasContent && !hasCompletedMedia)
+    ) {
+      return;
+    }
 
-    setIsSubmitting(true);
-    try {
-      // Extract server URLs and descriptions from completed uploads
-      const completedUploads = mediaUploads.filter(
-        (upload) => upload.status === "completed" && upload.serverUrl
-      );
+    // Extract server URLs and descriptions from completed uploads
+    const completedUploads = mediaUploads.filter(
+      (upload) =>
+        upload.status === "completed" &&
+        (Boolean(upload.serverUrl) ||
+          (deferMediaUpload && upload.file.size > 0))
+    );
+    const completedUploadsWithMetadata = await Promise.all(
+      completedUploads.map(withBrowserMediaMetadata)
+    );
 
-      const mediaUrls = completedUploads.map((upload) => upload.serverUrl!);
-      const mediaDescriptions = completedUploads.map(
-        (upload) => upload.description || ""
-      );
-      const mediaKinds = completedUploads.map((upload) => upload.mediaKind);
+    const mediaUrls = completedUploads.flatMap((upload) =>
+      upload.serverUrl ? [upload.serverUrl] : []
+    );
+    const mediaDescriptions = completedUploads.map(
+      (upload) => upload.description || ""
+    );
+    const mediaKinds = completedUploads.map((upload) => upload.mediaKind);
 
-      // When posting media-only, pass an empty editor state object to satisfy typing
-      const contentForSubmit = content ?? ({} as SerializedEditorState);
-      await onSubmit?.(
-        contentForSubmit,
-        mediaUrls,
-        mediaDescriptions,
-        mediaKinds
-      );
-      // Reset form
+    const resetComposer = (revokeMedia = true) => {
       setContent(undefined);
+      if (revokeMedia) {
+        for (const upload of completedUploadsWithMetadata) {
+          revokeComposerObjectUrl(upload.url);
+        }
+      }
       setMediaUploads([]);
       // Clear editor UI selection and nodes via bridge if available
       try {
         editorAPI?.clearContent();
       } catch {}
+    };
+
+    // When posting media-only, pass an empty editor state object to satisfy typing
+    const contentForSubmit = content ?? ({} as SerializedEditorState);
+    if (submitMode === "optimistic") {
+      resetComposer(false);
+      try {
+        await onSubmit?.(
+          contentForSubmit,
+          mediaUrls,
+          mediaDescriptions,
+          mediaKinds,
+          completedUploadsWithMetadata
+        );
+      } catch (error) {
+        logger.error("Submit error:", error);
+      } finally {
+        for (const upload of completedUploadsWithMetadata) {
+          revokeComposerObjectUrl(upload.url);
+        }
+      }
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onSubmit?.(
+        contentForSubmit,
+        mediaUrls,
+        mediaDescriptions,
+        mediaKinds,
+        completedUploadsWithMetadata
+      );
+      resetComposer();
     } catch (error) {
       logger.error("Submit error:", error);
     } finally {
       setIsSubmitting(false);
     }
-  }, [content, isSubmitting, onSubmit, editorAPI, mediaUploads]);
+  }, [
+    characterCountMode,
+    content,
+    deferMediaUpload,
+    editorAPI,
+    interactionDisabled,
+    isSubmitting,
+    maxLength,
+    mediaUploads,
+    onSubmit,
+    submitDisabled,
+    submitMode,
+  ]);
 
   // Note: cancel flow removed in UI; keep placeholder for potential future use
 
@@ -1002,7 +1149,9 @@ export function BaseComposer({
   const isOverLimit = characterCount > maxLength;
   const hasText = !!content && characterCount > 0;
   const hasCompletedMedia = mediaUploads.some(
-    (u) => u.status === "completed" && !!u.serverUrl
+    (u) =>
+      u.status === "completed" &&
+      (Boolean(u.serverUrl) || (deferMediaUpload && u.file.size > 0))
   );
   const isUploadingMedia = mediaUploads.some((u) => u.status === "uploading");
   const canSubmit =
@@ -1037,23 +1186,29 @@ export function BaseComposer({
     >
       <ComposerToolbar
         config={toolbarConfig}
-        imageAccept={imageAccept}
-        showImageUpload={allowImageUpload}
-        showVideoUpload={allowVideoUpload}
+        uploads={{
+          imageAccept,
+          fileAccept: LINKEDIN_MESSAGE_DOCUMENT_ACCEPT,
+          showImage: allowImageUpload,
+          showVideo: allowVideoUpload,
+          showFile: allowFileUpload,
+        }}
         onMediaUpload={handleMediaUpload}
         onEmojiSelect={handleEmojiSelect}
         submitButtonText={submitButtonText}
         submitButtonVariant={submitButtonVariant}
         onSubmit={handleSubmit}
-        canSubmit={!!canSubmit}
-        isSubmitting={isSubmitting}
-        interactionDisabled={interactionDisabled}
-        submitDisabled={submitDisabled}
+        state={{
+          canSubmit: !!canSubmit,
+          isSubmitting,
+          interactionDisabled,
+          submitDisabled,
+          isBoldActive: formattingState.isBold,
+          isItalicActive: formattingState.isItalic,
+        }}
         className="flex-1"
         onBold={handleBold}
         onItalic={handleItalic}
-        isBoldActive={formattingState.isBold}
-        isItalicActive={formattingState.isItalic}
         afterEmojiSlot={afterEmojiSlot}
         beforeCounterSlot={beforeCounterSlot}
         submitToolbarStart={submitToolbarStart}
@@ -1078,6 +1233,8 @@ export function BaseComposer({
         characterCountMode={characterCountMode}
         showCharacterCount={false}
         disabled={interactionDisabled}
+        submitOnEnter={submitOnEnter}
+        onSubmitShortcut={handleSubmit}
         contentEditableClassName={resolvedContentEditableClassName}
         composerPlaceholderClassName={resolvedPlaceholderClassName}
         inlineAutocompleteContext={inlineAutocompleteContext}
