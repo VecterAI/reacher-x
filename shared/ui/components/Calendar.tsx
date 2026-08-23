@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import {
-  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-} from "lucide-react";
+  KeyboardArrowDownIcon,
+} from "@/shared/ui/components/icons";
 import { DayButton, DayPicker, getDefaultClassNames } from "react-day-picker";
 
 import { cn } from "@/shared/lib/utils";
@@ -149,7 +149,10 @@ function Calendar({
           }
 
           return (
-            <ChevronDownIcon className={cn("size-4", className)} {...props} />
+            <KeyboardArrowDownIcon
+              className={cn("size-4 fill-current", className)}
+              {...props}
+            />
           );
         },
         DayButton: CalendarDayButton,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -13,6 +13,7 @@ import {
   CommandList,
 } from "@/shared/ui/components/Command";
 import { Label } from "@/shared/ui/components/Label";
+import { CheckIcon } from "@/shared/ui/components/icons";
 import {
   Popover,
   PopoverContent,
@@ -94,9 +95,9 @@ export function WorkspaceUseCaseCombobox({
                     }}
                   >
                     {opt.label}
-                    <Check
+                    <CheckIcon
                       className={cn(
-                        "ml-auto h-4 w-4",
+                        "ml-auto h-4 w-4 fill-current",
                         value === opt.value ? "opacity-100" : "opacity-0"
                       )}
                     />

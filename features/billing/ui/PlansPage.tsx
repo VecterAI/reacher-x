@@ -21,8 +21,7 @@ import { BillingSection } from "./components/BillingSection";
 import { PlanSelector } from "./components/PlanSelector";
 import { Button } from "@/shared/ui/components/Button";
 import { cn } from "@/shared/lib/utils";
-import { X } from "lucide-react";
-import { ArrowBackIcon } from "@/shared/ui/components/icons";
+import { ArrowBackIcon, CloseIcon } from "@/shared/ui/components/icons";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import { PLANS_UPGRADE_VALUE } from "@/features/billing/lib/plansUpgradeUrl";
 
@@ -239,7 +238,7 @@ export function PlansPage() {
               onClick={() => void setUpgradeParam(null)}
               aria-label="Close upgrade panel"
             >
-              <X className="size-4" />
+              <CloseIcon className="size-4 fill-current" />
             </Button>
             <span className="text-sm font-medium">Upgrade</span>
           </div>

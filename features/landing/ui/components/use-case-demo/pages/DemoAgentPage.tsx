@@ -28,7 +28,6 @@
 
 import * as React from "react";
 import { motion } from "motion/react";
-import { Check, Copy } from "lucide-react";
 import type { SerializedEditorState } from "lexical";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { cn, extractTextFromEditorState } from "@/shared/lib/utils";
@@ -92,7 +91,9 @@ import {
   ArrowUpwardIcon,
   AttachFileIcon,
   ChangeHistoryIcon,
+  CheckIcon,
   CognitionIcon,
+  ContentCopyIcon,
   MoreHorizIcon,
   OpenInNewIcon,
   SearchActivityIcon,
@@ -478,7 +479,11 @@ function DemoCopyButton({ text }: { text: string }) {
         onClick={handleCopy}
         className="text-muted-foreground hover:text-foreground"
       >
-        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        {copied ? (
+          <CheckIcon className="h-3 w-3 fill-current" />
+        ) : (
+          <ContentCopyIcon className="h-3 w-3 fill-current" />
+        )}
       </Button>
     </MessageAction>
   );

@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import { ONBOARDING_PLAN_TIERS } from "@/features/agent/ui/components/onboarding/planStepConfig";
-import { Check } from "lucide-react";
+import { CheckIcon } from "@/shared/ui/components/icons";
 
 type PlanSummary = {
   tier: "free" | "hobby" | "base" | "pro";
@@ -108,8 +108,8 @@ export function ActivePlanSection({
       <ul className="mt-4 space-y-2 text-sm">
         {features.map((line) => (
           <li key={line} className="flex gap-2">
-            <Check
-              className="text-foreground mt-0.5 size-4 shrink-0"
+            <CheckIcon
+              className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
               aria-hidden
             />
             <span>{line}</span>

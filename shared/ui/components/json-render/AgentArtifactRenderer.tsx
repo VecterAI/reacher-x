@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { JSONUIProvider, Renderer, defineRegistry } from "@json-render/react";
-import { CheckCircle2, Circle, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import type { InlinePanelOpenPayload } from "@/features/agent/lib";
@@ -33,8 +32,11 @@ import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
   ChangeHistoryIcon,
+  CheckCircleIcon,
   CognitionIcon,
+  ErrorIcon,
   OpenInNewIcon,
+  RadioButtonUncheckedIcon,
 } from "@/shared/ui/components/icons";
 import {
   agentArtifactCatalog,
@@ -91,15 +93,19 @@ function getArtifactProgressStatusIcon(
 ) {
   switch (status) {
     case "completed":
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      return (
+        <CheckCircleIcon className="h-4 w-4 fill-current text-green-500" />
+      );
     case "failed":
-      return <XCircle className="h-4 w-4 text-red-500" />;
+      return <ErrorIcon className="h-4 w-4 fill-current text-red-500" />;
     case "running":
       // Artifacts are persisted launch-time snapshots. A live spinner here
       // would incorrectly claim the workflow is still active on old turns.
-      return <Circle className="h-4 w-4 text-blue-500" />;
+      return <RadioButtonUncheckedIcon className="h-4 w-4 text-blue-500" />;
     default:
-      return <Circle className="text-muted-foreground h-4 w-4" />;
+      return (
+        <RadioButtonUncheckedIcon className="text-muted-foreground h-4 w-4" />
+      );
   }
 }
 

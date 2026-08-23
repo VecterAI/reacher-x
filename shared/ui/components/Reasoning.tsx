@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/shared/lib/utils";
-import { ChevronDownIcon } from "lucide-react";
+import { KeyboardArrowDownIcon } from "@/shared/ui/components/icons";
 import React, {
   useCallback,
   createContext,
@@ -100,7 +100,7 @@ function ReasoningTrigger({
           isOpen ? "rotate-180" : ""
         )}
       >
-        <ChevronDownIcon className="size-4" />
+        <KeyboardArrowDownIcon className="size-4 fill-current" />
       </div>
     </button>
   );

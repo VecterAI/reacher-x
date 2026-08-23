@@ -23,12 +23,15 @@ import {
   TabsTrigger,
 } from "@/shared/ui/components/Tabs";
 import {
+  CheckCircleIcon,
+  CloseIcon,
   FramePersonIcon,
   NotificationsIcon,
   QuickPhrasesIcon,
+  RepeatIcon,
   WarningIcon,
 } from "@/shared/ui/components/icons";
-import { CheckCircle, HelpCircle, Repeat2, Send, X } from "lucide-react";
+import { HelpCircle, Send } from "lucide-react";
 
 export type NotificationItem = Omit<
   Pick<
@@ -119,11 +122,11 @@ function getNotificationIcon(type: NotificationItem["type"]) {
       return <HelpCircle className="size-4" />;
     case "twitter_action_request":
     case "social_action_request":
-      return <Repeat2 className="size-4" />;
+      return <RepeatIcon className="size-4 fill-current" />;
     case "social_action_completed":
       return <Send className="size-4" />;
     case "setup_preview_ready":
-      return <CheckCircle className="size-4" />;
+      return <CheckCircleIcon className="size-4 fill-current" />;
     case "plan_batch_ready":
     case "plan_batch_started":
       return <NotificationsIcon className="fill-current" />;
@@ -134,7 +137,7 @@ function getNotificationIcon(type: NotificationItem["type"]) {
       return <WarningIcon className="size-4 fill-current" />;
     case "plan_completed":
     case "plan_batch_completed":
-      return <CheckCircle className="size-4" />;
+      return <CheckCircleIcon className="size-4 fill-current" />;
     default:
       return <NotificationsIcon className="fill-current" />;
   }
@@ -521,7 +524,7 @@ function NotificationCard({
             onDismiss();
           }}
         >
-          <X className="size-3.5" />
+          <CloseIcon className="size-3.5 fill-current" />
         </Button>
       </div>
     </article>

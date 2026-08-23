@@ -19,7 +19,7 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { TablePagination } from "@/shared/ui/components/TablePagination";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizIcon } from "@/shared/ui/components/icons";
 
 export type HistoryRow = {
   id: string;
@@ -126,7 +126,7 @@ export function SubscriptionHistorySection({
                           size="xsIcon"
                           aria-label="Row actions"
                         >
-                          <MoreHorizontal className="size-4" />
+                          <MoreHorizIcon className="size-4 fill-current" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">

@@ -9,7 +9,7 @@ import { InlineCode } from "@/shared/ui/components/InlineCode";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { ProgressActivityIcon } from "@/shared/ui/components/icons";
 import type {
   TwitterPostRef,
   TwitterPostSummary,
@@ -81,7 +81,7 @@ export function OutreachPlanSection({
   if (!planData && prospect?.planGenerationStatus === "generating") {
     return (
       <div className="rounded-xl border border-dashed p-6 text-center">
-        <Loader2 className="text-primary mx-auto size-6 animate-spin" />
+        <ProgressActivityIcon className="text-primary mx-auto size-6 animate-spin" />
         <p className="mt-2 text-sm font-medium">
           <InlineCode variant="mark">△</InlineCode> Agent is creating the
           plan&hellip;

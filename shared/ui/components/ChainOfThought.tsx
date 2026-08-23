@@ -6,7 +6,7 @@ import {
   CollapsibleTrigger,
 } from "@/shared/ui/components/Collapsible";
 import { cn } from "@/shared/lib/utils";
-import { ChevronDown, Circle } from "lucide-react";
+import { KeyboardArrowDownIcon } from "@/shared/ui/components/icons";
 import React from "react";
 
 export type ChainOfThoughtItemProps = React.ComponentProps<"div">;
@@ -54,18 +54,18 @@ export const ChainOfThoughtTrigger = ({
             {leftIcon}
           </span>
           {swapIconOnHover && (
-            <ChevronDown className="absolute size-4 opacity-0 transition-opacity group-hover:opacity-100 group-data-[state=open]:rotate-180" />
+            <KeyboardArrowDownIcon className="absolute size-4 fill-current opacity-0 transition-opacity group-hover:opacity-100 group-data-[state=open]:rotate-180" />
           )}
         </span>
       ) : (
         <span className="relative inline-flex size-4 items-center justify-center">
-          <Circle className="size-2 fill-current" />
+          <span className="size-2 rounded-full bg-current" />
         </span>
       )}
       <span>{children}</span>
     </div>
     {!leftIcon && (
-      <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+      <KeyboardArrowDownIcon className="size-4 fill-current transition-transform group-data-[state=open]:rotate-180" />
     )}
   </CollapsibleTrigger>
 );

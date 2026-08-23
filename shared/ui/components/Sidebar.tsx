@@ -3,7 +3,6 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { VariantProps, cva } from "class-variance-authority";
-import { PanelLeft } from "lucide-react";
 
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { cn } from "@/shared/lib/utils";
@@ -18,6 +17,7 @@ import {
   SheetTitle,
 } from "@/shared/ui/components/Sheet";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { LeftPanelOpenIcon } from "@/shared/ui/components/icons";
 import {
   Tooltip,
   TooltipContent,
@@ -287,7 +287,7 @@ const SidebarTrigger = React.forwardRef<
       }}
       {...props}
     >
-      <PanelLeft />
+      <LeftPanelOpenIcon />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { ChevronRight } from "lucide-react";
+import { ChevronRightIcon } from "@/shared/ui/components/icons";
 
 type ThinkingBarProps = {
   className?: string;
@@ -32,7 +32,7 @@ export function ThinkingBar({
           className="flex items-center gap-1 text-sm transition-opacity hover:opacity-80"
         >
           <span className="text-muted-foreground font-medium">{text}</span>
-          <ChevronRight className="text-muted-foreground size-4" />
+          <ChevronRightIcon className="text-muted-foreground size-4 fill-current" />
         </button>
       ) : (
         <span className="text-muted-foreground cursor-default font-medium">

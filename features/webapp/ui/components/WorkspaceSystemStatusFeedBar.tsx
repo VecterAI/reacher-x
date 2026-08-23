@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
 import { AnimatedElapsedTimer } from "@/shared/ui/components/AnimatedElapsedTimer";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { buttonVariants } from "@/shared/ui/components/Button";
-import { ChangeHistoryIcon } from "@/shared/ui/components/icons";
+import {
+  ChangeHistoryIcon,
+  ChevronRightIcon,
+} from "@/shared/ui/components/icons";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { cn } from "@/shared/lib/utils";
 import { getWorkspaceSystemStatusDotClassName } from "@/features/webapp/lib/workspaceSystemStatusTone";
@@ -159,7 +161,7 @@ export function WorkspaceSystemStatusFeedBar({
               "text-foreground shrink-0"
             )}
           >
-            <ChevronRight className="size-4" aria-hidden />
+            <ChevronRightIcon className="size-4 fill-current" aria-hidden />
           </span>
         </div>
       </button>

@@ -3,14 +3,6 @@
 import * as React from "react";
 import { useConvex } from "convex/react";
 import { parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
-import {
-  Bot,
-  BrainCircuit,
-  Cable,
-  HeartPulse,
-  Radar,
-  Search,
-} from "lucide-react";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
@@ -247,15 +239,13 @@ export function AgentOpsDashboard() {
         "learning-loop",
         "Learning loop",
         data.overview.metrics.healthScore,
-        "composite",
-        <HeartPulse className="h-4 w-4" />
+        "composite"
       ),
       metricCard(
         "query-win-rate",
         "Query win rate",
         data.overview.metrics.queryWinRate,
         "activated after review",
-        <Radar className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -264,7 +254,6 @@ export function AgentOpsDashboard() {
         "Qualification precision",
         data.overview.metrics.qualificationPrecision,
         "qualified prospects",
-        <BrainCircuit className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -273,7 +262,6 @@ export function AgentOpsDashboard() {
         "Outreach effectiveness",
         data.overview.metrics.outreachEffectiveness,
         "reply rate",
-        <Cable className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -287,29 +275,25 @@ export function AgentOpsDashboard() {
         "memories-learned",
         "Memories saved",
         data.overview.metrics.memoriesLearned,
-        "this period",
-        <BrainCircuit className="h-4 w-4" />
+        "this period"
       ),
       metricCard(
         "average-memory-impact",
         "Avg assigned impact",
         data.overview.metrics.averageMemoryImpact,
-        "saved memories",
-        <Bot className="h-4 w-4" />
+        "saved memories"
       ),
       metricCard(
         "queries-activated",
         "Queries activated",
         data.overview.metrics.queriesActivated,
-        "this period",
-        <Cable className="h-4 w-4" />
+        "this period"
       ),
       metricCard(
         "run-reliability",
         "Run reliability",
         data.overview.metrics.runReliability,
         "successful evaluator runs",
-        <HeartPulse className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -468,22 +452,19 @@ export function AgentOpsDashboard() {
         "disc-keywords",
         "Keywords created",
         data.discovery.stats.keywordsCreated,
-        "this period",
-        <Search className="h-4 w-4" />
+        "this period"
       ),
       metricCard(
         "disc-generated",
         "Queries generated",
         data.discovery.stats.queriesGenerated,
-        "this period",
-        <Bot className="h-4 w-4" />
+        "this period"
       ),
       metricCard(
         "disc-query-win-rate",
         "Query win rate",
         data.discovery.stats.queryWinRate,
         "activated after review",
-        <Cable className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -492,7 +473,6 @@ export function AgentOpsDashboard() {
         "Duplicate rejection rate",
         data.discovery.stats.duplicateRejectionRate,
         "of reviewed queries",
-        <Radar className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -507,7 +487,6 @@ export function AgentOpsDashboard() {
         "Qualification precision",
         data.quality.summary.qualificationPrecision,
         "of evaluated",
-        <Radar className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -515,15 +494,13 @@ export function AgentOpsDashboard() {
         "qual-enrichment",
         "Enrichment usefulness",
         data.quality.summary.enrichmentUsefulness,
-        "avg score",
-        <BrainCircuit className="h-4 w-4" />
+        "avg score"
       ),
       metricCard(
         "qual-outreach",
         "Outreach effectiveness",
         data.quality.summary.outreachEffectiveness,
         "reply rate",
-        <Bot className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -532,7 +509,6 @@ export function AgentOpsDashboard() {
         "Run reliability",
         data.quality.summary.runReliability,
         "successful evaluator runs",
-        <Cable className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -546,29 +522,25 @@ export function AgentOpsDashboard() {
         "mem-learned",
         "Memories saved",
         data.memory.summary.memoriesLearned,
-        "this period",
-        <BrainCircuit className="h-4 w-4" />
+        "this period"
       ),
       metricCard(
         "mem-high-impact",
         "High-scored memories",
         data.memory.summary.highImpactMemories,
-        "assigned impact >= 80",
-        <Bot className="h-4 w-4" />
+        "assigned impact >= 80"
       ),
       metricCard(
         "mem-average-impact",
         "Average assigned impact",
         data.memory.summary.averageImpact,
-        "saved memories",
-        <Radar className="h-4 w-4" />
+        "saved memories"
       ),
       metricCard(
         "mem-average-confidence",
         "Average assigned confidence",
         data.memory.summary.averageConfidence,
         "saved memories",
-        <Cable className="h-4 w-4" />,
         "default",
         "percent"
       ),
@@ -582,22 +554,19 @@ export function AgentOpsDashboard() {
         "act-events-received",
         "Events received",
         data.activity.counts.eventsReceived,
-        "this period",
-        <HeartPulse className="h-4 w-4" />
+        "this period"
       ),
       metricCard(
         "act-runs-started",
         "Runs started",
         data.activity.counts.runsStarted,
-        "this period",
-        <Bot className="h-4 w-4" />
+        "this period"
       ),
       metricCard(
         "act-failed-events",
         "Failed events",
         data.activity.counts.failedEvents,
         "errors",
-        <Cable className="h-4 w-4" />,
         "destructive"
       ),
       metricCard(
@@ -605,7 +574,6 @@ export function AgentOpsDashboard() {
         "Failed runs",
         data.activity.counts.failedRuns,
         "errors",
-        <Radar className="h-4 w-4" />,
         "destructive"
       ),
     ],
@@ -1113,7 +1081,6 @@ function metricCard(
   title: string,
   metric: AgentOpsDashboardData["overview"]["metrics"]["healthScore"],
   context: string,
-  icon: React.ReactNode,
   semantic: "default" | "destructive" = "default",
   format: "number" | "percent" = "number"
 ): StatMetricData {
@@ -1125,7 +1092,6 @@ function metricCard(
     changePercent: metric.changePercent,
     trend: metric.trend,
     context,
-    icon,
     semantic,
     format,
   };

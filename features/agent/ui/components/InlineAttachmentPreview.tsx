@@ -1,17 +1,8 @@
 "use client";
 
 import * as React from "react";
-import {
-  FileArchive,
-  FileAudio,
-  FileCode2,
-  FileImage,
-  FileSpreadsheet,
-  FileText,
-  FileVideo,
-  Presentation,
-} from "lucide-react";
 import { inferFileVisualKind } from "@/shared/lib/utils/media/inferFileVisualKind";
+import { FileVisualIcon } from "@/shared/ui/components/FileVisualIcon";
 import {
   Attachment,
   AttachmentContent,
@@ -31,35 +22,6 @@ export interface InlineAttachmentPreviewItem {
   size: number;
   uploadedAt: number;
   mediaUrl: string;
-}
-
-function getAttachmentIcon(attachment: InlineAttachmentPreviewItem) {
-  const visualKind = inferFileVisualKind({
-    fileName: attachment.fileName,
-    mimeType: attachment.mimeType,
-    url: attachment.mediaUrl,
-  });
-
-  switch (visualKind) {
-    case "archive":
-      return <FileArchive className="size-4" />;
-    case "audio":
-      return <FileAudio className="size-4" />;
-    case "code":
-      return <FileCode2 className="size-4" />;
-    case "image":
-      return <FileImage className="size-4" />;
-    case "presentation":
-      return <Presentation className="size-4" />;
-    case "spreadsheet":
-      return <FileSpreadsheet className="size-4" />;
-    case "video":
-      return <FileVideo className="size-4" />;
-    case "document":
-    case "pdf":
-    default:
-      return <FileText className="size-4" />;
-  }
 }
 
 function InlineAttachmentCard({
@@ -109,7 +71,11 @@ function InlineAttachmentCard({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={attachment.mediaUrl} alt="" loading="lazy" />
           ) : (
-            getAttachmentIcon(attachment)
+            <FileVisualIcon
+              fileName={attachment.fileName}
+              mimeType={attachment.mimeType}
+              url={attachment.mediaUrl}
+            />
           )}
         </AttachmentMedia>
         <AttachmentContent>
