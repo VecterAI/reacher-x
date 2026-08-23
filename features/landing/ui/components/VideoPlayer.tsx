@@ -13,6 +13,7 @@ interface VideoPlayerProps {
   ariaLabel?: string;
   className?: string;
   poster?: string;
+  onError?: React.ReactEventHandler<HTMLVideoElement>;
 }
 
 type MediaThemeElementLike = HTMLElement & { template?: HTMLTemplateElement };
@@ -28,6 +29,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   ariaLabel,
   className,
   poster,
+  onError,
   ...props
 }) => {
   const resolvedMp4Url = React.useMemo(
@@ -66,6 +68,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         playsInline
         preload="metadata"
         poster={poster}
+        onError={onError}
         {...({
           referrerPolicy: "no-referrer",
         } satisfies VideoWithReferrerPolicy)}

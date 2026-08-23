@@ -43,6 +43,11 @@ const nextConfig = {
         hostname: "pbs.twimg.com",
       },
       {
+        // X/Twitter direct-message media
+        protocol: "https",
+        hostname: "ton.twitter.com",
+      },
+      {
         // UploadThing storage (user uploads, video posters)
         protocol: "https",
         hostname: "*.ufs.sh",
