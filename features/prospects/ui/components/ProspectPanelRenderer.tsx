@@ -128,7 +128,7 @@ export function ProspectPanelRenderer({
     currentPanel.type !== "prospect-profile" && (depth > 1 || isMobile);
 
   // Render the panel content based on type
-  const renderPanelContent = (panelEntry: PanelEntry) => {
+  const renderPanelContent = (panelEntry: PanelEntry, isActive: boolean) => {
     const currentPanel = panelEntry;
     switch (currentPanel.type) {
       case "prospect-profile":
@@ -155,6 +155,9 @@ export function ProspectPanelRenderer({
             loading={loading}
             onChatWithAgent={handleChatWithAgent}
             className={className}
+            // Inactive mobile layers must not keep a portalled Drawer mounted
+            // above the active sub-panel. The renderer owns sub-panel drawers.
+            disableMobileDrawer={!isActive}
             mode="default"
           />
         );
@@ -448,7 +451,7 @@ export function ProspectPanelRenderer({
         className={isActive ? "contents" : "hidden"}
         aria-hidden={!isActive}
       >
-        {renderPanelContent(panelEntry)}
+        {renderPanelContent(panelEntry, isActive)}
       </div>
     );
   });

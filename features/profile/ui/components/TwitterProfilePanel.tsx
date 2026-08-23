@@ -28,8 +28,8 @@ import {
   EventIcon,
   LinkIcon,
   LocationOnIcon,
-  MailIcon,
   NewReleasesIcon,
+  XChatIcon,
 } from "@/shared/ui/components/icons";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
@@ -477,7 +477,7 @@ export function TwitterProfilePanel({
                                     : undefined
                                 }
                               >
-                                <MailIcon className="fill-current" />
+                                <XChatIcon />
                               </Button>
                             ) : null
                           }

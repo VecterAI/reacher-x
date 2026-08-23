@@ -251,6 +251,9 @@ importers:
       hls.js:
         specifier: ^1.6.16
         version: 1.6.16
+      input-otp:
+        specifier: ^1.4.2
+        version: 1.4.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       juicebox-sdk:
         specifier: 0.3.0
         version: 0.3.0

@@ -27,6 +27,7 @@ import {
   OpenInNewIcon,
   PersonIcon,
   UnarchiveIcon,
+  XChatIcon,
 } from "@/shared/ui/components/icons";
 import { usePanelStack } from "@/features/prospects/contexts/PanelStackContext";
 import { useProspectProfile } from "@/features/prospects/contexts/ProspectProfileContext";
@@ -324,7 +325,11 @@ export function ProspectCardMenu({
                 : undefined
           }
         >
-          <MailIcon className="fill-current" aria-hidden />
+          {platform === "linkedin" ? (
+            <MailIcon className="fill-current" aria-hidden />
+          ) : (
+            <XChatIcon aria-hidden />
+          )}
           {platform === "linkedin" ? "Message on LinkedIn" : "DM on X/Twitter"}
         </DropdownMenuItem>
 

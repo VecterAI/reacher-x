@@ -12,16 +12,28 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type {
   LinkedInConversationAttachmentSummary,
+  LinkedInConversationMessage,
   LinkedInConversationPanelContext,
 } from "@/shared/lib/linkedin/conversation";
-import { toast } from "sonner";
-import { mergeConversationHistoryMessages } from "../lib/conversationHistoryHelpers";
+import type { LinkedInMessageReactionResult } from "@/shared/lib/linkedin/messageReaction";
+import {
+  mergeConversationHistoryMessages,
+  reconcileConversationHistoryRefresh,
+} from "../lib/conversationHistoryHelpers";
+import {
+  mergeOutboundMessageOperations,
+  type OutboundMessageMediaMetadata,
+} from "../lib/outboundMessageOperations";
+import { useOutboundMessageQueue } from "./useOutboundMessageQueue";
+import type { ComposerMediaKind } from "@/features/composer/types";
+import { runLinkedInMessageReactionOperation } from "../lib/linkedinMessageReactionOperation";
 
-const panelCache = new Map<string, LinkedInConversationPanelContext | null>();
 const panelInflight = new Map<
   string,
   Promise<LinkedInConversationPanelContext | null>
 >();
+const LINKEDIN_PANEL_REFRESH_INTERVAL_MS = 30_000;
+const EMPTY_PENDING_REACTION_MESSAGE_IDS = new Set<string>();
 
 function isLikelyConnectionFailure(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -43,7 +55,16 @@ export function useProspectLinkedInPanel(args: {
   const getLinkedInConversationHistoryPage = useAction(
     linkedinApi.getLinkedInConversationHistoryPage
   );
-  const sendLinkedInMessage = useAction(linkedinApi.sendLinkedInMessage);
+  const {
+    operations: outboundOperations,
+    enqueue: enqueueOutboundMessage,
+    retry: retryOutboundMessage,
+  } = useOutboundMessageQueue({
+    prospectId,
+    platform: "linkedin",
+    enabled,
+  });
+  const reactToLinkedInMessage = useAction(linkedinApi.reactToLinkedInMessage);
   const cancelActionRequest = useMutation(
     api.socialActions.cancelActionRequest
   );
@@ -53,42 +74,61 @@ export function useProspectLinkedInPanel(args: {
       ? { actionRequestId: actionRequestId as Id<"agentActionRequests"> }
       : "skip"
   );
+  const conversationRevision = useQuery(
+    api.platformConversations.getLinkedInConversationRevision,
+    enabled && prospectId
+      ? { prospectId: prospectId as Id<"prospects"> }
+      : "skip"
+  );
   const getPanelContextRef = useRef(getPanelContext);
   const dataRef = useRef<LinkedInConversationPanelContext | null>(null);
   const activeCacheKeyRef = useRef("");
+  const conversationRevisionRef = useRef<string | null | undefined>(undefined);
+  const reactionOperationsRef = useRef(new Set<string>());
 
   useEffect(() => {
     getPanelContextRef.current = getPanelContext;
   }, [getPanelContext]);
 
-  const [data, setData] = useState<LinkedInConversationPanelContext | null>(
-    null
-  );
+  const [storedData, setData] =
+    useState<LinkedInConversationPanelContext | null>(null);
   const [loading, setLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
-  const [loadOlderError, setLoadOlderError] = useState(false);
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [statusOverride, setStatusOverride] = useState<string | null>(null);
+  const [storedLoadOlderError, setLoadOlderError] = useState(false);
+  const [storedError, setError] = useState<string | null>(null);
+  const [reactionPendingState, setReactionPendingState] = useState<{
+    cacheKey: string;
+    messageIds: Set<string>;
+  }>({ cacheKey: "", messageIds: new Set() });
+  const [statusOverride, setStatusOverride] = useState<{
+    cacheKey: string;
+    status: string;
+  } | null>(null);
   const cacheKey = `${prospectId ?? ""}:${actionRequestId ?? ""}`;
+  const stateBelongsToCurrentPanel = activeCacheKeyRef.current === cacheKey;
+  const data = stateBelongsToCurrentPanel ? storedData : null;
+  const loadOlderError = stateBelongsToCurrentPanel
+    ? storedLoadOlderError
+    : false;
+  const error = stateBelongsToCurrentPanel ? storedError : null;
+  const pendingReactionMessageIds =
+    reactionPendingState.cacheKey === cacheKey
+      ? reactionPendingState.messageIds
+      : EMPTY_PENDING_REACTION_MESSAGE_IDS;
 
   useEffect(() => {
     activeCacheKeyRef.current = cacheKey;
+    conversationRevisionRef.current = undefined;
+    dataRef.current = null;
   }, [cacheKey]);
 
-  useEffect(() => {
-    dataRef.current = data;
-  }, [data]);
-
-  useEffect(() => {
-    setStatusOverride(null);
-  }, [prospectId, actionRequestId]);
-
   const refetch = useCallback(async () => {
+    const requestCacheKey = cacheKey;
     setIsLoadingOlder(false);
     setLoadOlderError(false);
     if (!enabled || !prospectId) {
+      dataRef.current = null;
       setData(null);
       setError(null);
       setLoading(false);
@@ -96,14 +136,19 @@ export function useProspectLinkedInPanel(args: {
       return null;
     }
 
-    if (panelCache.has(cacheKey)) {
+    const hasVisibleData = dataRef.current !== null;
+    const commitResult = (result: LinkedInConversationPanelContext | null) => {
+      if (activeCacheKeyRef.current !== requestCacheKey) return;
+      const nextData = reconcileConversationHistoryRefresh(
+        dataRef.current,
+        result
+      );
+      dataRef.current = nextData;
       startTransition(() => {
-        setData(panelCache.get(cacheKey) ?? null);
+        setData(nextData);
         setError(null);
       });
-    }
-
-    const hasVisibleData = panelCache.has(cacheKey) || dataRef.current !== null;
+    };
 
     const existingRequest = panelInflight.get(cacheKey);
     if (existingRequest) {
@@ -111,14 +156,13 @@ export function useProspectLinkedInPanel(args: {
       setIsRefreshing(hasVisibleData);
       try {
         const result = await existingRequest;
-        startTransition(() => {
-          setData(result);
-          setError(null);
-        });
+        commitResult(result);
         return result;
       } finally {
-        setLoading(false);
-        setIsRefreshing(false);
+        if (activeCacheKeyRef.current === requestCacheKey) {
+          setLoading(false);
+          setIsRefreshing(false);
+        }
       }
     }
 
@@ -138,11 +182,7 @@ export function useProspectLinkedInPanel(args: {
           });
           panelInflight.set(cacheKey, request);
           result = await request;
-          panelCache.set(cacheKey, result);
-          startTransition(() => {
-            setData(result);
-            setError(null);
-          });
+          commitResult(result);
           return result;
         } catch (err) {
           lastErr = err;
@@ -155,7 +195,8 @@ export function useProspectLinkedInPanel(args: {
         }
       }
 
-      if (!hasVisibleData) {
+      if (!hasVisibleData && activeCacheKeyRef.current === requestCacheKey) {
+        dataRef.current = null;
         startTransition(() => {
           setData(null);
           setError(
@@ -168,14 +209,64 @@ export function useProspectLinkedInPanel(args: {
       return null;
     } finally {
       panelInflight.delete(cacheKey);
-      setLoading(false);
-      setIsRefreshing(false);
+      if (activeCacheKeyRef.current === requestCacheKey) {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [actionRequestId, cacheKey, enabled, prospectId]);
 
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  const conversationRevisionKey = conversationRevision
+    ? `${conversationRevision.updatedAt}:${conversationRevision.latestMessageId ?? ""}:${conversationRevision.latestMessageAt ?? ""}`
+    : null;
+  const conversationRevisionLoaded = conversationRevision !== undefined;
+
+  useEffect(() => {
+    if (!conversationRevisionLoaded) return;
+    const previousRevision = conversationRevisionRef.current;
+    conversationRevisionRef.current = conversationRevisionKey;
+    if (
+      previousRevision === undefined ||
+      previousRevision === conversationRevisionKey ||
+      dataRef.current === null
+    ) {
+      return;
+    }
+    void refetch();
+  }, [conversationRevisionKey, conversationRevisionLoaded, refetch]);
+
+  useEffect(() => {
+    if (!enabled || !prospectId) {
+      return;
+    }
+
+    const refreshWhenVisible = () => {
+      if (
+        document.visibilityState !== "visible" ||
+        dataRef.current?.eligibility.enabled === false
+      ) {
+        return;
+      }
+      // refetch coalesces concurrent calls per panel cache key, so a provider
+      // refresh already in flight is reused rather than duplicated.
+      void refetch();
+    };
+
+    const intervalId = window.setInterval(
+      refreshWhenVisible,
+      LINKEDIN_PANEL_REFRESH_INTERVAL_MS
+    );
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [enabled, prospectId, refetch]);
 
   const loadOlder = useCallback(async () => {
     const requestCacheKey = cacheKey;
@@ -215,7 +306,6 @@ export function useProspectLinkedInPanel(args: {
         history: page.history,
       };
       dataRef.current = nextData;
-      panelCache.set(cacheKey, nextData);
       startTransition(() => setData(nextData));
       return page;
     } catch {
@@ -235,183 +325,72 @@ export function useProspectLinkedInPanel(args: {
     prospectId,
   ]);
 
-  const actionRequestStatus = statusOverride ?? liveDraft?.status ?? null;
+  const currentStatusOverride =
+    statusOverride?.cacheKey === cacheKey ? statusOverride.status : null;
+  const actionRequestStatus =
+    currentStatusOverride === "executing" &&
+    liveDraft?.status &&
+    liveDraft.status !== "pending_approval"
+      ? liveDraft.status
+      : (currentStatusOverride ?? liveDraft?.status ?? null);
   const isPendingApproval = actionRequestStatus === "pending_approval";
 
   const send = useCallback(
     async (
       text: string,
       mediaUrls?: string[],
-      _mediaDescriptions?: string[]
+      mediaDescriptions?: string[],
+      mediaKinds?: ComposerMediaKind[],
+      mediaFileNames?: string[],
+      mediaMetadata?: OutboundMessageMediaMetadata[],
+      quoteId?: string
     ) => {
       if (!prospectId) {
         throw new Error("Missing prospect.");
       }
-      if (isSendingMessage) {
-        return { success: true as const, duplicate: true, pending: true };
-      }
-
       const activeActionRequestId =
         actionRequestStatus === "pending_approval" && actionRequestId
           ? (actionRequestId as Id<"agentActionRequests">)
           : undefined;
-      const trimmedText = text.trim();
-      const normalizedMediaUrls = (mediaUrls ?? []).filter(
-        (url): url is string => typeof url === "string" && url.trim().length > 0
-      );
-      const previousData = dataRef.current;
-      const optimisticConversationId =
-        previousData?.conversationId ?? `optimistic:linkedin:${prospectId}`;
-      const optimisticMessageId = `optimistic:linkedin:${Date.now()}`;
-      const optimisticMessage = {
-        id: optimisticMessageId,
-        conversationId: optimisticConversationId,
-        text: trimmedText,
-        createdAt: new Date().toISOString(),
-        direction: "sent" as const,
-        attachments:
-          normalizedMediaUrls.length > 0
-            ? normalizedMediaUrls.map((url) => ({
-                type: "attachment" as const,
-                url,
-                previewUrl: url,
-              }))
-            : undefined,
-      };
-      const optimisticData = previousData
-        ? {
-            ...previousData,
-            conversationId: optimisticConversationId,
-            eligibility: {
-              ...previousData.eligibility,
-              conversationId: optimisticConversationId,
-            },
-            messages: [...previousData.messages, optimisticMessage],
-            draftText: "",
-            draftAttachments: undefined,
-          }
-        : previousData;
-
       if (activeActionRequestId) {
-        setStatusOverride("executing");
+        setStatusOverride({ cacheKey, status: "executing" });
       }
-
-      startTransition(() => {
-        setData(optimisticData);
-        setError(null);
-      });
-      if (optimisticData) {
-        panelCache.set(cacheKey, optimisticData);
-      } else {
-        panelCache.delete(cacheKey);
-      }
-      setIsSendingMessage(true);
-
-      void sendLinkedInMessage({
-        prospectId: prospectId as Id<"prospects">,
-        conversationId: previousData?.conversationId,
-        text: trimmedText,
-        mediaUrls: normalizedMediaUrls,
-        actionRequestId: activeActionRequestId,
-      })
-        .then((result) => {
-          const nextMessages = Array.isArray(result?.messages)
-            ? (result.messages as LinkedInConversationPanelContext["messages"])
-            : (dataRef.current?.messages.map((message) =>
-                message.id === optimisticMessageId
-                  ? {
-                      ...message,
-                      id: result?.messageId ?? optimisticMessageId,
-                      conversationId:
-                        result?.conversationId ?? message.conversationId,
-                    }
-                  : message
-              ) ?? []);
-          const nextConversationId =
-            result?.conversationId ??
-            nextMessages.at(-1)?.conversationId ??
-            previousData?.conversationId;
-          const nextData = dataRef.current
-            ? {
-                ...dataRef.current,
-                conversationId: nextConversationId,
-                eligibility: {
-                  ...dataRef.current.eligibility,
-                  conversationId: nextConversationId,
-                },
-                messages: nextMessages,
-                draftText: "",
-                draftAttachments: undefined,
-              }
-            : null;
-
-          startTransition(() => {
-            setData(nextData);
-            setError(null);
-          });
-
-          if (nextData) {
-            panelCache.set(cacheKey, nextData);
-          } else {
-            panelCache.delete(cacheKey);
-          }
-
-          if (activeActionRequestId) {
-            setStatusOverride("completed");
-          }
-
-          void refetch();
-        })
-        .catch((err) => {
-          const revertedData = previousData
-            ? {
-                ...previousData,
-                draftText: trimmedText,
-                draftAttachments:
-                  normalizedMediaUrls.length > 0
-                    ? normalizedMediaUrls.map((url) => ({
-                        type: "attachment" as const,
-                        url,
-                        previewUrl: url,
-                      }))
-                    : undefined,
-              }
-            : previousData;
-
-          startTransition(() => {
-            setData(revertedData);
-            setError(
-              err instanceof Error ? err.message : "Unable to send message."
-            );
-          });
-
-          if (revertedData) {
-            panelCache.set(cacheKey, revertedData);
-          } else {
-            panelCache.delete(cacheKey);
-          }
-
-          setStatusOverride(null);
-          toast.error("Failed to send LinkedIn message", {
-            description:
-              err instanceof Error ? err.message : "Please try again.",
-          });
-        })
-        .finally(() => {
-          setIsSendingMessage(false);
+      try {
+        return await enqueueOutboundMessage({
+          conversationId: data?.conversationId,
+          text,
+          mediaUrls,
+          mediaDescriptions,
+          mediaKinds,
+          mediaFileNames,
+          mediaMetadata,
+          quoteId,
+          actionRequestId: activeActionRequestId,
         });
-
-      return { success: true as const, pending: true };
+      } catch (error) {
+        if (activeActionRequestId) setStatusOverride(null);
+        throw error;
+      }
     },
     [
       actionRequestStatus,
       actionRequestId,
       cacheKey,
-      isSendingMessage,
+      data?.conversationId,
+      enqueueOutboundMessage,
       prospectId,
-      refetch,
-      sendLinkedInMessage,
     ]
+  );
+
+  const retrySend = useCallback(
+    async (clientRequestId: string) => {
+      const operation = outboundOperations.find(
+        (item) => item.clientRequestId === clientRequestId
+      );
+      if (!operation) throw new Error("Message is no longer available.");
+      return await retryOutboundMessage(operation);
+    },
+    [outboundOperations, retryOutboundMessage]
   );
 
   const cancel = useCallback(async () => {
@@ -422,19 +401,74 @@ export function useProspectLinkedInPanel(args: {
     const result = await cancelActionRequest({
       actionRequestId: actionRequestId as Id<"agentActionRequests">,
     });
-    setStatusOverride("cancelled");
-    panelCache.delete(cacheKey);
+    setStatusOverride({ cacheKey, status: "cancelled" });
     return result;
   }, [actionRequestId, cacheKey, cancelActionRequest]);
 
+  const reactToMessage = useCallback(
+    async (messageId: string, emoji: string) => {
+      if (!prospectId) throw new Error("Prospect is required.");
+      const requestCacheKey = cacheKey;
+      return await runLinkedInMessageReactionOperation({
+        operationKey: `${requestCacheKey}:${messageId}`,
+        messageId,
+        emoji,
+        inFlightOperations: reactionOperationsRef.current,
+        getData: () => dataRef.current,
+        isCurrent: () => activeCacheKeyRef.current === requestCacheKey,
+        setData: (nextData) => {
+          dataRef.current = nextData;
+          setData(nextData);
+        },
+        setPending: (pending) => {
+          if (activeCacheKeyRef.current !== requestCacheKey) return;
+          setReactionPendingState((current) => {
+            const currentMessageIds =
+              current.cacheKey === requestCacheKey
+                ? [...current.messageIds]
+                : [];
+            const messageIds = new Set(
+              pending
+                ? [...currentMessageIds, messageId]
+                : currentMessageIds.filter(
+                    (currentMessageId) => currentMessageId !== messageId
+                  )
+            );
+            return { cacheKey: requestCacheKey, messageIds };
+          });
+        },
+        addReaction: async () =>
+          (await reactToLinkedInMessage({
+            prospectId: prospectId as Id<"prospects">,
+            messageId,
+            reaction: emoji,
+          })) as LinkedInMessageReactionResult,
+        refresh: refetch,
+      });
+    },
+    [cacheKey, prospectId, reactToLinkedInMessage, refetch]
+  );
+
+  const dataWithOutbound = data
+    ? {
+        ...data,
+        messages: mergeOutboundMessageOperations(
+          data.messages,
+          outboundOperations,
+          data.conversationId ?? `outbound:linkedin:${prospectId ?? ""}`
+        ) as LinkedInConversationMessage[],
+      }
+    : data;
+
   const mergedData =
-    data && liveDraft && isPendingApproval
+    dataWithOutbound && liveDraft && isPendingApproval
       ? {
-          ...data,
+          ...dataWithOutbound,
           draftText: liveDraft.draftText,
           draftAttachments:
-            data.draftAttachments?.length || liveDraft.mediaUrls.length === 0
-              ? data.draftAttachments
+            dataWithOutbound.draftAttachments?.length ||
+            liveDraft.mediaUrls.length === 0
+              ? dataWithOutbound.draftAttachments
               : liveDraft.mediaUrls.map(
                   (
                     url: string,
@@ -447,15 +481,15 @@ export function useProspectLinkedInPanel(args: {
                   })
                 ),
         }
-      : data
+      : dataWithOutbound
         ? {
-            ...data,
-            draftText: isPendingApproval ? data.draftText : "",
+            ...dataWithOutbound,
+            draftText: isPendingApproval ? dataWithOutbound.draftText : "",
             draftAttachments: isPendingApproval
-              ? data.draftAttachments
+              ? dataWithOutbound.draftAttachments
               : undefined,
           }
-        : data;
+        : dataWithOutbound;
 
   return {
     data: mergedData,
@@ -467,10 +501,12 @@ export function useProspectLinkedInPanel(args: {
     refetch,
     loadOlder,
     send,
+    retrySend,
+    reactToMessage,
+    pendingReactionMessageIds,
     cancel,
     actionRequestStatus,
     isPendingApproval,
-    isSendingMessage,
     isSendingActionRequest:
       actionRequestStatus === "approved" || actionRequestStatus === "executing",
   };

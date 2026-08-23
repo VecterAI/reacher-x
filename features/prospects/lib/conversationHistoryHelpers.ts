@@ -1,6 +1,17 @@
+import { parseIsoToTimestamp } from "@/shared/lib/utils/time/timeUtils";
+
 type ConversationMessageLike = {
   id: string;
   createdAt?: string;
+};
+
+type ConversationHistoryContext<
+  TMessage extends ConversationMessageLike,
+  THistory,
+> = {
+  conversationId?: string;
+  messages: TMessage[];
+  history?: THistory;
 };
 
 function toConversationMessageTimestamp(createdAt?: string): number {
@@ -27,4 +38,36 @@ export function mergeConversationHistoryMessages<
     return timestampDifference || left.id.localeCompare(right.id);
   });
 }
-import { parseIsoToTimestamp } from "@/shared/lib/utils/time/timeUtils";
+
+/**
+ * Apply a refreshed newest page without discarding pages the reader already
+ * loaded. Provider data wins for overlapping IDs so edits, reactions, and
+ * delivery state stay current while the existing continuation cursor remains
+ * at the oldest loaded boundary.
+ */
+export function reconcileConversationHistoryRefresh<
+  TMessage extends ConversationMessageLike,
+  THistory,
+  TContext extends ConversationHistoryContext<TMessage, THistory>,
+>(current: TContext | null, refreshed: TContext | null): TContext | null {
+  if (!current || !refreshed) {
+    return refreshed;
+  }
+
+  if (
+    current.conversationId &&
+    refreshed.conversationId &&
+    current.conversationId !== refreshed.conversationId
+  ) {
+    return refreshed;
+  }
+
+  return {
+    ...refreshed,
+    messages: mergeConversationHistoryMessages(
+      refreshed.messages,
+      current.messages
+    ),
+    history: current.history ?? refreshed.history,
+  };
+}

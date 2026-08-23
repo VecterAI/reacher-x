@@ -10,14 +10,12 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
-import { MessageBubble } from "@/shared/ui/components/MessageBubble";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import { cn } from "@/shared/lib/utils";
 import { useProspectDmPanel } from "@/features/prospects/hooks/useProspectDmPanel";
-import { XDmAttachmentGallery } from "@/features/prospects/ui/components/XDmAttachmentGallery";
 import { XDmConversationMenu } from "@/features/prospects/ui/components/XDmConversationMenu";
-import { formatDmMessageTime } from "@/features/prospects/lib/formatDmMessageTime";
+import { ConversationMessageList } from "@/features/prospects/ui/components/conversation-message/ConversationMessageList";
 import { buildSerializedTextState } from "@/features/composer/lib/buildSerializedTextState";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
 import { BaseComposer } from "@/features/composer/ui/components/BaseComposer";
@@ -32,6 +30,7 @@ import {
 } from "@/features/composer/ui/dmComposerClasses";
 import {
   ChangeHistoryIcon,
+  LockIcon,
   NewReleasesIcon,
   OpenInNewIcon,
 } from "@/shared/ui/components/icons";
@@ -39,6 +38,11 @@ import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
 import type { XDmAttachmentSummary } from "@/shared/lib/twitter/dm";
 import { Badge } from "@/shared/ui/components/Badge";
+import {
+  useXChatBrowserSession,
+  useXChatBrowserSessionState,
+} from "@/features/agent/lib/xChatBrowserSession";
+import { toXChatConversationMessages } from "@/features/prospects/lib/xChatConversationMessages";
 
 export interface InlineDmPreviewCardProps {
   prospectId: string;
@@ -70,6 +74,8 @@ export function InlineDmPreviewCard({
     actionRequestId,
     enabled: Boolean(prospectId && actionRequestId),
   });
+  const xChatSession = useXChatBrowserSession({ prospectId });
+  const xChatState = useXChatBrowserSessionState(prospectId);
 
   const profileUrl = data?.prospect.profileUrl;
 
@@ -91,6 +97,14 @@ export function InlineDmPreviewCard({
 
   async function handleSend() {
     if (!data?.draftText?.trim()) {
+      return;
+    }
+    if (xChatState.status !== "unavailable") {
+      toast.error("Unlock XChat before sending", {
+        description:
+          "Open the conversation panel so the message can be encrypted in your browser.",
+      });
+      onOpenPanel();
       return;
     }
     try {
@@ -144,8 +158,31 @@ export function InlineDmPreviewCard({
     );
   }
 
-  /** Last two messages for compact inline preview (matches product mock). */
-  const previewMessages = data.messages.slice(-2);
+  const shouldGateCachedConversation =
+    xChatState.status === "unknown" ||
+    xChatState.status === "checking" ||
+    xChatState.status === "locked" ||
+    xChatState.status === "unlocking" ||
+    xChatState.status === "configuration_required" ||
+    xChatState.status === "error" ||
+    xChatState.status === "rate_limited";
+  const previewMessages = shouldGateCachedConversation
+    ? []
+    : xChatState.status === "unlocked"
+      ? toXChatConversationMessages(xChatSession).slice(-2)
+      : data.messages.slice(-2);
+  const lockedConversationLabel =
+    xChatState.status === "checking"
+      ? "Checking encrypted messages…"
+      : xChatState.status === "unlocking"
+        ? "Unlocking encrypted messages…"
+        : xChatState.status === "rate_limited"
+          ? "Encrypted messages are temporarily rate limited"
+          : xChatState.status === "configuration_required"
+            ? "XChat API access is unavailable"
+            : xChatState.status === "error"
+              ? "Encrypted messages need attention"
+              : "Encrypted conversation locked";
   const isCompletedApproval = actionRequestStatus === "completed";
   const isCancelledApproval = actionRequestStatus === "cancelled";
   const isMissingConnection =
@@ -239,37 +276,34 @@ export function InlineDmPreviewCard({
             </div>
           ) : null}
 
-          {previewMessages.length > 0 ? (
-            <div className="flex flex-col gap-4">
-              {previewMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "flex flex-col gap-2",
-                    message.direction === "sent" ? "items-end" : "items-start"
-                  )}
-                >
-                  {message.attachments?.length ? (
-                    <XDmAttachmentGallery attachments={message.attachments} />
-                  ) : null}
-                  {message.text ? (
-                    <MessageBubble variant={message.direction}>
-                      <div className="wrap-break-word whitespace-pre-wrap">
-                        {message.text}
-                      </div>
-                    </MessageBubble>
-                  ) : null}
-                  {message.createdAt ? (
-                    <div className="text-muted-foreground px-1 text-xs">
-                      {formatDmMessageTime(message.createdAt)}
-                      {message.direction === "sent" && message.readAt
-                        ? " · Read"
-                        : ""}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
+          {shouldGateCachedConversation ? (
+            <InlineFeatureStrip
+              leading={
+                <>
+                  <div className="border-border shrink-0 rounded-md border p-1">
+                    <LockIcon
+                      className="text-foreground size-4 fill-current"
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <span className="min-w-0 truncate text-sm font-medium">
+                    {lockedConversationLabel}
+                  </span>
+                </>
+              }
+              trailing={
+                <Button size="xs" onClick={onOpenPanel}>
+                  Open
+                </Button>
+              }
+            />
+          ) : previewMessages.length > 0 ? (
+            <ConversationMessageList
+              messages={previewMessages}
+              platform="twitter"
+              participantAvatarUrl={data.prospect.avatarUrl}
+              participantName={data.prospect.displayName}
+            />
           ) : null}
 
           {data.warning ? (
