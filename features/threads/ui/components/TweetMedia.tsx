@@ -13,9 +13,73 @@ import GalleryViewer from "./GalleryViewer";
 import VideoTile from "./VideoTile";
 
 import { Media } from "@/features/threads/types";
+import { MediaUnavailablePlaceholder } from "@/shared/ui/components/MediaUnavailablePlaceholder";
+import { MediaRetryButton } from "@/shared/ui/components/MediaRetryButton";
+import { getMediaAspectRatio } from "@/shared/lib/platforms/mediaPresentation";
+import { useRetryableMediaFailures } from "@/shared/ui/hooks/use-retryable-media-failures";
 
 interface TweetMediaProps {
   media: Media[];
+  onRetry?: (item: Media, index: number) => Promise<void> | void;
+}
+
+function computeMediaAspect(item: Media): number {
+  if (item.original_info) {
+    return getMediaAspectRatio(item.original_info);
+  }
+  if (item.sizes?.large) {
+    return getMediaAspectRatio({
+      width: item.sizes.large.w,
+      height: item.sizes.large.h,
+    });
+  }
+  const aspectRatio = item.video_info?.aspect_ratio;
+  return getMediaAspectRatio({
+    width: aspectRatio?.[0],
+    height: aspectRatio?.[1],
+  });
+}
+
+function getMediaKey(item: Media, index: number) {
+  const identity = item.media_key ?? item.id_str ?? String(index);
+  const sources = [
+    item.media_url_https,
+    ...(item.video_info?.variants?.map((variant) => variant.url) ?? []),
+  ]
+    .filter(Boolean)
+    .join("|");
+  return `${identity}:${sources}`;
+}
+
+function TweetMediaUnavailable({
+  item,
+  aspectRatio,
+  isRetrying,
+  onRetry,
+}: {
+  item: Media;
+  aspectRatio?: number;
+  isRetrying?: boolean;
+  onRetry: () => void;
+}) {
+  const isVideo = item.type === "video" || item.type === "animated_gif";
+  const label = isVideo ? "Video" : "Image";
+  return (
+    <div className="h-full w-full" style={{ aspectRatio }}>
+      <MediaUnavailablePlaceholder
+        kind={isVideo ? "video" : "image"}
+        title={`${label} unavailable`}
+        className="h-full min-h-0"
+        action={
+          <MediaRetryButton
+            label={label}
+            isRetrying={isRetrying}
+            onRetry={onRetry}
+          />
+        }
+      />
+    </div>
+  );
 }
 
 function getVideoUrls(item: Media): { hlsUrl?: string; mp4Url?: string } {
@@ -26,9 +90,11 @@ function getVideoUrls(item: Media): { hlsUrl?: string; mp4Url?: string } {
   };
 }
 
-const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
+const TweetMedia: React.FC<TweetMediaProps> = ({ media, onRetry }) => {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [initialIndex, setInitialIndex] = useState(0);
+  const { failedKeys, markFailed, retry, retryingKeys } =
+    useRetryableMediaFailures();
 
   const mediaList = media ?? [];
   if (mediaList.length === 0) return null;
@@ -38,24 +104,38 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
       index === self.findIndex((m) => m.id_str === item.id_str)
   );
 
-  // Compute aspect ratio for single item from the media itself.
-  const computeAspect = (item: Media): number => {
-    if (item.original_info) {
-      return item.original_info.width / item.original_info.height;
-    }
-    if (item.sizes?.large) {
-      return item.sizes.large.w / item.sizes.large.h;
-    }
-    return 16 / 9; // sensible default
-  };
-
   const openViewerAt = (index: number) => {
     setInitialIndex(index);
     setViewerOpen(true);
   };
 
+  const markMediaUnavailable = (item: Media, index: number) => {
+    markFailed(getMediaKey(item, index));
+  };
+
+  const retryMedia = (item: Media, index: number) => {
+    const key = getMediaKey(item, index);
+    void retry(key, () => onRetry?.(item, index)).catch((error) => {
+      console.warn(
+        "[TweetMedia] Unable to retry media",
+        error instanceof Error ? error.message : String(error)
+      );
+    });
+  };
+
   const renderSingle = (item: Media) => {
-    const aspectRatio = computeAspect(item);
+    const mediaKey = getMediaKey(item, 0);
+    if (failedKeys.has(mediaKey)) {
+      return (
+        <TweetMediaUnavailable
+          item={item}
+          aspectRatio={computeMediaAspect(item)}
+          isRetrying={retryingKeys.has(mediaKey)}
+          onRetry={() => retryMedia(item, 0)}
+        />
+      );
+    }
+    const aspectRatio = computeMediaAspect(item);
 
     if (item.type === "video" || item.type === "animated_gif") {
       const { hlsUrl, mp4Url } = getVideoUrls(item);
@@ -74,6 +154,7 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
             mp4Url={mp4Url}
             ariaLabel="Tweet video"
             poster={item.media_url_https}
+            onError={() => markMediaUnavailable(item, 0)}
           />
         </div>
       );
@@ -81,7 +162,7 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
     const onClick = () => openViewerAt(0);
     return (
       <div
-        className="border-border relative w-full overflow-hidden rounded-md border"
+        className="border-border bg-muted/30 relative w-full overflow-hidden rounded-md border"
         style={{ aspectRatio }}
       >
         <Image
@@ -91,6 +172,7 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
           className="object-cover"
           sizes="(max-width: 768px) 100vw, 50vw"
           loading="eager"
+          onError={() => markMediaUnavailable(item, 0)}
         />
         <button
           type="button"
@@ -148,6 +230,18 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
               .join(" ");
 
             const onClick = () => openViewerAt(idx);
+            const mediaKey = getMediaKey(item, idx);
+            if (failedKeys.has(mediaKey)) {
+              return (
+                <div key={mediaKey} className={cellClasses}>
+                  <TweetMediaUnavailable
+                    item={item}
+                    isRetrying={retryingKeys.has(mediaKey)}
+                    onRetry={() => retryMedia(item, idx)}
+                  />
+                </div>
+              );
+            }
 
             if (item.type === "video" || item.type === "animated_gif") {
               return (
@@ -156,6 +250,7 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
                     item={item}
                     ariaLabel="Tweet video preview"
                     onClick={onClick}
+                    onError={() => markMediaUnavailable(item, idx)}
                     className="h-full w-full"
                   />
                 </div>
@@ -170,6 +265,7 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
                   fill
                   sizes="(max-width: 768px) 100vw, 50vw"
                   className="object-cover"
+                  onError={() => markMediaUnavailable(item, idx)}
                   onClick={(e) => {
                     e.stopPropagation();
                     onClick();

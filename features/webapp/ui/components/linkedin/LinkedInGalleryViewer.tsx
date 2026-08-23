@@ -23,7 +23,7 @@ import {
 import { Button } from "@/shared/ui/components/Button";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import VideoPlayer from "@/features/landing/ui/components/VideoPlayer";
-import type { UnifiedMedia } from "@/shared/lib/platforms/types";
+import type { AvailableUnifiedMedia } from "@/shared/lib/platforms/types";
 import { CloseIcon } from "@/shared/ui/components/icons";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
@@ -78,7 +78,7 @@ const ZoomPanImage: React.FC<{
 interface LinkedInGalleryViewerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  media: UnifiedMedia[];
+  media: AvailableUnifiedMedia[];
   initialIndex?: number;
 }
 

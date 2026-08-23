@@ -39,7 +39,7 @@ export function QuoteTweetCardSkeleton({
           <Skeleton className="h-4 w-5/6 rounded-md" />
           <Skeleton className="h-4 w-4/6 rounded-md" />
         </div>
-        <Skeleton className="mt-2 h-32 w-full rounded-md" />
+        <Skeleton className="mt-2 aspect-video w-full rounded-md" />
       </div>
     </div>
   );

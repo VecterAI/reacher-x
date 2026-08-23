@@ -15,6 +15,7 @@ type VideoTileProps = {
   className?: string;
   ariaLabel?: string;
   onClick?: () => void;
+  onError?: () => void;
 };
 
 function formatDuration(seconds: number): string {
@@ -28,6 +29,7 @@ const VideoTile: React.FC<VideoTileProps> = ({
   className,
   ariaLabel,
   onClick,
+  onError,
 }) => {
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const [duration, setDuration] = React.useState<number | null>(null);
@@ -93,6 +95,7 @@ const VideoTile: React.FC<VideoTileProps> = ({
         preload="metadata"
         poster={poster}
         aria-label={ariaLabel}
+        onError={onError}
       >
         {mp4Url && <source src={mp4Url} type="video/mp4" />}
         Your browser does not support HTML5 video.

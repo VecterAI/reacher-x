@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Button } from "@/shared/ui/components/Button";
@@ -18,6 +18,7 @@ interface OpenGraphPreviewProps {
   debounceMs?: number;
   enableCache?: boolean;
   retryOnError?: boolean;
+  fallback?: ReactNode;
 }
 
 export function OpenGraphPreview({
@@ -28,6 +29,7 @@ export function OpenGraphPreview({
   debounceMs = 500,
   enableCache = true,
   retryOnError = true,
+  fallback = null,
 }: OpenGraphPreviewProps) {
   const { data, loading, error, fromCache } = useOgPreview(url, {
     debounceMs,
@@ -90,14 +92,12 @@ export function OpenGraphPreview({
     );
   }
 
-  // Hide preview completely on error (mimic Twitter)
   if (error) {
-    return null;
+    return fallback;
   }
 
-  // Only render if image exists; otherwise render nothing
   if (!data || !data.image) {
-    return null;
+    return fallback;
   }
 
   const proxied = (u: string | null | undefined) =>
