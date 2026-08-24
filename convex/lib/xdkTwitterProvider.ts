@@ -1986,14 +1986,12 @@ function getXChatPageBudget(maxPages?: number): number {
   );
 }
 
-function getXChatEventContinuationParams(
-  cursor?: string
-): URLSearchParams | undefined {
-  if (!cursor) {
-    return undefined;
+function getXChatEventContinuationParams(cursor?: string): URLSearchParams {
+  const params = new URLSearchParams({ max_results: "100" });
+  if (cursor) {
+    params.set("pagination_token", cursor);
   }
-
-  return new URLSearchParams({ pagination_token: cursor });
+  return params;
 }
 
 /**
@@ -2098,7 +2096,10 @@ export type XChatBrowserDecryptBundleAvailable = {
 };
 
 export type XChatBrowserDecryptBundle =
-  | { availability: "unavailable"; reason: "not_configured" }
+  | {
+      availability: "unavailable";
+      reason: "viewer_not_configured" | "participant_not_configured";
+    }
   | { availability: "blocked"; reason: "xchat_access_denied" }
   | XChatBrowserDecryptBundleAvailable;
 
@@ -2196,17 +2197,29 @@ export async function getXChatBrowserDecryptBundle(
   ]);
   if (viewerKeyRecords.length === 0) {
     if (page.events.length === 0) {
-      return { availability: "unavailable", reason: "not_configured" };
+      return {
+        availability: "unavailable",
+        reason: "viewer_not_configured",
+      };
     }
     throw new XChatConfigurationError(
       "keys_unavailable",
       "XChat encryption keys are unavailable for this encrypted conversation."
     );
   }
+  if (participantKeyRecords.length === 0 && page.events.length === 0) {
+    return {
+      availability: "unavailable",
+      reason: "participant_not_configured",
+    };
+  }
   const ownerRecord = getLatestXChatOwnerRecord(viewerKeyRecords);
   if (!ownerRecord) {
     if (page.events.length === 0) {
-      return { availability: "unavailable", reason: "not_configured" };
+      return {
+        availability: "unavailable",
+        reason: "viewer_not_configured",
+      };
     }
     throw new XChatConfigurationError(
       "backup_unavailable",
@@ -2216,7 +2229,10 @@ export async function getXChatBrowserDecryptBundle(
   const juiceboxConfig = buildSanitizedXChatJuiceboxConfig(ownerRecord);
   if (!juiceboxConfig) {
     if (page.events.length === 0) {
-      return { availability: "unavailable", reason: "not_configured" };
+      return {
+        availability: "unavailable",
+        reason: "viewer_not_configured",
+      };
     }
     throw new XChatConfigurationError(
       "backup_unavailable",
@@ -2287,6 +2303,31 @@ export async function getXChatEncryptedEventPage(
   };
 }
 
+export async function markXChatConversationRead(
+  context: XProviderContext,
+  conversationId: string,
+  seenUntilSequenceId: string
+): Promise<void> {
+  try {
+    await context.client.chat.markConversationRead(
+      toXChatConversationPathId(conversationId),
+      { seenUntilSequenceId }
+    );
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new XChatProviderRequestError(
+        parseXChatProviderError({
+          status: error.status,
+          statusText: error.statusText,
+          headers: error.headers,
+          rawBody: JSON.stringify(error.data ?? {}),
+        })
+      );
+    }
+    throw error;
+  }
+}
+
 export async function submitEncryptedXChatMessage(
   context: XProviderContext,
   conversationId: string,
@@ -2316,7 +2357,13 @@ export async function submitEncryptedXChatMessage(
   }
 }
 
-const XCHAT_MEDIA_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
+/**
+ * Keep the raw chunk small enough that its base64 JSON representation stays
+ * comfortably below intermediary request-body limits. A 4 MiB raw chunk
+ * expands beyond 5 MiB and X's XChat append endpoint can terminate that
+ * request as a status-0 network failure, while smaller image uploads succeed.
+ */
+export const XCHAT_MEDIA_UPLOAD_CHUNK_BYTES = 1024 * 1024;
 
 export function parseXChatMediaUploadInitializeResponse(value: unknown): {
   sessionId: string;

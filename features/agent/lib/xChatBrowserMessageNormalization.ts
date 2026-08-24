@@ -22,6 +22,7 @@ export type BrowserDecryptedXChatAttachment = {
   }>;
   isGif?: boolean;
   isVoiceNote?: boolean;
+  isLoading?: boolean;
   unavailable?: boolean;
   urlExpiresAt?: string;
   linkedinPostUrl?: string;
@@ -66,9 +67,17 @@ export type BrowserDecryptedXChatMessageUpdate = {
   deletedAt?: string;
 };
 
+export type BrowserDecryptedXChatReadReceipt = {
+  senderId: string;
+  seenUntilSequenceId?: string;
+  seenAt: string;
+  occurredAt: number;
+};
+
 export type BrowserDecryptedXChatConversation = {
   messages: BrowserDecryptedXChatMessage[];
   messageUpdates: BrowserDecryptedXChatMessageUpdate[];
+  readReceipts: BrowserDecryptedXChatReadReceipt[];
 };
 
 export function hydrateXChatQuotedMessages(
@@ -143,6 +152,28 @@ function getFiniteNumber(
   return undefined;
 }
 
+const XCHAT_MEDIA_TYPE_BY_WIRE_VALUE: Readonly<Record<number, string>> = {
+  1: "image",
+  2: "gif",
+  3: "video",
+  4: "audio",
+  5: "file",
+  6: "svg",
+};
+
+function normalizeXChatMediaType(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) {
+    const normalized = value.trim();
+    const numericValue = Number(normalized);
+    return Number.isInteger(numericValue)
+      ? XCHAT_MEDIA_TYPE_BY_WIRE_VALUE[numericValue]
+      : normalized;
+  }
+  return typeof value === "number" && Number.isInteger(value)
+    ? XCHAT_MEDIA_TYPE_BY_WIRE_VALUE[value]
+    : undefined;
+}
+
 function normalizeAttachmentVariants(
   attachment: AttachmentInfo
 ): BrowserDecryptedXChatAttachment["variants"] {
@@ -184,8 +215,11 @@ function normalizeAttachmentVariants(
 function normalizeAttachment(
   attachment: AttachmentInfo
 ): BrowserDecryptedXChatAttachment {
-  const type =
-    attachment.mediaType ?? attachment.attachmentType ?? "attachment";
+  const attachmentRecord = attachment as Record<string, unknown>;
+  const mediaType = normalizeXChatMediaType(
+    attachmentRecord.mediaType ?? attachmentRecord.media_type
+  );
+  const type = mediaType ?? attachment.attachmentType ?? "attachment";
   const pathLikeValue = `${type} ${attachment.filename ?? ""}`.toLowerCase();
   const isVoiceNote =
     pathLikeValue.includes("audio") ||
@@ -201,7 +235,7 @@ function normalizeAttachment(
     variants?.find((variant) =>
       variant.mimeType?.toLowerCase().startsWith("video/")
     )?.url;
-  const attachmentRecord = attachment as Record<string, unknown>;
+  const mimeType = mediaType?.includes("/") ? mediaType : undefined;
 
   return {
     id: attachment.attachmentId ?? attachment.restId,
@@ -213,7 +247,7 @@ function normalizeAttachment(
     width: attachment.dimensions?.width,
     height: attachment.dimensions?.height,
     fileName: attachment.filename,
-    mimeType: attachment.mediaType,
+    mimeType,
     fileSize: attachment.filesizeBytes,
     durationMs: attachment.durationMillis,
     variants,
@@ -250,7 +284,14 @@ function normalizeContentAttachment(value: unknown): AttachmentInfo | null {
     ...(typeof width === "number" || typeof height === "number"
       ? { dimensions: { width, height } }
       : {}),
-    mediaType: getString(attachment, "mediaType", "media_type", "mimeType"),
+    mediaType: normalizeXChatMediaType(
+      attachment.mediaType ??
+        attachment.media_type ??
+        attachment.mimeType ??
+        attachment.mime_type ??
+        attachment.contentType ??
+        attachment.content_type
+    ),
     durationMillis: getFiniteNumber(
       attachment,
       "durationMillis",
@@ -277,6 +318,7 @@ function normalizeContentAttachment(value: unknown): AttachmentInfo | null {
     restId: getString(attachment, "restId", "rest_id"),
     postUrl: getString(attachment, "postUrl", "post_url"),
     fallbackText: getString(attachment, "fallbackText", "fallback_text"),
+    variants: attachment.variants,
   };
 }
 
@@ -371,6 +413,53 @@ function toIsoTimestamp(timestamp: number): string | undefined {
   return new Date(timestamp).toISOString();
 }
 
+function compareNumericSequenceIds(left: string, right: string) {
+  if (!/^\d+$/u.test(left) || !/^\d+$/u.test(right)) return undefined;
+  const leftValue = BigInt(left);
+  const rightValue = BigInt(right);
+  return leftValue === rightValue ? 0 : leftValue < rightValue ? -1 : 1;
+}
+
+export function applyXChatReadReceipts(
+  messages: BrowserDecryptedXChatMessage[],
+  receipts: BrowserDecryptedXChatReadReceipt[]
+): BrowserDecryptedXChatMessage[] {
+  if (receipts.length === 0) return messages;
+  const messageBySequenceId = new Map(
+    messages.flatMap((message) =>
+      message.sequenceId ? [[message.sequenceId, message] as const] : []
+    )
+  );
+
+  return messages.map((message) => {
+    if (message.direction !== "sent") return message;
+    let readAt = message.readAt;
+    for (const receipt of receipts) {
+      const targetSequenceId = receipt.seenUntilSequenceId;
+      const sequenceComparison =
+        message.sequenceId && targetSequenceId
+          ? compareNumericSequenceIds(message.sequenceId, targetSequenceId)
+          : undefined;
+      const targetMessage = targetSequenceId
+        ? messageBySequenceId.get(targetSequenceId)
+        : undefined;
+      const isRead = targetSequenceId
+        ? message.sequenceId === targetSequenceId ||
+          sequenceComparison === -1 ||
+          (sequenceComparison === undefined &&
+            Boolean(targetMessage) &&
+            message.occurredAt <= (targetMessage?.occurredAt ?? 0))
+        : message.occurredAt <= receipt.occurredAt;
+      if (isRead && (!readAt || receipt.seenAt > readAt)) {
+        readAt = receipt.seenAt;
+      }
+    }
+    return readAt && readAt !== message.readAt
+      ? { ...message, readAt }
+      : message;
+  });
+}
+
 export function normalizeVerifiedXChatConversation(args: {
   events: Event[];
   viewerUserId: string;
@@ -382,6 +471,7 @@ export function normalizeVerifiedXChatConversation(args: {
     string,
     BrowserDecryptedXChatMessageUpdate
   >();
+  const readReceipts: BrowserDecryptedXChatReadReceipt[] = [];
 
   for (const event of args.events) {
     if (
@@ -523,12 +613,30 @@ export function normalizeVerifiedXChatConversation(args: {
       }
     }
 
-    if (event.type === "readReceipt" && event.senderId !== args.viewerUserId) {
-      for (const message of messages) {
-        if (message.direction === "sent" && message.occurredAt <= occurredAt) {
-          message.readAt = timestamp;
-        }
-      }
+    if (
+      event.type === "readReceipt" &&
+      typeof event.senderId === "string" &&
+      event.senderId !== args.viewerUserId &&
+      timestamp
+    ) {
+      const content = asRecord(event.content);
+      const seenUntilSequenceId =
+        getString(
+          eventRecord,
+          "seenUntilSequenceId",
+          "seen_until_sequence_id"
+        ) ??
+        getString(content, "seenUntilSequenceId", "seen_until_sequence_id");
+      const seenAtMillis =
+        getFiniteNumber(eventRecord, "seenAtMillis", "seen_at_millis") ??
+        getFiniteNumber(content, "seenAtMillis", "seen_at_millis") ??
+        occurredAt;
+      readReceipts.push({
+        senderId: event.senderId,
+        ...(seenUntilSequenceId ? { seenUntilSequenceId } : {}),
+        seenAt: toIsoTimestamp(seenAtMillis) ?? timestamp,
+        occurredAt,
+      });
     }
   }
 
@@ -558,10 +666,12 @@ export function normalizeVerifiedXChatConversation(args: {
   }
 
   return {
-    messages: hydrateXChatQuotedMessages(messages).sort(
-      (left, right) => left.occurredAt - right.occurredAt
-    ),
+    messages: applyXChatReadReceipts(
+      hydrateXChatQuotedMessages(messages),
+      readReceipts
+    ).sort((left, right) => left.occurredAt - right.occurredAt),
     messageUpdates: [...updatesByMessageId.values()],
+    readReceipts,
   };
 }
 

@@ -26,10 +26,18 @@ import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import { Spinner } from "@/shared/ui/components/Spinner";
 import { XChatIcon } from "@/shared/ui/components/icons";
 import {
+  XChatPinRecoveryActions,
+  XChatRememberPinOption,
+  XCHAT_HELP_URL,
+} from "@/features/agent/ui/components/XChatPinPreferences";
+import {
   decryptXChatInBrowser,
+  decryptXChatWithRememberedPin,
   getXChatRateLimitState,
   getXChatUnlockErrorMessage,
+  getXChatUnlockFailureState,
   hasUnlockedXChatSession,
+  rememberSuccessfulXChatPin,
   setXChatBrowserSessionState,
   useXChatBrowserSession,
   useXChatBrowserSessionState,
@@ -38,10 +46,11 @@ import {
   type XChatDecryptBundleResponse,
 } from "@/features/agent/lib/xChatBrowserSession";
 import type { LockedXChatToolEvidence } from "@/features/agent/lib/xChatToolEvidence";
+import { getXChatUnlockGateMode } from "@/features/prospects/lib/xChatUnlockGate";
+import { forgetAllRememberedXChatPins } from "@/features/agent/lib/xChatDeviceCredentialStorage";
 
 const MAX_SHARED_XCHAT_MESSAGES = 100;
 const XCHAT_PIN_LENGTH = 4;
-
 export function XChatUnlockCard({
   threadId,
   evidence,
@@ -59,6 +68,7 @@ export function XChatUnlockCard({
   const streamAnalysis = useAction(api.chat.streamSharedXChatResponse);
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState("");
+  const [rememberOnDevice, setRememberOnDevice] = useState(true);
   const bundleRef = useRef<XChatDecryptBundle | null>(null);
   const unlockInFlightRef = useRef(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
@@ -149,7 +159,37 @@ export function XChatUnlockCard({
       if (hasUnlockedXChatSession(nextBundle)) {
         await decryptBundle(nextBundle, "");
       } else {
-        setXChatBrowserSessionState(prospectId, { status: "locked" });
+        setXChatBrowserSessionState(prospectId, { status: "unlocking" });
+        const rememberedUnlock = await decryptXChatWithRememberedPin({
+          prospectId,
+          bundle: nextBundle,
+          getRealmAuthToken: async (realmId) =>
+            await getRealmAuthToken({ realmId }),
+          getEncryptedMedia: async (mediaHashKey) =>
+            await getEncryptedMedia({
+              prospectId: prospectId as Id<"prospects">,
+              mediaHashKey,
+            }),
+        });
+        if (rememberedUnlock.status === "unlocked") {
+          bundleRef.current = nextBundle;
+        } else if (
+          rememberedUnlock.status === "invalid" &&
+          rememberedUnlock.attemptsRemaining === 0
+        ) {
+          setError("That PIN isn't correct. No attempts remain.");
+          setXChatBrowserSessionState(prospectId, {
+            status: "attempts_exhausted",
+          });
+        } else {
+          setXChatBrowserSessionState(prospectId, {
+            status: "locked",
+            ...(rememberedUnlock.status === "invalid" &&
+            typeof rememberedUnlock.attemptsRemaining === "number"
+              ? { attemptsRemaining: rememberedUnlock.attemptsRemaining }
+              : {}),
+          });
+        }
       }
     } catch (prepareError) {
       const message = "We couldn't check XChat messages. Try again.";
@@ -204,12 +244,19 @@ export function XChatUnlockCard({
       }
       const nextBundle = response;
       await decryptBundle(nextBundle, completedPin);
+      if (rememberOnDevice) {
+        await rememberSuccessfulXChatPin({
+          bundle: nextBundle,
+          pin: completedPin,
+        });
+      }
     } catch (unlockError) {
       setPin("");
       const message = getXChatUnlockErrorMessage(unlockError);
       setXChatBrowserSessionState(
         prospectId,
-        getXChatRateLimitState(unlockError) ?? { status: "locked" }
+        getXChatRateLimitState(unlockError) ??
+          getXChatUnlockFailureState(unlockError)
       );
       setError(message);
     } finally {
@@ -270,7 +317,18 @@ export function XChatUnlockCard({
   };
 
   const hasReadableMessages = messages.length > 0;
-  const isXChatAccessDenied = sessionState.status === "configuration_required";
+  const gateMode = getXChatUnlockGateMode(sessionState.status);
+  const isPreparingUnlock =
+    !browserSession && (isUnlocking || gateMode === "loading");
+  const shouldRequestPin =
+    !browserSession && !isPreparingUnlock && gateMode === "pin";
+  const isXChatAccessDenied = gateMode === "configuration_required";
+  const attemptsExhausted = gateMode === "attempts_exhausted";
+  const unlockFailed = !browserSession && gateMode === "error";
+  const unlockErrorMessage =
+    sessionState.status === "rate_limited"
+      ? "X is temporarily limiting requests. Try again shortly."
+      : error || "We couldn't check XChat messages. Try again.";
   const statusLabel = `Encrypted messages · ${evidence.eventCount} found · ${evidence.inboundEventCount} received · ${evidence.outboundEventCount} sent`;
 
   return (
@@ -318,21 +376,27 @@ export function XChatUnlockCard({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {!browserSession
-                ? "Enter your XChat PIN"
-                : hasReadableMessages
-                  ? "Share unlocked messages"
-                  : "XChat unlocked"}
+              {isPreparingUnlock
+                ? "Unlocking XChat"
+                : shouldRequestPin
+                  ? "Enter your XChat PIN"
+                  : hasReadableMessages
+                    ? "Share unlocked messages"
+                    : "XChat unlocked"}
             </DialogTitle>
             <DialogDescription
               id="xchat-pin-privacy"
-              className={!browserSession ? "sr-only" : undefined}
+              className={
+                isPreparingUnlock || shouldRequestPin ? "sr-only" : undefined
+              }
             >
-              {!browserSession
-                ? "Enter your four-digit XChat PIN."
-                : hasReadableMessages
-                  ? `Share up to the latest ${MAX_SHARED_XCHAT_MESSAGES} messages with the Agent for this response.`
-                  : "The messages already visible in the thread remain available. This unlock did not add any additional XChat rows to share for this response."}
+              {isPreparingUnlock
+                ? "Recovering your encrypted XChat messages."
+                : shouldRequestPin
+                  ? "Enter your four-digit XChat PIN."
+                  : hasReadableMessages
+                    ? `Share up to the latest ${MAX_SHARED_XCHAT_MESSAGES} messages with the Agent for this response.`
+                    : "The messages already visible in the thread remain available. This unlock did not add any additional XChat rows to share for this response."}
             </DialogDescription>
           </DialogHeader>
 
@@ -351,7 +415,53 @@ export function XChatUnlockCard({
                 </Button>
               </DialogFooter>
             </div>
-          ) : !browserSession ? (
+          ) : attemptsExhausted ? (
+            <div className="space-y-3">
+              <p className="text-muted-foreground text-sm">
+                No PIN attempts remain. Use X&apos;s XChat help to review the
+                available recovery steps.
+              </p>
+              <DialogFooter>
+                <Button asChild size="xs">
+                  <a href={XCHAT_HELP_URL} target="_blank" rel="noreferrer">
+                    View XChat help
+                  </a>
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : isPreparingUnlock ? (
+            <div
+              className="flex min-h-24 items-center justify-center"
+              role="status"
+              aria-label="Unlocking XChat messages"
+            >
+              <Spinner variant="circle" className="size-5" />
+            </div>
+          ) : unlockFailed ? (
+            <div className="space-y-3">
+              <p className="text-muted-foreground text-sm" role="alert">
+                {unlockErrorMessage}
+              </p>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  disabled={isCoolingDown}
+                  onClick={() => void handleOpen()}
+                >
+                  Retry
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : shouldRequestPin ? (
             <form
               className="space-y-3"
               aria-busy={isUnlocking}
@@ -363,7 +473,7 @@ export function XChatUnlockCard({
               <label htmlFor="xchat-agent-pin" className="sr-only">
                 XChat PIN
               </label>
-              <div className="relative mx-auto h-11 w-44">
+              <div className="mx-auto h-11 w-44">
                 <InputOTP
                   id="xchat-agent-pin"
                   value={pin}
@@ -379,35 +489,32 @@ export function XChatUnlockCard({
                   aria-describedby="xchat-pin-privacy"
                   containerClassName="justify-center has-disabled:opacity-100"
                 >
-                  <InputOTPGroup
-                    className={`transition-opacity duration-150 ${
-                      isUnlocking ? "opacity-0" : "opacity-100"
-                    }`}
-                  >
+                  <InputOTPGroup>
                     {Array.from({ length: XCHAT_PIN_LENGTH }, (_, index) => (
                       <InputOTPSlot key={index} index={index} />
                     ))}
                   </InputOTPGroup>
                 </InputOTP>
-                {isUnlocking ? (
-                  <div
-                    className="absolute inset-0 flex items-center justify-center"
-                    role="status"
-                  >
-                    <Spinner
-                      variant="circle"
-                      className="size-5"
-                      aria-hidden="true"
-                    />
-                    <span className="sr-only">Unlocking XChat messages</span>
-                  </div>
-                ) : null}
               </div>
               {error ? (
                 <p className="text-destructive text-sm" role="alert">
                   {error}
                 </p>
               ) : null}
+              <XChatRememberPinOption
+                className="mx-auto"
+                rememberOnDevice={rememberOnDevice}
+                onRememberOnDeviceChange={setRememberOnDevice}
+              />
+              <XChatPinRecoveryActions
+                className="border-border border-t pt-2"
+                onClearSavedPins={() => {
+                  setRememberOnDevice(false);
+                  return forgetAllRememberedXChatPins().then(() => {
+                    toast.success("Saved XChat PINs removed");
+                  });
+                }}
+              />
               <DialogFooter>
                 <Button
                   type="button"
@@ -420,7 +527,7 @@ export function XChatUnlockCard({
                 </Button>
               </DialogFooter>
             </form>
-          ) : !hasReadableMessages ? (
+          ) : browserSession && !hasReadableMessages ? (
             <div className="space-y-3">
               <p className="text-muted-foreground text-sm" role="status">
                 The conversation is already visible above. This unlock only adds
@@ -442,7 +549,7 @@ export function XChatUnlockCard({
                 </Button>
               </DialogFooter>
             </div>
-          ) : (
+          ) : browserSession ? (
             <div className="space-y-4">
               <InlineFeatureStrip
                 leading={
@@ -489,7 +596,7 @@ export function XChatUnlockCard({
                 </Button>
               </DialogFooter>
             </div>
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

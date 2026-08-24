@@ -7,6 +7,8 @@ import { api } from "@/convex/_generated/api";
 import { showStyleSyncIssueToast } from "@/features/linked-accounts/lib/styleSyncIssueToast";
 import { logger } from "@/shared/lib/logger";
 import { toast } from "sonner";
+import { lockXChatInBrowser } from "@/features/agent/lib/xChatBrowserSession";
+import { forgetAllRememberedXChatPins } from "@/features/agent/lib/xChatDeviceCredentialStorage";
 
 export type TwitterConnectionStatus = {
   isConnected: boolean;
@@ -60,6 +62,7 @@ export function useXAccountConnection({
   const disconnectTwitter = useAction(api.x.disconnectTwitter);
   const getXStatusRef = useRef(getXStatus);
   const onConnectedRef = useRef(onConnected);
+  const connectedAccountIdRef = useRef<string | undefined>(undefined);
   const authExchangeKeyRef = useRef<string | null>(null);
   const shownStyleSyncIssueKeyRef = useRef<string | null>(null);
   const styleSyncRefreshTimeoutsRef = useRef<number[]>([]);
@@ -79,6 +82,10 @@ export function useXAccountConnection({
   useEffect(() => {
     onConnectedRef.current = onConnected;
   }, [onConnected]);
+
+  useEffect(() => {
+    connectedAccountIdRef.current = xStatus?.connectedAccountId;
+  }, [xStatus?.connectedAccountId]);
 
   const clearStyleSyncRefreshTimeouts = useCallback(() => {
     for (const timeoutId of styleSyncRefreshTimeoutsRef.current) {
@@ -208,6 +215,10 @@ export function useXAccountConnection({
           code: oauthCode,
           state: oauthState,
         });
+        if (connectedAccountIdRef.current !== nextStatus.connectedAccountId) {
+          lockXChatInBrowser();
+          await forgetAllRememberedXChatPins();
+        }
         setXStatus(nextStatus);
         setStatusError(null);
         toast.success("Connected X/Twitter account", {
@@ -275,6 +286,8 @@ export function useXAccountConnection({
     try {
       setIsMutating(true);
       await disconnectTwitter({});
+      lockXChatInBrowser();
+      await forgetAllRememberedXChatPins();
       toast.success("Disconnected X/Twitter account");
       await refreshStatus();
     } catch (err) {

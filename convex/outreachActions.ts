@@ -858,6 +858,31 @@ export const executeDmTask = internalAction({
       throw new Error("Task not found");
     }
 
+    const previousResult =
+      typeof task.resultData === "object" && task.resultData !== null
+        ? (task.resultData as Record<string, unknown>)
+        : null;
+    if (
+      task.status === "completed" &&
+      previousResult?.browserEncryptedXChat === true
+    ) {
+      return {
+        success: true,
+        conversationId:
+          typeof previousResult.conversationId === "string"
+            ? previousResult.conversationId
+            : undefined,
+        messageId:
+          typeof previousResult.messageId === "string"
+            ? previousResult.messageId
+            : undefined,
+        attemptId:
+          typeof previousResult.attemptId === "string"
+            ? previousResult.attemptId
+            : attemptId,
+      };
+    }
+
     let mediaUrls = task.mediaUrls || [];
     if (!hasDmBody(task.content, mediaUrls)) {
       throw new Error("Task missing required data for DM");
@@ -896,11 +921,6 @@ export const executeDmTask = internalAction({
         ? "linkedin"
         : "twitter"
       : (task.approvalContext?.platform ?? "twitter");
-
-    const previousResult =
-      typeof task.resultData === "object" && task.resultData !== null
-        ? (task.resultData as Record<string, unknown>)
-        : null;
 
     try {
       const mediaValidation = await ctx.runQuery(

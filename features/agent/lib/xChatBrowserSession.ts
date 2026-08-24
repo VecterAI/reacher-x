@@ -8,6 +8,7 @@ import type {
   SigningKeyEntry,
 } from "@xdevplatform/chat-xdk";
 import {
+  applyXChatReadReceipts,
   hydrateXChatQuotedMessages,
   normalizeVerifiedXChatConversation,
   type BrowserDecryptedXChatAttachment,
@@ -16,6 +17,7 @@ import {
 } from "./xChatBrowserMessageNormalization";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { inferAttachmentMediaKind } from "../../../shared/lib/utils/media/inferAttachmentMediaKind";
+import { mapWithConcurrency } from "../../../shared/lib/utils/core/mapWithConcurrency";
 import {
   getNestedRecord,
   getNumberProperty,
@@ -29,6 +31,11 @@ import {
   readStoredXChatPendingSend,
   writeStoredXChatPendingSend,
 } from "./xChatPendingSendStorage";
+import {
+  forgetRememberedXChatPin,
+  readRememberedXChatPin,
+  rememberXChatPinOnDevice,
+} from "./xChatDeviceCredentialStorage";
 
 export type { BrowserDecryptedXChatMessage } from "./xChatBrowserMessageNormalization";
 
@@ -52,13 +59,26 @@ export type XChatDecryptBundle = {
 };
 
 export type XChatDecryptBundleResponse =
-  | { availability: "unavailable"; reason: "not_configured" }
+  | {
+      availability: "unavailable";
+      reason: "viewer_not_configured" | "participant_not_configured";
+    }
   | { availability: "blocked"; reason: "xchat_access_denied" }
   | ({ availability: "available" } & XChatDecryptBundle);
 
 const inFlightDecryptBundleRequests = new Map<
   string,
   Promise<XChatDecryptBundleResponse>
+>();
+
+type XChatDecryptResult = {
+  messages: BrowserDecryptedXChatMessage[];
+  decryptionErrorCount: number;
+};
+
+const inFlightBrowserDecryptRequests = new Map<
+  string,
+  Promise<XChatDecryptResult>
 >();
 
 /** Deduplicates Strict Mode/remount checks for the same XChat prospect. */
@@ -76,6 +96,29 @@ export function requestXChatDecryptBundleOnce(
   const clearIfCurrent = () => {
     if (inFlightDecryptBundleRequests.get(prospectId) === pending) {
       inFlightDecryptBundleRequests.delete(prospectId);
+    }
+  };
+  void pending.then(clearIfCurrent, clearIfCurrent);
+  return pending;
+}
+
+/**
+ * Serializes the full Juicebox unlock + XDK decrypt for one browser session.
+ * Responsive panel variants can mount together, while the SDK explicitly
+ * requires Juicebox operations in one JS process to run sequentially.
+ */
+export function requestXChatBrowserDecryptOnce(
+  operationKey: string,
+  decrypt: () => Promise<XChatDecryptResult>
+): Promise<XChatDecryptResult> {
+  const existing = inFlightBrowserDecryptRequests.get(operationKey);
+  if (existing) return existing;
+
+  const pending = Promise.resolve().then(decrypt);
+  inFlightBrowserDecryptRequests.set(operationKey, pending);
+  const clearIfCurrent = () => {
+    if (inFlightBrowserDecryptRequests.get(operationKey) === pending) {
+      inFlightBrowserDecryptRequests.delete(operationKey);
     }
   };
   void pending.then(clearIfCurrent, clearIfCurrent);
@@ -121,7 +164,8 @@ export type XChatBrowserSessionTarget = {
 export type XChatBrowserSessionState =
   | { status: "unknown" }
   | { status: "checking" }
-  | { status: "locked" }
+  | { status: "locked"; attemptsRemaining?: number }
+  | { status: "attempts_exhausted" }
   | { status: "unlocking" }
   | { status: "unlocked" }
   | { status: "unavailable" }
@@ -139,14 +183,52 @@ function getXChatErrorText(error: unknown): string {
   );
 }
 
+export type XChatUnlockFailure =
+  | { kind: "invalid_pin"; attemptsRemaining?: number }
+  | { kind: "other" };
+
+export function getXChatUnlockFailure(error: unknown): XChatUnlockFailure {
+  const message = getXChatErrorText(error);
+  if (!/\binvalid[ _-]?pin\b|reason\s*=\s*invalidpin/iu.test(message)) {
+    return { kind: "other" };
+  }
+  const remainingMatch = message.match(/guesses_remaining\s*=\s*(\d+)/iu);
+  const attemptsRemaining = remainingMatch?.[1]
+    ? Number.parseInt(remainingMatch[1], 10)
+    : undefined;
+  return {
+    kind: "invalid_pin",
+    ...(typeof attemptsRemaining === "number" &&
+    Number.isFinite(attemptsRemaining)
+      ? { attemptsRemaining }
+      : {}),
+  };
+}
+
+export function getXChatUnlockFailureState(
+  error: unknown
+): Extract<
+  XChatBrowserSessionState,
+  { status: "locked" | "attempts_exhausted" }
+> {
+  const failure = getXChatUnlockFailure(error);
+  if (failure.kind === "invalid_pin" && failure.attemptsRemaining === 0) {
+    return { status: "attempts_exhausted" };
+  }
+  return {
+    status: "locked",
+    ...(failure.kind === "invalid_pin" &&
+    typeof failure.attemptsRemaining === "number"
+      ? { attemptsRemaining: failure.attemptsRemaining }
+      : {}),
+  };
+}
+
 /** Converts SDK/provider unlock diagnostics into concise user-facing copy. */
 export function getXChatUnlockErrorMessage(error: unknown): string {
-  const message = getXChatErrorText(error);
-  if (/\binvalid[ _-]?pin\b|reason\s*=\s*invalidpin/iu.test(message)) {
-    const remainingMatch = message.match(/guesses_remaining\s*=\s*(\d+)/iu);
-    const remaining = remainingMatch?.[1]
-      ? Number.parseInt(remainingMatch[1], 10)
-      : null;
+  const failure = getXChatUnlockFailure(error);
+  if (failure.kind === "invalid_pin") {
+    const remaining = failure.attemptsRemaining ?? null;
 
     if (remaining === 0) {
       return "That PIN isn't correct. No attempts remain.";
@@ -161,6 +243,48 @@ export function getXChatUnlockErrorMessage(error: unknown): string {
   }
 
   return "We couldn't unlock XChat. Try again.";
+}
+
+export async function decryptXChatWithRememberedPin(
+  args: Omit<Parameters<typeof decryptXChatInBrowser>[0], "pin">
+): Promise<
+  | { status: "missing" }
+  | { status: "unlocked" }
+  | { status: "invalid"; attemptsRemaining?: number }
+> {
+  const target = {
+    viewerUserId: args.bundle.viewerUserId,
+    signingKeyVersion: args.bundle.signingKeyVersion,
+  };
+  const pin = await readRememberedXChatPin(target);
+  if (!pin) return { status: "missing" };
+  try {
+    await decryptXChatInBrowser({ ...args, pin });
+    return { status: "unlocked" };
+  } catch (error) {
+    const failure = getXChatUnlockFailure(error);
+    if (failure.kind === "invalid_pin") {
+      await forgetRememberedXChatPin(target);
+      return {
+        status: "invalid",
+        ...(typeof failure.attemptsRemaining === "number"
+          ? { attemptsRemaining: failure.attemptsRemaining }
+          : {}),
+      };
+    }
+    throw error;
+  }
+}
+
+export async function rememberSuccessfulXChatPin(args: {
+  bundle: XChatDecryptBundle;
+  pin: string;
+}): Promise<void> {
+  await rememberXChatPinOnDevice({
+    viewerUserId: args.bundle.viewerUserId,
+    signingKeyVersion: args.bundle.signingKeyVersion,
+    pin: args.pin,
+  });
 }
 
 export function getXChatRateLimitState(
@@ -262,6 +386,7 @@ export type PreparedXChatEncryptedMedia = {
   width: number;
   height: number;
   mediaType: number;
+  durationMs?: number;
 };
 
 type PendingXChatTextMessage = {
@@ -528,6 +653,9 @@ function isSameXChatBrowserSessionState(
       previous.message === next.message && previous.retryAt === next.retryAt
     );
   }
+  if (previous.status === "locked" && next.status === "locked") {
+    return previous.attemptsRemaining === next.attemptsRemaining;
+  }
   return true;
 }
 
@@ -593,6 +721,66 @@ export function cacheVerifiedXChatBrowserSession(args: {
   }
   emitChange();
   return session;
+}
+
+/**
+ * Apply best-effort attachment hydration to the current session without
+ * replacing newer messages, cursor coverage, reactions, or delivery state
+ * that may have arrived while media was downloading.
+ */
+function applyHydratedXChatMedia(args: {
+  prospectId: string;
+  sessionKey: string;
+  conversationId: string;
+  messages: BrowserDecryptedXChatMessage[];
+  objectUrls: string[];
+}): boolean {
+  const session = decryptedSessions.get(args.sessionKey);
+  if (
+    !session ||
+    sessionKeysByProspectId.get(args.prospectId) !== args.sessionKey ||
+    session.conversationId !== args.conversationId
+  ) {
+    return false;
+  }
+
+  const hydratedMessagesById = new Map(
+    args.messages.map((message) => [message.id, message])
+  );
+  const messages = session.messages.map((message) => {
+    const hydrated = hydratedMessagesById.get(message.id);
+    if (!hydrated) return message;
+
+    return {
+      ...message,
+      attachments: hydrated.attachments ?? message.attachments,
+      quotedMessage:
+        message.quotedMessage && hydrated.quotedMessage
+          ? {
+              ...message.quotedMessage,
+              attachments:
+                hydrated.quotedMessage.attachments ??
+                message.quotedMessage.attachments,
+              attachmentType:
+                hydrated.quotedMessage.attachmentType ??
+                message.quotedMessage.attachmentType,
+            }
+          : message.quotedMessage,
+    };
+  });
+
+  decryptedSessions.set(args.sessionKey, { ...session, messages });
+  if (args.objectUrls.length > 0) {
+    const currentUrls =
+      objectUrlsBySessionKey.get(args.sessionKey) ?? new Set<string>();
+    for (const objectUrl of args.objectUrls) {
+      currentUrls.add(objectUrl);
+    }
+    objectUrlsBySessionKey.set(args.sessionKey, currentUrls);
+  }
+  pruneUnreferencedXChatObjectUrls(args.sessionKey, messages);
+  emitChange();
+  return true;
 }
 
 function isMatchingUnlockedSession(bundle: XChatDecryptBundle): boolean {
@@ -726,10 +914,13 @@ export function prepareXChatTextMessageInBrowser(args: {
     pending?.text === text &&
     pending.conversationId === browserSession.conversationId
       ? pending.payload
-      : current.chat.encryptMessage({
-          conversationId: browserSession.conversationId,
-          text,
-        });
+      : withXChatEncryptionKey(current, (encryptionContext) =>
+          current.chat.encryptMessage({
+            conversationId: browserSession.conversationId,
+            text,
+            ...encryptionContext,
+          })
+        );
   pendingTextMessagesByProspectId.set(args.prospectId, {
     text,
     payload,
@@ -805,47 +996,84 @@ export function getXChatAttachmentMediaType(mimeType: string): number {
   return 5;
 }
 
+export function resolveXChatAttachmentMimeType(
+  claimedMimeType: string,
+  detectedMimeType: string | null | undefined
+): string {
+  const claimed = claimedMimeType.trim().toLowerCase();
+  return claimed.startsWith("audio/")
+    ? claimed
+    : (detectedMimeType?.trim().toLowerCase() ?? claimed);
+}
+
 export async function prepareXChatEncryptedMediaInBrowser(args: {
   prospectId: string;
   file: File;
+  durationMs?: number;
 }): Promise<PreparedXChatEncryptedMedia> {
   if (args.file.size <= 0 || args.file.size > MAX_XCHAT_BROWSER_MEDIA_BYTES) {
     throw new Error("XChat attachments must be between 1 byte and 100 MB.");
   }
   const { browserSession, current } = getXChatSendContext(args.prospectId);
-  const keyCandidate = getXChatMediaKeyCandidates({
+  const keyCandidate = copyXChatConversationKeyForEncryption({
     conversationKeys: current.conversationKeys,
-  })[0];
+    preferredKeyVersion: current.latestConversationKeyVersion,
+  });
   if (!keyCandidate) {
     throw new Error("The XChat conversation key is unavailable. Unlock again.");
   }
   const plaintext = new Uint8Array(await args.file.arrayBuffer());
+  const conversationKey = keyCandidate.conversationKey;
   try {
     const { detectImageDimensions, detectMimeType } =
       await import("@xdevplatform/chat-xdk");
     const dimensions = detectImageDimensions(plaintext);
-    const detectedMimeType = detectMimeType(plaintext) ?? args.file.type;
-    const ciphertext = current.chat.encryptStream(
-      plaintext,
-      keyCandidate.conversationKey
+    const detectedMimeType = detectMimeType(plaintext);
+    // M4A and MP4 share an ISO-BMFF container. The SDK correctly recognizes
+    // that container as video/mp4, but a browser-recorded audio/mp4 File must
+    // stay AUDIO on XChat's wire enum or native X renders it as a video.
+    const attachmentMimeType = resolveXChatAttachmentMimeType(
+      args.file.type,
+      detectedMimeType
     );
+    const ciphertext = current.chat.encryptStream(plaintext, conversationKey);
     if (ciphertext.byteLength > MAX_XCHAT_BROWSER_MEDIA_BYTES) {
       ciphertext.fill(0);
       throw new Error("Encrypted XChat attachment exceeds 100 MB.");
     }
     return {
       conversationId: browserSession.conversationId,
-      keyVersion: keyCandidate.keyVersion,
+      keyVersion: keyCandidate.conversationKeyVersion,
       ciphertext,
       fileName: args.file.name.trim().slice(0, 255) || "attachment",
       fileSize: args.file.size,
       width: dimensions?.width ?? 0,
       height: dimensions?.height ?? 0,
-      mediaType: getXChatAttachmentMediaType(detectedMimeType),
+      mediaType: getXChatAttachmentMediaType(attachmentMimeType),
+      durationMs: args.durationMs,
     };
   } finally {
+    conversationKey.fill(0);
     plaintext.fill(0);
   }
+}
+
+export function buildXChatMediaAttachment(args: {
+  mediaHashKey: string;
+  media: Omit<PreparedXChatEncryptedMedia, "ciphertext">;
+}) {
+  return {
+    attachment_type: "media" as const,
+    media_hash_key: args.mediaHashKey,
+    media_type: args.media.mediaType,
+    width: args.media.width,
+    height: args.media.height,
+    filesize_bytes: args.media.fileSize,
+    filename: args.media.fileName,
+    ...(args.media.durationMs
+      ? { duration_millis: Math.round(args.media.durationMs) }
+      : {}),
+  };
 }
 
 /** Encrypt the final message envelope after X returns the opaque media hash. */
@@ -862,39 +1090,34 @@ export function prepareXChatMediaMessageInBrowser(args: {
   if (browserSession.conversationId !== args.media.conversationId) {
     throw new Error("The XChat conversation changed during media upload.");
   }
-  const conversationKey = current.conversationKeys[args.media.keyVersion];
-  if (!conversationKey) {
-    throw new Error(
-      "The XChat conversation key changed. Try the upload again."
-    );
-  }
-  const attachment = {
-    attachment_type: "media" as const,
-    media_hash_key: args.mediaHashKey,
-    media_type: args.media.mediaType,
-    width: args.media.width,
-    height: args.media.height,
-    filesize_bytes: args.media.fileSize,
-    filename: args.media.fileName,
-  };
-  const encryptionContext = {
-    conversationId: browserSession.conversationId,
-    text: args.text.trim(),
-    conversationKey,
-    conversationKeyVersion: args.media.keyVersion,
-    attachments: [attachment],
-  };
-  const payload =
-    args.replyToMessageId || args.replyToSequenceId
-      ? current.chat.encryptReply({
-          ...encryptionContext,
-          ...getXChatReplyTarget({
-            current,
-            messageId: args.replyToMessageId,
-            sequenceId: args.replyToSequenceId,
-          }),
-        })
-      : current.chat.encryptMessage(encryptionContext);
+  const attachment = buildXChatMediaAttachment(args);
+  const payload = withXChatEncryptionKey(
+    current,
+    (keyContext) => {
+      if (keyContext.conversationKeyVersion !== args.media.keyVersion) {
+        throw new Error(
+          "The XChat conversation key changed. Try the upload again."
+        );
+      }
+      const encryptionContext = {
+        conversationId: browserSession.conversationId,
+        text: args.text.trim(),
+        ...keyContext,
+        attachments: [attachment],
+      };
+      return args.replyToMessageId || args.replyToSequenceId
+        ? current.chat.encryptReply({
+            ...encryptionContext,
+            ...getXChatReplyTarget({
+              current,
+              messageId: args.replyToMessageId,
+              sequenceId: args.replyToSequenceId,
+            }),
+          })
+        : current.chat.encryptMessage(encryptionContext);
+    },
+    args.media.keyVersion
+  );
   return {
     clientRequestId: args.clientRequestId ?? createXChatClientRequestId(),
     conversationId: browserSession.conversationId,
@@ -910,12 +1133,19 @@ export function publishPreparingXChatMessageInBrowser(args: {
   text: string;
   attachments?: BrowserDecryptedXChatMessage["attachments"];
   quotedMessage?: BrowserDecryptedXChatMessage["quotedMessage"];
+  /** Preview URLs whose lifetime is transferred from the composer to XChat. */
+  objectUrls?: string[];
 }): { clientRequestId: string; messageId: string } {
   const clientRequestId = createXChatClientRequestId();
   const messageId = `pending:${clientRequestId}`;
   const sessionKey = sessionKeysByProspectId.get(args.prospectId);
   const session = sessionKey ? decryptedSessions.get(sessionKey) : undefined;
-  if (!session) return { clientRequestId, messageId };
+  if (!session) {
+    for (const objectUrl of args.objectUrls ?? []) {
+      URL.revokeObjectURL(objectUrl);
+    }
+    return { clientRequestId, messageId };
+  }
 
   const message: BrowserDecryptedXChatMessage = {
     id: messageId,
@@ -933,6 +1163,11 @@ export function publishPreparingXChatMessageInBrowser(args: {
     .concat(message)
     .sort((left, right) => left.occurredAt - right.occurredAt);
   decryptedSessions.set(sessionKey!, { ...session, messages });
+  if (args.objectUrls?.length) {
+    const currentUrls = objectUrlsBySessionKey.get(sessionKey!) ?? new Set();
+    for (const objectUrl of args.objectUrls) currentUrls.add(objectUrl);
+    objectUrlsBySessionKey.set(sessionKey!, currentUrls);
+  }
   emitChange();
   return { clientRequestId, messageId };
 }
@@ -981,15 +1216,18 @@ export function prepareXChatReplyMessageInBrowser(args: {
     throw new Error("The XChat reply target is unavailable.");
   }
   const { browserSession, current } = getXChatSendContext(args.prospectId);
-  const payload = current.chat.encryptReply({
-    conversationId: browserSession.conversationId,
-    text,
-    ...getXChatReplyTarget({
-      current,
-      messageId: args.replyToMessageId,
-      sequenceId: args.replyToSequenceId,
-    }),
-  });
+  const payload = withXChatEncryptionKey(current, (encryptionContext) =>
+    current.chat.encryptReply({
+      conversationId: browserSession.conversationId,
+      text,
+      ...encryptionContext,
+      ...getXChatReplyTarget({
+        current,
+        messageId: args.replyToMessageId,
+        sequenceId: args.replyToSequenceId,
+      }),
+    })
+  );
   return {
     clientRequestId: createXChatClientRequestId(),
     conversationId: browserSession.conversationId,
@@ -1062,11 +1300,14 @@ export function prepareXChatReactionInBrowser(args: {
   const encrypt = args.remove
     ? current.chat.encryptRemoveReaction.bind(current.chat)
     : current.chat.encryptAddReaction.bind(current.chat);
-  const payload = encrypt({
-    conversationId: browserSession.conversationId,
-    targetMessageSequenceId: args.targetMessageSequenceId,
-    emoji: args.emoji,
-  });
+  const payload = withXChatEncryptionKey(current, (encryptionContext) =>
+    encrypt({
+      conversationId: browserSession.conversationId,
+      targetMessageSequenceId: args.targetMessageSequenceId,
+      emoji: args.emoji,
+      ...encryptionContext,
+    })
+  );
   return {
     clientRequestId: createXChatClientRequestId(),
     conversationId: browserSession.conversationId,
@@ -1253,6 +1494,50 @@ export function confirmXChatTextMessageInBrowser(args: {
   emitChange();
 }
 
+function hasPlayableXChatAttachment(
+  attachment: BrowserDecryptedXChatAttachment
+): boolean {
+  return Boolean(
+    attachment.url || attachment.previewUrl || attachment.variants?.length
+  );
+}
+
+/**
+ * A just-sent media event can arrive before X makes its encrypted bytes
+ * downloadable. Keep the browser-owned optimistic preview until a playable
+ * provider attachment is available instead of regressing to unavailable.
+ */
+export function mergeXChatAttachmentsPreservingPlayablePreview(args: {
+  existing?: BrowserDecryptedXChatAttachment[];
+  incoming?: BrowserDecryptedXChatAttachment[];
+}): BrowserDecryptedXChatAttachment[] | undefined {
+  if (!args.incoming?.length) return args.existing;
+  if (!args.existing?.length) return args.incoming;
+
+  return args.incoming.map((incoming, index) => {
+    if (hasPlayableXChatAttachment(incoming)) return incoming;
+    const existing =
+      args.existing?.find(
+        (candidate) =>
+          (incoming.mediaKey && candidate.mediaKey === incoming.mediaKey) ||
+          (incoming.id && candidate.id === incoming.id)
+      ) ?? args.existing?.[index];
+    if (!existing || !hasPlayableXChatAttachment(existing)) return incoming;
+
+    return {
+      ...existing,
+      ...incoming,
+      url: existing.url,
+      previewUrl: existing.previewUrl,
+      variants: existing.variants,
+      isGif: existing.isGif || incoming.isGif,
+      isVoiceNote: existing.isVoiceNote || incoming.isVoiceNote,
+      isLoading: false,
+      unavailable: false,
+    };
+  });
+}
+
 /** Decrypt and merge one user-requested older event page in browser memory. */
 export async function appendXChatEventPageInBrowser(args: {
   prospectId: string;
@@ -1352,19 +1637,23 @@ export async function appendXChatEventPageInBrowser(args: {
   );
   const incomingMessages = normalized.messages.map((message) => {
     const hydratedMessage = hydratedMessagesById.get(message.id);
-    if (hydratedMessage) return hydratedMessage;
     const existingMessage = existingMessagesById.get(message.id);
-    if (!existingMessage) return message;
+    const incomingMessage = hydratedMessage ?? message;
+    if (!existingMessage) return incomingMessage;
     return {
       ...existingMessage,
-      ...message,
-      attachments: existingMessage.attachments ?? message.attachments,
-      quotedMessage: message.quotedMessage
+      ...incomingMessage,
+      attachments: mergeXChatAttachmentsPreservingPlayablePreview({
+        existing: existingMessage.attachments,
+        incoming: incomingMessage.attachments,
+      }),
+      quotedMessage: incomingMessage.quotedMessage
         ? {
-            ...message.quotedMessage,
-            attachments:
-              existingMessage.quotedMessage?.attachments ??
-              message.quotedMessage.attachments,
+            ...incomingMessage.quotedMessage,
+            attachments: mergeXChatAttachmentsPreservingPlayablePreview({
+              existing: existingMessage.quotedMessage?.attachments,
+              incoming: incomingMessage.quotedMessage.attachments,
+            }),
           }
         : existingMessage.quotedMessage,
     };
@@ -1375,7 +1664,10 @@ export async function appendXChatEventPageInBrowser(args: {
       message,
     ])
   );
-  const mergedMessages = hydrateXChatQuotedMessages([...messagesById.values()]);
+  const mergedMessages = applyXChatReadReceipts(
+    hydrateXChatQuotedMessages([...messagesById.values()]),
+    normalized.readReceipts
+  );
   const messageUpdates = [
     ...(session.messageUpdates ?? []),
     ...normalized.messageUpdates,
@@ -1405,6 +1697,7 @@ export async function appendXChatEventPageInBrowser(args: {
     }
     objectUrlsBySessionKey.set(sessionKey, currentUrls);
   }
+  pruneUnreferencedXChatObjectUrls(sessionKey, mergedMessages);
   emitChange();
 }
 
@@ -1440,6 +1733,8 @@ export function lockXChatInBrowser(): void {
   sessionKeysByProspectId.clear();
   pendingTextMessagesByProspectId.clear();
   pendingPublishedMessagesByClientRequestId.clear();
+  encryptedMediaRequestsByBindingKey.clear();
+  encryptedMediaRetryAtByBindingKey.clear();
   for (const prospectId of unlockedProspectIds) {
     sessionStatesByProspectId.set(prospectId, { status: "locked" });
   }
@@ -1456,6 +1751,7 @@ type XChatMediaHydrationResult = {
 type XChatMimeTypeDetector = (bytes: Uint8Array) => string | undefined;
 
 const MAX_XCHAT_BROWSER_MEDIA_BYTES = 100 * 1024 * 1024;
+const XCHAT_MEDIA_HYDRATION_CONCURRENCY = 3;
 
 async function readXChatEncryptedMediaResponse(
   media: XChatEncryptedMediaResponse
@@ -1617,6 +1913,34 @@ function getXChatMediaOwners(
   });
 }
 
+function pruneUnreferencedXChatObjectUrls(
+  sessionKey: string,
+  messages: BrowserDecryptedXChatMessage[]
+): void {
+  const trackedUrls = objectUrlsBySessionKey.get(sessionKey);
+  if (!trackedUrls?.size) return;
+
+  const referencedUrls = new Set<string>();
+  for (const owner of getXChatMediaOwners(messages)) {
+    for (const attachment of owner.attachments) {
+      for (const url of [
+        attachment.url,
+        attachment.previewUrl,
+        ...(attachment.variants?.map((variant) => variant.url) ?? []),
+      ]) {
+        if (url?.startsWith("blob:")) referencedUrls.add(url);
+      }
+    }
+  }
+
+  for (const objectUrl of trackedUrls) {
+    if (referencedUrls.has(objectUrl)) continue;
+    URL.revokeObjectURL(objectUrl);
+    trackedUrls.delete(objectUrl);
+  }
+  if (trackedUrls.size === 0) objectUrlsBySessionKey.delete(sessionKey);
+}
+
 function getDecryptableXChatMedia(args: {
   owner: XChatMediaOwner;
   attachment: NonNullable<BrowserDecryptedXChatMessage["attachments"]>[number];
@@ -1662,10 +1986,54 @@ function buildVerifiedMediaBindings(args: {
   return bindings;
 }
 
+function setXChatMediaLoadingState(args: {
+  prospectId: string;
+  conversationId: string;
+  messages: BrowserDecryptedXChatMessage[];
+  mediaBindings: ReadonlyMap<string, XChatMediaBinding>;
+  isLoading: boolean;
+}): BrowserDecryptedXChatMessage[] {
+  const updateAttachments = (
+    messageId: string,
+    attachments: BrowserDecryptedXChatMessage["attachments"]
+  ) =>
+    attachments?.map((attachment) => {
+      if (!attachment.mediaKey || attachment.url) return attachment;
+      const bindingKey = makeMediaBindingKey({
+        prospectId: args.prospectId,
+        conversationId: args.conversationId,
+        messageId,
+        mediaHashKey: attachment.mediaKey,
+      });
+      if (!args.mediaBindings.has(bindingKey)) return attachment;
+      return {
+        ...attachment,
+        isLoading: args.isLoading,
+        unavailable: !args.isLoading,
+      };
+    });
+
+  return args.messages.map((message) => ({
+    ...message,
+    attachments: updateAttachments(message.id, message.attachments),
+    quotedMessage: message.quotedMessage
+      ? {
+          ...message.quotedMessage,
+          attachments: updateAttachments(
+            message.quotedMessage.id,
+            message.quotedMessage.attachments
+          ),
+        }
+      : undefined,
+  }));
+}
+
 type XChatConversationKeyCandidate = {
   keyVersion: string;
   conversationKey: Uint8Array;
 };
+
+const XCHAT_CONVERSATION_KEY_BYTES = 32;
 
 function compareXChatKeyVersionsNewestFirst(
   left: string,
@@ -1721,6 +2089,51 @@ function getXChatMediaKeyCandidates(args: {
       (candidate) => candidate.keyVersion !== args.preferredKeyVersion
     ),
   ];
+}
+
+/**
+ * Copies verified key bytes out of the SDK result before passing them back
+ * into WASM. chat-xdk can expose views backed by its own WASM memory; feeding
+ * those views into another mutating crypto call can trigger aliasing traps.
+ */
+export function copyXChatConversationKeyForEncryption(args: {
+  conversationKeys: Readonly<Record<string, Uint8Array>>;
+  preferredKeyVersion?: string;
+}): {
+  conversationKey: Uint8Array;
+  conversationKeyVersion: string;
+} | null {
+  const candidate = getXChatMediaKeyCandidates(args).find(
+    ({ conversationKey }) =>
+      conversationKey.byteLength === XCHAT_CONVERSATION_KEY_BYTES
+  );
+  if (!candidate) return null;
+  return {
+    conversationKey: new Uint8Array(candidate.conversationKey),
+    conversationKeyVersion: candidate.keyVersion,
+  };
+}
+
+function withXChatEncryptionKey<T>(
+  current: ActiveXChatSession,
+  encrypt: (context: {
+    conversationKey: Uint8Array;
+    conversationKeyVersion: string;
+  }) => T,
+  preferredKeyVersion = current.latestConversationKeyVersion
+): T {
+  const context = copyXChatConversationKeyForEncryption({
+    conversationKeys: current.conversationKeys,
+    preferredKeyVersion,
+  });
+  if (!context) {
+    throw new Error("The XChat conversation key is unavailable. Unlock again.");
+  }
+  try {
+    return encrypt(context);
+  } finally {
+    context.conversationKey.fill(0);
+  }
 }
 
 type DownloadableXChatMedia = {
@@ -1803,103 +2216,111 @@ export async function hydrateXChatAttachments(args: {
   }
 
   const hydratedMediaByBindingKey = new Map<string, HydratedXChatMedia>();
-  for (const [bindingKey, attachment] of downloadableAttachments) {
-    if (!isStillUnlocked()) {
-      break;
-    }
-    const retryAt = encryptedMediaRetryAtByBindingKey.get(bindingKey);
-    if (retryAt && retryAt > getCurrentUTCTimestamp()) {
-      continue;
-    }
-    encryptedMediaRetryAtByBindingKey.delete(bindingKey);
-
-    try {
-      const encryptedMedia = await getEncryptedXChatMediaOnce({
-        bindingKey,
-        mediaHashKey: attachment.mediaHashKey,
-        getEncryptedMedia: args.getEncryptedMedia,
-      });
-      encryptedMediaRetryAtByBindingKey.delete(bindingKey);
+  // Conversation messages arrive oldest-first. Start with the newest visible
+  // attachments and overlap only the network-bound work so a recent video does
+  // not wait behind every historical image in the page.
+  const prioritizedDownloads = Array.from(
+    downloadableAttachments.entries()
+  ).reverse();
+  await mapWithConcurrency(
+    prioritizedDownloads,
+    XCHAT_MEDIA_HYDRATION_CONCURRENCY,
+    async ([bindingKey, attachment]) => {
       if (!isStillUnlocked()) {
-        continue;
+        return;
       }
-      const encryptedBytes =
-        await readXChatEncryptedMediaResponse(encryptedMedia);
-      const keyCandidates = getXChatMediaKeyCandidates({
-        conversationKeys: args.conversationKeys,
-        preferredKeyVersion: attachment.preferredKeyVersion,
-      });
-      let lastDecryptError: unknown;
-      for (const candidate of keyCandidates) {
+      const retryAt = encryptedMediaRetryAtByBindingKey.get(bindingKey);
+      if (retryAt && retryAt > getCurrentUTCTimestamp()) {
+        return;
+      }
+      encryptedMediaRetryAtByBindingKey.delete(bindingKey);
+
+      try {
+        const encryptedMedia = await getEncryptedXChatMediaOnce({
+          bindingKey,
+          mediaHashKey: attachment.mediaHashKey,
+          getEncryptedMedia: args.getEncryptedMedia,
+        });
+        encryptedMediaRetryAtByBindingKey.delete(bindingKey);
         if (!isStillUnlocked()) {
-          break;
+          return;
         }
-        const ciphertext = new Uint8Array(encryptedBytes);
-        let plaintext: Uint8Array | undefined;
-        try {
-          plaintext = args.chat.decryptStream(
-            ciphertext,
-            candidate.conversationKey
-          );
-          const detectedMimeType = args.detectMimeType
-            ? args.detectMimeType(plaintext)
-            : await detectXChatMediaMimeType(plaintext);
-          const playableMimeType = getRenderableXChatMediaMimeType({
-            detectedMimeType,
-            claimedMimeType: attachment.claimedMimeType,
-            expectedKind: attachment.expectedKind,
-          });
-          if (!playableMimeType) {
-            throw new Error("XChat media type did not match its attachment.");
-          }
+        const encryptedBytes =
+          await readXChatEncryptedMediaResponse(encryptedMedia);
+        const keyCandidates = getXChatMediaKeyCandidates({
+          conversationKeys: args.conversationKeys,
+          preferredKeyVersion: attachment.preferredKeyVersion,
+        });
+        let lastDecryptError: unknown;
+        for (const candidate of keyCandidates) {
           if (!isStillUnlocked()) {
             break;
           }
-          const blobBytes = new Uint8Array(plaintext.byteLength);
-          blobBytes.set(plaintext);
-          const objectUrl = URL.createObjectURL(
-            new Blob([blobBytes.buffer], {
-              type: playableMimeType,
-            })
-          );
-          blobBytes.fill(0);
-          hydratedMediaByBindingKey.set(bindingKey, {
-            objectUrl,
-            mimeType: playableMimeType,
-          });
-          break;
-        } catch (error) {
-          lastDecryptError = error;
-          // The expected-key attempt can fail after a key rotation. Try the
-          // remaining recovered keys before marking this attachment missing.
-          continue;
-        } finally {
-          plaintext?.fill(0);
-          ciphertext.fill(0);
+          const ciphertext = new Uint8Array(encryptedBytes);
+          let plaintext: Uint8Array | undefined;
+          try {
+            plaintext = args.chat.decryptStream(
+              ciphertext,
+              candidate.conversationKey
+            );
+            const detectedMimeType = args.detectMimeType
+              ? args.detectMimeType(plaintext)
+              : await detectXChatMediaMimeType(plaintext);
+            const playableMimeType = getRenderableXChatMediaMimeType({
+              detectedMimeType,
+              claimedMimeType: attachment.claimedMimeType,
+              expectedKind: attachment.expectedKind,
+            });
+            if (!playableMimeType) {
+              throw new Error("XChat media type did not match its attachment.");
+            }
+            if (!isStillUnlocked()) {
+              break;
+            }
+            const blobBytes = new Uint8Array(plaintext.byteLength);
+            blobBytes.set(plaintext);
+            const objectUrl = URL.createObjectURL(
+              new Blob([blobBytes.buffer], {
+                type: playableMimeType,
+              })
+            );
+            blobBytes.fill(0);
+            hydratedMediaByBindingKey.set(bindingKey, {
+              objectUrl,
+              mimeType: playableMimeType,
+            });
+            break;
+          } catch (error) {
+            lastDecryptError = error;
+            // The expected-key attempt can fail after a key rotation. Try the
+            // remaining recovered keys before marking this attachment missing.
+            continue;
+          } finally {
+            plaintext?.fill(0);
+            ciphertext.fill(0);
+          }
         }
+        if (!hydratedMediaByBindingKey.has(bindingKey)) {
+          throw lastDecryptError instanceof Error
+            ? lastDecryptError
+            : new Error(
+                "No recovered XChat key could decrypt this attachment."
+              );
+        }
+      } catch (error) {
+        encryptedMediaRetryAtByBindingKey.set(
+          bindingKey,
+          getXChatMediaRetryAt(error)
+        );
+        console.warn(
+          "[XChatBrowserSession] Unable to render XChat attachment",
+          error instanceof Error ? error.message : String(error)
+        );
+        // Keep this one attachment unavailable. A bad/expired media blob must
+        // not discard independently verified XChat messages or other media.
       }
-      if (!hydratedMediaByBindingKey.has(bindingKey)) {
-        throw lastDecryptError instanceof Error
-          ? lastDecryptError
-          : new Error("No recovered XChat key could decrypt this attachment.");
-      }
-    } catch (error) {
-      encryptedMediaRetryAtByBindingKey.set(
-        bindingKey,
-        getXChatMediaRetryAt(error)
-      );
-      console.warn(
-        "[XChatBrowserSession] Unable to render XChat attachment",
-        error instanceof Error ? error.message : String(error)
-      );
-      // Keep this one attachment unavailable. A bad/expired media blob must
-      // not discard independently verified XChat messages or other media.
     }
-  }
-
-  if (hydratedMediaByBindingKey.size === 0) {
-    return { messages: args.messages, objectUrls: [] };
-  }
+  );
 
   const hydrateAttachments = (
     messageId: string,
@@ -1907,17 +2328,34 @@ export async function hydrateXChatAttachments(args: {
   ) => {
     let changed = false;
     const attachments = source?.map((attachment) => {
-      const hydratedMedia = attachment.mediaKey
-        ? hydratedMediaByBindingKey.get(
-            makeMediaBindingKey({
-              prospectId: args.prospectId,
-              conversationId: args.conversationId,
-              messageId,
-              mediaHashKey: attachment.mediaKey,
-            })
-          )
+      const bindingKey = attachment.mediaKey
+        ? makeMediaBindingKey({
+            prospectId: args.prospectId,
+            conversationId: args.conversationId,
+            messageId,
+            mediaHashKey: attachment.mediaKey,
+          })
+        : undefined;
+      const hydratedMedia = bindingKey
+        ? hydratedMediaByBindingKey.get(bindingKey)
         : undefined;
       if (!hydratedMedia) {
+        const hydrationSettled = Boolean(
+          bindingKey &&
+          (args.mediaBindings?.has(bindingKey) ??
+            downloadableAttachments.has(bindingKey))
+        );
+        if (
+          hydrationSettled &&
+          (attachment.isLoading || !attachment.unavailable)
+        ) {
+          changed = true;
+          return {
+            ...attachment,
+            isLoading: false,
+            unavailable: true,
+          };
+        }
         return attachment;
       }
       changed = true;
@@ -1936,12 +2374,14 @@ export async function hydrateXChatAttachments(args: {
         mimeType: hydratedMedia.mimeType,
         isGif: attachment.isGif || detectedMediaKind === "gif",
         isVoiceNote: attachment.isVoiceNote || isAudio,
+        isLoading: false,
         unavailable: false,
       };
     });
     return { attachments, changed };
   };
 
+  let messagesChanged = false;
   const messages = args.messages.map((message) => {
     const hydratedMessage = hydrateAttachments(message.id, message.attachments);
     const quote = message.quotedMessage;
@@ -1951,6 +2391,7 @@ export async function hydrateXChatAttachments(args: {
     if (!hydratedMessage.changed && !hydratedQuote.changed) {
       return message;
     }
+    messagesChanged = true;
     return {
       ...message,
       ...(hydratedMessage.changed
@@ -1970,7 +2411,7 @@ export async function hydrateXChatAttachments(args: {
   });
 
   return {
-    messages,
+    messages: messagesChanged ? messages : args.messages,
     objectUrls: Array.from(
       new Set(
         Array.from(
@@ -2032,16 +2473,29 @@ export function createInFlightRealmAuthTokenProvider(
   };
 }
 
-export async function decryptXChatInBrowser(args: {
+export function decryptXChatInBrowser(args: {
   prospectId: string;
   bundle: XChatDecryptBundle;
   pin: string;
   getRealmAuthToken: (realmId: string) => Promise<string>;
   getEncryptedMedia?: XChatEncryptedMediaFetcher;
-}): Promise<{
-  messages: BrowserDecryptedXChatMessage[];
-  decryptionErrorCount: number;
-}> {
+}): Promise<XChatDecryptResult> {
+  const operationKey = makeBrowserSessionKey({
+    prospectId: args.prospectId,
+    bundle: args.bundle,
+  });
+  return requestXChatBrowserDecryptOnce(operationKey, async () =>
+    decryptXChatInBrowserOnce(args)
+  );
+}
+
+async function decryptXChatInBrowserOnce(args: {
+  prospectId: string;
+  bundle: XChatDecryptBundle;
+  pin: string;
+  getRealmAuthToken: (realmId: string) => Promise<string>;
+  getEncryptedMedia?: XChatEncryptedMediaFetcher;
+}): Promise<XChatDecryptResult> {
   const { bundle } = args;
   let chat: ChatWithJuicebox;
   if (isMatchingUnlockedSession(bundle)) {
@@ -2104,35 +2558,80 @@ export async function decryptXChatInBrowser(args: {
     conversationId: bundle.conversationId,
     messages: decryptedConversation.messages,
   });
-  const hydratedMedia = args.getEncryptedMedia
-    ? await hydrateXChatAttachments({
-        chat,
-        conversationKeys: browserSession.conversationKeys,
+  const decryptionErrorCount = Object.keys(result.errors).length;
+  const verifiedMessages = hydrateXChatQuotedMessages(
+    decryptedConversation.messages
+  );
+  const messages = args.getEncryptedMedia
+    ? setXChatMediaLoadingState({
         prospectId: args.prospectId,
         conversationId: bundle.conversationId,
+        messages: verifiedMessages,
         mediaBindings: browserSession.mediaBindings,
-        messages: decryptedConversation.messages,
-        getEncryptedMedia: args.getEncryptedMedia,
-        isStillUnlocked: () =>
-          activeSession === browserSession && chat.isUnlocked(),
+        isLoading: true,
       })
-    : { messages: decryptedConversation.messages, objectUrls: [] };
-  if (activeSession !== browserSession || !chat.isUnlocked()) {
-    for (const objectUrl of hydratedMedia.objectUrls) {
-      URL.revokeObjectURL(objectUrl);
-    }
-    throw new Error("The XChat session was locked before media could decrypt.");
-  }
-  const decryptionErrorCount = Object.keys(result.errors).length;
-  const messages = hydrateXChatQuotedMessages(hydratedMedia.messages);
-  cacheVerifiedXChatBrowserSession({
+    : verifiedMessages;
+  const session = cacheVerifiedXChatBrowserSession({
     prospectId: args.prospectId,
     bundle,
     messages,
     messageUpdates: decryptedConversation.messageUpdates,
     decryptionErrorCount,
-    objectUrls: hydratedMedia.objectUrls,
   });
+
+  if (args.getEncryptedMedia) {
+    const sessionKey = makeBrowserSessionKey({
+      prospectId: args.prospectId,
+      bundle,
+    });
+    void hydrateXChatAttachments({
+      chat,
+      conversationKeys: browserSession.conversationKeys,
+      prospectId: args.prospectId,
+      conversationId: bundle.conversationId,
+      mediaBindings: browserSession.mediaBindings,
+      messages,
+      getEncryptedMedia: args.getEncryptedMedia,
+      isStillUnlocked: () =>
+        activeSession === browserSession && chat.isUnlocked(),
+    })
+      .then((hydratedMedia) => {
+        if (
+          activeSession !== browserSession ||
+          !chat.isUnlocked() ||
+          !applyHydratedXChatMedia({
+            prospectId: args.prospectId,
+            sessionKey,
+            conversationId: session.conversationId,
+            messages: hydrateXChatQuotedMessages(hydratedMedia.messages),
+            objectUrls: hydratedMedia.objectUrls,
+          })
+        ) {
+          for (const objectUrl of hydratedMedia.objectUrls) {
+            URL.revokeObjectURL(objectUrl);
+          }
+        }
+      })
+      .catch((error) => {
+        console.warn(
+          "[XChatBrowserSession] Unable to hydrate initial XChat media",
+          error instanceof Error ? error.message : String(error)
+        );
+        applyHydratedXChatMedia({
+          prospectId: args.prospectId,
+          sessionKey,
+          conversationId: session.conversationId,
+          messages: setXChatMediaLoadingState({
+            prospectId: args.prospectId,
+            conversationId: bundle.conversationId,
+            messages,
+            mediaBindings: browserSession.mediaBindings,
+            isLoading: false,
+          }),
+          objectUrls: [],
+        });
+      });
+  }
 
   return {
     messages,

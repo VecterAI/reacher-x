@@ -6,9 +6,12 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   decryptXChatInBrowser,
+  decryptXChatWithRememberedPin,
   getXChatRateLimitState,
   getXChatUnlockErrorMessage,
+  getXChatUnlockFailureState,
   hasUnlockedXChatSession,
+  rememberSuccessfulXChatPin,
   requestXChatDecryptBundleOnce,
   setXChatBrowserSessionState,
   useXChatBrowserSession,
@@ -18,6 +21,7 @@ import {
   type XChatDecryptBundleResponse,
 } from "@/features/agent/lib/xChatBrowserSession";
 import { XChatUnlockGate } from "./XChatUnlockGate";
+import { forgetAllRememberedXChatPins } from "@/features/agent/lib/xChatDeviceCredentialStorage";
 
 const XCHAT_PIN_LENGTH = 4;
 
@@ -44,6 +48,7 @@ export function XChatConversationUnlock({
   const bundleRef = React.useRef<XChatDecryptBundle | null>(null);
   const unlockInFlightRef = React.useRef(false);
   const [pin, setPin] = React.useState("");
+  const [rememberOnDevice, setRememberOnDevice] = React.useState(true);
   const [localError, setLocalError] = React.useState<string | null>(null);
   const isBusy =
     sessionState.status === "checking" || sessionState.status === "unlocking";
@@ -90,6 +95,41 @@ export function XChatConversationUnlock({
               prospectId: prospectId as Id<"prospects">,
               mediaHashKey,
             }),
+        });
+        return;
+      }
+      setXChatBrowserSessionState(prospectId, { status: "unlocking" });
+      const rememberedUnlock = await decryptXChatWithRememberedPin({
+        prospectId,
+        bundle,
+        getRealmAuthToken: async (realmId) =>
+          await getRealmAuthToken({ realmId }),
+        getEncryptedMedia: async (mediaHashKey) =>
+          await getEncryptedMedia({
+            prospectId: prospectId as Id<"prospects">,
+            mediaHashKey,
+          }),
+      });
+      if (rememberedUnlock.status === "unlocked") return;
+      if (rememberedUnlock.status === "invalid") {
+        const attemptsRemaining = rememberedUnlock.attemptsRemaining;
+        if (attemptsRemaining === 0) {
+          setLocalError("That PIN isn't correct. No attempts remain.");
+          setXChatBrowserSessionState(prospectId, {
+            status: "attempts_exhausted",
+          });
+          return;
+        }
+        setLocalError(
+          typeof attemptsRemaining === "number"
+            ? `Your saved PIN is no longer correct. You have ${attemptsRemaining} ${attemptsRemaining === 1 ? "attempt" : "attempts"} left.`
+            : "Your saved PIN is no longer correct. Enter it again."
+        );
+        setXChatBrowserSessionState(prospectId, {
+          status: "locked",
+          ...(typeof attemptsRemaining === "number"
+            ? { attemptsRemaining }
+            : {}),
         });
         return;
       }
@@ -154,10 +194,11 @@ export function XChatConversationUnlock({
         bundleRef.current = bundle;
 
         setXChatBrowserSessionState(prospectId, { status: "unlocking" });
+        const pinToUse = hasUnlockedXChatSession(bundle) ? "" : completedPin;
         await decryptXChatInBrowser({
           prospectId,
           bundle,
-          pin: hasUnlockedXChatSession(bundle) ? "" : completedPin,
+          pin: pinToUse,
           getRealmAuthToken: async (realmId) =>
             await getRealmAuthToken({ realmId }),
           getEncryptedMedia: async (mediaHashKey) =>
@@ -166,6 +207,9 @@ export function XChatConversationUnlock({
               mediaHashKey,
             }),
         });
+        if (pinToUse && rememberOnDevice) {
+          await rememberSuccessfulXChatPin({ bundle, pin: pinToUse });
+        }
         setPin("");
         setLocalError(null);
       } catch (error) {
@@ -174,9 +218,7 @@ export function XChatConversationUnlock({
         setLocalError(message);
         setXChatBrowserSessionState(
           prospectId,
-          getXChatRateLimitState(error) ?? {
-            status: "locked",
-          }
+          getXChatRateLimitState(error) ?? getXChatUnlockFailureState(error)
         );
       } finally {
         unlockInFlightRef.current = false;
@@ -189,6 +231,7 @@ export function XChatConversationUnlock({
       isBusy,
       isCoolingDown,
       prospectId,
+      rememberOnDevice,
     ]
   );
 
@@ -225,6 +268,12 @@ export function XChatConversationUnlock({
         if (localError) setLocalError(null);
       }}
       onPinComplete={(completedPin) => void handleUnlock(completedPin)}
+      rememberOnDevice={rememberOnDevice}
+      onRememberOnDeviceChange={setRememberOnDevice}
+      onForgetRememberedPins={() => {
+        setRememberOnDevice(false);
+        return forgetAllRememberedXChatPins();
+      }}
       onRetry={() => void prepareBundle()}
     />
   );

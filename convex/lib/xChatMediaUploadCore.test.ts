@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildXChatMediaUploadAppendRequest,
   parseXChatMediaUploadInitializeResponse,
+  XCHAT_MEDIA_UPLOAD_CHUNK_BYTES,
 } from "./xdkTwitterProvider";
 
 describe("parseXChatMediaUploadInitializeResponse", () => {
@@ -43,6 +44,12 @@ describe("parseXChatMediaUploadInitializeResponse", () => {
 });
 
 describe("buildXChatMediaUploadAppendRequest", () => {
+  it("keeps base64 append bodies below common multi-megabyte proxy limits", () => {
+    const base64Bytes = Math.ceil(XCHAT_MEDIA_UPLOAD_CHUNK_BYTES / 3) * 4;
+
+    expect(base64Bytes).toBeLessThan(2 * 1024 * 1024);
+  });
+
   it("includes every field required by the X Chat append schema", () => {
     expect(
       buildXChatMediaUploadAppendRequest(
