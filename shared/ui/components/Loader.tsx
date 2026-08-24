@@ -188,9 +188,11 @@ export function DotsLoader({
 export function TypingLoader({
   className,
   size = "md",
+  text,
 }: {
   className?: string;
   size?: "sm" | "md" | "lg";
+  text?: string;
 }) {
   const dotSizes = {
     sm: "h-1 w-1",
@@ -224,7 +226,7 @@ export function TypingLoader({
           }}
         />
       ))}
-      <span className="sr-only">Loading</span>
+      <span className="sr-only">{text ?? "Loading"}</span>
     </div>
   );
 }
@@ -476,7 +478,7 @@ function Loader({
     case "dots":
       return <DotsLoader size={size} className={className} />;
     case "typing":
-      return <TypingLoader size={size} className={className} />;
+      return <TypingLoader size={size} text={text} className={className} />;
     case "wave":
       return <WaveLoader size={size} className={className} />;
     case "bars":

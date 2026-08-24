@@ -187,7 +187,7 @@ export function getLinkedInActivityTimestamp(
 export function isRenderableLinkedInMediaUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
-    return parsed.protocol === "https:" || parsed.protocol === "http:";
+    return parsed.protocol === "https:";
   } catch {
     return false;
   }

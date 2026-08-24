@@ -7,6 +7,7 @@ import { internal } from "./_generated/api";
 import { internalAction } from "./lib/functionBuilders";
 import {
   X_DM_ACTIVITY_EVENT_TYPES,
+  X_DM_MESSAGE_ACTIVITY_EVENT_TYPES,
   X_POST_ACTIVITY_EVENT_TYPES,
   createXActivitySubscription,
   createXWebhook,
@@ -16,7 +17,7 @@ import {
   normalizeXActivityEventType,
   updateXActivitySubscription,
   type XActivityEventType,
-  type XDmActivityEventType,
+  type XDmMessageActivityEventType,
   validateXWebhook,
 } from "./lib/xActivity";
 import {
@@ -34,6 +35,7 @@ import { decryptXSecret } from "./lib/xdkCrypto";
 import { getXProviderContextForUser } from "./lib/xdkAuth";
 import { getDmEventsByConversationId } from "./lib/xdkTwitterProvider";
 import { normalizeXChatConversationId } from "./lib/xChatMediaCore";
+import { normalizeXTypingActivityPayload } from "./lib/xActivityTypingCore";
 import {
   getCurrentUTCTimestamp,
   parseIsoToTimestamp,
@@ -163,7 +165,7 @@ function extractSenderUserId(
 
 type NormalizedDmActivityEvent = {
   kind: "dm";
-  eventType: XDmActivityEventType;
+  eventType: XDmMessageActivityEventType;
   filteredUserId?: string;
   subscriptionId?: string;
   conversationId?: string;
@@ -173,6 +175,15 @@ type NormalizedDmActivityEvent = {
   senderUserId?: string;
   encodedEvent?: string;
   payload: Record<string, unknown>;
+};
+
+type NormalizedTypingActivityEvent = {
+  kind: "typing";
+  eventType: "dm.indicate_typing";
+  filteredUserId?: string;
+  subscriptionId?: string;
+  conversationId?: string;
+  senderUserId: string;
 };
 
 type NormalizedPostActivityEvent = {
@@ -185,7 +196,11 @@ type NormalizedPostActivityEvent = {
 
 function normalizeWebhookEvents(
   payload: unknown
-): Array<NormalizedDmActivityEvent | NormalizedPostActivityEvent> {
+): Array<
+  | NormalizedDmActivityEvent
+  | NormalizedTypingActivityEvent
+  | NormalizedPostActivityEvent
+> {
   const root = asRecord(payload);
   const entries = Array.isArray(root?.data)
     ? root?.data
@@ -194,7 +209,9 @@ function normalizeWebhookEvents(
       : [payload];
 
   const normalized: Array<
-    NormalizedDmActivityEvent | NormalizedPostActivityEvent
+    | NormalizedDmActivityEvent
+    | NormalizedTypingActivityEvent
+    | NormalizedPostActivityEvent
   > = [];
 
   for (const entry of entries) {
@@ -225,16 +242,37 @@ function normalizeWebhookEvents(
       continue;
     }
 
+    const normalizedPayload = asRecord(envelope.payload) ?? envelope;
+    if (eventType === "dm.indicate_typing") {
+      const typing = normalizeXTypingActivityPayload(normalizedPayload);
+      if (!typing) {
+        continue;
+      }
+      normalized.push({
+        kind: "typing",
+        eventType,
+        filteredUserId:
+          extractFilteredUserId(envelope) ?? typing.recipientUserId,
+        subscriptionId:
+          asString(envelope.subscription_id) ??
+          asString(envelope.subscriptionId),
+        conversationId: extractConversationId(normalizedPayload),
+        senderUserId: typing.senderUserId,
+      });
+      continue;
+    }
+
     if (
-      !X_DM_ACTIVITY_EVENT_TYPES.includes(eventType as XDmActivityEventType)
+      !X_DM_MESSAGE_ACTIVITY_EVENT_TYPES.includes(
+        eventType as XDmMessageActivityEventType
+      )
     ) {
       continue;
     }
-    const normalizedPayload = asRecord(envelope.payload) ?? envelope;
     const conversationId = extractConversationId(normalizedPayload);
     normalized.push({
       kind: "dm",
-      eventType: eventType as XDmActivityEventType,
+      eventType: eventType as XDmMessageActivityEventType,
       filteredUserId: extractFilteredUserId(envelope),
       subscriptionId:
         asString(envelope.subscription_id) ?? asString(envelope.subscriptionId),
@@ -324,7 +362,7 @@ async function syncConversationSnapshot(
   args: {
     userId: Id<"users">;
     conversationId: string;
-    sourceEventType?: XDmActivityEventType;
+    sourceEventType?: XDmMessageActivityEventType;
   }
 ) {
   const existingConversation = await ctx.runQuery(
@@ -1141,6 +1179,69 @@ export const handleWebhookPayloadInternal = internalAction({
           continue;
         }
 
+        if (event.kind === "typing") {
+          const userId = await resolveUserIdForEvent(ctx, {
+            filteredUserId: event.filteredUserId,
+            subscriptionId: event.subscriptionId,
+          });
+          if (!userId) {
+            results.push({
+              ignored: true,
+              eventType: event.eventType,
+              reason: "missing_connected_account",
+            });
+            continue;
+          }
+
+          const conversation = event.conversationId
+            ? await ctx.runQuery(
+                internal.platformConversations
+                  .getConversationByUserAndConversationIdInternal,
+                {
+                  userId,
+                  conversationId: event.conversationId,
+                }
+              )
+            : await ctx.runQuery(
+                internal.platformConversations
+                  .getTwitterConversationForTypingInternal,
+                {
+                  userId,
+                  participantUserId: event.senderUserId,
+                }
+              );
+
+          if (
+            !conversation ||
+            conversation.platform !== "twitter" ||
+            (conversation.participantUserId &&
+              conversation.participantUserId !== event.senderUserId)
+          ) {
+            results.push({
+              ignored: true,
+              eventType: event.eventType,
+              reason: "conversation_not_resolved",
+            });
+            continue;
+          }
+
+          await ctx.runMutation(
+            internal.conversationTypingPresence.upsertTwitterInternal,
+            {
+              userId,
+              conversationId: conversation.conversationId,
+              senderUserId: event.senderUserId,
+              receivedAt: getCurrentUTCTimestamp(),
+            }
+          );
+          results.push({
+            ignored: false,
+            eventType: event.eventType,
+            conversationId: conversation.conversationId,
+          });
+          continue;
+        }
+
         const userId = await resolveUserIdForEvent(ctx, {
           filteredUserId: event.filteredUserId,
           subscriptionId: event.subscriptionId,
@@ -1168,6 +1269,15 @@ export const handleWebhookPayloadInternal = internalAction({
         }
 
         const isIncomingMessage = event.eventType.endsWith("received");
+        if (isIncomingMessage) {
+          await ctx.runMutation(
+            internal.conversationTypingPresence.clearTwitterInternal,
+            {
+              userId,
+              conversationId: event.conversationId,
+            }
+          );
+        }
         const existingMessage =
           event.messageId && isIncomingMessage
             ? await ctx.runQuery(

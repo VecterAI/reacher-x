@@ -567,6 +567,11 @@ export const outboundMessageStatusValidator = v.union(
   v.literal("failed")
 );
 
+export const platformConversationMediaPurposeValidator = v.union(
+  v.literal("provider_cache"),
+  v.literal("outbound_voice_note")
+);
+
 export const outboundMessageMediaMetadataValidator = v.object({
   width: v.optional(v.number()),
   height: v.optional(v.number()),
@@ -587,6 +592,7 @@ export const outboundMessageOperationValidator = v.object({
   mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
   mediaFileNames: v.optional(v.array(v.string())),
   mediaMetadata: v.optional(v.array(outboundMessageMediaMetadataValidator)),
+  voiceNoteCacheId: v.optional(v.id("platformConversationMediaCache")),
   quoteId: v.optional(v.string()),
   status: outboundMessageStatusValidator,
   attemptCount: v.number(),
@@ -684,7 +690,10 @@ export const xChatEncryptedEventValidator = v.object({
 export const xChatBrowserDecryptBundleValidator = v.union(
   v.object({
     availability: v.literal("unavailable"),
-    reason: v.literal("not_configured"),
+    reason: v.union(
+      v.literal("viewer_not_configured"),
+      v.literal("participant_not_configured")
+    ),
   }),
   v.object({
     availability: v.literal("blocked"),
@@ -765,6 +774,7 @@ export const xChatSendStoredOperationValidator = v.object({
   operationId: v.id("xChatSendOperations"),
   userId: v.id("users"),
   prospectId: v.id("prospects"),
+  taskId: v.optional(v.id("outreachTasks")),
   clientRequestId: v.string(),
   conversationId: v.string(),
   messageId: v.string(),
@@ -854,6 +864,12 @@ export const unifiedPostValidator = v.object({
   raw: v.optional(v.any()),
 });
 
+export const linkedinProfilePostsPageResultValidator = v.object({
+  posts: v.array(unifiedPostValidator),
+  nextCursor: v.union(v.string(), v.null()),
+  error: v.optional(v.string()),
+});
+
 export const platformConversationAttachmentVariantValidator = v.object({
   url: v.string(),
   mimeType: v.optional(v.string()),
@@ -936,11 +952,20 @@ export const platformConversationMessageLookupValidator = v.object({
 export const xActivityEventTypeValidator = v.union(
   v.literal("dm.sent"),
   v.literal("dm.received"),
+  v.literal("dm.indicate_typing"),
   v.literal("dm.read"),
   v.literal("chat.sent"),
   v.literal("chat.received"),
   v.literal("chat.conversation_join"),
   v.literal("post.create")
+);
+
+export const twitterConversationTypingPresenceValidator = v.union(
+  v.null(),
+  v.object({
+    senderUserId: v.string(),
+    expiresAt: v.number(),
+  })
 );
 
 export const platformConversationEventTypeValidator = v.union(

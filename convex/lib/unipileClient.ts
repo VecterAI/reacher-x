@@ -5,6 +5,10 @@ import {
   UnipileClient,
   UnipileError as SdkUnipileError,
 } from "unipile-node-sdk";
+import {
+  LINKEDIN_NATIVE_VOICE_MESSAGE_MIME_TYPE,
+  normalizeMediaMimeType,
+} from "../../shared/lib/utils/media/linkedinMessageAttachmentTypes";
 import { normalizeConversationHistoryPageLimit } from "./conversationHistoryPaginationCore";
 
 const DEFAULT_HOSTED_AUTH_EXPIRY_MS = 1000 * 60 * 30;
@@ -578,6 +582,9 @@ function guessFilename(url: string, contentType?: string | null) {
       if (contentType?.includes("video/")) {
         return `${base}.mp4`;
       }
+      if (contentType?.includes("audio/")) {
+        return `${base}.m4a`;
+      }
     }
     if (base) {
       return base;
@@ -599,7 +606,8 @@ async function loadRemoteAttachment(url: string): Promise<[string, Buffer]> {
   }
 
   const contentType =
-    response.headers.get("content-type") ?? "application/octet-stream";
+    normalizeMediaMimeType(response.headers.get("content-type")) ||
+    "application/octet-stream";
   const filename = guessFilename(url, contentType);
   const buffer = Buffer.from(await response.arrayBuffer());
   return [filename, buffer];
@@ -619,7 +627,8 @@ async function loadRemoteAttachments(urls?: string[]) {
 export async function appendRemoteFile(
   formData: FormData,
   field: string,
-  url: string
+  url: string,
+  contentTypeOverride?: string
 ) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -627,7 +636,9 @@ export async function appendRemoteFile(
   }
 
   const contentType =
-    response.headers.get("content-type") ?? "application/octet-stream";
+    contentTypeOverride ??
+    (normalizeMediaMimeType(response.headers.get("content-type")) ||
+      "application/octet-stream");
   const buffer = await response.arrayBuffer();
   const blob = new Blob([buffer], { type: contentType });
   formData.append(field, blob, guessFilename(url, contentType));
@@ -835,19 +846,60 @@ export async function getLinkedInMessageAttachment(args: {
   });
 }
 
+export async function setLinkedInChatReadStatus(args: {
+  chatId: string;
+  accountId: string;
+  read: boolean;
+}) {
+  return await withUnipileErrorHandling(async () => {
+    return await getUnipileClient().messaging.setChatStatus(
+      {
+        chat_id: args.chatId,
+        action: "setReadStatus",
+        value: args.read,
+      },
+      { extra_params: { account_id: args.accountId } }
+    );
+  });
+}
+
 export async function startLinkedInChat(args: {
   accountId: string;
   attendeeProviderId: string;
   text?: string;
   mediaUrls?: string[];
+  voiceMessageUrl?: string;
 }) {
   return await withUnipileErrorHandling(async () => {
-    const attachments = await loadRemoteAttachments(args.mediaUrls);
+    const attachments = args.voiceMessageUrl
+      ? []
+      : await loadRemoteAttachments(args.mediaUrls);
 
-    if (!args.text?.trim() && attachments.length === 0) {
+    if (
+      !args.text?.trim() &&
+      attachments.length === 0 &&
+      !args.voiceMessageUrl
+    ) {
       throw new Error(
         "LinkedIn chat requires text or at least one attachment."
       );
+    }
+
+    if (args.voiceMessageUrl) {
+      const formData = new FormData();
+      formData.append("account_id", args.accountId);
+      formData.append("attendees_ids", args.attendeeProviderId);
+      formData.append("text", args.text?.trim() ?? "");
+      await appendRemoteFile(
+        formData,
+        "voice_message",
+        args.voiceMessageUrl,
+        LINKEDIN_NATIVE_VOICE_MESSAGE_MIME_TYPE
+      );
+      return await requestUnipile<{
+        chat_id?: string | null;
+        message_id?: string | null;
+      }>("/api/v1/chats", { method: "POST", body: formData });
     }
 
     return await getUnipileClient().messaging.startNewChat({
@@ -866,17 +918,36 @@ export async function sendLinkedInChatMessage(args: {
   quoteId?: string;
   quoteProviderId?: string;
   mediaUrls?: string[];
+  voiceMessageUrl?: string;
 }) {
-  const attachments = await loadRemoteAttachments(args.mediaUrls);
+  const attachments = args.voiceMessageUrl
+    ? []
+    : await loadRemoteAttachments(args.mediaUrls);
 
-  if (!args.text?.trim() && attachments.length === 0) {
+  if (!args.text?.trim() && attachments.length === 0 && !args.voiceMessageUrl) {
     throw new Error(
       "LinkedIn message requires text or at least one attachment."
     );
   }
 
-  const send = async (quoteId?: string) =>
-    await withUnipileErrorHandling(
+  const send = async (quoteId?: string) => {
+    if (args.voiceMessageUrl) {
+      const formData = new FormData();
+      formData.append("text", args.text?.trim() ?? "");
+      formData.append("account_id", args.accountId);
+      if (quoteId) formData.append("quote_id", quoteId);
+      await appendRemoteFile(
+        formData,
+        "voice_message",
+        args.voiceMessageUrl,
+        LINKEDIN_NATIVE_VOICE_MESSAGE_MIME_TYPE
+      );
+      return await requestUnipile<{ message_id?: string | null }>(
+        `/api/v1/chats/${args.chatId}/messages`,
+        { method: "POST", body: formData }
+      );
+    }
+    return await withUnipileErrorHandling(
       async () =>
         await getUnipileClient().messaging.sendMessage(
           {
@@ -892,6 +963,7 @@ export async function sendLinkedInChatMessage(args: {
           }
         )
     );
+  };
 
   const quoteId = args.quoteId?.trim();
   if (!quoteId) {
@@ -1154,5 +1226,37 @@ export async function createUnipileWebhook(args: {
       },
       undefined
     );
+  });
+}
+
+export type UnipileWebhook = {
+  id: string;
+  source: string;
+  request_url: string;
+  enabled: boolean;
+  events?: string[];
+};
+
+export async function listUnipileWebhooks(): Promise<UnipileWebhook[]> {
+  const webhooks: UnipileWebhook[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const page = await requestUnipile<{
+      items?: UnipileWebhook[];
+      cursor?: string | null;
+    }>("/api/v1/webhooks", {
+      query: { limit: 100, cursor },
+    });
+    webhooks.push(...(page.items ?? []));
+    cursor = page.cursor || undefined;
+  } while (cursor);
+
+  return webhooks;
+}
+
+export async function deleteUnipileWebhook(webhookId: string) {
+  return await requestUnipile(`/api/v1/webhooks/${webhookId}`, {
+    method: "DELETE",
   });
 }

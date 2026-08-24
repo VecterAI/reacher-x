@@ -57,6 +57,7 @@ import type {
   LinkedInProfileData,
   LinkedInProfileIdentity,
 } from "@/shared/lib/linkedin/profile";
+import { getLinkedInProfilePostsFailureMessage } from "@/shared/lib/linkedin/profilePosts";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import {
   base64UrlEncodeUtf8,
@@ -412,6 +413,8 @@ export function LinkedInProfilePanel({
   const [loadingMorePosts, setLoadingMorePosts] = React.useState(false);
   const [loadingInitialPosts, setLoadingInitialPosts] = React.useState(false);
   const [postsError, setPostsError] = React.useState<string | undefined>();
+  const [initialPostsRequestVersion, setInitialPostsRequestVersion] =
+    React.useState(0);
   const initialPostsRequestedRef = React.useRef<Set<string>>(new Set());
   const relationshipRequestedRef = React.useRef<Set<string>>(new Set());
   const [connectionState, setConnectionState] = React.useState<
@@ -587,7 +590,11 @@ export function LinkedInProfilePanel({
               identity,
               profileUrn,
               limit: 10,
-            }))) as { posts?: UnifiedPost[]; nextCursor?: string | null };
+            }))) as {
+          posts?: UnifiedPost[];
+          nextCursor?: string | null;
+          error?: string;
+        };
         if (cancelled) {
           return;
         }
@@ -613,12 +620,11 @@ export function LinkedInProfilePanel({
           return nextProfile;
         });
         setNextPostsCursor(nextCursor);
+        setPostsError(result.error);
       } catch (initialPostsError) {
         if (!cancelled) {
           setPostsError(
-            initialPostsError instanceof Error
-              ? initialPostsError.message
-              : "Could not load LinkedIn posts."
+            getLinkedInProfilePostsFailureMessage(initialPostsError)
           );
         }
       } finally {
@@ -641,7 +647,19 @@ export function LinkedInProfilePanel({
     profileData?.urn,
     prospectId,
     recentPosts.length,
+    initialPostsRequestVersion,
   ]);
+
+  const handleRetryInitialPosts = React.useCallback(() => {
+    const profileUrn = profileData?.urn;
+    if (!profileUrn || loadingInitialPosts) {
+      return;
+    }
+
+    initialPostsRequestedRef.current.delete(profileUrn);
+    setPostsError(undefined);
+    setInitialPostsRequestVersion((version) => version + 1);
+  }, [loadingInitialPosts, profileData?.urn]);
 
   React.useEffect(() => {
     const relationshipKey = profileData?.urn ?? profileData?.username;
@@ -788,7 +806,15 @@ export function LinkedInProfilePanel({
             profileUrn: profileData.urn,
             cursor: nextPostsCursor,
             limit: 20,
-          }))) as { posts?: UnifiedPost[]; nextCursor?: string | null };
+          }))) as {
+        posts?: UnifiedPost[];
+        nextCursor?: string | null;
+        error?: string;
+      };
+      if (result.error) {
+        setPostsError(result.error);
+        return;
+      }
       const nextCursor =
         typeof result.nextCursor === "string" ? result.nextCursor : null;
       const nextProfile =
@@ -810,11 +836,10 @@ export function LinkedInProfilePanel({
       }
       setNextPostsCursor(nextCursor);
     } catch (loadMoreError) {
+      const message = getLinkedInProfilePostsFailureMessage(loadMoreError);
+      setPostsError(message);
       toast.error("Could not load more LinkedIn posts", {
-        description:
-          loadMoreError instanceof Error
-            ? loadMoreError.message
-            : "Please try again.",
+        description: message,
       });
     } finally {
       setLoadingMorePosts(false);
@@ -1102,6 +1127,17 @@ export function LinkedInProfilePanel({
           className="p-4"
           loadingLabel="Loading more LinkedIn posts"
           loadMoreLabel="Load more LinkedIn posts"
+          retryLabel="Retry loading LinkedIn posts"
+        />
+      ) : postsError && recentPosts.length === 0 ? (
+        <InfiniteScrollTrigger
+          hasMore
+          isLoading={loadingInitialPosts}
+          loadMoreError
+          onLoadMore={handleRetryInitialPosts}
+          resultCount={0}
+          className="p-4"
+          loadingLabel="Loading LinkedIn posts"
           retryLabel="Retry loading LinkedIn posts"
         />
       ) : null}

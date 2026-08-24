@@ -3,6 +3,7 @@
 import type { ActionCtx } from "../../_generated/server";
 import { acquireLinkdApiBudget } from "../../lib/linkdapiBudget";
 import {
+  classifyProviderFailure,
   recordProviderRequestOutcome,
   type ProviderUsageEstimate,
 } from "../../lib/providerReliability";
@@ -50,6 +51,37 @@ function getApiKey() {
 
 function isRetryableStatus(status?: number) {
   return status === 429 || status === 408 || status === 503 || status === 504;
+}
+
+export function isLinkdApiNoDataError(
+  error: unknown
+): error is LinkdApiRequestError {
+  if (!(error instanceof LinkdApiRequestError) || error.status !== 200) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("the data cannot be displayed or it doesn't exist") ||
+    message.includes("the data cannot be displayed or it does not exist")
+  );
+}
+
+export function isLinkdApiProviderHealthEvidence(
+  error: unknown,
+  httpStatus?: number
+): boolean {
+  if (
+    !(error instanceof LinkdApiRequestError) ||
+    typeof httpStatus !== "number" ||
+    httpStatus < 200 ||
+    httpStatus >= 300
+  ) {
+    return false;
+  }
+
+  const recordedStatus = error.status ?? httpStatus;
+  return classifyProviderFailure(error, recordedStatus).reason === "unknown";
 }
 
 function toQueryString(query?: Record<string, LinkdApiQueryValue>) {
@@ -163,15 +195,19 @@ export async function requestLinkdApiData<T>(
       detail: payloadText.slice(0, 500),
     });
   } catch (error) {
+    const recordedStatus =
+      error instanceof LinkdApiRequestError
+        ? (error.status ?? httpStatus)
+        : httpStatus;
     await recordProviderRequestOutcome({
       ctx,
       provider: "linkdapi",
       request,
       startedAt,
       outcome: "error",
-      httpStatus:
-        error instanceof LinkdApiRequestError ? error.status : httpStatus,
+      httpStatus: recordedStatus,
       error,
+      healthEvidence: isLinkdApiProviderHealthEvidence(error, httpStatus),
     });
     throw error;
   }

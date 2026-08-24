@@ -276,7 +276,8 @@ export async function recordProviderRequestOutcome(args: {
       healthEvidence:
         args.outcome === "success"
           ? (args.healthEvidence ?? (args.usage?.billableUnits ?? 0) > 0)
-          : isProviderHealthEvidenceHttpStatus(args.httpStatus),
+          : (args.healthEvidence ??
+            isProviderHealthEvidenceHttpStatus(args.httpStatus)),
     }
   );
 }

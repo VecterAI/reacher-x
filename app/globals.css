@@ -136,6 +136,41 @@
   animation: notification-bump 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+@keyframes conversation-typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.38;
+    transform: translate3d(0, 1px, 0) scale(0.88);
+  }
+  30% {
+    opacity: 1;
+    transform: translate3d(0, -2px, 0) scale(1);
+  }
+}
+
+.conversation-typing-dot {
+  animation: conversation-typing-dot 1.08s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.conversation-typing-dot:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.conversation-typing-dot:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-typing-dot {
+    animation: none;
+    transform: none;
+    opacity: 0.72;
+    will-change: auto;
+  }
+}
+
 .agent-working-mark {
   color: hsl(var(--foreground));
 }
