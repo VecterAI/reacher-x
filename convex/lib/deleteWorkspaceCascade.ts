@@ -59,6 +59,22 @@ export async function deleteWorkspaceCascade(
     outboundOperations.map((operation) => ctx.db.delete(operation._id))
   );
 
+  const voiceNoteUploadIntents = await ctx.db
+    .query("outboundVoiceNoteUploadIntents")
+    .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+    .collect();
+  for (const intent of voiceNoteUploadIntents) {
+    const cached = intent.cacheId ? await ctx.db.get(intent.cacheId) : null;
+    const storageId = cached?.storageId ?? intent.storageId;
+    if (storageId && (await ctx.db.system.get("_storage", storageId))) {
+      await ctx.storage.delete(storageId);
+    }
+    if (cached) {
+      await ctx.db.delete(cached._id);
+    }
+    await ctx.db.delete(intent._id);
+  }
+
   for (const prospectId of prospectIds) {
     const threads = await ctx.db
       .query("prospectThreads")

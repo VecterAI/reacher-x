@@ -4,8 +4,12 @@ import { v } from "convex/values";
 import { internalAction } from "../../lib/functionBuilders";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { getLinkedInActivityTimestamp } from "../../../shared/lib/linkedin/post";
-import { requestLinkdApiData } from "./linkdapiClient";
+import { isLinkdApiNoDataError, requestLinkdApiData } from "./linkdapiClient";
 import { requireLinkedInProfileQueryUrn } from "./profileIdentity";
+import {
+  buildLinkdApiProfilePostsQuery,
+  limitLinkdApiProfilePosts,
+} from "../../lib/linkdApiProfilePostsCore";
 
 export interface LinkedInProfilePost {
   urn: string;
@@ -181,16 +185,22 @@ export const getProfilePostsInternal = internalAction({
   },
   handler: async (ctx, args) => {
     const profileUrn = requireLinkedInProfileQueryUrn(args.urn);
-    const data = await requestLinkdApiData<{
+    let data: {
       posts?: Array<Record<string, unknown>>;
       cursor?: string | null;
-    }>(ctx, {
-      path: "/api/v1/posts/all",
-      query: args.cursor
-        ? { urn: profileUrn, cursor: args.cursor }
-        : { urn: profileUrn, start: 0 },
-      consumer: `linkedin.getProfilePosts:${profileUrn}:${args.cursor ?? "first"}`,
-    });
+    };
+    try {
+      data = await requestLinkdApiData(ctx, {
+        path: "/api/v1/posts/all",
+        query: buildLinkdApiProfilePostsQuery(profileUrn, args.cursor),
+        consumer: `linkedin.getProfilePosts:${profileUrn}:${args.cursor ?? "first"}`,
+      });
+    } catch (error) {
+      if (args.cursor && isLinkdApiNoDataError(error)) {
+        return { posts: [], nextCursor: null };
+      }
+      throw error;
+    }
 
     const rawPosts = Array.isArray(data.posts) ? data.posts : [];
     const normalizedPosts = rawPosts
@@ -198,7 +208,7 @@ export const getProfilePostsInternal = internalAction({
       .filter((post): post is LinkedInProfilePost => post !== null);
 
     return {
-      posts: normalizedPosts.slice(0, args.maxPosts ?? 100),
+      posts: limitLinkdApiProfilePosts(normalizedPosts, args.maxPosts),
       nextCursor: typeof data.cursor === "string" ? data.cursor : null,
     };
   },

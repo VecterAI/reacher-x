@@ -123,6 +123,7 @@ import {
   platformConversationPlatformValidator,
   outboundMessageStatusValidator,
   outboundMessageMediaMetadataValidator,
+  platformConversationMediaPurposeValidator,
   platformConversationQuotedMessageValidator,
   platformConversationReactionValidator,
   platformConversationSharedPostValidator,
@@ -1103,13 +1104,32 @@ export default defineSchema({
     historyBoundary: v.optional(conversationHistoryBoundaryValidator),
     historyOldestLoadedAt: v.optional(v.number()),
     activitySubscribedAt: v.optional(v.number()),
+    /** Changes only when message/user-visible conversation content changes. */
+    contentUpdatedAt: v.optional(v.number()),
     updatedAt: v.number(),
   })
     .index("by_user_platform", ["userId", "platform"])
     .index("by_user_conversation", ["userId", "conversationId"])
     .index("by_user_prospect_platform", ["userId", "prospectId", "platform"])
+    .index("by_user_platform_and_participant_user_id", [
+      "userId",
+      "platform",
+      "participantUserId",
+    ])
     .index("by_workspace", ["workspaceId"])
     .index("by_prospect_platform", ["prospectId", "platform"]),
+
+  /** Short-lived, high-churn presence kept separate from conversation data. */
+  platformConversationTypingPresence: defineTable({
+    userId: v.id("users"),
+    platform: platformConversationPlatformValidator,
+    conversationId: v.string(),
+    senderUserId: v.string(),
+    receivedAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_user_id_and_conversation_id", ["userId", "conversationId"])
+    .index("by_expires_at", ["expiresAt"]),
 
   platformConversationMessages: defineTable({
     userId: v.id("users"),
@@ -1177,6 +1197,7 @@ export default defineSchema({
     mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
     mediaFileNames: v.optional(v.array(v.string())),
     mediaMetadata: v.optional(v.array(outboundMessageMediaMetadataValidator)),
+    voiceNoteCacheId: v.optional(v.id("platformConversationMediaCache")),
     quoteId: v.optional(v.string()),
     actionRequestId: v.optional(v.id("agentActionRequests")),
     status: outboundMessageStatusValidator,
@@ -1209,9 +1230,27 @@ export default defineSchema({
     .index("by_expires_at", ["expiresAt"]),
 
   /**
-   * Short-lived provider media cached in Convex storage. XChat rows contain
-   * ciphertext; LinkedIn rows contain provider attachment bytes. URLs are
-   * issued only after an authenticated ownership check, and every row has a
+   * One-use authorization record for a browser-uploaded LinkedIn voice note.
+   * The upload URL is minted only after this row is created. Finalization
+   * atomically binds the returned storage ID before any bytes are trusted.
+   */
+  outboundVoiceNoteUploadIntents: defineTable({
+    userId: v.id("users"),
+    workspaceId: v.id("workspaces"),
+    prospectId: v.id("prospects"),
+    storageId: v.optional(v.id("_storage")),
+    cacheId: v.optional(v.id("platformConversationMediaCache")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_prospect", ["prospectId"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  /**
+   * Short-lived conversation media in Convex storage. XChat rows contain
+   * ciphertext; LinkedIn rows contain provider attachment bytes or a validated
+   * outbound voice note waiting for provider delivery. Every row has a
    * scheduled storage cleanup at `expiresAt`.
    */
   platformConversationMediaCache: defineTable({
@@ -1227,6 +1266,8 @@ export default defineSchema({
     fileName: v.optional(v.string()),
     size: v.number(),
     encrypted: v.boolean(),
+    purpose: v.optional(platformConversationMediaPurposeValidator),
+    durationMs: v.optional(v.number()),
     createdAt: v.number(),
     expiresAt: v.number(),
   })
@@ -1243,6 +1284,7 @@ export default defineSchema({
   xChatSendOperations: defineTable({
     userId: v.id("users"),
     prospectId: v.id("prospects"),
+    taskId: v.optional(v.id("outreachTasks")),
     clientRequestId: v.string(),
     conversationId: v.string(),
     messageId: v.string(),

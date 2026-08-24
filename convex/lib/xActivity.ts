@@ -3,6 +3,16 @@ import { isRecord } from "./typeGuards";
 export const X_DM_ACTIVITY_EVENT_TYPES = [
   "dm.sent",
   "dm.received",
+  "dm.indicate_typing",
+  "dm.read",
+  "chat.sent",
+  "chat.received",
+  "chat.conversation_join",
+] as const;
+
+export const X_DM_MESSAGE_ACTIVITY_EVENT_TYPES = [
+  "dm.sent",
+  "dm.received",
   "dm.read",
   "chat.sent",
   "chat.received",
@@ -17,6 +27,8 @@ export const X_ACTIVITY_EVENT_TYPES = [
 ] as const;
 
 export type XDmActivityEventType = (typeof X_DM_ACTIVITY_EVENT_TYPES)[number];
+export type XDmMessageActivityEventType =
+  (typeof X_DM_MESSAGE_ACTIVITY_EVENT_TYPES)[number];
 export type XPostActivityEventType =
   (typeof X_POST_ACTIVITY_EVENT_TYPES)[number];
 export type XActivityEventType = (typeof X_ACTIVITY_EVENT_TYPES)[number];

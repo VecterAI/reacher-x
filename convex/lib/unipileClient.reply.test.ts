@@ -1,14 +1,30 @@
 // @vitest-environment node
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
-const { sendMessageMock } = vi.hoisted(() => ({
-  sendMessageMock: vi.fn(),
-}));
+const { requestSendMock, sendMessageMock, setChatStatusMock } = vi.hoisted(
+  () => ({
+    requestSendMock: vi.fn(),
+    sendMessageMock: vi.fn(),
+    setChatStatusMock: vi.fn(),
+  })
+);
 
 vi.mock("unipile-node-sdk", () => ({
   UnipileClient: class {
-    messaging = { sendMessage: sendMessageMock };
+    messaging = {
+      sendMessage: sendMessageMock,
+      setChatStatus: setChatStatusMock,
+    };
+    request = { send: requestSendMock };
   },
   UnipileError: class extends Error {
     body: unknown;
@@ -20,7 +36,10 @@ vi.mock("unipile-node-sdk", () => ({
   },
 }));
 
-import { sendLinkedInChatMessage } from "./unipileClient";
+import {
+  sendLinkedInChatMessage,
+  setLinkedInChatReadStatus,
+} from "./unipileClient";
 
 describe("LinkedIn quoted-message delivery", () => {
   beforeAll(() => {
@@ -30,7 +49,11 @@ describe("LinkedIn quoted-message delivery", () => {
 
   beforeEach(() => {
     sendMessageMock.mockReset();
+    requestSendMock.mockReset();
+    setChatStatusMock.mockReset();
   });
+
+  afterEach(() => vi.unstubAllGlobals());
 
   it("sends the documented Unipile message id through the SDK", async () => {
     sendMessageMock.mockResolvedValue({ message_id: "sent-message" });
@@ -109,5 +132,59 @@ describe("LinkedIn quoted-message delivery", () => {
       })
     ).rejects.toMatchObject({ classification: "service_unavailable" });
     expect(sendMessageMock).toHaveBeenCalledOnce();
+  });
+
+  it("sends audio through the stable v1 voice_message field", async () => {
+    requestSendMock.mockResolvedValue({ message_id: "voice-message" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(new Uint8Array([1, 2, 3]), {
+            status: 200,
+            headers: {
+              "content-type": "audio/mp4;codecs=mp4a.40.2",
+            },
+          })
+      )
+    );
+
+    await expect(
+      sendLinkedInChatMessage({
+        accountId: "account-id",
+        chatId: "chat-id",
+        voiceMessageUrl: "https://media.test/storage/voice-storage-id",
+      })
+    ).resolves.toEqual({ message_id: "voice-message" });
+
+    const request = requestSendMock.mock.calls[0]?.[0];
+    expect(request).toMatchObject({
+      path: ["chats", "chat-id", "messages"],
+      method: "POST",
+      parameters: {},
+      headers: undefined,
+    });
+    expect(request.body).toBeInstanceOf(FormData);
+    expect(request.body.get("account_id")).toBe("account-id");
+    const voiceMessage = request.body.get("voice_message");
+    expect(voiceMessage).toBeInstanceOf(Blob);
+    expect((voiceMessage as Blob).type).toBe("audio/x-m4a");
+    expect((voiceMessage as File).name).toBe("voice-storage-id.m4a");
+  });
+
+  it("marks a LinkedIn chat read through the v1 SDK action", async () => {
+    setChatStatusMock.mockResolvedValue({ object: "ChatPatched" });
+
+    await expect(
+      setLinkedInChatReadStatus({
+        accountId: "account-id",
+        chatId: "chat-id",
+        read: true,
+      })
+    ).resolves.toEqual({ object: "ChatPatched" });
+    expect(setChatStatusMock).toHaveBeenCalledWith(
+      { chat_id: "chat-id", action: "setReadStatus", value: true },
+      { extra_params: { account_id: "account-id" } }
+    );
   });
 });

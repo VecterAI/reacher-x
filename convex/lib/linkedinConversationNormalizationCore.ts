@@ -15,7 +15,10 @@ import {
   findLinkedInPostUrl,
 } from "../../shared/lib/linkedin/comments";
 import { isRenderableLinkedInMediaUrl } from "../../shared/lib/linkedin/post";
-import { parseIsoToTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import {
+  parseIsoToTimestamp,
+  validateAndNormalizeTimestamp,
+} from "../../shared/lib/utils/time/timeUtils";
 import type { UnipileMessage } from "./unipileClient";
 import { isRecord } from "./typeGuards";
 
@@ -133,9 +136,10 @@ function normalizeTimestamp(value: unknown): string | undefined {
   }
   const numberValue = asNumber(value);
   if (typeof numberValue !== "number") return undefined;
-  const milliseconds =
-    numberValue < 1_000_000_000_000 ? numberValue * 1000 : numberValue;
-  return new Date(milliseconds).toISOString();
+  const normalized = validateAndNormalizeTimestamp(numberValue);
+  return normalized.isValid && normalized.utcTimestamp !== undefined
+    ? new Date(normalized.utcTimestamp).toISOString()
+    : undefined;
 }
 
 function normalizeAttachmentVariants(
@@ -208,8 +212,7 @@ export function normalizeLinkedInConversationAttachment(
     id: getFirstString(source, ["id", "attachment_id", "attachmentId"]),
     mediaKey: getFirstString(source, ["media_key", "mediaKey"]),
     type,
-    url:
-      rawUrl && isRenderableLinkedInMediaUrl(rawUrl) ? rawUrl : undefined,
+    url: rawUrl && isRenderableLinkedInMediaUrl(rawUrl) ? rawUrl : undefined,
     previewUrl:
       rawPreviewUrl && isRenderableLinkedInMediaUrl(rawPreviewUrl)
         ? rawPreviewUrl

@@ -7,6 +7,7 @@ const LINKEDIN_POST_URN_PREFIXES = [
   "urn:li:ugcpost:",
   "urn:li:share:",
 ];
+const LINKEDIN_PROFILE_URN_PREFIXES = ["urn:li:fsd_profile:", "urn:li:member:"];
 
 function asRecord(value: unknown): LooseRecord | null {
   return typeof value === "object" && value !== null
@@ -37,7 +38,12 @@ export function normalizeLinkedInProfileQueryUrn(
   if (!trimmed || isLinkedInPostUrn(trimmed)) {
     return undefined;
   }
-  return trimmed;
+
+  const lowerCased = trimmed.toLowerCase();
+  const prefix = LINKEDIN_PROFILE_URN_PREFIXES.find((candidate) =>
+    lowerCased.startsWith(candidate)
+  );
+  return prefix ? asString(trimmed.slice(prefix.length)) : trimmed;
 }
 
 export function requireLinkedInProfileQueryUrn(value?: string | null): string {

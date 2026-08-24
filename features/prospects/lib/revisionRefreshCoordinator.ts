@@ -7,6 +7,32 @@ export interface RevisionRefreshCoordinator {
   dispose(): void;
 }
 
+export type XChatConversationRevisionSnapshot = {
+  revision: string | null;
+  latestMessageId: string | null;
+};
+
+/**
+ * Decides whether an XChat revision needs an authoritative newest-page fetch.
+ *
+ * A loaded latest message covers a revision only when that message changed.
+ * When the revision changes but the latest message ID does not, the provider
+ * may have updated an existing event, such as a read receipt or reaction.
+ */
+export function shouldRefreshXChatConversationRevision(args: {
+  previous?: XChatConversationRevisionSnapshot;
+  current: XChatConversationRevisionSnapshot;
+  latestMessageCovered: boolean;
+}): boolean {
+  if (!args.current.revision) return false;
+  if (!args.previous) return !args.latestMessageCovered;
+  if (args.previous.revision === args.current.revision) return false;
+  if (args.previous.latestMessageId === args.current.latestMessageId) {
+    return true;
+  }
+  return !args.latestMessageCovered;
+}
+
 interface RevisionRefreshCoordinatorOptions {
   refresh: () => Promise<void>;
   canRefresh: () => boolean;
@@ -112,8 +138,11 @@ export function createRevisionRefreshCoordinator(
   return {
     request(revision) {
       if (disposed || !revision || revision === completedRevision) return;
+      const isNewRevision = revision !== queuedRevision;
       queuedRevision = revision;
-      pausedAfterFailure = false;
+      if (isNewRevision) {
+        pausedAfterFailure = false;
+      }
       drain();
     },
     dispose() {

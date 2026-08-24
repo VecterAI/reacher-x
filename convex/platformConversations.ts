@@ -1,7 +1,10 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./lib/functionBuilders";
 import { internal } from "./_generated/api";
-import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
+import {
+  buildChangedPatch,
+  buildChangedPatchWithUpdatedAt,
+} from "./lib/patchHelpers";
 import {
   mergeConversationAttachments,
   mergeConversationQuotedMessage,
@@ -75,7 +78,7 @@ export const getTwitterConversationRevision = query({
     }
 
     return {
-      updatedAt: conversation.updatedAt,
+      updatedAt: conversation.contentUpdatedAt ?? conversation.updatedAt,
       latestMessageId: conversation.latestMessageId,
       latestMessageAt: conversation.latestMessageAt,
     };
@@ -105,7 +108,7 @@ export const getLinkedInConversationRevision = query({
     }
 
     return {
-      updatedAt: conversation.updatedAt,
+      updatedAt: conversation.contentUpdatedAt ?? conversation.updatedAt,
       latestMessageId: conversation.latestMessageId,
       latestMessageAt: conversation.latestMessageAt,
     };
@@ -164,6 +167,43 @@ export const getConversationSnapshotInternal = internalQuery({
   },
 });
 
+/**
+ * Resolve the server-owned conversation ID without loading message history.
+ * Media actions use this fast path before they initialize an external provider.
+ */
+export const getConversationIdentityForProspectInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    platform: platformConversationPlatformValidator,
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      conversationId: v.string(),
+      participantUserId: v.optional(v.string()),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const conversation = await ctx.db
+      .query("platformConversations")
+      .withIndex("by_user_prospect_platform", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("prospectId", args.prospectId)
+          .eq("platform", args.platform)
+      )
+      .first();
+
+    return conversation
+      ? {
+          conversationId: conversation.conversationId,
+          participantUserId: conversation.participantUserId,
+        }
+      : null;
+  },
+});
+
 export const getConversationByUserAndConversationIdInternal = internalQuery({
   args: {
     userId: v.id("users"),
@@ -176,6 +216,50 @@ export const getConversationByUserAndConversationIdInternal = internalQuery({
         q.eq("userId", args.userId).eq("conversationId", args.conversationId)
       )
       .first();
+  },
+});
+
+/**
+ * Resolve the one-to-one legacy DM conversation identified by X's documented
+ * typing payload. If the sender maps to more than one conversation, do not
+ * guess which panel should receive the presence update.
+ */
+export const getTwitterConversationForTypingInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    participantUserId: v.string(),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      platform: v.literal("twitter"),
+      conversationId: v.string(),
+      participantUserId: v.optional(v.string()),
+      prospectId: v.optional(v.id("prospects")),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const conversations = await ctx.db
+      .query("platformConversations")
+      .withIndex("by_user_platform_and_participant_user_id", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("platform", "twitter")
+          .eq("participantUserId", args.participantUserId)
+      )
+      .take(2);
+
+    if (conversations.length !== 1) {
+      return null;
+    }
+
+    const conversation = conversations[0]!;
+    return {
+      platform: "twitter" as const,
+      conversationId: conversation.conversationId,
+      participantUserId: conversation.participantUserId,
+      prospectId: conversation.prospectId,
+    };
   },
 });
 
@@ -371,11 +455,42 @@ export const upsertConversationSnapshotInternal = internalMutation({
       updatedAt: now,
     };
 
+    const conversationContentPatch = {
+      workspaceId: args.workspaceId,
+      prospectId: args.prospectId,
+      accountId: args.accountId,
+      sourceId: args.sourceId,
+      participantUserId: args.participantUserId,
+      participantAttendeeId: args.participantAttendeeId,
+      participantProviderId: args.participantProviderId,
+      participantUsername: args.participantUsername,
+      participantName: args.participantName,
+      participantHeadline: args.participantHeadline,
+      participantAvatarUrl: args.participantAvatarUrl,
+      participantProfileUrl: args.participantProfileUrl,
+      participantVerified: args.participantVerified,
+      eligibilityEnabled: args.eligibilityEnabled,
+      eligibilityReasonCode: args.eligibilityReasonCode,
+      eligibilityReasonLabel: args.eligibilityReasonLabel,
+      disabledFeatures: args.disabledFeatures,
+      readOnly: args.readOnly,
+      contentType: args.contentType,
+      latestMessageId: conversationPatch.latestMessageId,
+      latestMessageAt: conversationPatch.latestMessageAt,
+    };
+    let didContentChange = existingConversation
+      ? buildChangedPatch(
+          existingConversation as unknown as Record<string, unknown>,
+          conversationContentPatch
+        ) !== null
+      : true;
+
     const conversationId = existingConversation
       ? existingConversation._id
       : await ctx.db.insert("platformConversations", {
           userId: args.userId,
           ...conversationPatch,
+          contentUpdatedAt: now,
         });
 
     if (existingConversation) {
@@ -449,13 +564,19 @@ export const upsertConversationSnapshotInternal = internalMutation({
         );
         if (patch) {
           await ctx.db.patch(existingMessage._id, patch);
+          didContentChange = true;
         }
       } else {
         await ctx.db.insert("platformConversationMessages", {
           userId: args.userId,
           ...payload,
         });
+        didContentChange = true;
       }
+    }
+
+    if (existingConversation && didContentChange) {
+      await ctx.db.patch(existingConversation._id, { contentUpdatedAt: now });
     }
 
     return {
@@ -532,6 +653,7 @@ export const markConversationMessagesReadInternal = internalMutation({
       ) {
         await ctx.db.patch(conversation._id, {
           lastReadAt: args.readAt,
+          contentUpdatedAt: now,
           updatedAt: now,
         });
       }

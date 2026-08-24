@@ -20,6 +20,24 @@ async function deleteDocuments<TableName extends TableNames>(
   return rows.length;
 }
 
+async function deleteVoiceNoteUploadIntents(
+  ctx: MutationCtx,
+  rows: Array<Doc<"outboundVoiceNoteUploadIntents">>
+): Promise<number> {
+  for (const row of rows) {
+    const cached = row.cacheId ? await ctx.db.get(row.cacheId) : null;
+    const storageId = cached?.storageId ?? row.storageId;
+    if (storageId && (await ctx.db.system.get("_storage", storageId))) {
+      await ctx.storage.delete(storageId);
+    }
+    if (cached) {
+      await ctx.db.delete(cached._id);
+    }
+    await ctx.db.delete(row._id);
+  }
+  return rows.length;
+}
+
 export const sweepWorkspaceRowsInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
@@ -40,6 +58,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
       conversationMessages,
       conversations,
       outboundOperations,
+      voiceNoteUploadIntents,
       socialMonitors,
       replyCandidates,
       conversationSeeds,
@@ -109,6 +128,10 @@ export const sweepWorkspaceRowsInternal = internalMutation({
         .take(n),
       ctx.db
         .query("outboundMessageOperations")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", w))
+        .take(n),
+      ctx.db
+        .query("outboundVoiceNoteUploadIntents")
         .withIndex("by_workspace", (q) => q.eq("workspaceId", w))
         .take(n),
       ctx.db
@@ -252,6 +275,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
     deleted += await deleteDocuments(ctx, conversationMessages);
     deleted += await deleteDocuments(ctx, conversations);
     deleted += await deleteDocuments(ctx, outboundOperations);
+    deleted += await deleteVoiceNoteUploadIntents(ctx, voiceNoteUploadIntents);
     deleted += await deleteDocuments(ctx, socialMonitors);
     deleted += await deleteDocuments(ctx, replyCandidates);
     deleted += await deleteDocuments(ctx, conversationSeeds);
@@ -614,6 +638,7 @@ export const deleteProspectBatchInternal = internalMutation({
       messages,
       conversations,
       outboundOperations,
+      voiceNoteUploadIntents,
       contexts,
       requests,
       providerEvents,
@@ -650,6 +675,10 @@ export const deleteProspectBatchInternal = internalMutation({
         .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
         .take(n),
       ctx.db
+        .query("outboundVoiceNoteUploadIntents")
+        .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
+        .take(n),
+      ctx.db
         .query("agentMessageContexts")
         .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
         .take(n),
@@ -677,6 +706,7 @@ export const deleteProspectBatchInternal = internalMutation({
       messages.length +
       conversations.length +
       outboundOperations.length +
+      voiceNoteUploadIntents.length +
       contexts.length +
       requests.length +
       providerEvents.length +
@@ -689,6 +719,10 @@ export const deleteProspectBatchInternal = internalMutation({
       deleted += await deleteDocuments(ctx, messages);
       deleted += await deleteDocuments(ctx, conversations);
       deleted += await deleteDocuments(ctx, outboundOperations);
+      deleted += await deleteVoiceNoteUploadIntents(
+        ctx,
+        voiceNoteUploadIntents
+      );
       deleted += await deleteDocuments(ctx, contexts);
       deleted += await deleteDocuments(ctx, requests);
       deleted += await deleteDocuments(ctx, providerEvents);
