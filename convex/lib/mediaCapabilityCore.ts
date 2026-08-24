@@ -1,7 +1,12 @@
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { inferAttachmentMediaKind } from "../../shared/lib/utils/media/inferAttachmentMediaKind";
-import { LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES } from "../../shared/lib/utils/media/linkedinMessageAttachmentTypes";
+import {
+  LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES,
+  LINKEDIN_VOICE_MESSAGE_MIME_TYPES,
+  isLinkedInVoiceMessageMimeType,
+  normalizeMediaMimeType,
+} from "../../shared/lib/utils/media/linkedinMessageAttachmentTypes";
 
 export type OutreachMediaKind = "image" | "gif" | "video" | "file";
 export type OutreachMediaPlatform = "twitter" | "linkedin";
@@ -36,6 +41,7 @@ const LINKEDIN_MESSAGE_MIME_TYPES = new Set([
   "image/bmp",
   "video/mp4",
   ...LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES,
+  ...LINKEDIN_VOICE_MESSAGE_MIME_TYPES,
 ]);
 
 export interface ResolvedOutreachMedia {
@@ -228,7 +234,7 @@ export async function resolveOwnedOutreachMedia(
           }) ??
           (LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES.has(
             upload.mimeType.toLowerCase()
-          )
+          ) || isLinkedInVoiceMessageMimeType(upload.mimeType)
             ? "file"
             : null);
         if (!url || !kind) {
@@ -240,7 +246,7 @@ export async function resolveOwnedOutreachMedia(
           uploadId,
           url,
           fileName: upload.displayName?.trim() || upload.fileName,
-          mimeType: upload.mimeType.trim().toLowerCase(),
+          mimeType: normalizeMediaMimeType(upload.mimeType),
           size: upload.size,
           kind,
         };
@@ -267,7 +273,9 @@ export async function resolveOwnedOutreachMedia(
           mimeType: upload.mimeType,
           url: upload.fileName,
         }) ??
-        (LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES.has(upload.mimeType.toLowerCase())
+        (LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES.has(
+          upload.mimeType.toLowerCase()
+        ) || isLinkedInVoiceMessageMimeType(upload.mimeType)
           ? "file"
           : null);
       if (!url || !kind) return;
@@ -275,7 +283,7 @@ export async function resolveOwnedOutreachMedia(
         uploadId: upload._id,
         url,
         fileName: upload.displayName?.trim() || upload.fileName,
-        mimeType: upload.mimeType.trim().toLowerCase(),
+        mimeType: normalizeMediaMimeType(upload.mimeType),
         size: upload.size,
         kind,
       });

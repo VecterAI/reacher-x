@@ -506,4 +506,34 @@ describe("prospect Agent attachment references", () => {
       expect(await ctx.db.query("mediaUploads").collect()).toHaveLength(0);
     });
   });
+
+  test("stores a LinkedIn voice note with a codec-qualified audio MIME type", async () => {
+    const t = convexTest(schema, modules);
+    const suffix = "linkedin-voice-note-upload";
+    const seeded = await seedProspect(t, suffix);
+    const storageId = await t.run(
+      async (ctx) =>
+        await ctx.storage.store(
+          new Blob(["voice note"], {
+            type: "audio/mp4;codecs=mp4a.40.2",
+          })
+        )
+    );
+
+    const result = await t
+      .withIdentity({ subject: `workos-${suffix}` })
+      .mutation(internal.mediaUploadMutations.storeMediaMetadataInternal, {
+        mediaId: storageId,
+        fileName: "voice-note.m4a",
+        mimeType: "audio/mp4;codecs=mp4a.40.2",
+        size: 10,
+        workspaceId: seeded.workspaceId,
+      });
+
+    expect(result).toMatchObject({
+      success: true,
+      fileName: "voice-note.m4a",
+      mimeType: "audio/mp4",
+    });
+  });
 });

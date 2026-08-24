@@ -18,6 +18,11 @@ export type ComposerAttachmentDestination = {
   surface: "comment" | "dm";
 };
 
+export interface ComposerSubmitResult {
+  /** The submit target now owns and will revoke the uploads' blob URLs. */
+  retainMediaObjectUrls?: boolean;
+}
+
 /** Viewer row in post/reply composer: prefer X connection snapshot, then WorkOS. */
 export type ComposerIdentityUser = {
   name: string;
@@ -65,7 +70,7 @@ export interface ComposerBaseProps {
     mediaDescriptions?: string[],
     mediaKinds?: ComposerMediaKind[],
     mediaUploads?: MediaUpload[]
-  ) => void | Promise<void>;
+  ) => void | ComposerSubmitResult | Promise<void | ComposerSubmitResult>;
   onCancel?: () => void;
   onEditorBlur?: () => void;
   onEditorFocus?: () => void;
@@ -157,6 +162,9 @@ export interface MediaUpload {
   width?: number;
   height?: number;
   durationMs?: number;
+  /** Recorder-authored audio rendered and transported as a native voice note. */
+  isVoiceNote?: boolean;
+  waveform?: number[];
   progress: number;
   status: "uploading" | "completed" | "error";
   error?: string;

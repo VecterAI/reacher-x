@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import type { SerializedEditorState } from "lexical";
 import { toast } from "sonner";
+import { getOutboundMessageFailure } from "@/shared/lib/platforms/outboundMessageFailure";
 import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
@@ -97,6 +98,8 @@ function isVisualAttachment(type?: string) {
   return type === "img" || type === "image" || type === "video";
 }
 
+const VOICE_NOTE_UPLOAD_TIMEOUT_MS = 60_000;
+
 export function LinkedInConversationPanel({
   prospectId,
   actionRequestId,
@@ -127,6 +130,7 @@ export function LinkedInConversationPanel({
     error,
     loadOlder,
     send,
+    sendPrepared,
     retrySend,
     reactToMessage,
     pendingReactionMessageIds,
@@ -148,6 +152,12 @@ export function LinkedInConversationPanel({
   );
   const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
   const approvePlan = useMutation(api.outreach.approvePlan);
+  const generateVoiceNoteUploadUrl = useMutation(
+    api.outboundVoiceNotes.generateUploadUrl
+  );
+  const finalizeVoiceNoteUpload = useAction(
+    api.outboundVoiceNotes.finalizeUpload
+  );
 
   const resolvedData = previewData ?? data;
   const resolvedLoading = isPreview ? false : loading;
@@ -344,7 +354,11 @@ export function LinkedInConversationPanel({
             ? taskDraftForComposer?.mediaKinds
             : undefined;
 
-        if (!nextText && !(resolvedMediaUrls && resolvedMediaUrls.length > 0)) {
+        if (
+          !nextText &&
+          !(resolvedMediaUrls && resolvedMediaUrls.length > 0) &&
+          !completedUploads?.length
+        ) {
           return;
         }
 
@@ -389,13 +403,98 @@ export function LinkedInConversationPanel({
         const replyTarget = replyingTo;
         setReplyingTo(null);
         try {
+          const voiceUpload = completedUploads?.find(
+            (upload) => upload.isVoiceNote
+          );
+          const outboundFileNames = completedUploads?.map(
+            (upload) => upload.file.name
+          );
+          const outboundMetadata =
+            getOutboundMessageMediaMetadata(completedUploads);
+          if (voiceUpload) {
+            if (completedUploads?.length !== 1 || nextText) {
+              throw new Error("Send a LinkedIn voice note by itself.");
+            }
+            const optimisticPreviewUrl = URL.createObjectURL(voiceUpload.file);
+            const releaseOptimisticPreview = () =>
+              URL.revokeObjectURL(optimisticPreviewUrl);
+            const sendRequest = sendPrepared({
+              optimisticMessage: {
+                text: "",
+                mediaUrls: [optimisticPreviewUrl],
+                mediaDescriptions: [""],
+                mediaKinds: ["file"],
+                mediaFileNames: [voiceUpload.file.name],
+                mediaMetadata: [
+                  {
+                    durationMs: voiceUpload.durationMs,
+                    mimeType: voiceUpload.file.type,
+                    fileSize: voiceUpload.file.size,
+                  },
+                ],
+                quoteId: replyTarget?.id,
+              },
+              prepare: async () => {
+                const upload = await generateVoiceNoteUploadUrl({
+                  prospectId: prospectId as Id<"prospects">,
+                });
+                const uploadResponse = await fetch(upload.uploadUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": voiceUpload.file.type },
+                  body: voiceUpload.file,
+                  signal: AbortSignal.timeout(VOICE_NOTE_UPLOAD_TIMEOUT_MS),
+                });
+                if (!uploadResponse.ok) {
+                  throw new Error("Voice note upload failed. Try again.");
+                }
+                const uploaded = (await uploadResponse.json()) as {
+                  storageId?: string;
+                };
+                if (!uploaded.storageId) {
+                  throw new Error(
+                    "Voice note upload was incomplete. Try again."
+                  );
+                }
+                const staged = await finalizeVoiceNoteUpload({
+                  prospectId: prospectId as Id<"prospects">,
+                  storageId: uploaded.storageId as Id<"_storage">,
+                  uploadIntentId: upload.uploadIntentId,
+                });
+                return {
+                  text: "",
+                  mediaUrls: [staged.mediaUrl],
+                  mediaDescriptions: [""],
+                  mediaKinds: ["file"],
+                  mediaFileNames: [staged.fileName],
+                  mediaMetadata: [
+                    {
+                      durationMs: staged.durationMs,
+                      mimeType: staged.mimeType,
+                      fileSize: staged.fileSize,
+                    },
+                  ],
+                  voiceNoteCacheId: staged.cacheId,
+                  quoteId: replyTarget?.id,
+                };
+              },
+              releaseOptimisticPreview,
+            });
+            setScrollToLatestRequest((request) => request + 1);
+            await sendRequest;
+            setLocalDraftState({
+              sourceKey: draftSourceKey,
+              serverValue: serverDraft,
+              text: "",
+            });
+            return;
+          }
           const sendRequest = send(
             nextText,
             resolvedMediaUrls,
             resolvedDescriptions,
             resolvedMediaKinds,
-            completedUploads?.map((upload) => upload.file.name),
-            getOutboundMessageMediaMetadata(completedUploads),
+            outboundFileNames,
+            outboundMetadata,
             replyTarget?.id
           );
           setScrollToLatestRequest((request) => request + 1);
@@ -413,7 +512,10 @@ export function LinkedInConversationPanel({
         }
       } catch (err) {
         toast.error("Failed to send LinkedIn message", {
-          description: err instanceof Error ? err.message : "Please try again.",
+          description: getOutboundMessageFailure({
+            error: err,
+            platform: "linkedin",
+          }).message,
         });
         throw err;
       }
@@ -422,11 +524,15 @@ export function LinkedInConversationPanel({
       approvePlan,
       approveTaskWithEdits,
       draftSourceKey,
+      finalizeVoiceNoteUpload,
+      generateVoiceNoteUploadUrl,
       isTaskApprovalComposer,
       isTaskBacked,
       resolvedData,
       replyingTo,
+      prospectId,
       send,
+      sendPrepared,
       serverDraft,
       taskApprovalUi.planCanBeApproved,
       taskApprovalUi.submitBlockedByPlan,
@@ -468,8 +574,10 @@ export function LinkedInConversationPanel({
         await retrySend(message.outboundClientRequestId);
       } catch (error) {
         toast.error("Could not retry LinkedIn message", {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
+          description: getOutboundMessageFailure({
+            error,
+            platform: "linkedin",
+          }).message,
         });
       }
     },
@@ -800,6 +908,9 @@ export function LinkedInConversationPanel({
               showMediaDescription={false}
               showMediaUpload
               allowedMediaKinds={["image", "gif", "video", "file"]}
+              voiceNotePlatform={
+                isTaskApprovalComposer ? undefined : "linkedin"
+              }
               maxAttachments={4}
               disabled={shouldDisableComposer}
               submitDisabled={shouldDisableTaskSubmit}

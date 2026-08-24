@@ -120,7 +120,7 @@ function getDownloadLabel(
 export function getConversationAttachmentKind(
   attachment: ConversationAttachment
 ): ConversationAttachmentKind {
-  const providerType = attachment.type.trim().toLowerCase();
+  const providerType = (attachment.type ?? "").trim().toLowerCase();
   if (["img", "image", "photo", "sticker"].includes(providerType)) {
     return "image";
   }
@@ -173,7 +173,7 @@ export function getConversationAttachmentDownloadItems(
   attachments: ConversationAttachment[] | undefined
 ): ConversationAttachmentDownloadItem[] {
   const candidates = (attachments ?? []).filter((attachment) => {
-    const providerType = attachment.type.trim().toLowerCase();
+    const providerType = (attachment.type ?? "").trim().toLowerCase();
     return (
       !attachment.unavailable &&
       !NON_DOWNLOADABLE_ATTACHMENT_TYPES.has(providerType) &&

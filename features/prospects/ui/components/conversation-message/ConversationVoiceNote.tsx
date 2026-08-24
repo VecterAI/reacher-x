@@ -149,7 +149,7 @@ export function ConversationVoiceNote({
         aria-valuetext={`${formatDuration(currentTime)} of ${formatDuration(duration)}`}
       />
       <time
-        className="flex w-10 shrink-0 items-baseline justify-end text-right text-xs opacity-75"
+        className="flex shrink-0 items-baseline text-xs opacity-75"
         dateTime={`PT${Math.floor(Math.max(0, displayedSeconds))}S`}
       >
         <AnimatedNumber value={displayedMinutes} />

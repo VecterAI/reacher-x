@@ -71,19 +71,41 @@ export async function runLinkedInMessageReactionOperation(args: {
   }
 
   try {
-    const result = await args.addReaction();
-    if (!result.success) {
-      throw new LinkedInMessageReactionRequestError(result);
+    try {
+      const result = await args.addReaction();
+      if (!result.success) {
+        throw new LinkedInMessageReactionRequestError(result);
+      }
+    } catch (error) {
+      const latestData = args.getData();
+      if (previousData && latestData && args.isCurrent()) {
+        args.setData({
+          ...latestData,
+          messages: latestData.messages.map((message) =>
+            message.id === args.messageId
+              ? { ...message, reactions: currentMessage?.reactions }
+              : message
+          ),
+        });
+      }
+      throw error;
     }
-    if (args.isCurrent()) {
-      await args.refresh();
+
+    try {
+      if (args.isCurrent()) {
+        await args.refresh();
+      }
+    } catch (error) {
+      // The provider mutation already succeeded. Keep the optimistic state and
+      // let the next webhook or panel refresh reconcile it instead of reporting
+      // a false send failure and restoring a stale conversation snapshot.
+      console.warn(
+        "[LinkedInMessageReactionOperation] Reaction succeeded but refresh failed",
+        error instanceof Error ? error.message : String(error)
+      );
     }
+
     return "added";
-  } catch (error) {
-    if (args.isCurrent()) {
-      args.setData(previousData);
-    }
-    throw error;
   } finally {
     args.inFlightOperations.delete(args.operationKey);
     args.setPending(false);

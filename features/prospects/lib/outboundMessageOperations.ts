@@ -2,6 +2,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { outboundMessageMediaMetadataValidator } from "@/convex/validators";
 import type { Infer } from "convex/values";
 import type { MediaUpload } from "@/features/composer/types";
+import { getOutboundMessageFailure } from "../../../shared/lib/platforms/outboundMessageFailure";
 import type { RichConversationMessage } from "../ui/components/conversation-message/types";
 
 export type OutboundMessageStatus = "queued" | "sending" | "sent" | "failed";
@@ -34,7 +35,9 @@ export type OutboundMessageOperation = {
   mediaKinds?: Array<"image" | "video" | "gif" | "file">;
   mediaFileNames?: string[];
   mediaMetadata?: OutboundMessageMediaMetadata[];
+  voiceNoteCacheId?: Id<"platformConversationMediaCache">;
   quoteId?: string;
+  actionRequestId?: Id<"agentActionRequests">;
   status: OutboundMessageStatus;
   attemptCount: number;
   createdAt: number;
@@ -43,6 +46,38 @@ export type OutboundMessageOperation = {
   providerMessageId?: string;
   errorMessage?: string;
 };
+
+export type OutboundMessageRetryArgs = Pick<
+  OutboundMessageOperation,
+  | "conversationId"
+  | "text"
+  | "mediaUrls"
+  | "mediaDescriptions"
+  | "mediaKinds"
+  | "mediaFileNames"
+  | "mediaMetadata"
+  | "voiceNoteCacheId"
+  | "quoteId"
+  | "actionRequestId"
+>;
+
+export async function retryLocalOutboundMessageOperation<TResult>(
+  operation: OutboundMessageOperation,
+  enqueue: (message: OutboundMessageRetryArgs) => Promise<TResult>
+): Promise<TResult> {
+  return await enqueue({
+    conversationId: operation.conversationId,
+    text: operation.text,
+    mediaUrls: operation.mediaUrls,
+    mediaDescriptions: operation.mediaDescriptions,
+    mediaKinds: operation.mediaKinds,
+    mediaFileNames: operation.mediaFileNames,
+    mediaMetadata: operation.mediaMetadata,
+    voiceNoteCacheId: operation.voiceNoteCacheId,
+    quoteId: operation.quoteId,
+    actionRequestId: operation.actionRequestId,
+  });
+}
 
 function isCanonicalProviderMessage(
   message: RichConversationMessage & { providerMessageId?: string },
@@ -54,8 +89,11 @@ function isCanonicalProviderMessage(
       message.providerMessageId === operation.providerMessageId)
   );
   if (providerIdentityMatches) return true;
+  // A provider ID is authoritative. If it does not match this message, never
+  // fall back to text and timestamp heuristics or two distinct sends can
+  // collapse into one local row.
+  if (operation.providerMessageId) return false;
   if (
-    !operation.providerMessageId ||
     message.direction !== "sent" ||
     message.text.trim() !== operation.text.trim() ||
     (message.attachments?.length ?? 0) !== (operation.mediaUrls?.length ?? 0)
@@ -161,7 +199,12 @@ export function mergeOutboundMessageOperations<
           }
         : undefined,
       deliveryStatus: operation.status,
-      deliveryError: operation.errorMessage,
+      deliveryError: operation.errorMessage
+        ? getOutboundMessageFailure({
+            error: operation.errorMessage,
+            platform: operation.platform,
+          }).message
+        : undefined,
       outboundOperationId: operation.operationId,
       outboundClientRequestId: operation.clientRequestId,
     };

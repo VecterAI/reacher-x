@@ -8,12 +8,14 @@ import {
   createClientRequestId,
   getCurrentUTCTimestamp,
 } from "@/shared/lib/utils";
-import type {
-  OutboundMessageMediaMetadata,
-  OutboundMessageOperation,
+import { getOutboundMessageFailure } from "@/shared/lib/platforms/outboundMessageFailure";
+import {
+  retryLocalOutboundMessageOperation,
+  type OutboundMessageMediaMetadata,
+  type OutboundMessageOperation,
 } from "../lib/outboundMessageOperations";
 
-type QueueMessageArgs = {
+export type QueueMessageArgs = {
   conversationId?: string;
   text: string;
   mediaUrls?: string[];
@@ -21,9 +23,49 @@ type QueueMessageArgs = {
   mediaKinds?: Array<"image" | "video" | "gif" | "file">;
   mediaFileNames?: string[];
   mediaMetadata?: OutboundMessageMediaMetadata[];
+  voiceNoteCacheId?: Id<"platformConversationMediaCache">;
   quoteId?: string;
   actionRequestId?: Id<"agentActionRequests">;
 };
+
+export type PreparedQueueMessageArgs = {
+  optimisticMessage: QueueMessageArgs;
+  prepare: () => Promise<QueueMessageArgs>;
+  releaseOptimisticPreview?: () => void;
+};
+
+type PreparedLocalSend = Pick<
+  PreparedQueueMessageArgs,
+  "prepare" | "releaseOptimisticPreview"
+>;
+
+function createLocalOperation(args: {
+  clientRequestId: string;
+  prospectId: Id<"prospects">;
+  platform: "twitter" | "linkedin";
+  message: QueueMessageArgs;
+  now: number;
+}): OutboundMessageOperation {
+  return {
+    clientRequestId: args.clientRequestId,
+    prospectId: args.prospectId,
+    platform: args.platform,
+    conversationId: args.message.conversationId,
+    text: args.message.text.trim(),
+    mediaUrls: args.message.mediaUrls,
+    mediaDescriptions: args.message.mediaDescriptions,
+    mediaKinds: args.message.mediaKinds,
+    mediaFileNames: args.message.mediaFileNames,
+    mediaMetadata: args.message.mediaMetadata,
+    voiceNoteCacheId: args.message.voiceNoteCacheId,
+    quoteId: args.message.quoteId,
+    actionRequestId: args.message.actionRequestId,
+    status: "queued",
+    attemptCount: 0,
+    createdAt: args.now,
+    updatedAt: args.now,
+  };
+}
 
 export function useOutboundMessageQueue(args: {
   prospectId?: string;
@@ -47,83 +89,146 @@ export function useOutboundMessageQueue(args: {
   const [localOperations, setLocalOperations] = React.useState<
     OutboundMessageOperation[]
   >([]);
+  const preparedLocalSendsRef = React.useRef(
+    new Map<string, PreparedLocalSend>()
+  );
+
+  const releasePreparedLocalSend = React.useCallback(
+    (clientRequestId: string) => {
+      const prepared = preparedLocalSendsRef.current.get(clientRequestId);
+      if (!prepared) return;
+      prepared.releaseOptimisticPreview?.();
+      preparedLocalSendsRef.current.delete(clientRequestId);
+    },
+    []
+  );
 
   React.useEffect(() => {
     if (!serverOperations) return;
     const serverRequestIds = new Set(
       serverOperations.map((operation) => operation.clientRequestId)
     );
+    for (const clientRequestId of serverRequestIds) {
+      releasePreparedLocalSend(clientRequestId);
+    }
     setLocalOperations((current) =>
       current.filter(
         (operation) => !serverRequestIds.has(operation.clientRequestId)
       )
     );
-  }, [serverOperations]);
+  }, [releasePreparedLocalSend, serverOperations]);
 
   React.useEffect(() => {
+    for (const clientRequestId of preparedLocalSendsRef.current.keys()) {
+      releasePreparedLocalSend(clientRequestId);
+    }
     setLocalOperations([]);
-  }, [platform, prospectId]);
+  }, [platform, prospectId, releasePreparedLocalSend]);
+
+  React.useEffect(
+    () => () => {
+      for (const prepared of preparedLocalSendsRef.current.values()) {
+        prepared.releaseOptimisticPreview?.();
+      }
+      preparedLocalSendsRef.current.clear();
+    },
+    []
+  );
+
+  const markLocalOperationFailed = React.useCallback(
+    (clientRequestId: string, error: unknown) => {
+      const errorMessage = getOutboundMessageFailure({
+        error,
+        platform,
+      }).message;
+      setLocalOperations((current) =>
+        current.map((operation) =>
+          operation.clientRequestId === clientRequestId
+            ? {
+                ...operation,
+                status: "failed",
+                errorMessage,
+                updatedAt: getCurrentUTCTimestamp(),
+              }
+            : operation
+        )
+      );
+    },
+    [platform]
+  );
+
+  const queueWithClientRequestId = React.useCallback(
+    async (clientRequestId: string, message: QueueMessageArgs) => {
+      if (!prospectId) throw new Error("Prospect is required.");
+      return await queueMutation({
+        prospectId: prospectId as Id<"prospects">,
+        platform,
+        clientRequestId,
+        conversationId: message.conversationId,
+        text: message.text,
+        mediaUrls: message.mediaUrls,
+        mediaDescriptions: message.mediaDescriptions,
+        mediaKinds: message.mediaKinds,
+        mediaFileNames: message.mediaFileNames,
+        mediaMetadata: message.mediaMetadata,
+        voiceNoteCacheId: message.voiceNoteCacheId,
+        quoteId: message.quoteId,
+        actionRequestId: message.actionRequestId,
+      });
+    },
+    [platform, prospectId, queueMutation]
+  );
 
   const enqueue = React.useCallback(
     async (message: QueueMessageArgs) => {
       if (!prospectId) throw new Error("Prospect is required.");
       const clientRequestId = createClientRequestId();
       const now = getCurrentUTCTimestamp();
-      const localOperation: OutboundMessageOperation = {
+      const localOperation = createLocalOperation({
         clientRequestId,
         prospectId: prospectId as Id<"prospects">,
         platform,
-        conversationId: message.conversationId,
-        text: message.text.trim(),
-        mediaUrls: message.mediaUrls,
-        mediaDescriptions: message.mediaDescriptions,
-        mediaKinds: message.mediaKinds,
-        mediaFileNames: message.mediaFileNames,
-        mediaMetadata: message.mediaMetadata,
-        quoteId: message.quoteId,
-        status: "queued",
-        attemptCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      };
+        message,
+        now,
+      });
       setLocalOperations((current) => [...current, localOperation]);
 
       try {
-        return await queueMutation({
-          prospectId: prospectId as Id<"prospects">,
-          platform,
-          clientRequestId,
-          conversationId: message.conversationId,
-          text: message.text,
-          mediaUrls: message.mediaUrls,
-          mediaDescriptions: message.mediaDescriptions,
-          mediaKinds: message.mediaKinds,
-          mediaFileNames: message.mediaFileNames,
-          mediaMetadata: message.mediaMetadata,
-          quoteId: message.quoteId,
-          actionRequestId: message.actionRequestId,
-        });
+        return await queueWithClientRequestId(clientRequestId, message);
       } catch (error) {
-        const errorMessage =
-          error instanceof Error && error.message.trim()
-            ? error.message
-            : "Message could not be queued.";
-        setLocalOperations((current) =>
-          current.map((operation) =>
-            operation.clientRequestId === clientRequestId
-              ? {
-                  ...operation,
-                  status: "failed",
-                  errorMessage,
-                  updatedAt: getCurrentUTCTimestamp(),
-                }
-              : operation
-          )
-        );
+        markLocalOperationFailed(clientRequestId, error);
         throw error;
       }
     },
-    [platform, prospectId, queueMutation]
+    [markLocalOperationFailed, platform, prospectId, queueWithClientRequestId]
+  );
+
+  const enqueuePrepared = React.useCallback(
+    async (args: PreparedQueueMessageArgs) => {
+      if (!prospectId) throw new Error("Prospect is required.");
+      const clientRequestId = createClientRequestId();
+      const localOperation = createLocalOperation({
+        clientRequestId,
+        prospectId: prospectId as Id<"prospects">,
+        platform,
+        message: args.optimisticMessage,
+        now: getCurrentUTCTimestamp(),
+      });
+      preparedLocalSendsRef.current.set(clientRequestId, {
+        prepare: args.prepare,
+        releaseOptimisticPreview: args.releaseOptimisticPreview,
+      });
+      setLocalOperations((current) => [...current, localOperation]);
+
+      try {
+        const preparedMessage = await args.prepare();
+        return await queueWithClientRequestId(clientRequestId, preparedMessage);
+      } catch (error) {
+        markLocalOperationFailed(clientRequestId, error);
+        throw error;
+      }
+    },
+    [markLocalOperationFailed, platform, prospectId, queueWithClientRequestId]
   );
 
   const retry = React.useCallback(
@@ -131,23 +236,42 @@ export function useOutboundMessageQueue(args: {
       if (operation.operationId) {
         return await retryMutation({ operationId: operation.operationId });
       }
+      const preparedSend = preparedLocalSendsRef.current.get(
+        operation.clientRequestId
+      );
+      if (preparedSend) {
+        setLocalOperations((current) =>
+          current.map((item) =>
+            item.clientRequestId === operation.clientRequestId
+              ? {
+                  ...item,
+                  status: "queued",
+                  errorMessage: undefined,
+                  updatedAt: getCurrentUTCTimestamp(),
+                }
+              : item
+          )
+        );
+        try {
+          const preparedMessage = await preparedSend.prepare();
+          return await queueWithClientRequestId(operation.clientRequestId, {
+            ...preparedMessage,
+            actionRequestId:
+              preparedMessage.actionRequestId ?? operation.actionRequestId,
+          });
+        } catch (error) {
+          markLocalOperationFailed(operation.clientRequestId, error);
+          throw error;
+        }
+      }
       setLocalOperations((current) =>
         current.filter(
           (item) => item.clientRequestId !== operation.clientRequestId
         )
       );
-      return await enqueue({
-        conversationId: operation.conversationId,
-        text: operation.text,
-        mediaUrls: operation.mediaUrls,
-        mediaDescriptions: operation.mediaDescriptions,
-        mediaKinds: operation.mediaKinds,
-        mediaFileNames: operation.mediaFileNames,
-        mediaMetadata: operation.mediaMetadata,
-        quoteId: operation.quoteId,
-      });
+      return await retryLocalOutboundMessageOperation(operation, enqueue);
     },
-    [enqueue, retryMutation]
+    [enqueue, markLocalOperationFailed, queueWithClientRequestId, retryMutation]
   );
 
   const operations = React.useMemo(() => {
@@ -163,5 +287,5 @@ export function useOutboundMessageQueue(args: {
     ];
   }, [localOperations, serverOperations]);
 
-  return { operations, enqueue, retry };
+  return { operations, enqueue, enqueuePrepared, retry };
 }

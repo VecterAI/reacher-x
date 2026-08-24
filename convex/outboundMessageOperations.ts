@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
 import {
   internalAction,
   internalMutation,
@@ -22,9 +22,11 @@ import {
   hasDmBody,
 } from "../shared/lib/twitter/xPostTextLimit";
 import { LINKEDIN_DM_TEXT_MAX } from "../shared/lib/linkedin/conversation";
+import { getOutboundMessageFailure } from "../shared/lib/platforms/outboundMessageFailure";
 
 const OUTBOUND_OPERATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SENT_OPERATION_TTL_MS = 24 * 60 * 60 * 1000;
+const SENT_VOICE_NOTE_CACHE_TTL_MS = 15 * 60 * 1000;
 const SEND_LEASE_MS = 2 * 60 * 1000;
 const BUSY_RETRY_MS = 1_000;
 const MAX_VISIBLE_OPERATIONS = 50;
@@ -43,6 +45,26 @@ type ProviderSendResult = {
   conversationId?: string;
   messageId?: string;
 };
+
+async function extendVoiceNoteCacheExpiry(
+  ctx: MutationCtx,
+  cacheId: Id<"platformConversationMediaCache"> | undefined,
+  expiresAt: number
+) {
+  if (!cacheId) return;
+  const cached = await ctx.db.get(cacheId);
+  if (!cached) return;
+  await ctx.db.patch(cached._id, { expiresAt });
+  await ctx.scheduler.runAt(
+    expiresAt,
+    internal.platformConversationMedia.deleteCachedMediaInternal,
+    {
+      cacheId: cached._id,
+      expectedStorageId: cached.storageId,
+      expectedExpiresAt: expiresAt,
+    }
+  );
+}
 
 function normalizeOptionalStrings(values?: string[]): string[] | undefined {
   const normalized = (values ?? []).filter(
@@ -160,6 +182,7 @@ function toPublicOperation(row: {
   mediaKinds?: Array<"image" | "video" | "gif" | "file">;
   mediaFileNames?: string[];
   mediaMetadata?: OutboundMediaMetadata[];
+  voiceNoteCacheId?: Id<"platformConversationMediaCache">;
   quoteId?: string;
   status: "queued" | "sending" | "sent" | "failed";
   attemptCount: number;
@@ -181,6 +204,7 @@ function toPublicOperation(row: {
     mediaKinds: row.mediaKinds,
     mediaFileNames: row.mediaFileNames,
     mediaMetadata: row.mediaMetadata,
+    voiceNoteCacheId: row.voiceNoteCacheId,
     quoteId: row.quoteId,
     status: row.status,
     attemptCount: row.attemptCount,
@@ -269,6 +293,7 @@ export const queueMessage = mutation({
     mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
     mediaFileNames: v.optional(v.array(v.string())),
     mediaMetadata: v.optional(v.array(outboundMessageMediaMetadataValidator)),
+    voiceNoteCacheId: v.optional(v.id("platformConversationMediaCache")),
     quoteId: v.optional(v.string()),
     actionRequestId: v.optional(v.id("agentActionRequests")),
   },
@@ -279,23 +304,67 @@ export const queueMessage = mutation({
     if (prospect.platform !== args.platform) {
       throw new Error("Prospect platform does not match this conversation.");
     }
-    const mediaUrls = normalizeOptionalStrings(args.mediaUrls);
+    const now = getCurrentUTCTimestamp();
+    let mediaUrls = normalizeOptionalStrings(args.mediaUrls);
+    let voiceNoteCache:
+      | {
+          _id: Id<"platformConversationMediaCache">;
+          storageId: Id<"_storage">;
+          durationMs?: number;
+          size: number;
+          contentType: string;
+          fileName?: string;
+          expiresAt: number;
+        }
+      | undefined;
+    if (args.voiceNoteCacheId) {
+      const cached = await ctx.db.get(args.voiceNoteCacheId);
+      if (
+        !cached ||
+        cached.userId !== user._id ||
+        cached.prospectId !== args.prospectId ||
+        cached.platform !== "linkedin" ||
+        cached.purpose !== "outbound_voice_note" ||
+        cached.encrypted ||
+        cached.expiresAt <= now
+      ) {
+        throw new Error("This voice note expired. Record it again.");
+      }
+      const mediaUrl = await ctx.storage.getUrl(cached.storageId);
+      if (!mediaUrl) {
+        throw new Error("This voice note is no longer available.");
+      }
+      voiceNoteCache = cached;
+      mediaUrls = [mediaUrl];
+    }
     const mediaDescriptions = normalizeMediaDescriptions(
       args.mediaDescriptions,
       mediaUrls?.length ?? 0
     );
-    const mediaKinds = args.mediaKinds?.slice(0, mediaUrls?.length ?? 0);
-    const mediaFileNames = normalizeMediaMetadata(
-      args.mediaFileNames,
-      mediaUrls?.length ?? 0
-    );
-    const mediaMetadata = normalizeOutboundMediaMetadata(
-      args.mediaMetadata,
-      mediaUrls?.length ?? 0
-    );
+    const mediaKinds = voiceNoteCache
+      ? (["file"] as Array<"image" | "video" | "gif" | "file">)
+      : args.mediaKinds?.slice(0, mediaUrls?.length ?? 0);
+    const mediaFileNames = voiceNoteCache
+      ? [voiceNoteCache.fileName ?? "voice-note.m4a"]
+      : normalizeMediaMetadata(args.mediaFileNames, mediaUrls?.length ?? 0);
+    const mediaMetadata = voiceNoteCache
+      ? [
+          {
+            durationMs: voiceNoteCache.durationMs,
+            mimeType: voiceNoteCache.contentType,
+            fileSize: voiceNoteCache.size,
+          },
+        ]
+      : normalizeOutboundMediaMetadata(
+          args.mediaMetadata,
+          mediaUrls?.length ?? 0
+        );
     const text = args.text.trim();
     const conversationId = args.conversationId?.trim() || undefined;
     const quoteId = args.quoteId?.trim() || undefined;
+    if (voiceNoteCache && text) {
+      throw new Error("Send a LinkedIn voice note by itself.");
+    }
     assertValidMessage({
       platform: args.platform,
       text,
@@ -334,6 +403,7 @@ export const queueMessage = mutation({
         JSON.stringify(existing.mediaFileNames ?? []) !==
           JSON.stringify(mediaFileNames ?? []) ||
         !areOutboundMediaMetadataEqual(existing.mediaMetadata, mediaMetadata) ||
+        existing.voiceNoteCacheId !== args.voiceNoteCacheId ||
         existing.conversationId !== conversationId ||
         existing.quoteId !== quoteId ||
         existing.actionRequestId !== args.actionRequestId
@@ -343,7 +413,12 @@ export const queueMessage = mutation({
       return toPublicOperation(existing);
     }
 
-    const now = getCurrentUTCTimestamp();
+    const operationExpiresAt = now + OUTBOUND_OPERATION_TTL_MS;
+    await extendVoiceNoteCacheExpiry(
+      ctx,
+      voiceNoteCache?._id,
+      operationExpiresAt
+    );
     const operationId = await ctx.db.insert("outboundMessageOperations", {
       userId: user._id,
       workspaceId: prospect.workspaceId,
@@ -357,13 +432,14 @@ export const queueMessage = mutation({
       mediaKinds,
       mediaFileNames,
       mediaMetadata,
+      voiceNoteCacheId: args.voiceNoteCacheId,
       quoteId,
       actionRequestId: args.actionRequestId,
       status: "queued",
       attemptCount: 0,
       createdAt: now,
       updatedAt: now,
-      expiresAt: now + OUTBOUND_OPERATION_TTL_MS,
+      expiresAt: operationExpiresAt,
     });
     await ctx.scheduler.runAfter(
       0,
@@ -371,11 +447,11 @@ export const queueMessage = mutation({
       { userId: user._id, prospectId: args.prospectId, platform: args.platform }
     );
     await ctx.scheduler.runAt(
-      now + OUTBOUND_OPERATION_TTL_MS,
+      operationExpiresAt,
       internal.outboundMessageOperations.cleanupInternal,
       {
         operationId,
-        expectedExpiresAt: now + OUTBOUND_OPERATION_TTL_MS,
+        expectedExpiresAt: operationExpiresAt,
       }
     );
     const row = await ctx.db.get(operationId);
@@ -397,8 +473,12 @@ export const retryMessage = mutation({
     if (row.status !== "failed") {
       throw new Error("Message is already queued.");
     }
+    if (row.voiceNoteCacheId && !(await ctx.db.get(row.voiceNoteCacheId))) {
+      throw new Error("This voice note expired. Record it again.");
+    }
     const now = getCurrentUTCTimestamp();
     const expiresAt = now + OUTBOUND_OPERATION_TTL_MS;
+    await extendVoiceNoteCacheExpiry(ctx, row.voiceNoteCacheId, expiresAt);
     await ctx.db.patch(row._id, {
       status: "queued",
       leaseId: undefined,
@@ -449,6 +529,8 @@ export const acquireNextInternal = internalMutation({
       mediaDescriptions: v.optional(v.array(v.string())),
       mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
       mediaFileNames: v.optional(v.array(v.string())),
+      mediaMetadata: v.optional(v.array(outboundMessageMediaMetadataValidator)),
+      voiceNoteCacheId: v.optional(v.id("platformConversationMediaCache")),
       quoteId: v.optional(v.string()),
       actionRequestId: v.optional(v.id("agentActionRequests")),
       leaseId: v.string(),
@@ -479,6 +561,11 @@ export const acquireNextInternal = internalMutation({
     }
     if (sending) {
       const expiresAt = args.now + OUTBOUND_OPERATION_TTL_MS;
+      await extendVoiceNoteCacheExpiry(
+        ctx,
+        sending.voiceNoteCacheId,
+        expiresAt
+      );
       await ctx.db.patch(sending._id, {
         status: "failed",
         leaseId: undefined,
@@ -542,6 +629,8 @@ export const acquireNextInternal = internalMutation({
       mediaDescriptions: next.mediaDescriptions,
       mediaKinds: next.mediaKinds,
       mediaFileNames: next.mediaFileNames,
+      mediaMetadata: next.mediaMetadata,
+      voiceNoteCacheId: next.voiceNoteCacheId,
       quoteId: next.quoteId,
       actionRequestId: next.actionRequestId,
       leaseId: args.leaseId,
@@ -575,6 +664,13 @@ export const markSentInternal = internalMutation({
       updatedAt: args.now,
       expiresAt,
     });
+    // Keep the temporary preview alive briefly while the provider webhook or
+    // history refresh replaces it with LinkedIn's canonical attachment.
+    await extendVoiceNoteCacheExpiry(
+      ctx,
+      row.voiceNoteCacheId,
+      args.now + SENT_VOICE_NOTE_CACHE_TTL_MS
+    );
     await ctx.scheduler.runAt(
       expiresAt,
       internal.outboundMessageOperations.cleanupInternal,
@@ -598,6 +694,7 @@ export const markFailedInternal = internalMutation({
       return null;
     }
     const expiresAt = args.now + OUTBOUND_OPERATION_TTL_MS;
+    await extendVoiceNoteCacheExpiry(ctx, row.voiceNoteCacheId, expiresAt);
     await ctx.db.patch(row._id, {
       status: "failed",
       leaseId: undefined,
@@ -631,6 +728,7 @@ export const expireLeaseInternal = internalMutation({
     if (row?.status === "sending" && row.leaseId === args.leaseId) {
       const now = getCurrentUTCTimestamp();
       const expiresAt = now + OUTBOUND_OPERATION_TTL_MS;
+      await extendVoiceNoteCacheExpiry(ctx, row.voiceNoteCacheId, expiresAt);
       await ctx.db.patch(row._id, {
         status: "failed",
         leaseId: undefined,
@@ -673,6 +771,13 @@ export const cleanupInternal = internalMutation({
       );
       return null;
     }
+    if (row.voiceNoteCacheId) {
+      const cached = await ctx.db.get(row.voiceNoteCacheId);
+      if (cached) {
+        await ctx.storage.delete(cached.storageId);
+        await ctx.db.delete(cached._id);
+      }
+    }
     await ctx.db.delete(row._id);
     return null;
   },
@@ -690,6 +795,8 @@ async function sendThroughProvider(
     mediaDescriptions?: string[];
     mediaKinds?: Array<"image" | "video" | "gif" | "file">;
     mediaFileNames?: string[];
+    mediaMetadata?: OutboundMediaMetadata[];
+    voiceNoteCacheId?: Id<"platformConversationMediaCache">;
     quoteId?: string;
     actionRequestId?: Id<"agentActionRequests">;
   }
@@ -705,14 +812,45 @@ async function sendThroughProvider(
       actionRequestId: operation.actionRequestId,
     })) as ProviderSendResult;
   }
+  let mediaUrls = operation.mediaUrls;
+  let mediaMetadata = operation.mediaMetadata;
+  let mediaFileNames = operation.mediaFileNames;
+  let mediaKinds = operation.mediaKinds;
+  if (operation.voiceNoteCacheId) {
+    const cached = await ctx.runQuery(
+      internal.platformConversationMedia.getCachedMediaByIdInternal,
+      {
+        cacheId: operation.voiceNoteCacheId,
+        userId: operation.userId,
+        prospectId: operation.prospectId,
+        now: getCurrentUTCTimestamp(),
+      }
+    );
+    if (!cached || cached.purpose !== "outbound_voice_note") {
+      throw new Error("This voice note expired. Record it again.");
+    }
+    const mediaUrl = await ctx.storage.getUrl(cached.storageId);
+    if (!mediaUrl) throw new Error("This voice note is no longer available.");
+    mediaUrls = [mediaUrl];
+    mediaKinds = ["file"];
+    mediaFileNames = [cached.fileName ?? "voice-note.m4a"];
+    mediaMetadata = [
+      {
+        durationMs: cached.durationMs,
+        mimeType: cached.contentType,
+        fileSize: cached.size,
+      },
+    ];
+  }
   return (await ctx.runAction(internal.linkedin.sendLinkedInMessageInternal, {
     userId: operation.userId,
     prospectId: operation.prospectId,
     conversationId: operation.conversationId,
     text: operation.text,
-    mediaUrls: operation.mediaUrls,
-    mediaKinds: operation.mediaKinds,
-    mediaFileNames: operation.mediaFileNames,
+    mediaUrls,
+    mediaKinds,
+    mediaFileNames,
+    mediaMetadata,
     quoteId: operation.quoteId,
     actionRequestId: operation.actionRequestId,
   })) as ProviderSendResult;
@@ -754,16 +892,23 @@ export const processQueueInternal = internalAction({
         }
       );
     } catch (error) {
-      const message =
-        error instanceof Error && error.message.trim()
-          ? error.message
-          : "The provider could not send this message.";
+      const failure = getOutboundMessageFailure({
+        error,
+        platform: acquired.platform,
+      });
+      console.error("[OutboundMessageOperations] Provider send failed", {
+        platform: acquired.platform,
+        prospectId: acquired.prospectId,
+        operationId: acquired.operationId,
+        failureCode: failure.code,
+        error,
+      });
       await ctx.runMutation(
         internal.outboundMessageOperations.markFailedInternal,
         {
           operationId: acquired.operationId,
           leaseId: acquired.leaseId,
-          errorMessage: message,
+          errorMessage: failure.message,
           now: getCurrentUTCTimestamp(),
         }
       );

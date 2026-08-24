@@ -2,6 +2,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { inferAttachmentMediaKind } from "../../shared/lib/utils/media/inferAttachmentMediaKind";
+import { normalizeMediaMimeType } from "../../shared/lib/utils/media/linkedinMessageAttachmentTypes";
 import {
   assertOutreachMediaCapability,
   getMediaCapabilityErrorMessage,
@@ -123,7 +124,7 @@ export function getWorkspaceAttachmentCompatibility(args: {
     url: args.url ?? "",
     fileName:
       args.attachment.displayName?.trim() || args.attachment.fileName.trim(),
-    mimeType: args.attachment.mimeType.trim().toLowerCase(),
+    mimeType: normalizeMediaMimeType(args.attachment.mimeType),
     size: args.attachment.size,
     kind,
   };
