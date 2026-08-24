@@ -1,7 +1,6 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { ChevronsUpDown } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -13,7 +12,7 @@ import {
   CommandList,
 } from "@/shared/ui/components/Command";
 import { Label } from "@/shared/ui/components/Label";
-import { CheckIcon } from "@/shared/ui/components/icons";
+import { CheckIcon, KeyboardArrowDownIcon } from "@/shared/ui/components/icons";
 import {
   Popover,
   PopoverContent,
@@ -73,7 +72,7 @@ export function WorkspaceUseCaseCombobox({
             className="border-input bg-background hover:bg-background w-full justify-between px-3 font-normal"
           >
             <span className="truncate">{label}</span>
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            <KeyboardArrowDownIcon className="ml-2 h-4 w-4 shrink-0 fill-current opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent
