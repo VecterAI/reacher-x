@@ -34,6 +34,7 @@ import {
   getHydratedProfileByUsername,
   getHydratedTimelinePage,
   hasXChatEncryptedMessage,
+  markXChatConversationRead as markXChatConversationReadWithProvider,
   getXExecutionFailure,
   submitEncryptedXChatMessage,
   uploadEncryptedXChatMedia,
@@ -42,6 +43,7 @@ import {
 } from "./lib/xdkTwitterProvider";
 import {
   assertMatchingEncryptedXChatSendOperation,
+  finalizeSuccessfulXChatSend,
   normalizeEncryptedXChatSendPayload,
 } from "./lib/xChatSendCore";
 import {
@@ -2453,6 +2455,55 @@ export const getXChatEventPage = action({
   },
 });
 
+/** Marks the owned direct XChat conversation read through X's Chat endpoint. */
+export const markXChatConversationRead = action({
+  args: {
+    prospectId: v.id("prospects"),
+    seenUntilSequenceId: v.string(),
+  },
+  returns: v.object({ success: v.literal(true) }),
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedTwitterProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("X prospect not found or not authorized.");
+    }
+    const identity = resolveProspectTwitterIdentity(
+      prospect as Record<string, unknown>
+    );
+    if (!identity.username) {
+      throw new Error("This prospect does not have a usable X username.");
+    }
+    const sequenceId = args.seenUntilSequenceId.trim();
+    if (!sequenceId) {
+      throw new Error("XChat read position is required.");
+    }
+    const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+      userId,
+      requiredScopes: ["tweet.read", "users.read", "dm.read", "dm.write"],
+    });
+    const { profileUserId } = await getHydratedProfileByUsername(
+      provider,
+      identity.username
+    );
+    try {
+      const page = await getXChatEncryptedEventPage(provider, profileUserId);
+      await markXChatConversationReadWithProvider(
+        provider,
+        page.conversationId,
+        sequenceId
+      );
+      return { success: true as const };
+    } catch (error) {
+      throwXChatClientRequestError(error);
+    }
+  },
+});
+
 /**
  * Move browser-encrypted XChat media ciphertext from temporary Convex storage
  * into X's encrypted media store. Plain media bytes never cross this boundary.
@@ -2508,7 +2559,9 @@ export const uploadXChatEncryptedMedia = action({
 
       const blob = await ctx.storage.get(args.storageId);
       if (!blob || blob.size <= 0 || blob.size > 100 * 1024 * 1024) {
-        throw new Error("Encrypted XChat media must be between 1 byte and 100 MB.");
+        throw new Error(
+          "Encrypted XChat media must be between 1 byte and 100 MB."
+        );
       }
       const ciphertext = new Uint8Array(await blob.arrayBuffer());
       try {
@@ -2545,6 +2598,7 @@ export const submitXChatEncryptedMessage = action({
     messageId: v.string(),
     encodedMessageCreateEvent: v.string(),
     encodedMessageEventSignature: v.string(),
+    taskId: v.optional(v.id("outreachTasks")),
   },
   returns: xChatEncryptedSendResultValidator,
   handler: async (ctx, args): Promise<XChatEncryptedSendResult> => {
@@ -2563,6 +2617,27 @@ export const submitXChatEncryptedMessage = action({
     if (!identity.username) {
       throw new Error("This prospect does not have a usable X username.");
     }
+    const finalizeSuccessfulSend = async (
+      sendResult: XChatEncryptedSendResult
+    ): Promise<XChatEncryptedSendResult> => {
+      const taskId = args.taskId;
+      if (!taskId) return sendResult;
+      return await finalizeSuccessfulXChatSend({
+        sendResult,
+        completeOutreachTask: async () => {
+          await ctx.runMutation(
+            internal.outreach.completeBrowserEncryptedDmTaskInternal,
+            {
+              userId,
+              taskId,
+              clientRequestId: args.clientRequestId,
+              conversationId: sendResult.conversationId,
+              messageId: sendResult.messageId,
+            }
+          );
+        },
+      });
+    };
     const suppliedConversationId = args.conversationId
       .trim()
       .replaceAll(":", "-");
@@ -2576,14 +2651,15 @@ export const submitXChatEncryptedMessage = action({
       assertMatchingEncryptedXChatSendOperation(existingOperation, {
         ...payload,
         prospectId: args.prospectId,
+        taskId: args.taskId,
         conversationId: suppliedConversationId,
       });
-      return {
+      return await finalizeSuccessfulSend({
         success: true as const,
         conversationId: existingOperation.conversationId,
         messageId: existingOperation.messageId,
         deduplicated: true,
-      };
+      });
     }
 
     const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
@@ -2609,6 +2685,7 @@ export const submitXChatEncryptedMessage = action({
       {
         userId,
         prospectId: args.prospectId,
+        taskId: args.taskId,
         clientRequestId: payload.clientRequestId,
         conversationId: expectedConversationId,
         messageId: payload.messageId,
@@ -2619,12 +2696,12 @@ export const submitXChatEncryptedMessage = action({
       }
     );
     if (lease.kind === "sent") {
-      return {
+      return await finalizeSuccessfulSend({
         success: true as const,
         conversationId: expectedConversationId,
         messageId: lease.messageId,
         deduplicated: true,
-      };
+      });
     }
     if (lease.kind === "in_progress") {
       throw new ConvexError({
@@ -2648,12 +2725,12 @@ export const submitXChatEncryptedMessage = action({
           now: getCurrentUTCTimestamp(),
         }
       );
-      return {
+      return await finalizeSuccessfulSend({
         success: true as const,
         conversationId: expectedConversationId,
         messageId: lease.messageId,
         deduplicated: true,
-      };
+      });
     }
 
     try {
@@ -2683,12 +2760,12 @@ export const submitXChatEncryptedMessage = action({
             now: getCurrentUTCTimestamp(),
           }
         );
-        return {
+        return await finalizeSuccessfulSend({
           success: true as const,
           conversationId: expectedConversationId,
           messageId: lease.messageId,
           deduplicated: true,
-        };
+        });
       }
       await ctx.runMutation(
         internal.xChatSendOperations.releaseXChatSendLeaseInternal,
@@ -2711,12 +2788,12 @@ export const submitXChatEncryptedMessage = action({
         now: getCurrentUTCTimestamp(),
       }
     );
-    return {
+    return await finalizeSuccessfulSend({
       success: true as const,
       conversationId: expectedConversationId,
       messageId: lease.messageId,
       deduplicated: lease.existed,
-    };
+    });
   },
 });
 
@@ -2741,24 +2818,41 @@ export const getXChatEncryptedMedia = action({
     if (!prospect) {
       throw new Error("X prospect not found or not authorized.");
     }
-    const identity = resolveProspectTwitterIdentity(
-      prospect as Record<string, unknown>
+    const cachedConversation: {
+      conversationId: string;
+      participantUserId?: string;
+    } | null = await ctx.runQuery(
+      internal.platformConversations.getConversationIdentityForProspectInternal,
+      {
+        userId,
+        prospectId: args.prospectId,
+        platform: "twitter",
+      }
     );
-    if (!identity.username) {
-      throw new Error("This prospect does not have a usable X username.");
+    let provider:
+      | Awaited<ReturnType<typeof getXProviderContextForUser>>
+      | undefined;
+    let conversationId = cachedConversation?.conversationId.trim();
+    if (!conversationId) {
+      const identity = resolveProspectTwitterIdentity(
+        prospect as Record<string, unknown>
+      );
+      if (!identity.username) {
+        throw new Error("This prospect does not have a usable X username.");
+      }
+      provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+        userId,
+        requiredScopes: ["tweet.read", "users.read", "dm.read"],
+      });
+      const { profileUserId } = await getHydratedProfileByUsername(
+        provider,
+        identity.username
+      );
+      conversationId = computeOneToOneDmConversationId(
+        provider.xUserId,
+        profileUserId
+      );
     }
-    const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
-      userId,
-      requiredScopes: ["tweet.read", "users.read", "dm.read"],
-    });
-    const { profileUserId } = await getHydratedProfileByUsername(
-      provider,
-      identity.username
-    );
-    const conversationId = computeOneToOneDmConversationId(
-      provider.xUserId,
-      profileUserId
-    );
     const cacheKey = buildPlatformConversationMediaCacheKey({
       platform: "twitter",
       conversationId,
@@ -2787,6 +2881,10 @@ export const getXChatEncryptedMedia = action({
 
     let ciphertext: Blob;
     try {
+      provider ??= await getXProviderContextForUser(ctx, getXStoreRefs(), {
+        userId,
+        requiredScopes: ["tweet.read", "users.read", "dm.read"],
+      });
       ciphertext = await fetchXChatEncryptedMedia(
         provider,
         conversationId,

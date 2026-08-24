@@ -108,6 +108,43 @@ describe("normalizeVerifiedXChatMessages", () => {
     ]);
   });
 
+  it("applies a peer receipt only through XChat's seen sequence", () => {
+    const messages = normalizeVerifiedXChatMessages({
+      viewerUserId: "viewer",
+      events: [
+        {
+          type: "message",
+          id: "message-100",
+          sequenceId: "100",
+          senderId: "viewer",
+          createdAtMsec: 1_000,
+          verified: true,
+          content: { contentType: "text", text: "Read" },
+        },
+        {
+          type: "message",
+          id: "message-200",
+          sequenceId: "200",
+          senderId: "viewer",
+          createdAtMsec: 2_000,
+          verified: true,
+          content: { contentType: "text", text: "Not read" },
+        },
+        {
+          type: "readReceipt",
+          senderId: "participant",
+          createdAtMsec: 3_000,
+          seenUntilSequenceId: "100",
+          seenAtMillis: 2_500,
+          verified: true,
+        },
+      ] as Event[],
+    });
+
+    expect(messages[0]?.readAt).toBe("1970-01-01T00:00:02.500Z");
+    expect(messages[1]?.readAt).toBeUndefined();
+  });
+
   it("rejects unverified content and invalid reply previews", () => {
     const messages = normalizeVerifiedXChatMessages({
       viewerUserId: "viewer",
@@ -310,6 +347,37 @@ describe("normalizeVerifiedXChatMessages", () => {
       durationMs: 7_000,
       fileSize: 42_000,
       isVoiceNote: true,
+      unavailable: true,
+    });
+  });
+
+  it("maps numeric XChat media wire values before rendering", () => {
+    const messages = normalizeVerifiedXChatMessages({
+      viewerUserId: "viewer",
+      events: [
+        {
+          type: "message",
+          id: "numeric-video-message",
+          senderId: "participant",
+          createdAtMsec: 5_800,
+          verified: true,
+          content: {
+            contentType: "unknown",
+            attachments: [
+              {
+                attachment_type: "media",
+                media_type: 3,
+                media_hash_key: "raw-encrypted-video",
+              },
+            ],
+          },
+        },
+      ] as Event[],
+    });
+
+    expect(messages[0]?.attachments?.[0]).toMatchObject({
+      mediaKey: "raw-encrypted-video",
+      type: "video",
       unavailable: true,
     });
   });

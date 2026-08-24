@@ -1,5 +1,5 @@
 import { Client } from "@xdevplatform/xdk";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildSanitizedXChatJuiceboxConfig,
   getXChatRealmAuthToken,
@@ -8,6 +8,7 @@ import {
 } from "./xChatDecryptBundleCore";
 import {
   getXChatBrowserDecryptBundle,
+  markXChatConversationRead,
   XChatConfigurationError,
   XChatProviderRequestError,
 } from "./xdkTwitterProvider";
@@ -32,6 +33,28 @@ const PUBLIC_KEYS_PAYLOAD = {
     },
   ],
 };
+
+describe("XChat read receipts", () => {
+  it("calls XDK's documented read method with the latest sequence", async () => {
+    const markConversationRead = vi.fn().mockResolvedValue({ data: {} });
+
+    await markXChatConversationRead(
+      {
+        client: {
+          chat: { markConversationRead },
+        } as unknown as Client,
+        xUserId: viewerUserId,
+      },
+      `${viewerUserId}-${participantUserId}`,
+      "sequence-42"
+    );
+
+    expect(markConversationRead).toHaveBeenCalledWith(
+      `${viewerUserId}-${participantUserId}`,
+      { seenUntilSequenceId: "sequence-42" }
+    );
+  });
+});
 
 const viewerUserId = "1743216568451125248";
 const participantUserId = "2035575047868583936";
@@ -120,7 +143,7 @@ describe("XChat decrypt bundle normalization", () => {
     ).toEqual([{ encodedEvent: "camel-key-envelope" }]);
   });
 
-  it("uses a bare initial participant-events request and preserves partial encrypted coverage", async () => {
+  it("requests the largest bounded participant-events page and preserves partial encrypted coverage", async () => {
     const events = Array.from({ length: 23 }, (_, index) => ({
       id: `event-${index}`,
       conversation_id: "direct-conversation",
@@ -187,7 +210,9 @@ describe("XChat decrypt bundle normalization", () => {
       expect(
         requests.some((request) => request.includes("/2/users/public_keys"))
       ).toBe(false);
-      expect(new URL(eventRequests[0]!).search).toBe("");
+      expect(new URL(eventRequests[0]!).searchParams.get("max_results")).toBe(
+        "100"
+      );
       expect(bundle.events).toHaveLength(23);
       expect(
         bundle.events.filter((event) => event.senderId === participantUserId)
@@ -227,7 +252,7 @@ describe("XChat decrypt bundle normalization", () => {
         )
       ).resolves.toEqual({
         availability: "unavailable",
-        reason: "not_configured",
+        reason: "viewer_not_configured",
       });
       expect(requests).toHaveLength(3);
       expect(
@@ -238,7 +263,7 @@ describe("XChat decrypt bundle normalization", () => {
     }
   });
 
-  it("keeps a configured but empty XChat conversation unlock-gated", async () => {
+  it("does not ask for a PIN when the participant has not configured XChat", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input);
@@ -265,11 +290,9 @@ describe("XChat decrypt bundle normalization", () => {
         },
         participantUserId
       );
-      expect(bundle).toMatchObject({
-        availability: "available",
-        viewerUserId,
-        participantUserId,
-        events: [],
+      expect(bundle).toEqual({
+        availability: "unavailable",
+        reason: "participant_not_configured",
       });
     } finally {
       globalThis.fetch = originalFetch;

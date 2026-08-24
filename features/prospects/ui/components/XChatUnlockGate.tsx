@@ -12,9 +12,14 @@ import { Spinner } from "@/shared/ui/components/Spinner";
 import { XChatIcon } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils";
 import type { XChatBrowserSessionState } from "@/features/agent/lib/xChatBrowserSession";
+import {
+  XChatPinRecoveryActions,
+  XChatRememberPinOption,
+  XCHAT_HELP_URL,
+} from "@/features/agent/ui/components/XChatPinPreferences";
+import { getXChatUnlockGateMode } from "@/features/prospects/lib/xChatUnlockGate";
 
 const XCHAT_PIN_LENGTH = 4;
-
 export function XChatUnlockGate({
   sessionState,
   pin,
@@ -25,6 +30,9 @@ export function XChatUnlockGate({
   errorDescriptionId,
   onPinChange,
   onPinComplete,
+  rememberOnDevice,
+  onRememberOnDeviceChange,
+  onForgetRememberedPins,
   onRetry,
   className,
 }: {
@@ -37,20 +45,26 @@ export function XChatUnlockGate({
   errorDescriptionId: string;
   onPinChange: (value: string) => void;
   onPinComplete: (pin: string) => void;
+  rememberOnDevice: boolean;
+  onRememberOnDeviceChange: (checked: boolean) => void;
+  onForgetRememberedPins: () => void;
   onRetry: () => void;
   className?: string;
 }) {
-  const isChecking =
-    sessionState.status === "unknown" || sessionState.status === "checking";
-  const shouldRequestPin =
-    sessionState.status === "locked" || sessionState.status === "unlocking";
-  const isXChatAccessDenied = sessionState.status === "configuration_required";
+  const gateMode = getXChatUnlockGateMode(sessionState.status);
+  const shouldRequestPin = gateMode === "pin";
+  const isXChatAccessDenied = gateMode === "configuration_required";
+  const attemptsExhausted = gateMode === "attempts_exhausted";
 
-  if (isChecking) {
+  if (gateMode === "loading") {
     return (
       <div
         role="status"
-        aria-label="Loading X/Twitter conversation"
+        aria-label={
+          sessionState.status === "unlocking"
+            ? "Unlocking XChat messages"
+            : "Loading X/Twitter conversation"
+        }
         className={cn(
           "flex min-h-48 flex-1 items-center justify-center",
           className
@@ -61,10 +75,15 @@ export function XChatUnlockGate({
     );
   }
 
+  if (gateMode === "hidden") {
+    return null;
+  }
+
   return (
     <section
       className={cn(
-        "flex min-h-0 flex-1 items-center justify-center px-5 py-8 sm:px-8",
+        "relative flex min-h-0 flex-1 items-center justify-center px-5 py-8 sm:px-8",
+        shouldRequestPin && "pb-20",
         className
       )}
       aria-labelledby="xchat-unlock-title"
@@ -73,23 +92,27 @@ export function XChatUnlockGate({
         <XChatIcon className="mb-4 size-16" aria-hidden />
         <h2
           id="xchat-unlock-title"
-      className={cn(
-        shouldRequestPin
-          ? "text-foreground text-center text-xl font-medium text-pretty sm:text-2xl"
-          : "text-base font-medium"
-      )}
+          className={cn(
+            shouldRequestPin
+              ? "text-foreground text-center text-xl font-medium text-pretty sm:text-2xl"
+              : "text-base font-medium"
+          )}
         >
           {shouldRequestPin
             ? "Enter your XChat PIN"
             : isXChatAccessDenied
               ? "XChat API access unavailable"
-              : "Couldn't check XChat messages"}
+              : attemptsExhausted
+                ? "No PIN attempts remain"
+                : "Couldn't check XChat messages"}
         </h2>
         {!shouldRequestPin ? (
           <p className="text-muted-foreground mt-1.5 text-sm leading-5">
             {isXChatAccessDenied
               ? "X accepted the connected account but denied this app access to encrypted XChat endpoints. Reconnect X once; if this remains, contact X Developer support."
-              : "Retry the encrypted-message check."}
+              : attemptsExhausted
+                ? "Use X's XChat help to review the available recovery steps."
+                : "Retry the encrypted-message check."}
           </p>
         ) : null}
 
@@ -105,7 +128,7 @@ export function XChatUnlockGate({
             <label htmlFor={pinInputId} className="sr-only">
               XChat PIN
             </label>
-            <div className="relative h-11 w-44">
+            <div className="h-11 w-44">
               <InputOTP
                 id={pinInputId}
                 value={pin}
@@ -118,49 +141,42 @@ export function XChatUnlockGate({
                 autoFocus
                 disabled={isBusy || isCoolingDown}
                 aria-invalid={Boolean(errorMessage)}
-                aria-describedby={errorDescriptionId}
+                aria-describedby={errorMessage ? errorDescriptionId : undefined}
                 containerClassName="justify-center has-disabled:opacity-100"
               >
-                <InputOTPGroup
-                  className={cn(
-                    "transition-opacity duration-150",
-                    sessionState.status === "unlocking" && "opacity-0"
-                  )}
-                >
+                <InputOTPGroup>
                   {Array.from({ length: XCHAT_PIN_LENGTH }, (_, index) => (
                     <InputOTPSlot key={index} index={index} />
                   ))}
                 </InputOTPGroup>
               </InputOTP>
-              {sessionState.status === "unlocking" ? (
-                <div
-                  className="absolute inset-0 flex items-center justify-center"
-                  role="status"
-                >
-                  <Spinner
-                    variant="circle"
-                    className="size-5"
-                    aria-hidden="true"
-                  />
-                  <span className="sr-only">Unlocking XChat messages</span>
-                </div>
-              ) : null}
             </div>
-            <div
-              id={errorDescriptionId}
-              className="mt-3 min-h-5 text-sm"
-              aria-live="polite"
-            >
-              {errorMessage ? (
+            {errorMessage ? (
+              <div
+                id={errorDescriptionId}
+                className="mt-3 text-sm"
+                aria-live="polite"
+              >
                 <p className="text-destructive" role="alert">
                   {errorMessage}
                 </p>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
+            <XChatRememberPinOption
+              className="mt-4"
+              rememberOnDevice={rememberOnDevice}
+              onRememberOnDeviceChange={onRememberOnDeviceChange}
+            />
           </form>
         ) : isXChatAccessDenied ? (
           <Button asChild type="button" size="sm" className="mt-5">
             <Link href="/settings/connected-accounts">Connected accounts</Link>
+          </Button>
+        ) : attemptsExhausted ? (
+          <Button asChild type="button" size="sm" className="mt-5">
+            <a href={XCHAT_HELP_URL} target="_blank" rel="noreferrer">
+              View XChat help
+            </a>
           </Button>
         ) : errorMessage ? (
           <div className="mt-5 flex flex-col items-center">
@@ -184,6 +200,12 @@ export function XChatUnlockGate({
           </div>
         ) : null}
       </div>
+      {shouldRequestPin ? (
+        <XChatPinRecoveryActions
+          className="absolute inset-x-0 bottom-0 px-5 pb-[max(1rem,env(safe-area-inset-bottom))]"
+          onClearSavedPins={onForgetRememberedPins}
+        />
+      ) : null}
     </section>
   );
 }

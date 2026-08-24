@@ -40,6 +40,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     () => toTwitterMediaProxyUrl(hlsUrl),
     [hlsUrl]
   );
+  const mediaSourceKey = `${resolvedMp4Url ?? ""}\n${resolvedHlsUrl ?? ""}`;
 
   const attachTemplate = React.useCallback((el: Element | null) => {
     if (!el) return;
@@ -56,6 +57,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   return (
     <MediaTheme
+      key={mediaSourceKey}
       ref={attachTemplate}
       className={cn("h-full min-h-0 w-full overflow-hidden", className)}
       style={{ "--media-accent-color": "#ffffff" } as React.CSSProperties}

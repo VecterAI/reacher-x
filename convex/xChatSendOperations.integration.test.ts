@@ -30,7 +30,7 @@ async function seedOperationOwner(t: ReturnType<typeof convexTest>) {
       status: "new",
       updatedAt: 1,
     });
-    return { userId, prospectId };
+    return { userId, workspaceId, prospectId };
   });
 }
 
@@ -143,5 +143,119 @@ describe("XChat encrypted send idempotency", () => {
         clientRequestId: operation.clientRequestId,
       })
     ).resolves.toBeNull();
+  });
+
+  test("completes an approved DM only from matching durable sent proof", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, workspaceId, prospectId } = await seedOperationOwner(t);
+    const seeded = await t.run(async (ctx) => {
+      const planId = await ctx.db.insert("outreachPlans", {
+        prospectId,
+        workspaceId,
+        userId,
+        status: "executing",
+        strategy: {
+          rationale: "Verify encrypted task completion.",
+          valueProposition: "One provider write.",
+          tone: "peer",
+        },
+        version: 1,
+        updatedAt: 1,
+      });
+      const taskId = await ctx.db.insert("outreachTasks", {
+        planId,
+        order: 1,
+        type: "dm",
+        description: "Send through XChat.",
+        content: "Approved encrypted DM",
+        status: "executing",
+        timing: { type: "immediate" },
+        approvalEventId: "approval-event-1",
+        approvalRequestedAt: 1,
+        approvalNonce: 1,
+        approvalContext: { platform: "twitter", panelMode: "approval" },
+      });
+      const otherTaskId = await ctx.db.insert("outreachTasks", {
+        planId,
+        order: 2,
+        type: "dm",
+        description: "Do not complete from another task's proof.",
+        content: "Different approved encrypted DM",
+        status: "executing",
+        timing: { type: "immediate" },
+        approvalEventId: "approval-event-2",
+        approvalRequestedAt: 1,
+        approvalNonce: 1,
+        approvalContext: { platform: "twitter", panelMode: "approval" },
+      });
+      await ctx.db.insert("xChatSendOperations", {
+        userId,
+        prospectId,
+        taskId,
+        clientRequestId: "approved-client-request",
+        conversationId: "1-2",
+        messageId: "approved-message",
+        encodedMessageCreateEvent: "encrypted-event",
+        encodedMessageEventSignature: "encrypted-signature",
+        status: "sent",
+        attemptCount: 1,
+        createdAt: 1,
+        updatedAt: 2,
+        sentAt: 2,
+        expiresAt: 1_000_000,
+      });
+      return { taskId, otherTaskId };
+    });
+
+    await expect(
+      t.mutation(internal.outreach.completeBrowserEncryptedDmTaskInternal, {
+        userId,
+        taskId: seeded.taskId,
+        clientRequestId: "approved-client-request",
+        conversationId: "1-2",
+        messageId: "wrong-message",
+      })
+    ).rejects.toThrow("send proof is missing or does not match");
+
+    await expect(
+      t.mutation(internal.outreach.completeBrowserEncryptedDmTaskInternal, {
+        userId,
+        taskId: seeded.otherTaskId,
+        clientRequestId: "approved-client-request",
+        conversationId: "1-2",
+        messageId: "approved-message",
+      })
+    ).rejects.toThrow("send proof is missing or does not match");
+
+    await expect(
+      t.mutation(internal.outreach.completeBrowserEncryptedDmTaskInternal, {
+        userId,
+        taskId: seeded.taskId,
+        clientRequestId: "approved-client-request",
+        conversationId: "1-2",
+        messageId: "approved-message",
+      })
+    ).resolves.toEqual({ success: true, duplicate: false });
+
+    await expect(
+      t.mutation(internal.outreach.completeBrowserEncryptedDmTaskInternal, {
+        userId,
+        taskId: seeded.taskId,
+        clientRequestId: "approved-client-request",
+        conversationId: "1-2",
+        messageId: "approved-message",
+      })
+    ).resolves.toEqual({ success: true, duplicate: true });
+
+    const storedTask = await t.run((ctx) => ctx.db.get(seeded.taskId));
+    expect(storedTask).toMatchObject({
+      status: "completed",
+      approvalContext: { platform: "twitter", panelMode: "posted" },
+      resultData: {
+        messageId: "approved-message",
+        conversationId: "1-2",
+        browserEncryptedXChat: true,
+      },
+    });
   });
 });

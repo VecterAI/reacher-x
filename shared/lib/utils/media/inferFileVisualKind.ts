@@ -45,10 +45,13 @@ export function inferFileVisualKind(args: {
     .map(normalize)
     .filter(Boolean)
     .join(" ");
-  const mediaKind = inferAttachmentMediaKind({
-    mimeType,
-    url: pathLikeValue,
-  });
+  // Keep the filename and URL as independent extension candidates. Joining a
+  // concrete filename to a generated blob URL makes the filename extension no
+  // longer terminal (for example, `clip.mov blob:...`) and used to downgrade
+  // decrypted XChat videos to generic files.
+  const mediaKind =
+    inferAttachmentMediaKind({ mimeType, url: args.fileName }) ??
+    inferAttachmentMediaKind({ mimeType, url: args.url });
 
   if (mediaKind === "image" || mediaKind === "gif") {
     return "image";

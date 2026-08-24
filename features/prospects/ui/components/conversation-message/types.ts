@@ -24,6 +24,7 @@ export interface ConversationAttachment {
   variants?: ConversationMediaVariant[];
   isGif?: boolean;
   isVoiceNote?: boolean;
+  isLoading?: boolean;
   unavailable?: boolean;
   urlExpiresAt?: string;
   linkedinPostUrl?: string;

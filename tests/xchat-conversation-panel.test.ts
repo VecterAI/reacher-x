@@ -289,6 +289,46 @@ test("the X conversation panel gates history behind the shared XChat lifecycle",
   assert.doesNotMatch(agentUnlockSource, /No readable messages/);
 });
 
+test("XChat publishes verified messages before best-effort media hydration", () => {
+  const sessionSource = readFileSync(
+    "features/agent/lib/xChatBrowserSession.ts",
+    "utf8"
+  );
+  const cacheIndex = sessionSource.indexOf(
+    "const session = cacheVerifiedXChatBrowserSession"
+  );
+  const hydrateIndex = sessionSource.indexOf(
+    "void hydrateXChatAttachments",
+    cacheIndex
+  );
+
+  assert.ok(cacheIndex >= 0);
+  assert.ok(hydrateIndex > cacheIndex);
+  assert.match(sessionSource, /function applyHydratedXChatMedia/);
+  assert.match(sessionSource, /session\.messages\.map/);
+  assert.match(sessionSource, /objectUrlsBySessionKey\.get/);
+});
+
+test("sent XChat voice notes keep a conversation-owned playable preview", () => {
+  const panel = readFileSync(
+    "features/prospects/ui/components/XConversationPanel.tsx",
+    "utf8"
+  );
+  const session = readFileSync(
+    "features/agent/lib/xChatBrowserSession.ts",
+    "utf8"
+  );
+
+  assert.match(panel, /const localPreviewUrl = selectedMedia\.url/);
+  assert.match(panel, /retainMediaObjectUrls: true as const/);
+  assert.match(panel, /didTransferMediaPreview = true/);
+  assert.match(panel, /objectUrls: \[localPreviewUrl\]/);
+  assert.match(panel, /isVoiceNote: selectedMedia\.isVoiceNote/);
+  assert.match(panel, /mediaKey: mediaHashKey/);
+  assert.match(session, /mergeXChatAttachmentsPreservingPlayablePreview/);
+  assert.match(session, /url: existing\.url,[\s\S]{0,220}unavailable: false/);
+});
+
 test("open XChat panels refresh from reactive revisions without polling", () => {
   const panelSource = readFileSync(
     "features/prospects/ui/components/XConversationPanel.tsx",
@@ -305,6 +345,7 @@ test("open XChat panels refresh from reactive revisions without polling", () => 
 
   assert.match(panelSource, /conversationRevisionKey/);
   assert.match(panelSource, /createRevisionRefreshCoordinator/);
+  assert.match(panelSource, /shouldRefreshXChatConversationRevision/);
   assert.match(panelSource, /pagination: "newest"/);
   assert.match(panelSource, /realtimeEventCoversRevision/);
   assert.match(panelSource, /decryptedSessionCoversRevision/);
@@ -320,7 +361,7 @@ test("open XChat panels refresh from reactive revisions without polling", () => 
   assert.ok(observedRevisionAfterUnlock > lockedRevisionGuard);
   assert.match(hookSource, /getTwitterConversationRevision/);
   assert.doesNotMatch(panelSource, /setInterval/);
-  assert.doesNotMatch(panelSource, /visibilitychange/);
+  assert.doesNotMatch(panelSource, /visibilitychange",\s*refreshNewest/u);
   assert.doesNotMatch(hookSource, /setInterval/);
   assert.doesNotMatch(hookSource, /visibilitychange/);
 });

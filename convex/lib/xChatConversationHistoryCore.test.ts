@@ -102,7 +102,7 @@ describe("XChat conversation-history metadata", () => {
     });
   });
 
-  test("uses the bare participant-events request and preserves partial encrypted coverage", async () => {
+  test("uses the largest bounded participant-events page and preserves partial encrypted coverage", async () => {
     const data = Array.from({ length: 23 }, (_, index) => ({
       encoded_event: `ciphertext-${index}`,
       sender_id: index < 8 ? participantUserId : viewerUserId,
@@ -137,7 +137,7 @@ describe("XChat conversation-history metadata", () => {
       expect(new URL(requests[0]!).pathname).toBe(
         `/2/chat/conversations/${participantUserId}/events`
       );
-      expect(new URL(requests[0]!).search).toBe("");
+      expect(new URL(requests[0]!).searchParams.get("max_results")).toBe("100");
       expect(evidence).toMatchObject({
         conversationFound: true,
         conversationLookupComplete: true,

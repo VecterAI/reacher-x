@@ -31,10 +31,17 @@ export function getBestMp4VariantUrl(
   }
 
   return variants
-    .filter(
-      (variant) => normalizeContentType(variant.content_type) === "video/mp4"
+    .filter((variant) =>
+      ["video/mp4", "video/quicktime"].includes(
+        normalizeContentType(variant.content_type)
+      )
     )
-    .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0]?.url;
+    .sort((a, b) => {
+      const typeDifference =
+        Number(normalizeContentType(b.content_type) === "video/mp4") -
+        Number(normalizeContentType(a.content_type) === "video/mp4");
+      return typeDifference || (b.bitrate ?? 0) - (a.bitrate ?? 0);
+    })[0]?.url;
 }
 
 export type { VideoVariant };

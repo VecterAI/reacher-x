@@ -1,17 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildXChatMediaAttachment,
   cacheVerifiedXChatBrowserSession,
   confirmXChatReactionInBrowser,
   confirmXChatTextMessageInBrowser,
+  copyXChatConversationKeyForEncryption,
   getXChatBrowserSession,
   getXChatBrowserSessionState,
   getXChatUnlockErrorMessage,
+  getXChatUnlockFailureState,
   hydrateXChatAttachments,
   getXChatAttachmentMediaType,
   hydrateXChatVoiceNotes,
   lockXChatInBrowser,
+  mergeXChatAttachmentsPreservingPlayablePreview,
   mergeXChatConversationKeys,
+  publishPreparingXChatMessageInBrowser,
+  requestXChatBrowserDecryptOnce,
   requestXChatDecryptBundleOnce,
+  resolveXChatAttachmentMimeType,
   setXChatBrowserSessionState,
   type XChatDecryptBundle,
   type XChatDecryptBundleResponse,
@@ -25,6 +32,37 @@ describe("getXChatAttachmentMediaType", () => {
     expect(getXChatAttachmentMediaType("audio/mpeg")).toBe(4);
     expect(getXChatAttachmentMediaType("application/pdf")).toBe(5);
     expect(getXChatAttachmentMediaType("image/svg+xml")).toBe(6);
+  });
+
+  it("keeps browser-recorded M4A audio out of XChat's video wire type", () => {
+    const mimeType = resolveXChatAttachmentMimeType("audio/mp4", "video/mp4");
+
+    expect(mimeType).toBe("audio/mp4");
+    expect(getXChatAttachmentMediaType(mimeType)).toBe(4);
+    expect(
+      buildXChatMediaAttachment({
+        mediaHashKey: "encrypted-audio-hash",
+        media: {
+          conversationId: "100-200",
+          keyVersion: "200",
+          fileName: "voice-note.m4a",
+          fileSize: 42_000,
+          width: 0,
+          height: 0,
+          mediaType: getXChatAttachmentMediaType(mimeType),
+          durationMs: 7_000,
+        },
+      })
+    ).toEqual({
+      attachment_type: "media",
+      media_hash_key: "encrypted-audio-hash",
+      media_type: 4,
+      width: 0,
+      height: 0,
+      filesize_bytes: 42_000,
+      filename: "voice-note.m4a",
+      duration_millis: 7_000,
+    });
   });
 });
 
@@ -41,6 +79,105 @@ describe("mergeXChatConversationKeys", () => {
     expect(Array.from(previousView)).toEqual([7, 8, 9]);
     expect(Array.from(incomingView)).toEqual([7, 8, 9]);
     expect(merged["key-v1"]).toBe(incomingView);
+  });
+});
+
+describe("mergeXChatAttachmentsPreservingPlayablePreview", () => {
+  it("keeps a sent voice note playable while provider media is still unavailable", () => {
+    const attachments = mergeXChatAttachmentsPreservingPlayablePreview({
+      existing: [
+        {
+          mediaKey: "sent-voice-hash",
+          type: "file",
+          url: "blob:local-voice-preview",
+          previewUrl: "blob:local-voice-preview",
+          mimeType: "audio/mp4",
+          durationMs: 4_000,
+          isVoiceNote: true,
+          unavailable: false,
+        },
+      ],
+      incoming: [
+        {
+          mediaKey: "sent-voice-hash",
+          type: "audio",
+          durationMs: 4_000,
+          isVoiceNote: true,
+          unavailable: true,
+        },
+      ],
+    });
+
+    expect(attachments?.[0]).toMatchObject({
+      mediaKey: "sent-voice-hash",
+      type: "audio",
+      url: "blob:local-voice-preview",
+      isVoiceNote: true,
+      unavailable: false,
+    });
+  });
+
+  it("replaces the local preview once decrypted provider media is playable", () => {
+    const attachments = mergeXChatAttachmentsPreservingPlayablePreview({
+      existing: [
+        {
+          mediaKey: "sent-voice-hash",
+          type: "audio",
+          url: "blob:local-voice-preview",
+          isVoiceNote: true,
+        },
+      ],
+      incoming: [
+        {
+          mediaKey: "sent-voice-hash",
+          type: "audio",
+          url: "blob:decrypted-provider-voice",
+          isVoiceNote: true,
+          unavailable: false,
+        },
+      ],
+    });
+
+    expect(attachments?.[0]?.url).toBe("blob:decrypted-provider-voice");
+  });
+});
+
+describe("copyXChatConversationKeyForEncryption", () => {
+  it("copies the preferred 32-byte key out of the SDK-owned view", () => {
+    const preferred = new Uint8Array(32).fill(7);
+    const selected = copyXChatConversationKeyForEncryption({
+      conversationKeys: {
+        "100": new Uint8Array(32).fill(1),
+        "200": preferred,
+      },
+      preferredKeyVersion: "200",
+    });
+
+    expect(selected?.conversationKeyVersion).toBe("200");
+    expect(selected?.conversationKey).not.toBe(preferred);
+    expect(selected?.conversationKey).toEqual(preferred);
+  });
+
+  it("rejects malformed keys and falls back to the newest valid version", () => {
+    const selected = copyXChatConversationKeyForEncryption({
+      conversationKeys: {
+        "300": new Uint8Array(31),
+        "200": new Uint8Array(32).fill(2),
+        "100": new Uint8Array(32).fill(1),
+      },
+      preferredKeyVersion: "300",
+    });
+
+    expect(selected?.conversationKeyVersion).toBe("200");
+    expect(selected?.conversationKey).toEqual(new Uint8Array(32).fill(2));
+  });
+
+  it("returns null when no protocol-valid conversation key exists", () => {
+    expect(
+      copyXChatConversationKeyForEncryption({
+        conversationKeys: { invalid: new Uint8Array(33) },
+      })
+    ).toBeNull();
   });
 });
 
@@ -67,6 +204,44 @@ describe("requestXChatDecryptBundleOnce", () => {
   });
 });
 
+describe("requestXChatBrowserDecryptOnce", () => {
+  it("shares the complete unlock and decrypt across concurrently mounted panels", async () => {
+    let resolveDecrypt:
+      | ((value: { messages: []; decryptionErrorCount: number }) => void)
+      | undefined;
+    const decrypt = vi.fn(
+      () =>
+        new Promise<{ messages: []; decryptionErrorCount: number }>(
+          (resolve) => {
+            resolveDecrypt = resolve;
+          }
+        )
+    );
+
+    const first = requestXChatBrowserDecryptOnce(
+      "concurrent-panel-session",
+      decrypt
+    );
+    const second = requestXChatBrowserDecryptOnce(
+      "concurrent-panel-session",
+      decrypt
+    );
+
+    expect(first).toBe(second);
+    await Promise.resolve();
+    expect(decrypt).toHaveBeenCalledTimes(1);
+    resolveDecrypt?.({ messages: [], decryptionErrorCount: 0 });
+    await expect(first).resolves.toEqual({
+      messages: [],
+      decryptionErrorCount: 0,
+    });
+
+    decrypt.mockResolvedValueOnce({ messages: [], decryptionErrorCount: 0 });
+    await requestXChatBrowserDecryptOnce("concurrent-panel-session", decrypt);
+    expect(decrypt).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("getXChatUnlockErrorMessage", () => {
   it("turns Juicebox invalid-PIN diagnostics into product copy", () => {
     expect(
@@ -89,6 +264,23 @@ describe("getXChatUnlockErrorMessage", () => {
     expect(
       getXChatUnlockErrorMessage(new Error("provider_internal_code=abc123"))
     ).toBe("We couldn't unlock XChat. Try again.");
+  });
+
+  it("disables PIN entry when X reports no attempts remaining", () => {
+    expect(
+      getXChatUnlockFailureState(
+        new Error(
+          "Juicebox recovery failed: reason=InvalidPin guesses_remaining=0"
+        )
+      )
+    ).toEqual({ status: "attempts_exhausted" });
+    expect(
+      getXChatUnlockFailureState(
+        new Error(
+          "Juicebox recovery failed: reason=InvalidPin guesses_remaining=3"
+        )
+      )
+    ).toEqual({ status: "locked", attemptsRemaining: 3 });
   });
 });
 
@@ -468,7 +660,7 @@ describe("browser-only XChat session", () => {
       { url: "blob:image/png", unavailable: false },
       { type: "video", url: "blob:video/mp4", unavailable: false },
     ]);
-    expect(hydrated.objectUrls).toEqual(["blob:image/png", "blob:video/mp4"]);
+    expect(hydrated.objectUrls).toEqual(["blob:video/mp4", "blob:image/png"]);
   });
 
   it("hydrates quoted media before its original message page is loaded", async () => {
@@ -560,6 +752,76 @@ describe("browser-only XChat session", () => {
     await hydrateXChatAttachments(args);
 
     expect(getEncryptedMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears missing-media retry state when XChat is locked", async () => {
+    const getEncryptedMedia = vi.fn(async () => {
+      throw new Error("XChat request failed (404 Not Found).");
+    });
+    const args = {
+      chat: { decryptStream: vi.fn(() => new Uint8Array()) },
+      conversationKeys: { "missing-key": new Uint8Array([1]) },
+      prospectId: "prospect-lock-clears-media",
+      conversationId: "100-200",
+      messages: [
+        {
+          id: "message-lock-clears-media",
+          senderId: "participant",
+          direction: "received" as const,
+          occurredAt: 1,
+          keyVersion: "missing-key",
+          text: "",
+          attachments: [
+            {
+              mediaKey: "missing-media-after-lock",
+              type: "image",
+              unavailable: true,
+            },
+          ],
+        },
+      ],
+      getEncryptedMedia,
+    };
+
+    await hydrateXChatAttachments(args);
+    lockXChatInBrowser();
+    await hydrateXChatAttachments(args);
+
+    expect(getEncryptedMedia).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts recent XChat media before older attachments", async () => {
+    const started: string[] = [];
+    const messages = Array.from({ length: 4 }, (_, index) => ({
+      id: `message-${index + 1}`,
+      senderId: "participant",
+      direction: "received" as const,
+      occurredAt: index + 1,
+      keyVersion: "media-key",
+      text: "",
+      attachments: [
+        {
+          mediaKey: `media-${index + 1}`,
+          type: "image",
+          unavailable: true,
+        },
+      ],
+    }));
+
+    await hydrateXChatAttachments({
+      chat: { decryptStream: () => new Uint8Array([1]) },
+      conversationKeys: { "media-key": new Uint8Array([1]) },
+      prospectId: "prospect-priority",
+      conversationId: "100-200",
+      messages,
+      getEncryptedMedia: async (mediaHashKey) => {
+        started.push(mediaHashKey);
+        return { ciphertext: new Uint8Array([1]).buffer };
+      },
+      detectMimeType: () => "image/png",
+    });
+
+    expect(started.slice(0, 3)).toEqual(["media-4", "media-3", "media-2"]);
   });
 
   it("renders an M4A voice note when the XDK reports its MP4 container", async () => {
@@ -666,6 +928,33 @@ describe("browser-only XChat session", () => {
     expect(failedMime.objectUrls).toEqual([]);
   });
 
+  it("settles a loading attachment to unavailable after hydration fails", async () => {
+    const messages = receivedVoiceNote("historical-key").map((message) => ({
+      ...message,
+      attachments: message.attachments?.map((attachment) => ({
+        ...attachment,
+        isLoading: true,
+        unavailable: false,
+      })),
+    }));
+
+    const result = await hydrateXChatVoiceNotes({
+      chat: { decryptStream: vi.fn(() => new Uint8Array()) },
+      conversationKeys: { "historical-key": new Uint8Array([1]) },
+      prospectId: "prospect-loading-failure",
+      conversationId: "100-200",
+      messages,
+      getEncryptedMedia: async () => {
+        throw new Error("expired");
+      },
+    });
+
+    expect(result.messages[0]?.attachments?.[0]).toMatchObject({
+      isLoading: false,
+      unavailable: true,
+    });
+  });
+
   it("revokes browser-created voice-note URLs when the XChat session locks", () => {
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", { createObjectURL: vi.fn(), revokeObjectURL });
@@ -681,5 +970,33 @@ describe("browser-only XChat session", () => {
     lockXChatInBrowser();
 
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:voice-note");
+  });
+
+  it("transfers an optimistic voice-note preview to the conversation lifecycle", () => {
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(), revokeObjectURL });
+
+    cacheVerifiedXChatBrowserSession({
+      prospectId: "prospect-local-preview",
+      bundle: bundle(),
+      messages: [],
+      decryptionErrorCount: 0,
+    });
+    publishPreparingXChatMessageInBrowser({
+      prospectId: "prospect-local-preview",
+      text: "",
+      attachments: [
+        {
+          type: "audio",
+          url: "blob:optimistic-voice-note",
+          isVoiceNote: true,
+        },
+      ],
+      objectUrls: ["blob:optimistic-voice-note"],
+    });
+
+    lockXChatInBrowser();
+
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:optimistic-voice-note");
   });
 });

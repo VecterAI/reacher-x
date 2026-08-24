@@ -37,6 +37,8 @@ export interface XDmAttachmentSummary {
   variants?: XDmAttachmentVariant[];
   isGif?: boolean;
   isVoiceNote?: boolean;
+  /** Browser-only encrypted media hydration is still in progress. */
+  isLoading?: boolean;
   unavailable?: boolean;
   urlExpiresAt?: string;
   linkedinPostUrl?: string;

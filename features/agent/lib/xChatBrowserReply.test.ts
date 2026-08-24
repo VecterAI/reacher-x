@@ -86,8 +86,8 @@ describe("XChat signed reply encryption", () => {
         ],
         conversationKeys: {
           keys: {
-            "conversation-key-v0": new Uint8Array([1, 2, 3]),
-            "conversation-key-v1": new Uint8Array([4, 5, 6]),
+            "conversation-key-v0": new Uint8Array(32).fill(1),
+            "conversation-key-v1": new Uint8Array(32).fill(2),
           },
           latestVersion: "conversation-key-v1",
         },
@@ -139,6 +139,7 @@ describe("XChat signed reply encryption", () => {
         width: 100,
         height: 80,
         mediaType: 1,
+        durationMs: 7_000,
       },
       replyToMessageId: "xchat:viewer-participant:original-id",
       replyToSequenceId: "original-sequence",
@@ -164,6 +165,7 @@ describe("XChat signed reply encryption", () => {
             attachment_type: "media",
             media_hash_key: "opaque-media-hash",
             filename: "photo.jpg",
+            duration_millis: 7_000,
           }),
         ],
       })
@@ -180,7 +182,9 @@ describe("XChat signed reply encryption", () => {
   });
 
   it("omits key-change context when replying on the current conversation key", async () => {
-    const encryptReply = vi.fn(() => encryptedPayload("current-key-reply"));
+    const encryptReply = vi.fn((_input: unknown) =>
+      encryptedPayload("current-key-reply")
+    );
     const chat = {
       unlock: vi.fn(),
       isUnlocked: vi.fn(() => true),
@@ -206,7 +210,7 @@ describe("XChat signed reply encryption", () => {
           },
         ],
         conversationKeys: {
-          keys: { "conversation-key-v1": new Uint8Array([1, 2, 3]) },
+          keys: { "conversation-key-v1": new Uint8Array(32).fill(1) },
           latestVersion: "conversation-key-v1",
         },
         errors: {},
@@ -242,10 +246,13 @@ describe("XChat signed reply encryption", () => {
       replyToSequenceId: "current-original-sequence",
     });
 
-    expect(encryptReply).toHaveBeenCalledWith({
-      conversationId: "viewer-participant",
-      text: "Current-key reply",
-      replyToEvent: "raw-current-original",
-    });
+    expect(encryptReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "viewer-participant",
+        text: "Current-key reply",
+        replyToEvent: "raw-current-original",
+      })
+    );
+    expect(encryptReply.mock.calls[0]?.[0]).not.toHaveProperty("replyToCkces");
   });
 });

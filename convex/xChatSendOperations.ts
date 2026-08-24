@@ -22,6 +22,7 @@ type StoredOperation = {
   operationId: Id<"xChatSendOperations">;
   userId: Id<"users">;
   prospectId: Id<"prospects">;
+  taskId?: Id<"outreachTasks">;
   clientRequestId: string;
   conversationId: string;
   messageId: string;
@@ -87,6 +88,7 @@ function toStoredOperation(row: {
   _id: Id<"xChatSendOperations">;
   userId: Id<"users">;
   prospectId: Id<"prospects">;
+  taskId?: Id<"outreachTasks">;
   clientRequestId: string;
   conversationId: string;
   messageId: string;
@@ -101,6 +103,7 @@ function toStoredOperation(row: {
     operationId: row._id,
     userId: row.userId,
     prospectId: row.prospectId,
+    taskId: row.taskId,
     clientRequestId: row.clientRequestId,
     conversationId: row.conversationId,
     messageId: row.messageId,
@@ -134,6 +137,7 @@ export const acquireXChatSendLeaseInternal = internalMutation({
   args: {
     userId: v.id("users"),
     prospectId: v.id("prospects"),
+    taskId: v.optional(v.id("outreachTasks")),
     clientRequestId: v.string(),
     conversationId: v.string(),
     messageId: v.string(),
@@ -154,6 +158,7 @@ export const acquireXChatSendLeaseInternal = internalMutation({
     if (existing) {
       assertMatchingEncryptedXChatSendOperation(existing, {
         prospectId: args.prospectId,
+        taskId: args.taskId,
         conversationId: args.conversationId,
         clientRequestId: args.clientRequestId,
         messageId: args.messageId,
@@ -212,6 +217,7 @@ export const acquireXChatSendLeaseInternal = internalMutation({
     const operationId = await ctx.db.insert("xChatSendOperations", {
       userId: args.userId,
       prospectId: args.prospectId,
+      taskId: args.taskId,
       clientRequestId: args.clientRequestId,
       conversationId: args.conversationId,
       messageId: args.messageId,

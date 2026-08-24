@@ -25,6 +25,7 @@ import {
   getProspectActivityLog,
   logProspectActivity,
   createNotification,
+  completeBrowserEncryptedDmTaskCore,
   stopActiveOutreachRecoveryMonitorsForTask,
   type OutreachPlanInput,
   type OutreachPlanSnapshot,
@@ -417,6 +418,63 @@ function assertExpectedTaskType(
           : "This draft belongs to a DM task, not a reply task."
     );
   }
+}
+
+async function recordEditableTaskApprovalMemory(
+  ctx: MutationCtx,
+  args: {
+    task: Doc<"outreachTasks">;
+    plan: Doc<"outreachPlans">;
+    content: string;
+    originalDraft?: string;
+    platform: "twitter" | "linkedin";
+  }
+): Promise<void> {
+  const isEdited = args.content.trim() !== (args.originalDraft ?? "").trim();
+  await recordMemoryWorkflowEvent(ctx, {
+    workspaceId: args.plan.workspaceId,
+    eventType: "outreach_task_approved",
+    sourceType: "outreach_task",
+    sourceId: String(args.task._id),
+    planId: args.plan._id,
+    taskId: args.task._id,
+    prospectId: args.plan.prospectId,
+    payload: {
+      edited: isEdited,
+      contentLength: args.content.length,
+      weightedLength:
+        args.task.type === "comment"
+          ? getXPostWeightedLength(args.content)
+          : undefined,
+    },
+    eventKey: `outreach-task:${args.task._id}:approved:${args.task.approvalNonce ?? 0}`,
+  });
+
+  if (!isEdited || !args.originalDraft) return;
+  const xAccount = await ctx.db
+    .query("xAccounts")
+    .withIndex("by_user", (q) => q.eq("userId", args.plan.userId))
+    .first();
+  if (!xAccount) return;
+
+  await recordMemoryWorkflowEvent(ctx, {
+    workspaceId: args.plan.workspaceId,
+    eventType: "style_edit_diff_captured",
+    sourceType: "style_edit_diff",
+    sourceId: `task:${args.task._id}:style-edit`,
+    prospectId: args.plan.prospectId,
+    planId: args.plan._id,
+    taskId: args.task._id,
+    payload: {
+      originalDraft: args.originalDraft,
+      editedContent: args.content,
+      diffSource: "outreach_task",
+      platform: args.platform,
+      sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
+      sourceExternalUserId: xAccount.xUserId,
+    },
+    eventKey: `style-edit:task:${args.task._id}:${args.task.approvalNonce ?? 0}`,
+  });
 }
 
 function parsePlanSnapshot(snapshot: unknown): OutreachPlanSnapshot | null {
@@ -3865,7 +3923,6 @@ export const approveTaskWithEdits = mutation({
 
     // Preserve original draft for style learning before overwriting
     const originalDraft = task.content;
-    const isEdited = trimmedContent !== (originalDraft || "").trim();
     const mediaKinds = validation.media.map((media) => media.kind);
 
     await ctx.db.patch(args.taskId, {
@@ -3889,53 +3946,13 @@ export const approveTaskWithEdits = mutation({
           },
     });
 
-    await recordMemoryWorkflowEvent(ctx, {
-      workspaceId: plan.workspaceId,
-      eventType: "outreach_task_approved",
-      sourceType: "outreach_task",
-      sourceId: String(args.taskId),
-      planId: plan._id,
-      taskId: args.taskId,
-      prospectId: plan.prospectId,
-      payload: {
-        edited: isEdited,
-        contentLength: trimmedContent.length,
-        weightedLength:
-          task.type === "comment"
-            ? getXPostWeightedLength(trimmedContent)
-            : undefined,
-      },
-      eventKey: `outreach-task:${args.taskId}:approved:${task.approvalNonce ?? 0}`,
+    await recordEditableTaskApprovalMemory(ctx, {
+      task,
+      plan,
+      content: trimmedContent,
+      originalDraft,
+      platform: validation.platform,
     });
-
-    // Capture edit diff for writing style learning
-    if (isEdited && originalDraft) {
-      const xAccount = await ctx.db
-        .query("xAccounts")
-        .withIndex("by_user", (q) => q.eq("userId", plan.userId))
-        .first();
-      if (xAccount) {
-        await recordMemoryWorkflowEvent(ctx, {
-          workspaceId: plan.workspaceId,
-          eventType: "style_edit_diff_captured",
-          sourceType: "style_edit_diff",
-          sourceId: `task:${args.taskId}:style-edit`,
-          prospectId: plan.prospectId,
-          planId: plan._id,
-          taskId: args.taskId,
-          payload: {
-            originalDraft,
-            editedContent: trimmedContent,
-            diffSource: "outreach_task",
-            platform: validation.platform,
-            sourceVersion:
-              xAccount.styleSourceVersion ?? xAccount._creationTime,
-            sourceExternalUserId: xAccount.xUserId,
-          },
-          eventKey: `style-edit:task:${args.taskId}:${task.approvalNonce ?? 0}`,
-        });
-      }
-    }
 
     await ctx.scheduler.runAfter(
       0,
@@ -3947,6 +3964,46 @@ export const approveTaskWithEdits = mutation({
     );
 
     return { success: true, duplicate: false };
+  },
+});
+
+export const completeBrowserEncryptedDmTaskInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    taskId: v.id("outreachTasks"),
+    clientRequestId: v.string(),
+    conversationId: v.string(),
+    messageId: v.string(),
+  },
+  returns: v.object({ success: v.literal(true), duplicate: v.boolean() }),
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    const plan = await ctx.db.get(task.planId);
+    if (!plan || plan.userId !== args.userId) {
+      throw new Error("Not authorized to complete this task");
+    }
+    if (task.type !== "dm") {
+      throw new Error("Only DM tasks can use encrypted XChat completion");
+    }
+
+    const result = await completeBrowserEncryptedDmTaskCore(ctx, {
+      userId: args.userId,
+      taskId: task._id,
+      clientRequestId: args.clientRequestId,
+      conversationId: args.conversationId,
+      messageId: args.messageId,
+    });
+    if (!result.duplicate) {
+      await recordEditableTaskApprovalMemory(ctx, {
+        task,
+        plan,
+        content: task.content ?? "",
+        originalDraft: task.originalDraftContent,
+        platform: "twitter",
+      });
+    }
+    return { success: true as const, duplicate: result.duplicate };
   },
 });
 
@@ -4020,6 +4077,7 @@ export const updatePendingTaskDraft = mutation({
     await ctx.db.patch(args.taskId, {
       description: withAttachmentNames(task.description, validation.media),
       content: trimmedContent,
+      originalDraftContent: task.originalDraftContent ?? task.content,
       mediaUrls: validation.media.map((media) => media.url),
       mediaUploadIds: validation.media.map((media) => media.uploadId),
       mediaKinds: validation.media.map((media) => media.kind),

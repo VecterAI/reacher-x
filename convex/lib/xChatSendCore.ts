@@ -13,6 +13,30 @@ export type EncryptedXChatSendPayload = {
   encodedMessageEventSignature: string;
 };
 
+const XCHAT_OUTREACH_COMPLETION_ERROR_MESSAGE =
+  "[XChatSend] Sent message but could not complete outreach task";
+
+/**
+ * Preserve a durable provider-send result when follow-up outreach bookkeeping
+ * fails. Returning the successful send prevents a client retry from creating a
+ * duplicate message at X.
+ */
+export async function finalizeSuccessfulXChatSend<T>(args: {
+  sendResult: T;
+  completeOutreachTask: () => Promise<void>;
+  logError?: (message: string, error: unknown) => void;
+}): Promise<T> {
+  try {
+    await args.completeOutreachTask();
+  } catch (error) {
+    (args.logError ?? console.error)(
+      XCHAT_OUTREACH_COMPLETION_ERROR_MESSAGE,
+      error
+    );
+  }
+  return args.sendResult;
+}
+
 function requireOpaqueValue(
   value: string,
   label: string,
@@ -71,15 +95,18 @@ export function assertMatchingEncryptedXChatSendOperation(
   existing: EncryptedXChatSendPayload & {
     prospectId: string;
     conversationId: string;
+    taskId?: string;
   },
   requested: EncryptedXChatSendPayload & {
     prospectId: string;
     conversationId: string;
+    taskId?: string;
   }
 ): void {
   if (
     existing.prospectId !== requested.prospectId ||
     existing.conversationId !== requested.conversationId ||
+    existing.taskId !== requested.taskId ||
     existing.messageId !== requested.messageId ||
     existing.encodedMessageCreateEvent !==
       requested.encodedMessageCreateEvent ||

@@ -30,11 +30,14 @@ import { TweetMedia } from "@/features/threads/ui/components/TweetMedia";
 import { LinkedInMediaGrid } from "@/features/webapp/ui/components/linkedin/LinkedInMediaGrid";
 import { MediaUnavailablePlaceholder } from "@/shared/ui/components/MediaUnavailablePlaceholder";
 import { LinkIcon } from "@/shared/ui/components/icons";
+import { cn } from "@/shared/lib/utils";
 import type {
   ConversationAttachment,
   ConversationMessagePlatform,
   SharedConversationPost,
 } from "./types";
+
+const LINKEDIN_ATTACHMENT_AUTO_RETRY_DELAYS_MS = [1_500, 4_000] as const;
 
 function ConversationLinkPreviewFallback({ url }: { url: string }) {
   const hostname = new URL(url).hostname;
@@ -90,6 +93,7 @@ function DeferredLinkedInAttachment({
       : null
   );
   const [failed, setFailed] = React.useState(false);
+  const [loadAttempt, setLoadAttempt] = React.useState(0);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const retry = React.useCallback(() => {
     if (attachmentId) {
@@ -101,6 +105,7 @@ function DeferredLinkedInAttachment({
     }
     setResolved(null);
     setFailed(false);
+    setLoadAttempt(0);
     setShouldLoad(true);
   }, [attachmentId, messageId, prospectId]);
 
@@ -127,6 +132,7 @@ function DeferredLinkedInAttachment({
   React.useEffect(() => {
     if (!shouldLoad || !attachmentId || resolved || failed) return;
     let active = true;
+    let retryTimeoutId: number | undefined;
     void resolveAttachment({ prospectId, messageId, attachmentId })
       .then((result) => {
         if (active) setResolved(result);
@@ -136,14 +142,27 @@ function DeferredLinkedInAttachment({
           "[ConversationRichAttachments] Unable to load LinkedIn attachment",
           error instanceof Error ? error.message : String(error)
         );
-        if (active) setFailed(true);
+        if (!active) return;
+        const retryDelay =
+          LINKEDIN_ATTACHMENT_AUTO_RETRY_DELAYS_MS[loadAttempt];
+        if (retryDelay !== undefined) {
+          retryTimeoutId = window.setTimeout(() => {
+            if (active) setLoadAttempt((attempt) => attempt + 1);
+          }, retryDelay);
+          return;
+        }
+        setFailed(true);
       });
     return () => {
       active = false;
+      if (retryTimeoutId !== undefined) {
+        window.clearTimeout(retryTimeoutId);
+      }
     };
   }, [
     attachmentId,
     failed,
+    loadAttempt,
     messageId,
     prospectId,
     resolved,
@@ -242,16 +261,19 @@ function toTweetMedia(attachment: ConversationAttachment): Media | null {
   const kind = getAttachmentKind(attachment);
   if (kind !== "image" && kind !== "video") return null;
 
-  const videoVariants = attachment.variants?.length
-    ? attachment.variants
-    : kind === "video" && attachment.url
+  const providerVariants = attachment.variants ?? [];
+  const videoVariants =
+    kind === "video" &&
+    attachment.url &&
+    !providerVariants.some((variant) => variant.url === attachment.url)
       ? [
+          ...providerVariants,
           {
             url: attachment.url,
             mimeType: attachment.mimeType ?? "video/mp4",
           },
         ]
-      : [];
+      : providerVariants;
 
   return {
     id_str: attachment.id,
@@ -314,6 +336,7 @@ interface ConversationRichAttachmentsProps {
   onRetryAttachment?: (
     attachment: ConversationAttachment
   ) => Promise<void> | void;
+  actionRail?: React.ReactNode;
 }
 
 export function ConversationRichAttachments({
@@ -325,6 +348,7 @@ export function ConversationRichAttachments({
   prospectId,
   messageId,
   onRetryAttachment,
+  actionRail,
 }: ConversationRichAttachmentsProps) {
   const deferredLinkedInAttachments = attachments.filter(
     (attachment) =>
@@ -338,8 +362,17 @@ export function ConversationRichAttachments({
   );
   const availableAttachments = attachments.filter(
     (attachment) =>
+      (!attachment.isLoading ||
+        hasUsableAttachmentUrl(attachment) ||
+        Boolean(attachment.variants?.length)) &&
       !attachment.unavailable &&
       !deferredLinkedInAttachmentIds.has(attachment.id)
+  );
+  const loadingAttachments = attachments.filter(
+    (attachment) =>
+      attachment.isLoading &&
+      !hasUsableAttachmentUrl(attachment) &&
+      !attachment.variants?.length
   );
   const audioAttachments = availableAttachments.filter(
     (attachment) =>
@@ -410,6 +443,7 @@ export function ConversationRichAttachments({
       : [];
   const unavailableAttachments = attachments.filter(
     (attachment) =>
+      !attachment.isLoading &&
       !deferredLinkedInAttachmentIds.has(attachment.id) &&
       (attachment.unavailable ||
         ((attachment.isVoiceNote ||
@@ -422,9 +456,26 @@ export function ConversationRichAttachments({
           !attachment.previewUrl &&
           !attachment.variants?.length))
   );
+  const usesCompactWidth =
+    attachments.length > 0 &&
+    attachments.every(
+      (attachment) =>
+        attachment.isVoiceNote || getAttachmentKind(attachment) === "audio"
+    ) &&
+    !resolvedSharedPost &&
+    !linkedInPostUrl &&
+    !attachmentRichLink &&
+    !textRichLink;
 
   return (
-    <>
+    <div
+      data-conversation-rich-attachments
+      className={cn(
+        "relative flex max-w-full flex-col gap-1.5",
+        usesCompactWidth ? "w-full max-w-sm" : "w-full",
+        direction === "sent" ? "self-end" : "self-start"
+      )}
+    >
       {platform === "twitter" && resolvedSharedPost?.id ? (
         <div className="w-full max-w-full">
           <ConversationSharedPost post={resolvedSharedPost} />
@@ -551,6 +602,17 @@ export function ConversationRichAttachments({
             />
           ))
         : null}
+      {loadingAttachments.map((attachment) => (
+        <ConversationAttachmentSkeleton
+          key={
+            attachment.id ??
+            attachment.mediaKey ??
+            `${attachment.type}-loading-${attachment.fileName ?? attachment.durationMs ?? "attachment"}`
+          }
+          attachment={attachment}
+          kind={getUnavailableAttachmentKind(attachment)}
+        />
+      ))}
       {unavailableAttachments.map((attachment, index) => {
         return (
           <ConversationUnavailableAttachment
@@ -567,6 +629,7 @@ export function ConversationRichAttachments({
           />
         );
       })}
-    </>
+      {actionRail}
+    </div>
   );
 }

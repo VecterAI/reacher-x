@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { getOutboundMessageFailure } from "@/shared/lib/platforms/outboundMessageFailure";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { SerializedEditorState } from "lexical";
 import { useRouter } from "next/navigation";
@@ -16,8 +17,12 @@ import {
 } from "@/features/composer/ui/dmComposerClasses";
 import { mergeXChatConversationMessages } from "../../lib/xChatConversationMessages";
 import { getOutboundMessageMediaMetadata } from "../../lib/outboundMessageOperations";
-import { createRevisionRefreshCoordinator } from "../../lib/revisionRefreshCoordinator";
+import {
+  createRevisionRefreshCoordinator,
+  shouldRefreshXChatConversationRevision,
+} from "../../lib/revisionRefreshCoordinator";
 import { useProspectDmPanel } from "../../hooks/useProspectDmPanel";
+import { useTwitterConversationTyping } from "../../hooks/useTwitterConversationTyping";
 import { ConversationMessageViewport } from "./ConversationMessageViewport";
 import { XChatConversationUnlock } from "./XChatConversationUnlock";
 import { XDmConversationMenu } from "./XDmConversationMenu";
@@ -51,6 +56,7 @@ import type {
   ComposerMediaKind,
   MediaUpload,
 } from "@/features/composer/types";
+import { materializeBrowserMediaFile } from "@/features/composer/lib/browserMediaFile";
 import {
   appendXChatEventPageInBrowser,
   bindPreparedXChatMessageInBrowser,
@@ -71,6 +77,7 @@ import {
   useXChatBrowserSessionState,
 } from "@/features/agent/lib/xChatBrowserSession";
 import { ConversationMessageList } from "./conversation-message/ConversationMessageList";
+import { ConversationTypingIndicator } from "./conversation-message/ConversationTypingIndicator";
 import { ConversationComposerReplyTarget } from "./conversation-message/ConversationReplyPreview";
 import type { RichConversationMessage } from "./conversation-message/types";
 
@@ -157,6 +164,10 @@ export function XConversationPanel({
     prospectId,
     participantUserId: data?.participantUserId,
   });
+  const isParticipantTyping = useTwitterConversationTyping({
+    prospectId,
+    enabled: Boolean(prospectId && data),
+  });
   const [scrollToLatestRequest, setScrollToLatestRequest] = React.useState(0);
   const [replyingTo, setReplyingTo] =
     React.useState<RichConversationMessage | null>(null);
@@ -172,6 +183,7 @@ export function XConversationPanel({
   const observedXChatRevisionRef = React.useRef<{
     prospectId: string;
     revision: string | null;
+    latestMessageId: string | null;
   } | null>(null);
   const appliedRealtimeEventPageRef = React.useRef<{
     prospectId: string;
@@ -198,6 +210,7 @@ export function XConversationPanel({
       messageId: string;
       encodedMessageCreateEvent: string;
       encodedMessageEventSignature: string;
+      taskId?: Id<"outreachTasks">;
     }) => {
       const queueKey = String(payload.prospectId);
       const previous = xChatSendTailsRef.current.get(queueKey);
@@ -223,6 +236,7 @@ export function XConversationPanel({
   );
   const uploadXChatEncryptedMedia = useAction(api.x.uploadXChatEncryptedMedia);
   const getXChatEventPage = useAction(api.x.getXChatEventPage);
+  const markXChatConversationRead = useAction(api.x.markXChatConversationRead);
   const realtimeXChatEventPage = useQuery(
     api.xChatRealtimeEvents.getForProspect,
     prospectId ? { prospectId: prospectId as Id<"prospects"> } : "skip"
@@ -354,6 +368,70 @@ export function XConversationPanel({
     });
   }, [messagesWithXChat, taskMode, taskPosted]);
 
+  const latestReceivedXChatSequenceId = React.useMemo(
+    () =>
+      renderedMessages
+        .toReversed()
+        .find(
+          (message) =>
+            message.direction === "received" &&
+            message.id.startsWith("xchat:") &&
+            Boolean(message.sequenceId)
+        )?.sequenceId,
+    [renderedMessages]
+  );
+  const acknowledgedXChatReadRef = React.useRef<{
+    prospectId: string;
+    sequenceId: string;
+  } | null>(null);
+  const xChatReadInFlightRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isXChatUnlocked || !latestReceivedXChatSequenceId) return;
+    const sequenceId = latestReceivedXChatSequenceId;
+    const operationKey = `${prospectId}:${sequenceId}`;
+    const markReadWhenVisible = () => {
+      if (
+        document.visibilityState !== "visible" ||
+        xChatReadInFlightRef.current === operationKey ||
+        (acknowledgedXChatReadRef.current?.prospectId === prospectId &&
+          acknowledgedXChatReadRef.current.sequenceId === sequenceId)
+      ) {
+        return;
+      }
+      xChatReadInFlightRef.current = operationKey;
+      void markXChatConversationRead({
+        prospectId: prospectId as Id<"prospects">,
+        seenUntilSequenceId: sequenceId,
+      })
+        .then(() => {
+          acknowledgedXChatReadRef.current = { prospectId, sequenceId };
+        })
+        .catch((readError) => {
+          console.warn(
+            "[XConversationPanel] Unable to mark XChat conversation read",
+            readError instanceof Error ? readError.message : String(readError)
+          );
+        })
+        .finally(() => {
+          if (xChatReadInFlightRef.current === operationKey) {
+            xChatReadInFlightRef.current = null;
+          }
+        });
+    };
+
+    markReadWhenVisible();
+    document.addEventListener("visibilitychange", markReadWhenVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", markReadWhenVisible);
+    };
+  }, [
+    isXChatUnlocked,
+    latestReceivedXChatSequenceId,
+    markXChatConversationRead,
+    prospectId,
+  ]);
+
   const handleLoadOlder = React.useCallback(async () => {
     if (xChatSession?.hasMore) {
       if (!xChatSession.nextCursor || isLoadingOlderXChat) return;
@@ -437,6 +515,8 @@ export function XConversationPanel({
     conversationRevisionLatestMessageId &&
     xChatSession?.loadedEventIds?.includes(conversationRevisionLatestMessageId)
   );
+  const latestMessageCoversRevision =
+    realtimeEventCoversRevision || decryptedSessionCoversRevision;
 
   React.useEffect(() => {
     if (
@@ -525,22 +605,26 @@ export function XConversationPanel({
   React.useEffect(() => {
     if (!conversationRevisionLoaded) return;
     const previous = observedXChatRevisionRef.current;
+    const current = {
+      revision: conversationRevisionKey,
+      latestMessageId: conversationRevisionLatestMessageId,
+    };
     if (!previous || previous.prospectId !== prospectId) {
       observedXChatRevisionRef.current = {
         prospectId,
-        revision: conversationRevisionKey,
+        ...current,
       };
       // If the reactive revision first resolves after unlock, the decrypt
       // bundle may predate it. Queue one deduplicated newest-page refresh.
       if (
         isXChatUnlocked &&
-        conversationRevisionKey &&
-        !realtimeEventCoversRevision &&
-        !decryptedSessionCoversRevision
+        current.revision &&
+        shouldRefreshXChatConversationRevision({
+          current,
+          latestMessageCovered: latestMessageCoversRevision,
+        })
       ) {
-        xChatNewestRefreshCoordinatorRef.current?.request(
-          conversationRevisionKey
-        );
+        xChatNewestRefreshCoordinatorRef.current?.request(current.revision);
       }
       return;
     }
@@ -557,20 +641,25 @@ export function XConversationPanel({
 
     observedXChatRevisionRef.current = {
       prospectId,
-      revision: conversationRevisionKey,
+      ...current,
     };
-    if (!realtimeEventCoversRevision && !decryptedSessionCoversRevision) {
-      xChatNewestRefreshCoordinatorRef.current?.request(
-        conversationRevisionKey
-      );
+    if (
+      current.revision &&
+      shouldRefreshXChatConversationRevision({
+        previous,
+        current,
+        latestMessageCovered: latestMessageCoversRevision,
+      })
+    ) {
+      xChatNewestRefreshCoordinatorRef.current?.request(current.revision);
     }
   }, [
     conversationRevisionKey,
     conversationRevisionLoaded,
-    decryptedSessionCoversRevision,
+    conversationRevisionLatestMessageId,
     isXChatUnlocked,
+    latestMessageCoversRevision,
     prospectId,
-    realtimeEventCoversRevision,
   ]);
 
   const draftSync = useDebouncedDraftSync({
@@ -639,6 +728,7 @@ export function XConversationPanel({
     ) => {
       const replyTarget = replyingTo;
       let didClearReplyTarget = false;
+      let didTransferMediaPreview = false;
       try {
         const nextText = extractTextFromEditorState(content).trim();
         const resolvedMediaUrls = mediaUrls?.length
@@ -674,11 +764,6 @@ export function XConversationPanel({
           return;
         }
         if (isTaskApprovalComposer) {
-          if (isXChatUnlocked) {
-            throw new Error(
-              "Encrypted XChat task approval is not supported yet. Send this message from the direct XChat composer instead."
-            );
-          }
           if (!taskId) {
             return;
           }
@@ -702,18 +787,32 @@ export function XConversationPanel({
             });
             return;
           }
-          await approveTaskWithEdits({
-            taskId: taskId as Id<"outreachTasks">,
-            expectedType: "dm",
-            content: nextText,
-            mediaUrls: resolvedMediaUrls,
-            mediaDescriptions: resolvedDescriptions,
-            mediaKinds: resolvedMediaKinds,
-          });
-          toast.success("DM approved.", {
-            description: "Queued. We'll notify you if X/Twitter blocks it.",
-          });
-          return;
+          if (isXChatUnlocked) {
+            // Validate and persist the exact approved draft before any
+            // provider write. The encrypted submit then completes the task
+            // only after its durable XChat send ledger reaches `sent`.
+            await updatePendingTaskDraft({
+              taskId: taskId as Id<"outreachTasks">,
+              expectedType: "dm",
+              content: nextText,
+              mediaUrls: resolvedMediaUrls,
+              mediaDescriptions: resolvedDescriptions,
+              mediaKinds: resolvedMediaKinds,
+            });
+          } else {
+            await approveTaskWithEdits({
+              taskId: taskId as Id<"outreachTasks">,
+              expectedType: "dm",
+              content: nextText,
+              mediaUrls: resolvedMediaUrls,
+              mediaDescriptions: resolvedDescriptions,
+              mediaKinds: resolvedMediaKinds,
+            });
+            toast.success("DM approved.", {
+              description: "Queued. We'll notify you if X/Twitter blocks it.",
+            });
+            return;
+          }
         }
         if (isXChatUnlocked) {
           if (replyTarget) {
@@ -721,17 +820,24 @@ export function XConversationPanel({
             didClearReplyTarget = true;
           }
           let encryptedMessage;
-          const selectedMedia = mediaUploads?.[0];
+          const selectedMedia = mediaUploads?.[0]
+            ? await materializeBrowserMediaFile(mediaUploads[0])
+            : undefined;
           let pendingMessageId: string | undefined;
           let pendingMediaClientRequestId: string | undefined;
           let preparedAttachmentMetadata:
             | {
+                mediaKey?: string;
                 width?: number;
                 height?: number;
                 durationMs?: number;
               }
             | undefined;
           if (selectedMedia) {
+            const localPreviewUrl = selectedMedia.url;
+            if (!localPreviewUrl) {
+              throw new Error("The attachment preview is unavailable.");
+            }
             const pending = publishPreparingXChatMessageInBrowser({
               prospectId,
               text: nextText,
@@ -739,8 +845,8 @@ export function XConversationPanel({
                 {
                   id: selectedMedia.id,
                   type: selectedMedia.mediaKind,
-                  url: selectedMedia.url,
-                  previewUrl: selectedMedia.url,
+                  url: localPreviewUrl,
+                  previewUrl: localPreviewUrl,
                   fileName: selectedMedia.file.name,
                   mimeType: selectedMedia.file.type,
                   fileSize: selectedMedia.file.size,
@@ -748,6 +854,8 @@ export function XConversationPanel({
                   height: selectedMedia.height,
                   durationMs: selectedMedia.durationMs,
                   isGif: selectedMedia.mediaKind === "gif",
+                  isVoiceNote: selectedMedia.isVoiceNote,
+                  unavailable: false,
                 },
               ],
               quotedMessage: replyTarget
@@ -759,9 +867,11 @@ export function XConversationPanel({
                     attachments: replyTarget.attachments,
                   }
                 : undefined,
+              objectUrls: [localPreviewUrl],
             });
             pendingMessageId = pending.messageId;
             pendingMediaClientRequestId = pending.clientRequestId;
+            didTransferMediaPreview = true;
             setScrollToLatestRequest((request) => request + 1);
           }
           try {
@@ -769,6 +879,7 @@ export function XConversationPanel({
               const encryptedMedia = await prepareXChatEncryptedMediaInBrowser({
                 prospectId,
                 file: selectedMedia.file,
+                durationMs: selectedMedia.durationMs,
               });
               preparedAttachmentMetadata = {
                 width: encryptedMedia.width || selectedMedia.width,
@@ -809,6 +920,10 @@ export function XConversationPanel({
                   conversationId: encryptedMedia.conversationId,
                   storageId: uploaded.storageId as Id<"_storage">,
                 });
+                preparedAttachmentMetadata = {
+                  ...preparedAttachmentMetadata,
+                  mediaKey: mediaHashKey,
+                };
                 const { ciphertext: _ciphertext, ...mediaDescriptor } =
                   encryptedMedia;
                 encryptedMessage = prepareXChatMediaMessageInBrowser({
@@ -862,14 +977,20 @@ export function XConversationPanel({
             await submitXChatMessageInOrder({
               prospectId: prospectId as Id<"prospects">,
               ...encryptedMessage,
+              ...(isTaskApprovalComposer && taskId
+                ? { taskId: taskId as Id<"outreachTasks"> }
+                : {}),
             });
           } catch (error) {
             if (pendingMessageId) {
+              const failure = getOutboundMessageFailure({
+                error,
+                platform: "twitter",
+              });
               failPendingXChatTextMessageInBrowser({
                 prospectId,
                 messageId: pendingMessageId,
-                errorMessage:
-                  error instanceof Error ? error.message : "Please try again.",
+                errorMessage: failure.message,
               });
             }
             throw error;
@@ -882,12 +1003,17 @@ export function XConversationPanel({
           if (selectedMedia) {
             await refreshNewestXChatPage();
           }
+          if (isTaskApprovalComposer) {
+            toast.success("DM approved and sent through XChat.");
+          }
           setLocalDraftState({
             sourceKey: draftSourceKey,
             serverValue: serverDraft,
             text: "",
           });
-          return;
+          return selectedMedia
+            ? { retainMediaObjectUrls: true as const }
+            : undefined;
         }
         const sendRequest = send(
           nextText,
@@ -911,8 +1037,14 @@ export function XConversationPanel({
           setReplyingTo((current) => current ?? replyTarget);
         }
         toast.error("Failed to send DM", {
-          description: err instanceof Error ? err.message : "Please try again.",
+          description: getOutboundMessageFailure({
+            error: err,
+            platform: "twitter",
+          }).message,
         });
+        if (didTransferMediaPreview) {
+          return { retainMediaObjectUrls: true as const };
+        }
         // BaseComposer preserves editor/media state when submission rejects.
         throw err;
       }
@@ -1008,11 +1140,14 @@ export function XConversationPanel({
               text: message.text,
             });
           } catch (error) {
+            const failure = getOutboundMessageFailure({
+              error,
+              platform: "twitter",
+            });
             failPendingXChatTextMessageInBrowser({
               prospectId,
               messageId: prepared.messageId,
-              errorMessage:
-                error instanceof Error ? error.message : "Please try again.",
+              errorMessage: failure.message,
             });
             throw error;
           }
@@ -1021,8 +1156,10 @@ export function XConversationPanel({
         await retrySend(message.outboundClientRequestId);
       } catch (error) {
         toast.error("Could not retry DM", {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
+          description: getOutboundMessageFailure({
+            error,
+            platform: "twitter",
+          }).message,
         });
       }
     },
@@ -1235,6 +1372,17 @@ export function XConversationPanel({
                       onRetry={handleRetrySend}
                     />
                   )}
+                  {isParticipantTyping ? (
+                    <MessageScrollerItem
+                      messageId="twitter-conversation-typing"
+                      scrollAnchor
+                    >
+                      <ConversationTypingIndicator
+                        participantAvatarUrl={data.prospect.avatarUrl}
+                        participantName={data.prospect.displayName}
+                      />
+                    </MessageScrollerItem>
+                  ) : null}
                   {!data.eligibility.enabled ? (
                     <MessageScrollerItem messageId="conversation-unavailable">
                       <Alert className="mt-2">
@@ -1332,6 +1480,11 @@ export function XConversationPanel({
                 showMediaUpload
                 deferMediaUpload={isXChatUnlocked}
                 allowedMediaKinds={["image", "gif", "video"]}
+                voiceNotePlatform={
+                  isXChatUnlocked && !isTaskApprovalComposer
+                    ? "twitter"
+                    : undefined
+                }
                 maxAttachments={1}
                 disabled={shouldDisableComposer}
                 submitDisabled={shouldDisableTaskSubmit}

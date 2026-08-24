@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertMatchingEncryptedXChatSendOperation,
+  finalizeSuccessfulXChatSend,
   normalizeEncryptedXChatSendPayload,
 } from "./xChatSendCore";
 
@@ -58,5 +59,30 @@ describe("encrypted XChat send boundary", () => {
         encodedMessageCreateEvent: "different-ciphertext",
       })
     ).toThrow("already bound");
+  });
+
+  it("preserves a successful send when outreach completion fails", async () => {
+    const sendResult = {
+      success: true as const,
+      conversationId: "1-2",
+      messageId: "message-id",
+      deduplicated: false,
+    };
+    const completionError = new Error("outreach completion failed");
+    const completeOutreachTask = vi.fn().mockRejectedValue(completionError);
+    const logError = vi.fn();
+
+    await expect(
+      finalizeSuccessfulXChatSend({
+        sendResult,
+        completeOutreachTask,
+        logError,
+      })
+    ).resolves.toEqual(sendResult);
+    expect(completeOutreachTask).toHaveBeenCalledOnce();
+    expect(logError).toHaveBeenCalledWith(
+      "[XChatSend] Sent message but could not complete outreach task",
+      completionError
+    );
   });
 });

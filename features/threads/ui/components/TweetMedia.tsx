@@ -139,6 +139,12 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media, onRetry }) => {
 
     if (item.type === "video" || item.type === "animated_gif") {
       const { hlsUrl, mp4Url } = getVideoUrls(item);
+      const poster =
+        item.media_url_https &&
+        item.media_url_https !== mp4Url &&
+        item.media_url_https !== hlsUrl
+          ? item.media_url_https
+          : undefined;
       return (
         <div
           className="border-border relative w-full overflow-hidden rounded-md border"
@@ -153,7 +159,7 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media, onRetry }) => {
             hlsUrl={hlsUrl}
             mp4Url={mp4Url}
             ariaLabel="Tweet video"
-            poster={item.media_url_https}
+            poster={poster}
             onError={() => markMediaUnavailable(item, 0)}
           />
         </div>

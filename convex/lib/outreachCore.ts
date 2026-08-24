@@ -968,6 +968,117 @@ export async function stopActiveOutreachRecoveryMonitorsForTask(
   return activeMonitors.length;
 }
 
+export async function completeBrowserEncryptedDmTaskCore(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    taskId: Id<"outreachTasks">;
+    clientRequestId: string;
+    conversationId: string;
+    messageId: string;
+  }
+): Promise<{ duplicate: boolean; postedAt: number }> {
+  const task = await ctx.db.get(args.taskId);
+  if (!task) throw new Error("Task not found");
+  const plan = await ctx.db.get(task.planId);
+  if (!plan || plan.userId !== args.userId) {
+    throw new Error("Not authorized to complete this task");
+  }
+  if (task.type !== "dm") {
+    throw new Error("Only DM tasks can use encrypted XChat completion");
+  }
+
+  const previousResult = isRecord(task.resultData) ? task.resultData : null;
+  if (task.status === "completed") {
+    const duplicate =
+      previousResult?.messageId === args.messageId &&
+      previousResult?.conversationId === args.conversationId;
+    if (!duplicate) {
+      throw new Error("Task was already completed by another provider write");
+    }
+    return {
+      duplicate: true,
+      postedAt:
+        typeof previousResult.postedAt === "number"
+          ? previousResult.postedAt
+          : (task.executedAt ?? task._creationTime),
+    };
+  }
+  if (task.status !== "pending" && task.status !== "executing") {
+    throw new Error("Task is no longer actionable");
+  }
+  if (!task.approvalEventId) {
+    throw new Error("Task approval signal is missing. Reopen and retry.");
+  }
+  if (!hasDmBody(task.content, task.mediaUrls ?? [])) {
+    throw new Error("Task is missing its validated DM draft.");
+  }
+
+  const prospect = await ctx.db.get(plan.prospectId);
+  if (
+    !prospect ||
+    prospect.userId !== args.userId ||
+    prospect.platform !== "twitter"
+  ) {
+    throw new Error("X prospect not found or not authorized.");
+  }
+  const operation = await ctx.db
+    .query("xChatSendOperations")
+    .withIndex("by_user_id_and_client_request_id", (q) =>
+      q.eq("userId", args.userId).eq("clientRequestId", args.clientRequestId)
+    )
+    .unique();
+  if (
+    !operation ||
+    operation.status !== "sent" ||
+    operation.prospectId !== plan.prospectId ||
+    operation.taskId !== task._id ||
+    operation.conversationId !== args.conversationId ||
+    operation.messageId !== args.messageId
+  ) {
+    throw new Error("Encrypted XChat send proof is missing or does not match.");
+  }
+
+  const postedAt = operation.sentAt ?? getCurrentUTCTimestamp();
+  await ctx.db.patch(task._id, {
+    status: "completed",
+    approvedAt: task.approvedAt ?? postedAt,
+    executedAt: postedAt,
+    errorMessage: undefined,
+    approvalContext: {
+      ...task.approvalContext,
+      platform: "twitter",
+      panelMode: "posted",
+    },
+    resultData: {
+      conversationId: operation.conversationId,
+      messageId: operation.messageId,
+      postedAt,
+      postedText: task.content ?? "",
+      postedMediaUrls: task.mediaUrls ?? [],
+      postedMediaDescriptions: task.mediaDescriptions ?? [],
+      postedMediaKinds: task.mediaKinds ?? [],
+      postedBy: { name: "You" },
+      attemptId: `browser-xchat:${operation.clientRequestId}`,
+      text: task.content ?? "",
+      platform: "twitter",
+      browserEncryptedXChat: true,
+    },
+  });
+  await dismissNotificationsForTask(ctx, task._id);
+  await ctx.scheduler.runAfter(
+    0,
+    internal.workflows.outreach.sendTaskApproval,
+    { approvalEventId: task.approvalEventId, taskId: task._id }
+  );
+  await ctx.scheduler.runAfter(
+    0,
+    internal.chat.bridgeOutreachTaskStatusToThread,
+    { taskId: task._id }
+  );
+  return { duplicate: false, postedAt };
+}
+
 /**
  * Permanently deletes an outreach plan and cleanup rows that would otherwise
  * leave stale UI state behind.
