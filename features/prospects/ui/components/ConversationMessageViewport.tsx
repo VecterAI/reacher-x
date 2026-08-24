@@ -10,11 +10,18 @@ import {
   useMessageScroller,
 } from "@/shared/ui/components/MessageScroller";
 import { Button } from "@/shared/ui/components/Button";
+import { Badge } from "@/shared/ui/components/Badge";
 import { Spinner } from "@/shared/ui/components/Spinner";
 import { KeyboardArrowDownIcon } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils";
+import {
+  INITIAL_CONVERSATION_HISTORY_PAGE_BUDGET,
+  isConversationViewportScrollable,
+  shouldRequestInitialConversationHistory,
+  shouldRequestOlderConversationHistory,
+} from "@/features/prospects/lib/conversationHistoryHelpers";
 
-const HISTORY_PRELOAD_DISTANCE_PX = 160;
+const INITIAL_HYDRATION_FALLBACK_MS = 5_000;
 
 type ConversationMessageViewportProps = {
   conversationKey: string;
@@ -55,10 +62,24 @@ function ConversationScrollController({
 
 /**
  * Shared DM history viewport. The shadcn scroller exclusively owns opening at
- * the latest message, user-intent tracking, resize following, and prepend
- * anchoring. An observer on the first real message only requests the next page.
+ * the latest message, resize following, and prepend anchoring. Initial pages
+ * are committed behind one stable loading state; subsequent pages require a
+ * genuine upward reader interaction.
  */
 export function ConversationMessageViewport({
+  conversationKey,
+  ...props
+}: ConversationMessageViewportProps) {
+  return (
+    <ConversationMessageViewportSession
+      key={conversationKey}
+      conversationKey={conversationKey}
+      {...props}
+    />
+  );
+}
+
+function ConversationMessageViewportSession({
   conversationKey,
   messageCount,
   historyRequestKey,
@@ -74,12 +95,15 @@ export function ConversationMessageViewport({
   const viewportRef = React.useRef<HTMLDivElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const requestedHistoryKeyRef = React.useRef<string | null>(null);
+  const initialRequestsStartedRef = React.useRef(0);
+  const previousScrollTopRef = React.useRef<number | null>(null);
+  const hasOlderHistoryIntentRef = React.useRef(false);
+  const isPointerActiveRef = React.useRef(false);
+  const [initialHydrationComplete, setInitialHydrationComplete] =
+    React.useState(false);
+  const [isViewportScrollable, setIsViewportScrollable] = React.useState(false);
 
-  React.useEffect(() => {
-    requestedHistoryKeyRef.current = null;
-  }, [conversationKey]);
-
-  const requestOlderMessages = React.useCallback(() => {
+  const requestOlderMessages = React.useCallback((): boolean => {
     if (
       !hasMore ||
       !historyRequestKey ||
@@ -87,41 +111,146 @@ export function ConversationMessageViewport({
       loadOlderError ||
       requestedHistoryKeyRef.current === historyRequestKey
     ) {
-      return;
+      return false;
     }
     requestedHistoryKeyRef.current = historyRequestKey;
+    hasOlderHistoryIntentRef.current = false;
     onLoadOlder();
+    return true;
   }, [hasMore, historyRequestKey, isLoadingOlder, loadOlderError, onLoadOlder]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const content = contentRef.current;
-    if (!viewport || !content || !hasMore || !historyRequestKey) return;
+    if (!viewport || !content) return;
 
-    const firstMessage = content.querySelector<HTMLElement>(
-      ":scope > [data-message-id]"
+    const isScrollable = isConversationViewportScrollable({
+      scrollHeight: viewport.scrollHeight,
+      clientHeight: viewport.clientHeight,
+    });
+    setIsViewportScrollable((current) =>
+      current === isScrollable ? current : isScrollable
     );
-    if (!firstMessage) return;
+    previousScrollTopRef.current = viewport.scrollTop;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          requestOlderMessages();
-        }
-      },
-      {
-        root: viewport,
-        rootMargin: `${HISTORY_PRELOAD_DISTANCE_PX}px 0px 0px`,
+    if (initialHydrationComplete || isLoadingOlder) return;
+
+    if (
+      shouldRequestInitialConversationHistory({
+        isScrollable,
+        hasMore,
+        historyRequestKey,
+        isLoading: isLoadingOlder,
+        hasError: loadOlderError,
+        requestsStarted: initialRequestsStartedRef.current,
+      })
+    ) {
+      const requested = requestOlderMessages();
+      if (requested) {
+        initialRequestsStartedRef.current += 1;
+        return;
       }
+    }
+
+    setInitialHydrationComplete(true);
+  }, [
+    hasMore,
+    historyRequestKey,
+    initialHydrationComplete,
+    isLoadingOlder,
+    loadOlderError,
+    messageCount,
+    requestOlderMessages,
+  ]);
+
+  React.useEffect(() => {
+    if (initialHydrationComplete) return;
+    const timeoutId = window.setTimeout(
+      () => setInitialHydrationComplete(true),
+      INITIAL_HYDRATION_FALLBACK_MS
     );
-    observer.observe(firstMessage);
-    return () => observer.disconnect();
-  }, [hasMore, historyRequestKey, messageCount, requestOlderMessages]);
+    return () => window.clearTimeout(timeoutId);
+  }, [initialHydrationComplete]);
+
+  const requestOlderFromUserIntent = React.useCallback(
+    (viewport: HTMLDivElement) => {
+      if (
+        shouldRequestOlderConversationHistory({
+          hasUserIntent: hasOlderHistoryIntentRef.current,
+          scrollTop: viewport.scrollTop,
+          hasMore,
+          historyRequestKey,
+          isLoading: isLoadingOlder,
+          hasError: loadOlderError,
+        })
+      ) {
+        requestOlderMessages();
+      }
+    },
+    [
+      hasMore,
+      historyRequestKey,
+      isLoadingOlder,
+      loadOlderError,
+      requestOlderMessages,
+    ]
+  );
+
+  const handleScroll = React.useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      const viewport = event.currentTarget;
+      const previousScrollTop = previousScrollTopRef.current;
+      if (
+        previousScrollTop !== null &&
+        viewport.scrollTop < previousScrollTop - 1 &&
+        isPointerActiveRef.current
+      ) {
+        hasOlderHistoryIntentRef.current = true;
+      }
+      previousScrollTopRef.current = viewport.scrollTop;
+      requestOlderFromUserIntent(viewport);
+    },
+    [requestOlderFromUserIntent]
+  );
+
+  const handleWheel = React.useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (event.deltaY >= 0) return;
+      hasOlderHistoryIntentRef.current = true;
+      requestOlderFromUserIntent(event.currentTarget);
+    },
+    [requestOlderFromUserIntent]
+  );
+
+  const handleKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!["ArrowUp", "Home", "PageUp"].includes(event.key)) return;
+      hasOlderHistoryIntentRef.current = true;
+      requestOlderFromUserIntent(event.currentTarget);
+    },
+    [requestOlderFromUserIntent]
+  );
 
   const handleRetry = React.useCallback(() => {
     requestedHistoryKeyRef.current = null;
     onLoadOlder();
   }, [onLoadOlder]);
+
+  const handleManualLoadOlder = React.useCallback(() => {
+    requestedHistoryKeyRef.current = null;
+    requestOlderMessages();
+  }, [requestOlderMessages]);
+
+  const isInitialHistoryLoading = !initialHydrationComplete;
+  const showManualLoadOlder =
+    initialHydrationComplete &&
+    !isViewportScrollable &&
+    initialRequestsStartedRef.current >=
+      INITIAL_CONVERSATION_HISTORY_PAGE_BUDGET &&
+    hasMore &&
+    Boolean(historyRequestKey) &&
+    !isLoadingOlder &&
+    !loadOlderError;
 
   return (
     <MessageScrollerProvider
@@ -135,45 +264,84 @@ export function ConversationMessageViewport({
           ref={viewportRef}
           preserveScrollOnPrepend
           aria-label="Conversation messages"
-          className="overflow-x-clip"
+          tabIndex={0}
+          onScroll={handleScroll}
+          onWheel={handleWheel}
+          onKeyDown={handleKeyDown}
+          onPointerDown={() => {
+            isPointerActiveRef.current = true;
+          }}
+          onPointerUp={() => {
+            isPointerActiveRef.current = false;
+          }}
+          onPointerCancel={() => {
+            isPointerActiveRef.current = false;
+          }}
+          className="overflow-x-clip focus-visible:outline-hidden"
         >
           <MessageScrollerContent
             ref={contentRef}
-            className={cn("gap-0 px-4 pt-4 pb-16", contentClassName)}
+            aria-hidden={isInitialHistoryLoading}
+            className={cn(
+              "gap-0 px-4 pt-4 pb-16",
+              isInitialHistoryLoading && "invisible",
+              contentClassName
+            )}
           >
             {children}
           </MessageScrollerContent>
         </MessageScrollerViewport>
 
-        {isLoadingOlder ? (
+        {isInitialHistoryLoading ? (
           <div
-            className="bg-background/90 border-border pointer-events-none absolute top-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-1.5 text-xs shadow-sm backdrop-blur"
+            className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center"
             role="status"
+            aria-label="Loading conversation"
+          >
+            <Spinner variant="circle" className="size-5" />
+          </div>
+        ) : isLoadingOlder ? (
+          <Badge
+            variant="outline"
+            className="bg-background/90 border-border pointer-events-none absolute top-2 left-1/2 z-20 -translate-x-1/2 gap-2 px-3 py-1.5 font-normal backdrop-blur"
+            role="status"
+            aria-live="polite"
             aria-label="Loading earlier messages"
           >
             <Spinner variant="circle" className="size-3.5" />
             Loading earlier messages
-          </div>
+          </Badge>
         ) : loadOlderError ? (
           <Button
             type="button"
             size="xs"
             variant="outline"
-            className="absolute top-2 left-1/2 z-20 -translate-x-1/2 shadow-sm"
+            className="absolute top-2 left-1/2 z-20 -translate-x-1/2"
             onClick={handleRetry}
           >
             Retry earlier messages
           </Button>
+        ) : showManualLoadOlder ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            className="absolute top-2 left-1/2 z-20 -translate-x-1/2"
+            onClick={handleManualLoadOlder}
+          >
+            Load earlier messages
+          </Button>
         ) : null}
 
-        <MessageScrollerButton
-          variant="outline"
-          className="shadow-sm"
-          aria-label="Scroll to latest message"
-        >
-          <KeyboardArrowDownIcon className="size-4 fill-current" />
-          <span className="sr-only">Scroll to latest message</span>
-        </MessageScrollerButton>
+        {isInitialHistoryLoading ? null : (
+          <MessageScrollerButton
+            variant="outline"
+            aria-label="Scroll to latest message"
+          >
+            <KeyboardArrowDownIcon className="size-4 fill-current" />
+            <span className="sr-only">Scroll to latest message</span>
+          </MessageScrollerButton>
+        )}
       </MessageScroller>
     </MessageScrollerProvider>
   );

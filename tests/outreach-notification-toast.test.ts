@@ -67,13 +67,27 @@ test("the toast hook serializes individual toasts and coalesces bursts", () => {
   assert.match(source, /Open Notifications to review/);
 });
 
-test("the dedicated prospect profile owns the desktop right divider", () => {
+test("dedicated prospect panels have no left border or mobile side borders", () => {
   const source = readFileSync(
     "features/prospects/ui/pages/UseCaseProspectPage.tsx",
     "utf8"
   );
+  const pageLayout = readFileSync(
+    "features/webapp/ui/components/page/PageLayout.tsx",
+    "utf8"
+  );
 
   assert.match(source, /md:border-border md:border-r/);
+  assert.match(
+    source,
+    /w-full max-w-none border-x-0 md:border-l-0 \[&_\[data-page-layout\]\]:max-w-none \[&_\[data-page-layout\]\]:border-x-0/
+  );
+  assert.equal(
+    source.match(/\[&_\[data-page-layout\]\]:border-x-0/g)?.length,
+    2
+  );
+  assert.doesNotMatch(source, /DESKTOP_PANEL_BORDER_CLASS_NAME/);
+  assert.match(pageLayout, /data-page-layout/);
 });
 
 test("waiting for connection uses a static calendar icon", () => {

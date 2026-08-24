@@ -8,6 +8,7 @@ import {
   getSharedXPostFromText,
   hasConversationMessageRichSurface,
   isSameXPostReference,
+  shouldRenderConversationMessage,
   shouldShowConversationDaySeparator,
 } from "./conversationMessagePresentation";
 import type { RichConversationMessage } from "../ui/components/conversation-message/types";
@@ -65,6 +66,38 @@ describe("conversation message presentation", () => {
         shouldShowConversationDaySeparator(messages, index)
       )
     ).toEqual([true, false, true]);
+  });
+
+  it("hides reaction activity rows without hiding messages with reactions", () => {
+    const reactionEvent = {
+      ...message("reaction-event", "2026-08-13T10:01:00.000Z"),
+      isEvent: true,
+      sourceEventType: "message_reaction",
+      eventMetadata: { eventLabel: "Prospect reacted 👏" },
+    };
+    const providerReactionEvent = {
+      ...message("provider-reaction-event", "2026-08-13T10:02:00.000Z"),
+      isEvent: true,
+      eventMetadata: {
+        providerEventType: "MESSAGE_REACTION",
+        eventLabel: "Prospect reacted 👍",
+      },
+    };
+    const labelOnlyReactionEvent = {
+      ...message("label-only-reaction-event", "2026-08-13T10:02:30.000Z"),
+      isEvent: true,
+      text: "Prospect reacted ❤️",
+    };
+    const reactedMessage = {
+      ...message("reacted-message", "2026-08-13T10:03:00.000Z"),
+      text: "I reacted to the update",
+      reactions: [{ emoji: "👏", count: 1 }],
+    };
+
+    expect(shouldRenderConversationMessage(reactionEvent)).toBe(false);
+    expect(shouldRenderConversationMessage(providerReactionEvent)).toBe(false);
+    expect(shouldRenderConversationMessage(labelOnlyReactionEvent)).toBe(false);
+    expect(shouldRenderConversationMessage(reactedMessage)).toBe(true);
   });
 
   it("formats relative day labels and file sizes", () => {

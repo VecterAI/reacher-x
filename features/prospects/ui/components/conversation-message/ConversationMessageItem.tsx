@@ -160,18 +160,16 @@ export function ConversationMessageItem({
         )}
       >
         {hasRichSurface ? (
-          <div className="relative flex w-full max-w-full flex-col gap-1.5">
-            <ConversationRichAttachments
-              attachments={message.attachments}
-              text={message.text}
-              sharedPost={message.sharedPost}
-              platform={platform}
-              direction={message.direction}
-              prospectId={prospectId}
-              messageId={message.id}
-            />
-            {!hasBubble ? messageActions : null}
-          </div>
+          <ConversationRichAttachments
+            attachments={message.attachments}
+            text={message.text}
+            sharedPost={message.sharedPost}
+            platform={platform}
+            direction={message.direction}
+            prospectId={prospectId}
+            messageId={message.id}
+            actionRail={!hasBubble ? messageActions : undefined}
+          />
         ) : null}
 
         {hasBubble ? (

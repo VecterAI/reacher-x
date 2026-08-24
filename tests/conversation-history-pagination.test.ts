@@ -4,7 +4,93 @@ import test from "node:test";
 import {
   mergeConversationHistoryMessages,
   reconcileConversationHistoryRefresh,
+  isConversationViewportScrollable,
+  shouldRequestInitialConversationHistory,
+  shouldRequestOlderConversationHistory,
 } from "../features/prospects/lib/conversationHistoryHelpers";
+
+test("initial conversation history is filled atomically within a bounded page budget", () => {
+  assert.equal(
+    shouldRequestInitialConversationHistory({
+      isScrollable: false,
+      hasMore: true,
+      historyRequestKey: "cursor-1",
+      isLoading: false,
+      hasError: false,
+      requestsStarted: 0,
+    }),
+    true
+  );
+  assert.equal(
+    shouldRequestInitialConversationHistory({
+      isScrollable: true,
+      hasMore: true,
+      historyRequestKey: "cursor-1",
+      isLoading: false,
+      hasError: false,
+      requestsStarted: 0,
+    }),
+    false
+  );
+  assert.equal(
+    shouldRequestInitialConversationHistory({
+      isScrollable: false,
+      hasMore: true,
+      historyRequestKey: "cursor-4",
+      isLoading: false,
+      hasError: false,
+      requestsStarted: 3,
+    }),
+    false
+  );
+  assert.equal(
+    isConversationViewportScrollable({
+      scrollHeight: 801,
+      clientHeight: 800,
+    }),
+    false
+  );
+  assert.equal(
+    isConversationViewportScrollable({
+      scrollHeight: 802,
+      clientHeight: 800,
+    }),
+    true
+  );
+});
+
+test("older conversation history requires genuine upward reader intent", () => {
+  const requestState = {
+    scrollTop: 120,
+    hasMore: true,
+    historyRequestKey: "cursor-2",
+    isLoading: false,
+    hasError: false,
+  };
+
+  assert.equal(
+    shouldRequestOlderConversationHistory({
+      ...requestState,
+      hasUserIntent: false,
+    }),
+    false
+  );
+  assert.equal(
+    shouldRequestOlderConversationHistory({
+      ...requestState,
+      hasUserIntent: true,
+    }),
+    true
+  );
+  assert.equal(
+    shouldRequestOlderConversationHistory({
+      ...requestState,
+      hasUserIntent: true,
+      scrollTop: 161,
+    }),
+    false
+  );
+});
 
 test("conversation pages merge without duplicates in chronological order", () => {
   const current = [
@@ -114,9 +200,15 @@ test("conversation panels share upward history loading and recovery", () => {
   assert.match(viewportSource, /defaultScrollPosition="end"/);
   assert.match(viewportSource, /preserveScrollOnPrepend/);
   assert.match(viewportSource, /Retry earlier messages/);
-  assert.match(viewportSource, /new IntersectionObserver/);
+  assert.match(viewportSource, /hasOlderHistoryIntentRef/);
+  assert.match(viewportSource, /onWheel=\{handleWheel\}/);
+  assert.match(viewportSource, /onPointerDown/);
   assert.match(viewportSource, /requestedHistoryKeyRef/);
+  assert.match(viewportSource, /INITIAL_HYDRATION_FALLBACK_MS/);
+  assert.match(viewportSource, /setInitialHydrationComplete\(true\)/);
+  assert.doesNotMatch(viewportSource, /new IntersectionObserver/);
   assert.doesNotMatch(viewportSource, /new ResizeObserver/);
+  assert.doesNotMatch(viewportSource, /shadow-/);
 
   for (const file of [
     "features/prospects/hooks/useProspectDmPanel.ts",

@@ -11,6 +11,24 @@ import {
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 const HTTP_URL_PATTERN = /https?:\/\/[^\s<>]+/i;
 const TRAILING_URL_PUNCTUATION_PATTERN = /[),.!?;:'"]+$/;
+const REACTION_EVENT_TYPE = "message_reaction";
+const REACTION_EVENT_LABEL_PATTERN = /\breacted\b/iu;
+
+export function shouldRenderConversationMessage(
+  message: RichConversationMessage
+): boolean {
+  const hasReactionEventType = [
+    message.sourceEventType,
+    message.eventMetadata?.providerEventType,
+  ]
+    .filter((eventType): eventType is string => Boolean(eventType))
+    .some((eventType) => eventType.toLowerCase() === REACTION_EVENT_TYPE);
+  const eventLabel = message.eventMetadata?.eventLabel || message.text;
+  const hasReactionEventLabel =
+    message.isEvent === true && REACTION_EVENT_LABEL_PATTERN.test(eventLabel);
+
+  return !hasReactionEventType && !hasReactionEventLabel;
+}
 
 function toTimestamp(value?: string): number | null {
   if (!value) return null;
