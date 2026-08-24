@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  "@xdevplatform/chat-xdk@0.4.3": 413d393b0cbe73406125356613aa7c1f19b2a75b7b68c68cd950567ba023e073
+  "@xdevplatform/chat-xdk@0.5.0": 65e666f277ac8bb60e3afc03d19c55bd20dd3fbb5255cee7aa9cc20ad19fc148
   next-themes@0.4.6: 9ab742790bc3284034400fc2d6422e596a9b3439e3dacdb030316992ec0bec6e
 
 importers:
@@ -201,8 +201,8 @@ importers:
         specifier: ^4.1.1
         version: 4.1.1(next@16.2.9(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@6.0.3)
       "@xdevplatform/chat-xdk":
-        specifier: 0.4.3
-        version: 0.4.3(patch_hash=413d393b0cbe73406125356613aa7c1f19b2a75b7b68c68cd950567ba023e073)(juicebox-sdk@0.3.0)
+        specifier: 0.5.0
+        version: 0.5.0(patch_hash=65e666f277ac8bb60e3afc03d19c55bd20dd3fbb5255cee7aa9cc20ad19fc148)(juicebox-sdk@0.3.0)
       "@xdevplatform/xdk":
         specifier: ^0.5.0
         version: 0.5.0
@@ -260,9 +260,6 @@ importers:
       lexical:
         specifier: ^0.45.0
         version: 0.45.0
-      lucide-react:
-        specifier: ^1.20.0
-        version: 1.20.0(react@19.2.7)
       marked:
         specifier: ^18.0.5
         version: 18.0.5
@@ -4898,10 +4895,10 @@ packages:
       }
     engines: { node: ">=22.11.0" }
 
-  "@xdevplatform/chat-xdk@0.4.3":
+  "@xdevplatform/chat-xdk@0.5.0":
     resolution:
       {
-        integrity: sha512-OoR2RRJlCfrOp/iOrLotcQwgxVuahc9lQIFLx5Odgq3EwdNik7KvNeDl5sE05C2k/5FAwM/iYxOSMJEsEelasQ==,
+        integrity: sha512-ywcg/OTwZlAAzbmOOJWBnRGj/ABguHmrSF0tJ7XSruAn+tHEBwzRNyGwrjj+7p+CSFJGow/U6uHMPho/b+jAIQ==,
       }
     engines: { node: ">=18" }
     peerDependencies:
@@ -6514,6 +6511,7 @@ packages:
         integrity: sha512-Hx0MOjPh6uK9oq9nVsATZKE/Wlbai7KFjfCuw9UHaguDW3x+HF0O5nIi3ud39TWgrTjTO5nHxmL3R1eANinWHQ==,
       }
     engines: { node: ^18.18.0 || ^20.9.0 || >=21.1.0 }
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: "*"
@@ -8118,14 +8116,6 @@ packages:
     resolution:
       {
         integrity: sha512-YLChGBWKq8ynr1UWP8WWRPhHhyuBAXfSBnHSgfoj51L//9TU3d0zvxpigf5C1IJ4vnEoTzthl5awPK55PiZhdA==,
-      }
-    peerDependencies:
-      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
-  lucide-react@1.20.0:
-    resolution:
-      {
-        integrity: sha512-jhXLeC/7m0/tjL1nzMdKk6x256zWA6AtbhTVreHOiKPoeX2d6MK4FbyIQPpVq0E6iPWBisyy1TW+pEge/uMEuQ==,
       }
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -14054,7 +14044,7 @@ snapshots:
     dependencies:
       eventemitter3: 5.0.4
 
-  "@xdevplatform/chat-xdk@0.4.3(patch_hash=413d393b0cbe73406125356613aa7c1f19b2a75b7b68c68cd950567ba023e073)(juicebox-sdk@0.3.0)":
+  "@xdevplatform/chat-xdk@0.5.0(patch_hash=65e666f277ac8bb60e3afc03d19c55bd20dd3fbb5255cee7aa9cc20ad19fc148)(juicebox-sdk@0.3.0)":
     optionalDependencies:
       juicebox-sdk: 0.3.0
 
@@ -16069,10 +16059,6 @@ snapshots:
       yallist: 3.1.1
 
   lucide-react@0.547.0(react@19.2.7):
-    dependencies:
-      react: 19.2.7
-
-  lucide-react@1.20.0(react@19.2.7):
     dependencies:
       react: 19.2.7
 

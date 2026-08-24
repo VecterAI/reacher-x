@@ -27,11 +27,11 @@ import {
   CloseIcon,
   FramePersonIcon,
   NotificationsIcon,
+  PsychologyAltIcon,
   QuickPhrasesIcon,
   RepeatIcon,
   WarningIcon,
 } from "@/shared/ui/components/icons";
-import { HelpCircle, Send } from "lucide-react";
 
 export type NotificationItem = Omit<
   Pick<
@@ -119,12 +119,12 @@ function getNotificationIcon(type: NotificationItem["type"]) {
     case "prospect_replied":
       return <QuickPhrasesIcon className="fill-current" />;
     case "ask_human":
-      return <HelpCircle className="size-4" />;
+      return <PsychologyAltIcon className="size-4" />;
     case "twitter_action_request":
     case "social_action_request":
       return <RepeatIcon className="size-4 fill-current" />;
     case "social_action_completed":
-      return <Send className="size-4" />;
+      return <CheckCircleIcon className="size-4 fill-current" />;
     case "setup_preview_ready":
       return <CheckCircleIcon className="size-4 fill-current" />;
     case "plan_batch_ready":

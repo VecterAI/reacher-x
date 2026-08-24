@@ -71,7 +71,6 @@ const nextConfig = {
   },
 
   experimental: {
-    optimizePackageImports: ["lucide-react"],
     // Turbopack: Persist compiler artifacts for faster dev restarts
     turbopackFileSystemCacheForDev: true,
   },

@@ -1,14 +1,14 @@
 diff --git a/index.js b/index.js
-index a47dc436f476b147ae68426430e3c45612de041d..faae7aa806555211fd325ba7e344384d8d3c0684 100644
+index 6281479142a25d3ad5a1b88cff6dcac5a2b46c55..94b53aac1996449747a6267c95a3f9a37d05cb46 100644
 --- a/index.js
 +++ b/index.js
-@@ -24,0 +25,5 @@
+@@ -114,0 +115,5 @@ export function guessesRemaining(err) {
 +// Keep Node-only builtins out of browser bundles. The SDK chooses this branch
 +// only at runtime, but static bundlers otherwise still try to resolve these
 +// imports while producing the browser chunk.
 +const importNodeBuiltin = (specifier) => import(specifier);
 +
-@@ -101,7 +106,7 @@ async function initWasmModule() {
+@@ -124,7 +129,7 @@ async function initWasmModule() {
      // Node 18 ships WebCrypto but does not expose it on the global scope,
      // and the wasm module's random-byte source requires globalThis.crypto.
      if (typeof globalThis.crypto === "undefined") {
@@ -17,7 +17,7 @@ index a47dc436f476b147ae68426430e3c45612de041d..faae7aa806555211fd325ba7e344384d
        globalThis.crypto = webcrypto;
      }
      // Dynamic import, not require(): the wasm glue is ESM, and require(esm)
-@@ -114,13 +119,13 @@ async function initWasmModule() {
+@@ -137,13 +142,13 @@ async function initWasmModule() {
      if (typeof init !== "function") {
        throw new Error("WASM init function not found in chat_xdk_wasm module.");
      }
@@ -33,8 +33,8 @@ index a47dc436f476b147ae68426430e3c45612de041d..faae7aa806555211fd325ba7e344384d
        wasmBytes = fs.readFileSync(fileURLToPath(wasmUrl));
      }
      await init({ module_or_path: wasmBytes });
-@@ -141,9 +146,9 @@ async function initWasmModule() {
- async function loadJuiceboxSdk() {
+@@ -181,9 +186,9 @@
+ async function loadJuiceboxSdkOnce() {
    if (isNodeRuntime()) {
      const juiceboxBg = await import("juicebox-sdk/juicebox-sdk_bg.js");
 -    const { createRequire } = await import("module");
