@@ -1,8 +1,46 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
 const readSource = (file: string) => readFileSync(file, "utf8");
+
+function getApplicationSourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return getApplicationSourceFiles(path);
+    return /\.(?:js|jsx|mjs|cjs|ts|tsx)$/u.test(entry.name) ? [path] : [];
+  });
+}
+
+test("application source does not import Lucide icons", () => {
+  for (const file of ["app", "features", "shared", "convex"].flatMap(
+    getApplicationSourceFiles
+  )) {
+    assert.doesNotMatch(
+      readSource(file),
+      /(?:lucide-react|@lucide)/u,
+      `${file} must use the custom icon library`
+    );
+  }
+});
+
+test("workspace and notification glyphs use the custom icon library", () => {
+  const workspaceSource = readSource(
+    "features/webapp/workspace/WorkspaceUseCaseCombobox.tsx"
+  );
+  const notificationSource = readSource(
+    "features/webapp/ui/components/notifications/NotificationsInbox.tsx"
+  );
+  const iconSource = readSource("shared/ui/components/icons/index.tsx");
+
+  assert.doesNotMatch(workspaceSource, /lucide-react/);
+  assert.match(workspaceSource, /KeyboardArrowDownIcon/);
+  assert.doesNotMatch(notificationSource, /lucide-react/);
+  assert.match(notificationSource, /PsychologyAltIcon/);
+  assert.match(notificationSource, /CheckCircleIcon/);
+  assert.match(iconSource, /export const PsychologyAltIcon/);
+});
 
 test("the desktop upgrade panel separates from its content with a left border", () => {
   const source = readSource("features/billing/ui/PlansPage.tsx");
@@ -115,6 +153,34 @@ test("circular spinners use the primary color without local overrides", () => {
   }
 });
 
+test("voice-note controls stay compact, themed, and continuously seekable", () => {
+  const composerSource = readSource(
+    "features/composer/ui/components/voice-note-composer/VoiceNoteComposer.tsx"
+  );
+  const timeSource = readSource(
+    "features/composer/ui/components/voice-note-composer/VoiceNoteTime.tsx"
+  );
+  const waveformSource = readSource("shared/ui/components/Waveform.tsx");
+
+  assert.match(composerSource, /items-center gap-1/);
+  assert.match(composerSource, /size="xsIcon"/);
+  assert.match(composerSource, /min-h-10/);
+  assert.match(composerSource, /TooltipContent/);
+  assert.doesNotMatch(composerSource, /bg-destructive/);
+  assert.doesNotMatch(composerSource, /isRecording && "text-destructive"/);
+  assert.doesNotMatch(composerSource, />\s*(?:Delete|Cancel|Stop|Send)\s*</u);
+  assert.match(timeSource, /AnimatedNumber/);
+  assert.match(timeSource, /minimumIntegerDigits: 2/);
+
+  assert.match(waveformSource, /type="range"/);
+  assert.match(waveformSource, /touch-pan-y/);
+  assert.match(waveformSource, /getComputedStyle\(container\)\.color/);
+  assert.match(waveformSource, /MutationObserver/);
+  assert.doesNotMatch(waveformSource, /getPropertyValue\("--foreground"\)/);
+  assert.doesNotMatch(waveformSource, /onPointerDown/);
+  assert.doesNotMatch(waveformSource, /focus-within:ring/);
+});
+
 test("conversation history opens at the latest page and preserves scroll position", () => {
   const conversationViewportSource = readSource(
     "features/prospects/ui/components/ConversationMessageViewport.tsx"
@@ -158,7 +224,6 @@ test("desktop side panels own a left divider and mobile panels have no side bord
     "app/(webapp)/post/linkedin/[id]/page.tsx",
     "app/(webapp)/post/x/[id]/page.tsx",
     "features/agent/ui/AgentPageShell.tsx",
-    "features/prospects/ui/pages/UseCaseProspectPage.tsx",
     "features/webapp/ui/pages/UseCaseSuccessPage.tsx",
     "features/webapp/workspace/WorkspaceRefinePanel.tsx",
   ]) {
@@ -169,6 +234,12 @@ test("desktop side panels own a left divider and mobile panels have no side bord
     );
   }
 
+  const dedicatedProspectPage = readSource(
+    "features/prospects/ui/pages/UseCaseProspectPage.tsx"
+  );
+  assert.doesNotMatch(dedicatedProspectPage, /DESKTOP_PANEL_BORDER_CLASS_NAME/);
+  assert.match(dedicatedProspectPage, /\[&_\[data-page-layout\]\]:border-x-0/);
+
   for (const file of [
     "features/agent/ui/components/AgentOnboardingPanel.tsx",
     "features/agent/ui/components/AgentOnboardingPanelSpinner.tsx",
@@ -177,4 +248,14 @@ test("desktop side panels own a left divider and mobile panels have no side bord
     assert.match(source, /DESKTOP_PANEL_BORDER_CLASS_NAME/);
     assert.doesNotMatch(source, /md:border-r(?:\s|["'])/);
   }
+});
+
+test("dedicated prospect routes keep unresolved data in the profile skeleton", () => {
+  const source = readSource(
+    "features/prospects/ui/pages/UseCaseProspectPage.tsx"
+  );
+
+  assert.match(source, /selectedProspectId !== prospectId \|\| loading/);
+  assert.match(source, /loading=\{isResolvingRouteProspect\}/);
+  assert.match(source, /!routeProspect && !isResolvingRouteProspect/);
 });

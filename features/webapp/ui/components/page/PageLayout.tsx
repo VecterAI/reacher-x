@@ -25,6 +25,7 @@ export const PageLayout = React.forwardRef<HTMLDivElement, PageLayoutProps>(
     return (
       <div
         ref={ref}
+        data-page-layout
         className={cn("h-full w-full max-w-lg min-w-0 border-x-0", className)}
         {...props}
       >

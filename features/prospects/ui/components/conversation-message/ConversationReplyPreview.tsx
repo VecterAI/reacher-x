@@ -43,7 +43,9 @@ function getReplySummary(quote: QuotedConversationMessage) {
     if (kind === "image") return "Image attachment";
     if (kind === "video") return "Video attachment";
     if (kind === "audio") return "Audio attachment";
-    if (["attachment", "media"].includes(attachment.type.toLowerCase())) {
+    if (
+      ["attachment", "media"].includes((attachment.type ?? "").toLowerCase())
+    ) {
       return "Attachment";
     }
     return "File attachment";

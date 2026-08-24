@@ -14,6 +14,65 @@ type ConversationHistoryContext<
   history?: THistory;
 };
 
+export const CONVERSATION_HISTORY_PRELOAD_DISTANCE_PX = 160;
+export const INITIAL_CONVERSATION_HISTORY_PAGE_BUDGET = 3;
+
+type ConversationHistoryRequestState = {
+  hasMore: boolean;
+  historyRequestKey?: string;
+  isLoading: boolean;
+  hasError: boolean;
+};
+
+/** A one-pixel tolerance avoids treating fractional layout rounding as overflow. */
+export function isConversationViewportScrollable(args: {
+  scrollHeight: number;
+  clientHeight: number;
+}): boolean {
+  return args.scrollHeight - args.clientHeight > 1;
+}
+
+/**
+ * Fill only the first visible viewport before revealing it. The page budget
+ * prevents short provider pages from silently draining an entire transcript.
+ */
+export function shouldRequestInitialConversationHistory(
+  args: ConversationHistoryRequestState & {
+    isScrollable: boolean;
+    requestsStarted: number;
+    requestBudget?: number;
+  }
+): boolean {
+  return Boolean(
+    !args.isScrollable &&
+    args.hasMore &&
+    args.historyRequestKey &&
+    !args.isLoading &&
+    !args.hasError &&
+    args.requestsStarted <
+      (args.requestBudget ?? INITIAL_CONVERSATION_HISTORY_PAGE_BUDGET)
+  );
+}
+
+/** Older pages are requested only after a real upward reader interaction. */
+export function shouldRequestOlderConversationHistory(
+  args: ConversationHistoryRequestState & {
+    hasUserIntent: boolean;
+    scrollTop: number;
+    preloadDistance?: number;
+  }
+): boolean {
+  return Boolean(
+    args.hasUserIntent &&
+    args.scrollTop <=
+      (args.preloadDistance ?? CONVERSATION_HISTORY_PRELOAD_DISTANCE_PX) &&
+    args.hasMore &&
+    args.historyRequestKey &&
+    !args.isLoading &&
+    !args.hasError
+  );
+}
+
 function toConversationMessageTimestamp(createdAt?: string): number {
   return createdAt ? (parseIsoToTimestamp(createdAt) ?? 0) : 0;
 }

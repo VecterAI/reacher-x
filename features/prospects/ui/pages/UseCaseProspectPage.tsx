@@ -11,7 +11,6 @@ import {
 } from "@/features/prospects/contexts";
 import { useActiveUseCaseLabels, useWorkspace } from "@/shared/hooks";
 import { cn } from "@/shared/lib/utils";
-import { DESKTOP_PANEL_BORDER_CLASS_NAME } from "@/features/webapp/ui/components/page/PageLayout";
 
 interface UseCaseProspectPageProps {
   entitySlug: string;
@@ -26,7 +25,12 @@ export function UseCaseProspectPage({
   const { entityPlural, entitySingular, routes } = useActiveUseCaseLabels();
   const { isLoading: isWorkspaceLoading } = useWorkspace();
   const { currentPanel, depth } = usePanelStack();
-  const { prospect, loading, openProspect } = useProspectProfile();
+  const {
+    prospectId: selectedProspectId,
+    prospect,
+    loading,
+    openProspect,
+  } = useProspectProfile();
   const entityPluralLower = entityPlural.toLowerCase();
   const isCanonicalRoute = entitySlug === routes.entitySlug;
 
@@ -53,12 +57,15 @@ export function UseCaseProspectPage({
   };
 
   const hasSubPanel = depth >= 1 && currentPanel?.type !== "prospect-profile";
+  const isResolvingRouteProspect = selectedProspectId !== prospectId || loading;
+  const routeProspect =
+    selectedProspectId === prospectId ? prospect : undefined;
 
   if (!isWorkspaceLoading && !isCanonicalRoute) {
     return null;
   }
 
-  if (!prospect && !loading) {
+  if (!routeProspect && !isResolvingRouteProspect) {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <div className="text-muted-foreground text-center">
@@ -78,13 +85,13 @@ export function UseCaseProspectPage({
   return (
     <div className="flex h-full min-h-0 w-full">
       <ProspectProfilePanel
-        prospect={prospect || undefined}
-        loading={loading}
+        prospect={routeProspect || undefined}
+        loading={isResolvingRouteProspect}
         onChatWithAgent={handleChatWithAgent}
         onBack={handleBack}
         disableMobileDrawer={true}
         className={cn(
-          "h-full min-h-0 w-full shrink-0 overflow-hidden",
+          "h-full min-h-0 w-full shrink-0 overflow-hidden border-x-0 [&_[data-page-layout]]:border-x-0",
           "md:border-border md:border-r",
           hasSubPanel && "hidden md:block md:max-w-lg"
         )}
@@ -92,9 +99,7 @@ export function UseCaseProspectPage({
 
       {hasSubPanel && (
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <ProspectPanelRenderer
-            className={cn("w-full", DESKTOP_PANEL_BORDER_CLASS_NAME)}
-          />
+          <ProspectPanelRenderer className="w-full max-w-none border-x-0 md:border-l-0 [&_[data-page-layout]]:max-w-none [&_[data-page-layout]]:border-x-0" />
         </div>
       )}
     </div>

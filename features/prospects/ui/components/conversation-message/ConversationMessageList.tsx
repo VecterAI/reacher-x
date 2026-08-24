@@ -3,6 +3,7 @@
 import {
   formatConversationDayLabel,
   getConversationMessageGrouping,
+  shouldRenderConversationMessage,
   shouldShowConversationDaySeparator,
 } from "../../../lib/conversationMessagePresentation";
 import { ConversationDaySeparator } from "./ConversationDaySeparator";
@@ -43,10 +44,11 @@ export function ConversationMessageList({
   prospectId,
   scrollerItems = false,
 }: ConversationMessageListProps) {
-  const rows = messages.map((message, index) => {
+  const visibleMessages = messages.filter(shouldRenderConversationMessage);
+  const rows = visibleMessages.map((message, index) => {
     const row = (
       <>
-        {shouldShowConversationDaySeparator(messages, index) ? (
+        {shouldShowConversationDaySeparator(visibleMessages, index) ? (
           <ConversationDaySeparator
             label={formatConversationDayLabel(message.createdAt)}
           />
@@ -54,7 +56,7 @@ export function ConversationMessageList({
         <ConversationMessageItem
           message={message}
           platform={platform}
-          grouping={getConversationMessageGrouping(messages, index)}
+          grouping={getConversationMessageGrouping(visibleMessages, index)}
           participantAvatarUrl={participantAvatarUrl}
           participantName={participantName}
           onReply={
