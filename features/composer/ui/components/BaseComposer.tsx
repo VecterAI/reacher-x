@@ -12,6 +12,7 @@ import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import {
   LINKEDIN_MESSAGE_DOCUMENT_ACCEPT,
   LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES,
+  isLinkedInVoiceMessageMimeType,
 } from "@/shared/lib/utils/media/linkedinMessageAttachmentTypes";
 import CharacterCounter from "@/shared/ui/components/CharacterCounter";
 import {
@@ -47,7 +48,6 @@ import { useAction, useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
-import { logger } from "@/shared/lib/logger";
 import {
   COMPOSER_PREVIEW_CONTENT_EDITABLE_CLASS,
   COMPOSER_PREVIEW_PLACEHOLDER_CLASS,
@@ -58,6 +58,11 @@ import {
   withBrowserMediaMetadata,
 } from "../../lib/browserMediaMetadata";
 import { useWorkspace } from "@/shared/hooks";
+import {
+  useVoiceNoteRecorder,
+  type VoiceNotePlatform,
+} from "../../hooks/useVoiceNoteRecorder";
+import { VoiceNoteComposer, VoiceNoteTrigger } from "./voice-note-composer";
 
 function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
   if (a === b) return true;
@@ -75,6 +80,7 @@ function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
       left.width !== right.width ||
       left.height !== right.height ||
       left.durationMs !== right.durationMs ||
+      left.isVoiceNote !== right.isVoiceNote ||
       left.progress !== right.progress ||
       left.status !== right.status ||
       left.error !== right.error ||
@@ -113,7 +119,10 @@ function inferMediaKindFromMimeType(
   if (normalized.startsWith("video/")) {
     return "video";
   }
-  if (LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES.has(normalized)) {
+  if (
+    LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES.has(normalized) ||
+    isLinkedInVoiceMessageMimeType(normalized)
+  ) {
     return "file";
   }
   return "image";
@@ -221,6 +230,11 @@ interface BaseComposerProps extends ComposerBaseProps {
   headerActionsRight?: React.ReactNode; // right-aligned actions in headerPrimary row
   /** Passed to toolbar: after emoji (e.g. draft save indicator). */
   afterEmojiSlot?: React.ReactNode;
+  /** Composes a provider-specific media control with the shared upload path. */
+  renderMediaControl?: (controls: {
+    addFiles: (files: File[]) => Promise<void>;
+    disabled: boolean;
+  }) => React.ReactNode;
   /** Passed to toolbar: immediately before the character counter. */
   beforeCounterSlot?: React.ReactNode;
   /** Passed to toolbar: immediately before submit, after char count (e.g. cancel draft). */
@@ -231,6 +245,8 @@ interface BaseComposerProps extends ComposerBaseProps {
   submitDisabled?: boolean;
   /** Keep selected files in browser memory for an encrypted submit flow. */
   deferMediaUpload?: boolean;
+  /** Enables the shared, local-first voice-note recording flow. */
+  voiceNotePlatform?: VoiceNotePlatform;
 }
 
 export function BaseComposer({
@@ -268,11 +284,13 @@ export function BaseComposer({
   headerSecondary,
   headerActionsRight,
   afterEmojiSlot,
+  renderMediaControl,
   beforeCounterSlot,
   submitToolbarStart,
   showMediaDescription = true,
   submitDisabled = false,
   deferMediaUpload = false,
+  voiceNotePlatform,
   onContentChange,
   onSubmit,
   onEditorBlur,
@@ -346,6 +364,8 @@ export function BaseComposer({
   const [mediaUploads, setMediaUploads] = useState<MediaUpload[]>(
     resolvedInitialMediaUploads
   );
+  const voiceNote = useVoiceNoteRecorder(voiceNotePlatform);
+  const attachedVoiceFileRef = useRef<File | null>(null);
   const mediaUploadsRef = useRef(mediaUploads);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -635,7 +655,10 @@ export function BaseComposer({
     () => new Set(["video/mp4", "video/quicktime"]),
     []
   );
-  const ALLOWED_FILE_TYPES = LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES;
+  const ALLOWED_FILE_TYPES = useMemo(
+    () => new Set(LINKEDIN_MESSAGE_DOCUMENT_MIME_TYPES),
+    []
+  );
   const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
   const MAX_GIF_BYTES = 15 * 1024 * 1024; // 15 MB
   const MAX_VIDEO_BYTES = 512 * 1024 * 1024; // 512 MB
@@ -705,11 +728,12 @@ export function BaseComposer({
       return {
         ok: false,
         error:
-          "Invalid format. Allowed: JPG, PNG, WEBP, GIF; MP4, MOV; CSV, XLS, XLSX, DOC, DOCX, PPT, PPTX, PDF, TXT.",
+          "Invalid format. Allowed: JPG, PNG, WEBP, GIF; MP4, MOV; CSV, XLS, XLSX, DOC, DOCX, PPT, PPTX, PDF, or TXT.",
       } as const;
     },
     [
       ALLOWED_IMAGE_TYPES,
+      ALLOWED_FILE_TYPES,
       ALLOWED_VIDEO_TYPES,
       MAX_FILE_BYTES,
       MAX_GIF_BYTES,
@@ -720,6 +744,30 @@ export function BaseComposer({
       entityMentions?.attachmentDestination,
     ]
   );
+
+  useEffect(() => {
+    const recording = voiceNote.recording;
+    if (!recording || attachedVoiceFileRef.current === recording.file) return;
+    attachedVoiceFileRef.current = recording.file;
+    for (const upload of mediaUploadsRef.current) {
+      revokeComposerObjectUrl(upload.url);
+    }
+    setMediaUploads([
+      {
+        id: `voice-note-${getCurrentUTCTimestamp()}`,
+        file: recording.file,
+        url: URL.createObjectURL(recording.file),
+        type: "file",
+        mediaKind: "file",
+        size: recording.file.size,
+        durationMs: recording.durationMs,
+        waveform: recording.waveform,
+        isVoiceNote: true,
+        progress: 100,
+        status: "completed",
+      },
+    ]);
+  }, [voiceNote.recording]);
 
   const handleMediaUpload = useCallback(
     async (files: FileList | File[]) => {
@@ -968,7 +1016,7 @@ export function BaseComposer({
             )
           );
         } catch (error) {
-          logger.error("Media upload failed:", error);
+          console.error("[BaseComposer] Media upload failed", error);
           setMediaUploads((prev) =>
             prev.map((u) =>
               u.id === upload.id
@@ -996,13 +1044,22 @@ export function BaseComposer({
     ]
   );
 
-  const handleRemoveMedia = useCallback((id: string) => {
-    setMediaUploads((prev) => {
-      const removed = prev.find((upload) => upload.id === id);
+  const handleRemoveMedia = useCallback(
+    (id: string) => {
+      const removed = mediaUploadsRef.current.find(
+        (upload) => upload.id === id
+      );
       revokeComposerObjectUrl(removed?.url);
-      return prev.filter((upload) => upload.id !== id);
-    });
-  }, []);
+      if (removed?.isVoiceNote) {
+        attachedVoiceFileRef.current = null;
+        voiceNote.reset();
+      }
+      setMediaUploads((prev) => {
+        return prev.filter((upload) => upload.id !== id);
+      });
+    },
+    [voiceNote]
+  );
 
   const handleRemovePreview = useCallback(() => {
     setPreviewUrl(null);
@@ -1033,7 +1090,9 @@ export function BaseComposer({
     const hasCompletedMedia = mediaUploads.some(
       (u) =>
         u.status === "completed" &&
-        (Boolean(u.serverUrl) || (deferMediaUpload && u.file.size > 0))
+        (Boolean(u.serverUrl) ||
+          u.isVoiceNote ||
+          (deferMediaUpload && u.file.size > 0))
     );
     const hasContent = !!content;
     const hasUploadingMedia = mediaUploads.some(
@@ -1058,6 +1117,7 @@ export function BaseComposer({
       (upload) =>
         upload.status === "completed" &&
         (Boolean(upload.serverUrl) ||
+          upload.isVoiceNote ||
           (deferMediaUpload && upload.file.size > 0))
     );
     const completedUploadsWithMetadata = await Promise.all(
@@ -1080,6 +1140,8 @@ export function BaseComposer({
         }
       }
       setMediaUploads([]);
+      attachedVoiceFileRef.current = null;
+      voiceNote.reset();
       // Clear editor UI selection and nodes via bridge if available
       try {
         editorAPI?.clearContent();
@@ -1090,19 +1152,23 @@ export function BaseComposer({
     const contentForSubmit = content ?? ({} as SerializedEditorState);
     if (submitMode === "optimistic") {
       resetComposer(false);
+      let retainMediaObjectUrls = false;
       try {
-        await onSubmit?.(
+        const result = await onSubmit?.(
           contentForSubmit,
           mediaUrls,
           mediaDescriptions,
           mediaKinds,
           completedUploadsWithMetadata
         );
+        retainMediaObjectUrls = result?.retainMediaObjectUrls === true;
       } catch (error) {
-        logger.error("Submit error:", error);
+        console.error("[BaseComposer] Optimistic submit failed", error);
       } finally {
-        for (const upload of completedUploadsWithMetadata) {
-          revokeComposerObjectUrl(upload.url);
+        if (!retainMediaObjectUrls) {
+          for (const upload of completedUploadsWithMetadata) {
+            revokeComposerObjectUrl(upload.url);
+          }
         }
       }
       return;
@@ -1119,7 +1185,7 @@ export function BaseComposer({
       );
       resetComposer();
     } catch (error) {
-      logger.error("Submit error:", error);
+      console.error("[BaseComposer] Submit failed", error);
     } finally {
       setIsSubmitting(false);
     }
@@ -1135,6 +1201,7 @@ export function BaseComposer({
     onSubmit,
     submitDisabled,
     submitMode,
+    voiceNote,
   ]);
 
   // Note: cancel flow removed in UI; keep placeholder for potential future use
@@ -1151,7 +1218,9 @@ export function BaseComposer({
   const hasCompletedMedia = mediaUploads.some(
     (u) =>
       u.status === "completed" &&
-      (Boolean(u.serverUrl) || (deferMediaUpload && u.file.size > 0))
+      (Boolean(u.serverUrl) ||
+        u.isVoiceNote ||
+        (deferMediaUpload && u.file.size > 0))
   );
   const isUploadingMedia = mediaUploads.some((u) => u.status === "uploading");
   const canSubmit =
@@ -1176,6 +1245,20 @@ export function BaseComposer({
   const handleItalic = useCallback(() => {
     editorAPI?.toggleItalic();
   }, [editorAPI]);
+
+  const voiceNoteActive = voiceNote.status !== "idle";
+  const voiceNoteUpload = mediaUploads.find((upload) => upload.isVoiceNote);
+  const voiceNoteTrigger = voiceNotePlatform ? (
+    <VoiceNoteTrigger
+      disabled={
+        interactionDisabled ||
+        isSubmitting ||
+        hasText ||
+        mediaUploads.some((upload) => upload.status !== "error")
+      }
+      onStart={() => void voiceNote.start()}
+    />
+  ) : null;
 
   const toolbarRow = showToolbar && (
     <div
@@ -1209,7 +1292,14 @@ export function BaseComposer({
         className="flex-1"
         onBold={handleBold}
         onItalic={handleItalic}
-        afterEmojiSlot={afterEmojiSlot}
+        afterEmojiSlot={
+          voiceNoteTrigger ??
+          renderMediaControl?.({
+            addFiles: async (files) => await handleMediaUpload(files),
+            disabled: interactionDisabled,
+          }) ??
+          afterEmojiSlot
+        }
         beforeCounterSlot={beforeCounterSlot}
         submitToolbarStart={submitToolbarStart}
         beforeSubmitSlot={
@@ -1279,6 +1369,18 @@ export function BaseComposer({
         className={toolbarPlacement === "bottom" ? "mb-3" : "mt-3"}
       />
     ) : null;
+
+  const voiceNoteBlock = voiceNoteActive ? (
+    <VoiceNoteComposer
+      controller={voiceNote}
+      sending={isSubmitting}
+      onDelete={() => {
+        if (voiceNoteUpload) handleRemoveMedia(voiceNoteUpload.id);
+        else voiceNote.reset();
+      }}
+      onSend={() => void handleSubmit()}
+    />
+  ) : null;
 
   return (
     <div
@@ -1368,7 +1470,9 @@ export function BaseComposer({
             </>
           ) : null}
 
-          {toolbarPlacement === "top" ? (
+          {voiceNoteBlock ? (
+            voiceNoteBlock
+          ) : toolbarPlacement === "top" ? (
             <>
               {toolbarRow}
               {editorBlock}

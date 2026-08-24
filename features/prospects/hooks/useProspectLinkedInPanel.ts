@@ -24,7 +24,10 @@ import {
   mergeOutboundMessageOperations,
   type OutboundMessageMediaMetadata,
 } from "../lib/outboundMessageOperations";
-import { useOutboundMessageQueue } from "./useOutboundMessageQueue";
+import {
+  type QueueMessageArgs,
+  useOutboundMessageQueue,
+} from "./useOutboundMessageQueue";
 import type { ComposerMediaKind } from "@/features/composer/types";
 import { runLinkedInMessageReactionOperation } from "../lib/linkedinMessageReactionOperation";
 
@@ -55,9 +58,13 @@ export function useProspectLinkedInPanel(args: {
   const getLinkedInConversationHistoryPage = useAction(
     linkedinApi.getLinkedInConversationHistoryPage
   );
+  const markLinkedInConversationRead = useAction(
+    linkedinApi.markLinkedInConversationRead
+  );
   const {
     operations: outboundOperations,
     enqueue: enqueueOutboundMessage,
+    enqueuePrepared: enqueuePreparedOutboundMessage,
     retry: retryOutboundMessage,
   } = useOutboundMessageQueue({
     prospectId,
@@ -85,6 +92,8 @@ export function useProspectLinkedInPanel(args: {
   const activeCacheKeyRef = useRef("");
   const conversationRevisionRef = useRef<string | null | undefined>(undefined);
   const reactionOperationsRef = useRef(new Set<string>());
+  const acknowledgedReadRef = useRef<string | null>(null);
+  const readInFlightRef = useRef<string | null>(null);
 
   useEffect(() => {
     getPanelContextRef.current = getPanelContext;
@@ -116,6 +125,63 @@ export function useProspectLinkedInPanel(args: {
     reactionPendingState.cacheKey === cacheKey
       ? reactionPendingState.messageIds
       : EMPTY_PENDING_REACTION_MESSAGE_IDS;
+
+  const latestReceivedMessageId = data?.messages
+    .toReversed()
+    .find((message) => message.direction === "received")?.id;
+
+  useEffect(() => {
+    if (
+      !enabled ||
+      !prospectId ||
+      !data?.conversationId ||
+      !latestReceivedMessageId
+    ) {
+      return;
+    }
+    const operationKey = `${data.conversationId}:${latestReceivedMessageId}`;
+    const markReadWhenVisible = () => {
+      if (
+        document.visibilityState !== "visible" ||
+        acknowledgedReadRef.current === operationKey ||
+        readInFlightRef.current === operationKey
+      ) {
+        return;
+      }
+      readInFlightRef.current = operationKey;
+      void markLinkedInConversationRead({
+        prospectId: prospectId as Id<"prospects">,
+      })
+        .then(() => {
+          acknowledgedReadRef.current = operationKey;
+        })
+        .catch((markReadError) => {
+          console.warn(
+            "[LinkedInConversationPanel] Unable to mark conversation read",
+            markReadError instanceof Error
+              ? markReadError.message
+              : String(markReadError)
+          );
+        })
+        .finally(() => {
+          if (readInFlightRef.current === operationKey) {
+            readInFlightRef.current = null;
+          }
+        });
+    };
+
+    markReadWhenVisible();
+    document.addEventListener("visibilitychange", markReadWhenVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", markReadWhenVisible);
+    };
+  }, [
+    data?.conversationId,
+    enabled,
+    latestReceivedMessageId,
+    markLinkedInConversationRead,
+    prospectId,
+  ]);
 
   useEffect(() => {
     activeCacheKeyRef.current = cacheKey;
@@ -343,7 +409,8 @@ export function useProspectLinkedInPanel(args: {
       mediaKinds?: ComposerMediaKind[],
       mediaFileNames?: string[],
       mediaMetadata?: OutboundMessageMediaMetadata[],
-      quoteId?: string
+      quoteId?: string,
+      voiceNoteCacheId?: Id<"platformConversationMediaCache">
     ) => {
       if (!prospectId) {
         throw new Error("Missing prospect.");
@@ -364,6 +431,7 @@ export function useProspectLinkedInPanel(args: {
           mediaKinds,
           mediaFileNames,
           mediaMetadata,
+          voiceNoteCacheId,
           quoteId,
           actionRequestId: activeActionRequestId,
         });
@@ -378,6 +446,48 @@ export function useProspectLinkedInPanel(args: {
       cacheKey,
       data?.conversationId,
       enqueueOutboundMessage,
+      prospectId,
+    ]
+  );
+
+  const sendPrepared = useCallback(
+    async (args: {
+      optimisticMessage: QueueMessageArgs;
+      prepare: () => Promise<QueueMessageArgs>;
+      releaseOptimisticPreview?: () => void;
+    }) => {
+      if (!prospectId) {
+        throw new Error("Missing prospect.");
+      }
+      const activeActionRequestId =
+        actionRequestStatus === "pending_approval" && actionRequestId
+          ? (actionRequestId as Id<"agentActionRequests">)
+          : undefined;
+      if (activeActionRequestId) {
+        setStatusOverride({ cacheKey, status: "executing" });
+      }
+      const withPanelContext = (message: QueueMessageArgs) => ({
+        ...message,
+        conversationId: data?.conversationId,
+        actionRequestId: activeActionRequestId,
+      });
+      try {
+        return await enqueuePreparedOutboundMessage({
+          optimisticMessage: withPanelContext(args.optimisticMessage),
+          prepare: async () => withPanelContext(await args.prepare()),
+          releaseOptimisticPreview: args.releaseOptimisticPreview,
+        });
+      } catch (error) {
+        if (activeActionRequestId) setStatusOverride(null);
+        throw error;
+      }
+    },
+    [
+      actionRequestId,
+      actionRequestStatus,
+      cacheKey,
+      data?.conversationId,
+      enqueuePreparedOutboundMessage,
       prospectId,
     ]
   );
@@ -501,6 +611,7 @@ export function useProspectLinkedInPanel(args: {
     refetch,
     loadOlder,
     send,
+    sendPrepared,
     retrySend,
     reactToMessage,
     pendingReactionMessageIds,

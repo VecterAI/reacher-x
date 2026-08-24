@@ -55,7 +55,7 @@ describe("LinkedIn reaction operation", () => {
       })
     ).rejects.toThrow("LinkedIn could not add the reaction");
 
-    expect(data).toBe(original);
+    expect(data).toStrictEqual(original);
     expect(pending).toEqual([true, false]);
   });
 
@@ -80,5 +80,68 @@ describe("LinkedIn reaction operation", () => {
     ).resolves.toBe("deduplicated");
 
     expect(addReaction).not.toHaveBeenCalled();
+  });
+
+  it("keeps the successful optimistic reaction when refresh fails", async () => {
+    let data: LinkedInConversationPanelContext | null = createPanelData();
+    const refreshError = new Error("refresh unavailable");
+
+    await expect(
+      runLinkedInMessageReactionOperation({
+        operationKey: "panel:message-1",
+        messageId: "message-1",
+        emoji: "👏",
+        inFlightOperations: new Set(),
+        getData: () => data,
+        isCurrent: () => true,
+        setData: (nextData) => {
+          data = nextData;
+        },
+        setPending: vi.fn(),
+        addReaction: async () => ({ success: true }),
+        refresh: async () => {
+          throw refreshError;
+        },
+      })
+    ).resolves.toBe("added");
+
+    expect(
+      data?.messages[0]?.reactions?.find((reaction) => reaction.emoji === "👏")
+    ).toMatchObject({ count: 1, reactedByViewer: true });
+  });
+
+  it("rolls back only the failed reaction and preserves concurrent data", async () => {
+    let data: LinkedInConversationPanelContext | null = createPanelData();
+
+    await expect(
+      runLinkedInMessageReactionOperation({
+        operationKey: "panel:message-1",
+        messageId: "message-1",
+        emoji: "👏",
+        inFlightOperations: new Set(),
+        getData: () => data,
+        isCurrent: () => true,
+        setData: (nextData) => {
+          data = nextData;
+        },
+        setPending: vi.fn(),
+        addReaction: async () => {
+          if (data) {
+            data = { ...data, draftText: "concurrent draft" };
+          }
+          return {
+            success: false,
+            code: "provider_unavailable",
+            message: "Provider rejected the reaction",
+            retryable: true,
+            recovery: "retry",
+          };
+        },
+        refresh: vi.fn(),
+      })
+    ).rejects.toThrow("Provider rejected the reaction");
+
+    expect(data?.draftText).toBe("concurrent draft");
+    expect(data?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2 }]);
   });
 });

@@ -5,8 +5,11 @@ import { mergeOutboundMessageOperations } from "../features/prospects/lib/outbou
 import type { RichConversationMessage } from "../features/prospects/ui/components/conversation-message/types";
 
 test("outbound attachment metadata survives provider reconciliation", () => {
-  const providerMessage: RichConversationMessage = {
-    id: "linkedin:provider-message",
+  const providerMessage: RichConversationMessage & {
+    providerMessageId: string;
+  } = {
+    id: "unipile-message",
+    providerMessageId: "provider-message",
     conversationId: "conversation",
     text: "Document",
     createdAt: "2026-08-21T12:00:00.000Z",

@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
 import { platformConversationPlatformValidator } from "./validators";
+import { platformConversationMediaPurposeValidator } from "./validators";
 
 const cachedMediaValidator = v.object({
   cacheId: v.id("platformConversationMediaCache"),
@@ -11,6 +12,8 @@ const cachedMediaValidator = v.object({
   fileName: v.optional(v.string()),
   size: v.number(),
   encrypted: v.boolean(),
+  purpose: v.optional(platformConversationMediaPurposeValidator),
+  durationMs: v.optional(v.number()),
   expiresAt: v.number(),
 });
 
@@ -38,6 +41,8 @@ export const getCachedMediaInternal = internalQuery({
       fileName: row.fileName,
       size: row.size,
       encrypted: row.encrypted,
+      purpose: row.purpose,
+      durationMs: row.durationMs,
       expiresAt: row.expiresAt,
     };
   },
@@ -57,6 +62,8 @@ export const storeCachedMediaInternal = internalMutation({
     fileName: v.optional(v.string()),
     size: v.number(),
     encrypted: v.boolean(),
+    purpose: v.optional(platformConversationMediaPurposeValidator),
+    durationMs: v.optional(v.number()),
     expiresAt: v.number(),
   },
   returns: v.object({
@@ -66,6 +73,8 @@ export const storeCachedMediaInternal = internalMutation({
     fileName: v.optional(v.string()),
     size: v.number(),
     encrypted: v.boolean(),
+    purpose: v.optional(platformConversationMediaPurposeValidator),
+    durationMs: v.optional(v.number()),
     expiresAt: v.number(),
   }),
   handler: async (ctx, args) => {
@@ -91,6 +100,8 @@ export const storeCachedMediaInternal = internalMutation({
         fileName: existing.fileName,
         size: existing.size,
         encrypted: existing.encrypted,
+        purpose: existing.purpose,
+        durationMs: existing.durationMs,
         expiresAt: existing.expiresAt,
       };
     }
@@ -110,6 +121,8 @@ export const storeCachedMediaInternal = internalMutation({
       fileName: args.fileName,
       size: args.size,
       encrypted: args.encrypted,
+      purpose: args.purpose,
+      durationMs: args.durationMs,
       createdAt: now,
       expiresAt: args.expiresAt,
     };
@@ -141,8 +154,54 @@ export const storeCachedMediaInternal = internalMutation({
       fileName: args.fileName,
       size: args.size,
       encrypted: args.encrypted,
+      purpose: args.purpose,
+      durationMs: args.durationMs,
       expiresAt: args.expiresAt,
     };
+  },
+});
+
+export const getCachedMediaByIdInternal = internalQuery({
+  args: {
+    cacheId: v.id("platformConversationMediaCache"),
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    now: v.number(),
+  },
+  returns: v.union(v.null(), cachedMediaValidator),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.cacheId);
+    if (
+      !row ||
+      row.userId !== args.userId ||
+      row.prospectId !== args.prospectId ||
+      row.expiresAt <= args.now
+    ) {
+      return null;
+    }
+    return {
+      cacheId: row._id,
+      storageId: row.storageId,
+      contentType: row.contentType,
+      fileName: row.fileName,
+      size: row.size,
+      encrypted: row.encrypted,
+      purpose: row.purpose,
+      durationMs: row.durationMs,
+      expiresAt: row.expiresAt,
+    };
+  },
+});
+
+export const deleteCachedMediaNowInternal = internalMutation({
+  args: { cacheId: v.id("platformConversationMediaCache") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.cacheId);
+    if (!row) return null;
+    await ctx.storage.delete(row.storageId);
+    await ctx.db.delete(row._id);
+    return null;
   },
 });
 

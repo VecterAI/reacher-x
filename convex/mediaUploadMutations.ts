@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { normalizeMediaMimeType } from "../shared/lib/utils/media/linkedinMessageAttachmentTypes";
 import { internalMutation, mutation, query } from "./lib/functionBuilders";
 import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import {
@@ -64,9 +65,9 @@ export const storeMediaMetadataInternal = internalMutation({
     try {
       fileName = sanitizeWorkspaceAttachmentFileName(args.fileName);
       displayName = args.displayName?.trim().slice(0, 255) || fileName;
-      mimeType = (
-        storageMetadata.contentType?.trim() || args.mimeType.trim()
-      ).toLowerCase();
+      mimeType = normalizeMediaMimeType(
+        storageMetadata.contentType || args.mimeType
+      );
       size = storageMetadata.size;
       tags = sanitizeWorkspaceAttachmentTags(args.tags);
       if (

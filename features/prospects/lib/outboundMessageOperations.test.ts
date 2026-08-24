@@ -1,10 +1,41 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
-import { mergeOutboundMessageOperations } from "./outboundMessageOperations";
+import {
+  mergeOutboundMessageOperations,
+  retryLocalOutboundMessageOperation,
+} from "./outboundMessageOperations";
 
 const prospectId = "prospect-1" as Id<"prospects">;
 
 describe("outbound message presentation", () => {
+  test("forwards approval ownership when retrying a failed local enqueue", async () => {
+    const actionRequestId = "action-request-1" as Id<"agentActionRequests">;
+    const enqueue = vi.fn().mockResolvedValue({ queued: true });
+
+    await expect(
+      retryLocalOutboundMessageOperation(
+        {
+          clientRequestId: "request-approval-retry",
+          prospectId,
+          platform: "linkedin",
+          conversationId: "conversation-1",
+          text: "Approved message",
+          actionRequestId,
+          status: "failed",
+          attemptCount: 0,
+          createdAt: 1_000,
+          updatedAt: 1_001,
+          errorMessage: "Initial enqueue failed",
+        },
+        enqueue
+      )
+    ).resolves.toEqual({ queued: true });
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ actionRequestId })
+    );
+  });
+
   test("adds ordered pending and failed messages without hiding canonical history", () => {
     const merged = mergeOutboundMessageOperations(
       [
@@ -55,7 +86,7 @@ describe("outbound message presentation", () => {
     });
     expect(merged[2]).toMatchObject({
       deliveryStatus: "failed",
-      deliveryError: "Provider unavailable",
+      deliveryError: "X couldn't send this message. Try again.",
     });
   });
 
@@ -82,6 +113,68 @@ describe("outbound message presentation", () => {
           createdAt: 1_900,
           updatedAt: 2_000,
           providerMessageId: "provider-1",
+        },
+      ],
+      "conversation-1"
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.id).toBe("canonical-row");
+  });
+
+  test("does not reconcile a nonmatching authoritative provider ID", () => {
+    const merged = mergeOutboundMessageOperations(
+      [
+        {
+          id: "canonical-row",
+          providerMessageId: "provider-other",
+          conversationId: "conversation-1",
+          text: "Same text",
+          createdAt: new Date(2_000).toISOString(),
+          direction: "sent" as const,
+        },
+      ],
+      [
+        {
+          clientRequestId: "request-1",
+          prospectId,
+          platform: "linkedin",
+          text: "Same text",
+          status: "sent",
+          attemptCount: 1,
+          createdAt: 1_900,
+          updatedAt: 2_000,
+          providerMessageId: "provider-expected",
+        },
+      ],
+      "conversation-1"
+    );
+
+    expect(merged).toHaveLength(2);
+    expect(merged.map((message) => message.id)).toContain("outbound:request-1");
+  });
+
+  test("uses the bounded heuristic only before a provider ID is known", () => {
+    const merged = mergeOutboundMessageOperations(
+      [
+        {
+          id: "canonical-row",
+          conversationId: "conversation-1",
+          text: "Delivered before the ID arrived",
+          createdAt: new Date(2_000).toISOString(),
+          direction: "sent" as const,
+        },
+      ],
+      [
+        {
+          clientRequestId: "request-1",
+          prospectId,
+          platform: "linkedin",
+          text: "Delivered before the ID arrived",
+          status: "sending",
+          attemptCount: 1,
+          createdAt: 1_900,
+          updatedAt: 2_000,
         },
       ],
       "conversation-1"

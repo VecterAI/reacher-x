@@ -1,6 +1,6 @@
 "use node";
 
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 import { action, internalAction } from "./lib/functionBuilders";
 import { api, components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -8,6 +8,7 @@ import type { ActionCtx } from "./_generated/server";
 import {
   createHostedAuthLink,
   createUnipileWebhook,
+  deleteUnipileWebhook,
   deleteLinkedInAccount,
   getLinkedInPost,
   getLinkedInFailure,
@@ -15,12 +16,14 @@ import {
   getLinkedInMessageAttachment,
   getLinkedInUserProfile,
   listLinkedInAccounts,
+  listUnipileWebhooks,
   listLinkedInPostComments,
   listLinkedInChatMessagesPage,
   listLinkedInChatsForAttendeeOrEmpty,
   reactToLinkedInPost,
   commentOnLinkedInPost,
   sendLinkedInChatMessage,
+  setLinkedInChatReadStatus,
   setLinkedInMessageReaction,
   sendLinkedInInvitation,
   startLinkedInChat,
@@ -31,6 +34,7 @@ import {
   type UnipileChat,
   normalizeLinkedInReactionType,
 } from "./lib/unipileClient";
+import { planUnipileWebhookReconciliation } from "./lib/unipileWebhookReconciliationCore";
 import {
   assertCacheableProviderMedia,
   buildPlatformConversationMediaCacheKey,
@@ -61,6 +65,7 @@ import type {
   LinkedInPostThreadContext,
 } from "../shared/lib/linkedin/comments";
 import type { LinkedInProfileData } from "../shared/lib/linkedin/profile";
+import { LINKEDIN_PROFILE_POSTS_UNAVAILABLE_MESSAGE } from "../shared/lib/linkedin/profilePosts";
 import {
   normalizeLinkedInReadUrn,
   resolveLinkedInPostReference,
@@ -88,6 +93,26 @@ type PlatformConversationMediaUrlResult = {
   encrypted: boolean;
   expiresAt: number;
 };
+
+type LinkedInProfilePostsPageResult = Infer<
+  typeof linkedinProfilePostsPageResultValidator
+>;
+
+function getUnavailableLinkedInProfilePostsPage(
+  context: string,
+  error: unknown
+): LinkedInProfilePostsPageResult {
+  console.warn("[LinkedIn] Profile posts unavailable", {
+    context,
+    error: stringifyUnknownError(error),
+  });
+  return {
+    posts: [],
+    nextCursor: null,
+    error: LINKEDIN_PROFILE_POSTS_UNAVAILABLE_MESSAGE,
+  };
+}
+
 import type { LinkedInProfilePost } from "./integrations/linkedin/getProfilePosts";
 import { requestLinkdApiData } from "./integrations/linkedin/linkdapiClient";
 import {
@@ -99,10 +124,13 @@ import {
   linkedinMessageReactionValidator,
   linkedinDmPostPreviewArgsValidator,
   linkedinProfileIdentityValidator,
+  linkedinProfilePostsPageResultValidator,
+  outboundMessageMediaMetadataValidator,
   platformConversationMediaUrlValidator,
   twitterMediaKindValidator,
   unifiedPostValidator,
 } from "./validators";
+import { stringifyUnknownError } from "./lib/errorHelpers";
 import type { LinkedInMessageReactionResult } from "../shared/lib/linkedin/messageReaction";
 import {
   getLinkedInMessageReactionFailureResult,
@@ -895,7 +923,9 @@ function isLinkedInAccountSnapshotStale(
     return true;
   }
 
-  return Date.now() - account.lastSyncedAt >= ACCOUNT_SYNC_STALE_MS;
+  return (
+    getCurrentUTCTimestamp() - account.lastSyncedAt >= ACCOUNT_SYNC_STALE_MS
+  );
 }
 
 async function scheduleLinkedInAccountRefreshIfStale(
@@ -2107,6 +2137,14 @@ export const ensureUnipileWebhooksInternal = internalAction({
       },
     ];
 
+    const remoteWebhooks = (await listUnipileWebhooks()).map((webhook) => ({
+      id: webhook.id,
+      source: webhook.source,
+      requestUrl: webhook.request_url,
+      enabled: webhook.enabled,
+      events: webhook.events ?? [],
+    }));
+
     for (const config of desired) {
       const existing = await ctx.runQuery(
         internalLinkedInStore.getUnipileWebhookBySourceInternal,
@@ -2114,25 +2152,47 @@ export const ensureUnipileWebhooksInternal = internalAction({
           source: config.source,
         }
       );
-      if (existing) {
-        continue;
-      }
-      const created = await createUnipileWebhook({
+      const plan = planUnipileWebhookReconciliation(remoteWebhooks, {
         source: config.source,
         events: config.events,
         requestUrl,
-        secretHeader: secret,
+        storedWebhookId: existing?.webhookId,
       });
+
+      const webhookId = plan.createReplacement
+        ? (
+            await createUnipileWebhook({
+              source: config.source,
+              events: config.events,
+              requestUrl,
+              secretHeader: secret,
+            })
+          ).webhook_id
+        : plan.keepWebhookId;
+
+      if (!webhookId) {
+        throw new Error(
+          `Unable to reconcile the ${config.source} Unipile webhook.`
+        );
+      }
+
       await ctx.runMutation(
         internalLinkedInStore.upsertUnipileWebhookInternal,
         {
           source: config.source,
-          webhookId: created.webhook_id,
+          webhookId,
           requestUrl,
           enabled: true,
           events: config.events as any,
           updatedAt: getCurrentUTCTimestamp(),
+          lastValidatedAt: getCurrentUTCTimestamp(),
         }
+      );
+
+      await Promise.all(
+        plan.deleteWebhookIds.map((duplicateWebhookId) =>
+          deleteUnipileWebhook(duplicateWebhookId)
+        )
       );
     }
 
@@ -2222,7 +2282,7 @@ async function syncLinkedInAccountForUser(
                   : failure.classification === "feature_not_subscribed"
                     ? "restricted"
                     : storedAccount.status,
-            lastSyncAttemptAt: Date.now(),
+            lastSyncAttemptAt: getCurrentUTCTimestamp(),
             lastSyncError: failure.message,
             updatedAt: Date.now(),
           },
@@ -2636,6 +2696,13 @@ async function sendLinkedInMessageForUser(
     mediaUrls?: string[];
     mediaKinds?: Array<"image" | "video" | "gif" | "file">;
     mediaFileNames?: string[];
+    mediaMetadata?: Array<{
+      width?: number;
+      height?: number;
+      durationMs?: number;
+      mimeType?: string;
+      fileSize?: number;
+    }>;
     quoteId?: string;
     actionRequestId?: Id<"agentActionRequests">;
   }
@@ -2659,6 +2726,36 @@ async function sendLinkedInMessageForUser(
   const mediaUrls = (args.mediaUrls ?? []).filter(
     (url): url is string => typeof url === "string" && url.trim().length > 0
   );
+  const voiceMessageIndexes = (args.mediaMetadata ?? []).flatMap(
+    (metadata, index) =>
+      metadata.mimeType?.toLowerCase().startsWith("audio/") ? [index] : []
+  );
+  if (voiceMessageIndexes.length > 0 && mediaUrls.length !== 1) {
+    throw new Error("Send a LinkedIn voice note by itself.");
+  }
+  if (voiceMessageIndexes.length === 1) {
+    const voiceMetadata = args.mediaMetadata?.[voiceMessageIndexes[0]];
+    if (trimmedText) {
+      throw new Error("Send a LinkedIn voice note by itself.");
+    }
+    if (
+      voiceMetadata?.mimeType?.trim().toLowerCase() !== "audio/x-m4a" ||
+      !voiceMetadata.durationMs ||
+      voiceMetadata.durationMs > 60_000
+    ) {
+      throw new Error(
+        "LinkedIn voice notes must be valid M4A audio up to 1 minute."
+      );
+    }
+  }
+  let voiceMessageUrl: string | undefined;
+  if (voiceMessageIndexes.length === 1) {
+    const candidate = args.mediaUrls?.[voiceMessageIndexes[0]]?.trim();
+    if (!candidate) {
+      throw new Error("LinkedIn voice note media is missing.");
+    }
+    voiceMessageUrl = candidate;
+  }
   if (!trimmedText && mediaUrls.length === 0) {
     throw new Error(
       "LinkedIn message requires text or at least one attachment."
@@ -2711,6 +2808,7 @@ async function sendLinkedInMessageForUser(
       quoteId,
       quoteProviderId: quotedMessage?.providerMessageId,
       mediaUrls,
+      voiceMessageUrl,
     });
   } else {
     if (quoteId) {
@@ -2728,6 +2826,7 @@ async function sendLinkedInMessageForUser(
       attendeeProviderId: prospectIdentity.providerId,
       text: trimmedText || undefined,
       mediaUrls,
+      voiceMessageUrl,
     });
     effectiveConversationId =
       "chat_id" in result ? (result.chat_id ?? undefined) : undefined;
@@ -2758,7 +2857,17 @@ async function sendLinkedInMessageForUser(
             mediaUrls,
             args.mediaKinds,
             args.mediaFileNames
-          ),
+          )?.map((attachment, index) => ({
+            ...attachment,
+            ...(args.mediaMetadata?.[index]?.mimeType?.startsWith("audio/")
+              ? {
+                  type: "audio",
+                  isVoiceNote: true,
+                  mimeType: args.mediaMetadata[index]?.mimeType,
+                  durationMs: args.mediaMetadata[index]?.durationMs,
+                }
+              : {}),
+          })),
         }
       : null;
   const messages = optimisticMessage
@@ -3385,6 +3494,52 @@ export const getLinkedInConversationHistoryPage = action({
   },
 });
 
+/** Syncs the opened owned conversation's read state to LinkedIn via v1. */
+export const markLinkedInConversationRead = action({
+  args: {
+    prospectId: v.id("prospects"),
+  },
+  returns: v.object({ success: v.literal(true) }),
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("LinkedIn prospect not found or not authorized.");
+    }
+    const [account, snapshot]: [LinkedInStoredAccount, any] = await Promise.all(
+      [
+        getConnectedLinkedInAccountOrThrow(ctx, userId),
+        ctx.runQuery(
+          internal.platformConversations.getConversationSnapshotInternal,
+          {
+            userId,
+            platform: "linkedin",
+            prospectId: args.prospectId,
+            messageLimit: 1,
+          }
+        ),
+      ]
+    );
+    const conversationId = snapshot?.conversation?.conversationId;
+    if (typeof conversationId !== "string" || !conversationId.trim()) {
+      throw new Error("LinkedIn conversation is not available.");
+    }
+    if (snapshot.conversation.accountId !== account.accountId) {
+      throw new Error("LinkedIn conversation account does not match.");
+    }
+    await setLinkedInChatReadStatus({
+      chatId: conversationId,
+      accountId: account.accountId,
+      read: true,
+    });
+    return { success: true as const };
+  },
+});
+
 /** Same page contract for trusted agent/workflow callers. */
 export const getLinkedInConversationHistoryPageInternal = internalAction({
   args: {
@@ -3761,10 +3916,8 @@ export const getLinkedInProfilePostsPage = action({
     cursor: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{ posts: UnifiedPost[]; nextCursor: string | null }> => {
+  returns: linkedinProfilePostsPageResultValidator,
+  handler: async (ctx, args): Promise<LinkedInProfilePostsPageResult> => {
     const userId = await getCurrentUserId(ctx);
     const prospect = await getOwnedLinkedInProspectForUser(
       ctx,
@@ -3778,23 +3931,30 @@ export const getLinkedInProfilePostsPage = action({
       getProspectLinkedInIdentity(prospect)
     );
 
-    const page = await ctx.runAction(
-      internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
-      {
-        urn: args.profileUrn,
-        cursor: args.cursor,
-        maxPosts: args.limit ?? 20,
-      }
-    );
+    try {
+      const page = await ctx.runAction(
+        internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
+        {
+          urn: args.profileUrn,
+          cursor: args.cursor,
+        }
+      );
 
-    return {
-      posts: Array.isArray(page?.posts)
-        ? page.posts.map((post: LinkedInProfilePost) =>
-            toUnifiedLinkedInProfilePost(post, activityActor)
-          )
-        : [],
-      nextCursor: typeof page?.nextCursor === "string" ? page.nextCursor : null,
-    };
+      return {
+        posts: Array.isArray(page?.posts)
+          ? page.posts.map((post: LinkedInProfilePost) =>
+              toUnifiedLinkedInProfilePost(post, activityActor)
+            )
+          : [],
+        nextCursor:
+          typeof page?.nextCursor === "string" ? page.nextCursor : null,
+      };
+    } catch (error) {
+      return getUnavailableLinkedInProfilePostsPage(
+        `prospect:${args.prospectId}`,
+        error
+      );
+    }
   },
 });
 
@@ -4008,64 +4168,69 @@ export const getLinkedInIdentityProfilePostsPage = action({
     cursor: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{ posts: UnifiedPost[]; nextCursor: string | null }> => {
+  returns: linkedinProfilePostsPageResultValidator,
+  handler: async (ctx, args): Promise<LinkedInProfilePostsPageResult> => {
     await getCurrentUserId(ctx);
 
-    if (args.identity.entityType === "company") {
-      const companyId =
-        normalizeLinkedInCompanyId(args.profileUrn) ??
-        normalizeLinkedInCompanyId(args.identity.providerId);
-      if (!companyId) {
-        return { posts: [], nextCursor: null };
+    try {
+      if (args.identity.entityType === "company") {
+        const companyId =
+          normalizeLinkedInCompanyId(args.profileUrn) ??
+          normalizeLinkedInCompanyId(args.identity.providerId);
+        if (!companyId) {
+          return { posts: [], nextCursor: null };
+        }
+
+        const start = Math.max(0, Number.parseInt(args.cursor ?? "0", 10) || 0);
+        const result = await requestLinkdApiData<{
+          posts?: LinkedInProfilePost[];
+        }>(ctx, {
+          path: "/api/v1/companies/company/posts",
+          query: {
+            id: companyId,
+            start,
+          },
+          consumer: `linkedin.getCompanyPosts:${companyId}:${start}`,
+        });
+        const activityActor = toLinkedInActivityActor(args.identity);
+        const posts = Array.isArray(result.posts)
+          ? result.posts.map((post) =>
+              toUnifiedLinkedInProfilePost(post, activityActor)
+            )
+          : [];
+
+        return {
+          posts,
+          nextCursor: posts.length > 0 ? String(start + posts.length) : null,
+        };
       }
 
-      const start = Math.max(0, Number.parseInt(args.cursor ?? "0", 10) || 0);
-      const result = await requestLinkdApiData<{
-        posts?: LinkedInProfilePost[];
-      }>(ctx, {
-        path: "/api/v1/companies/company/posts",
-        query: {
-          id: companyId,
-          start,
-        },
-        consumer: `linkedin.getCompanyPosts:${companyId}:${start}`,
-      });
-      const activityActor = toLinkedInActivityActor(args.identity);
-      const posts = Array.isArray(result.posts)
-        ? result.posts.map((post) =>
-            toUnifiedLinkedInProfilePost(post, activityActor)
-          )
-        : [];
+      const page = await ctx.runAction(
+        internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
+        {
+          urn: args.profileUrn,
+          cursor: args.cursor,
+        }
+      );
 
       return {
-        posts,
-        nextCursor: posts.length > 0 ? String(start + posts.length) : null,
-      };
-    }
-
-    const page = await ctx.runAction(
-      internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
-      {
-        urn: args.profileUrn,
-        cursor: args.cursor,
-        maxPosts: Math.min(Math.max(args.limit ?? 20, 1), 50),
-      }
-    );
-
-    return {
-      posts: Array.isArray(page?.posts)
-        ? page.posts.map((post: LinkedInProfilePost) =>
-            toUnifiedLinkedInProfilePost(
-              post,
-              toLinkedInActivityActor(args.identity)
+        posts: Array.isArray(page?.posts)
+          ? page.posts.map((post: LinkedInProfilePost) =>
+              toUnifiedLinkedInProfilePost(
+                post,
+                toLinkedInActivityActor(args.identity)
+              )
             )
-          )
-        : [],
-      nextCursor: typeof page?.nextCursor === "string" ? page.nextCursor : null,
-    };
+          : [],
+        nextCursor:
+          typeof page?.nextCursor === "string" ? page.nextCursor : null,
+      };
+    } catch (error) {
+      return getUnavailableLinkedInProfilePostsPage(
+        `identity:${args.identity.entityType}`,
+        error
+      );
+    }
   },
 });
 
@@ -5369,6 +5534,7 @@ export const sendLinkedInMessage = action({
     mediaUrls: v.optional(v.array(v.string())),
     mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
     mediaFileNames: v.optional(v.array(v.string())),
+    mediaMetadata: v.optional(v.array(outboundMessageMediaMetadataValidator)),
     quoteId: v.optional(v.string()),
     actionRequestId: v.optional(v.id("agentActionRequests")),
   },
@@ -5382,6 +5548,7 @@ export const sendLinkedInMessage = action({
       mediaUrls: args.mediaUrls,
       mediaKinds: args.mediaKinds,
       mediaFileNames: args.mediaFileNames,
+      mediaMetadata: args.mediaMetadata,
       quoteId: args.quoteId,
       actionRequestId: args.actionRequestId,
     });
@@ -5479,6 +5646,7 @@ export const sendLinkedInMessageInternal = internalAction({
     mediaUrls: v.optional(v.array(v.string())),
     mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
     mediaFileNames: v.optional(v.array(v.string())),
+    mediaMetadata: v.optional(v.array(outboundMessageMediaMetadataValidator)),
     quoteId: v.optional(v.string()),
     actionRequestId: v.optional(v.id("agentActionRequests")),
   },

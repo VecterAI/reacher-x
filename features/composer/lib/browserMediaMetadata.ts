@@ -28,7 +28,8 @@ function readBrowserMediaMetadataUncached(
   file: File,
   type: ComposerUploadType
 ): Promise<BrowserMediaMetadata> {
-  if (type === "file" || typeof window === "undefined") {
+  const isAudio = file.type.toLowerCase().startsWith("audio/");
+  if ((type === "file" && !isAudio) || typeof window === "undefined") {
     return Promise.resolve({});
   }
 
@@ -56,16 +57,20 @@ function readBrowserMediaMetadataUncached(
       return;
     }
 
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    video.onloadedmetadata = () =>
+    const media = document.createElement(isAudio ? "audio" : "video");
+    media.preload = "metadata";
+    media.onloadedmetadata = () =>
       finish({
-        width: getPositiveDimension(video.videoWidth),
-        height: getPositiveDimension(video.videoHeight),
-        durationMs: getDurationMs(video.duration),
+        ...(!isAudio && media instanceof HTMLVideoElement
+          ? {
+              width: getPositiveDimension(media.videoWidth),
+              height: getPositiveDimension(media.videoHeight),
+            }
+          : {}),
+        durationMs: getDurationMs(media.duration),
       });
-    video.onerror = () => finish();
-    video.src = objectUrl;
+    media.onerror = () => finish();
+    media.src = objectUrl;
   });
 }
 
@@ -86,7 +91,11 @@ export function readBrowserMediaMetadata(
 export async function withBrowserMediaMetadata(
   upload: MediaUpload
 ): Promise<MediaUpload> {
-  if (upload.type === "file" || (upload.width && upload.height)) {
+  if (
+    (upload.type === "file" && !upload.file.type.startsWith("audio/")) ||
+    upload.durationMs ||
+    (upload.width && upload.height)
+  ) {
     return upload;
   }
   const metadata = await readBrowserMediaMetadata(upload.file, upload.type);

@@ -178,10 +178,11 @@ export function isLinkedInConversationFeatureDisabled(
   feature: "reaction" | "reply"
 ): boolean {
   const target = feature.replace(/[^a-z]/gu, "");
+  const pluralTarget = feature === "reply" ? "replies" : `${target}s`;
   return Boolean(
     disabledFeatures?.some((value) => {
       const normalized = value.toLowerCase().replace(/[^a-z]/gu, "");
-      return normalized === target || normalized === `${target}s`;
+      return normalized === target || normalized === pluralTarget;
     })
   );
 }
