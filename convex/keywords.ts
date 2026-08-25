@@ -1001,6 +1001,32 @@ export const deleteWorkspaceKeywordsInternal = internalMutation({
   },
 });
 
+export const deleteWorkspaceKeywordsBatchInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    limit: v.number(),
+  },
+  returns: v.object({
+    deleted: v.number(),
+    hasMore: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(Math.floor(args.limit), 500));
+    const keywords = await ctx.db
+      .query("keywords")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .take(limit + 1);
+    const batch = keywords.slice(0, limit);
+
+    await Promise.all(batch.map((keyword) => ctx.db.delete(keyword._id)));
+
+    return {
+      deleted: batch.length,
+      hasMore: keywords.length > limit,
+    };
+  },
+});
+
 // ============================================================================
 // Queries (public, with auth)
 // ============================================================================

@@ -82,7 +82,7 @@ async function applyProfileChangeRequest(
   const now = getCurrentUTCTimestamp();
   await ctx.db.patch("workspaceProfileChangeRequests", request._id, {
     status: "applied",
-    proposedIcps,
+    proposedIcps: result.appliedIcps ?? proposedIcps,
     ...changes,
     resolvedAt: now,
     updatedAt: now,

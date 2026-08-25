@@ -1,5 +1,7 @@
 export const DEFAULT_WORKSPACE_USE_CASE_KEY = "customer_prospecting";
 
+export const WORKSPACE_USE_CASE_FIELD_LABEL = "Outreach goal";
+
 export const WORKSPACE_USE_CASE_KEYS = [
   "customer_prospecting",
   "recruiting",

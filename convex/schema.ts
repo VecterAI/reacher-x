@@ -53,6 +53,7 @@ import {
   workspaceOnboardingIssueSourceValidator,
   workspaceOnboardingIssueStatusCodeValidator,
   workspaceProfileChangeStatusValidator,
+  workspaceProfileProvenanceValidator,
   monitorStatusValidator,
   monitorHealthStatusValidator,
   pipelineStageValidator,
@@ -368,6 +369,7 @@ export default defineSchema({
           description: v.string(), // Who they are
           painPoints: v.array(v.string()), // Their problems
           channels: v.array(v.string()), // Where to find them (Twitter, LinkedIn)
+          provenance: v.optional(workspaceProfileProvenanceValidator),
           // Synthetic posts: realistic tweets/posts this ICP would write
           syntheticPosts: v.optional(v.array(v.string())),
           // Keywords for qualification evidence search
@@ -446,7 +448,7 @@ export default defineSchema({
     // Setup thread that created/updated this workspace (used to restore onboarding UI context)
     onboardingThreadId: v.optional(v.string()),
 
-    /** Previous config after last successful refine; used for Base/Pro rollback. */
+    /** Legacy data retained until old rows can be migrated safely. */
     refineRollbackSnapshot: v.optional(refineRollbackSnapshotValidator),
   })
     .index("by_user_id", ["userId"])
@@ -529,7 +531,7 @@ export default defineSchema({
     existingWorkspaceId: v.optional(v.id("workspaces")),
     targetWorkspaceId: v.optional(v.id("workspaces")),
     entitlementSlot: v.optional(entitlementSlotValidator),
-    /** True when session was created from /workspace Refine audience (skip post-preview onboarding). */
+    /** Legacy flag retained until old setup-session rows can be migrated safely. */
     refineFromWorkspace: v.optional(v.boolean()),
     previewRevision: v.optional(v.number()),
     previewWorkflowId: v.optional(v.string()),

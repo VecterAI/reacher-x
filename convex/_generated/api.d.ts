@@ -245,6 +245,7 @@ import type * as lib_workspaceSettingsCore from "../lib/workspaceSettingsCore.js
 import type * as lib_workspaceSetup from "../lib/workspaceSetup.js";
 import type * as lib_workspaceStyleProfileCore from "../lib/workspaceStyleProfileCore.js";
 import type * as lib_workspaceSystem from "../lib/workspaceSystem.js";
+import type * as lib_workspaceTargetingUpdateCore from "../lib/workspaceTargetingUpdateCore.js";
 import type * as lib_workspaceThreadHelpers from "../lib/workspaceThreadHelpers.js";
 import type * as lib_xActivity from "../lib/xActivity.js";
 import type * as lib_xActivityReconciliationCore from "../lib/xActivityReconciliationCore.js";
@@ -339,6 +340,7 @@ import type * as workspaceIcpSignals from "../workspaceIcpSignals.js";
 import type * as workspacePlanStarts from "../workspacePlanStarts.js";
 import type * as workspaceProfileChanges from "../workspaceProfileChanges.js";
 import type * as workspaceQueryPerformanceDaily from "../workspaceQueryPerformanceDaily.js";
+import type * as workspaceSettingsActions from "../workspaceSettingsActions.js";
 import type * as workspaceStats from "../workspaceStats.js";
 import type * as workspaceStyleProfiles from "../workspaceStyleProfiles.js";
 import type * as workspaceThreads from "../workspaceThreads.js";
@@ -597,6 +599,7 @@ declare const fullApi: ApiFromModules<{
   "lib/workspaceSetup": typeof lib_workspaceSetup;
   "lib/workspaceStyleProfileCore": typeof lib_workspaceStyleProfileCore;
   "lib/workspaceSystem": typeof lib_workspaceSystem;
+  "lib/workspaceTargetingUpdateCore": typeof lib_workspaceTargetingUpdateCore;
   "lib/workspaceThreadHelpers": typeof lib_workspaceThreadHelpers;
   "lib/xActivity": typeof lib_xActivity;
   "lib/xActivityReconciliationCore": typeof lib_xActivityReconciliationCore;
@@ -691,6 +694,7 @@ declare const fullApi: ApiFromModules<{
   workspacePlanStarts: typeof workspacePlanStarts;
   workspaceProfileChanges: typeof workspaceProfileChanges;
   workspaceQueryPerformanceDaily: typeof workspaceQueryPerformanceDaily;
+  workspaceSettingsActions: typeof workspaceSettingsActions;
   workspaceStats: typeof workspaceStats;
   workspaceStyleProfiles: typeof workspaceStyleProfiles;
   workspaceThreads: typeof workspaceThreads;

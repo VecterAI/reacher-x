@@ -97,6 +97,7 @@ async function seedSetupSession(
       | "awaiting_plan";
     targetWorkspaceId?: Id<"workspaces">;
     entitlementSlot?: number;
+    refineFromWorkspace?: boolean;
     setupThreadId?: string;
     suffix: string;
   }
@@ -116,6 +117,7 @@ async function seedSetupSession(
       generatedProfiles: setupProfiles,
       targetWorkspaceId: args.targetWorkspaceId,
       entitlementSlot: args.entitlementSlot ?? 2,
+      refineFromWorkspace: args.refineFromWorkspace,
       statusUpdatedAt: 20,
       lastActiveAt: 20,
     })
@@ -123,6 +125,31 @@ async function seedSetupSession(
 }
 
 describe("setup session and workspace lifecycle", () => {
+  test("excludes legacy refine sessions without hiding normal active setup", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, workosUserId } = await seedUser(t, "legacy-refine");
+    await seedSetupSession(t, {
+      userId,
+      suffix: "legacy-refine",
+      refineFromWorkspace: true,
+    });
+    const authenticated = t.withIdentity({ subject: workosUserId });
+
+    expect(
+      await authenticated.query(api.setupSessions.getActiveSetupSession)
+    ).toBeNull();
+
+    const activeSessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "normal-active",
+    });
+    const activeSession = await authenticated.query(
+      api.setupSessions.getActiveSetupSession
+    );
+
+    expect(activeSession?.sessionId).toBe(activeSessionId);
+  });
+
   test("starting New workspace creates one reusable setup draft and no workspace document", async () => {
     const t = convexTest(schema, modules);
     agentTest.register(t);
@@ -440,15 +467,22 @@ describe("setup session and workspace lifecycle", () => {
       status: "provisioning_preview_workspace",
       previewRevision: 1,
     });
-    expect(session?.generatedProfiles?.[0]).toEqual(generatedSetupProfiles[0]);
-    expect(session?.generatedProfiles?.[1]).toMatchObject(
-      generatedProfiles[1]!
-    );
+    expect(session?.generatedProfiles?.[0]).toEqual({
+      ...generatedSetupProfiles[0],
+      provenance: "ai_generated",
+    });
+    expect(session?.generatedProfiles?.[1]).toMatchObject({
+      ...generatedProfiles[1]!,
+      provenance: "manual",
+    });
     expect(session?.generatedProfiles?.[1]?.syntheticPosts).toBeUndefined();
     expect(
       session?.generatedProfiles?.[1]?.qualificationKeywords
     ).toBeUndefined();
-    expect(session?.generatedProfiles?.[2]).toEqual(generatedSetupProfiles[2]);
+    expect(session?.generatedProfiles?.[2]).toEqual({
+      ...generatedSetupProfiles[2],
+      provenance: "ai_generated",
+    });
   });
 
   test("the setup agent approval is anchored to the approving chat message", async () => {

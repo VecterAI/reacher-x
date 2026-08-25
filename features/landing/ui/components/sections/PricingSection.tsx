@@ -383,6 +383,18 @@ export function PricingSection({
                 </SelectGroup>
               </React.Fragment>
             ))}
+            <SelectSeparator />
+            <SelectGroup>
+              <SelectLabel className="text-muted-foreground pl-2 text-xs font-normal">
+                For anything else
+              </SelectLabel>
+              <UseCaseSelectItem
+                value="general_outreach"
+                icon={useCaseIconByKey.general_outreach}
+              >
+                Other
+              </UseCaseSelectItem>
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>

@@ -42,10 +42,12 @@ export async function applyWorkspaceSettingsUpdateCore(
 ): Promise<{
   workspaceId: Workspace["_id"];
   regenerationScheduledCount: number;
+  appliedIcps?: WorkspaceProfile[];
 }> {
   const { workspace, updates } = args;
   const now = getCurrentUTCTimestamp();
   const updateData: Record<string, unknown> = { updatedAt: now };
+  let appliedIcps: WorkspaceProfile[] | undefined;
   let regenerationIndices: number[] = [];
   let restartWorkflowAfterRefresh = false;
   let stopWorkflowForRefresh = false;
@@ -87,12 +89,14 @@ export async function applyWorkspaceSettingsUpdateCore(
         : reconcileWorkspaceIcpUpdate({
             existingIcps: workspace.icps ?? [],
             incomingIcps: normalizedProfiles,
+            markChangedProfilesManual: true,
           });
     const nextIcps = targetingContextChanged
       ? invalidateWorkspaceIcpGeneratedSignals(reconciliation.nextIcps)
       : reconciliation.nextIcps;
 
     updateData.icps = nextIcps;
+    appliedIcps = nextIcps;
     regenerationIndices = targetingContextChanged
       ? nextIcps.map((_profile, index) => index)
       : reconciliation.regenerationIndices;
@@ -156,5 +160,6 @@ export async function applyWorkspaceSettingsUpdateCore(
   return {
     workspaceId: workspace._id,
     regenerationScheduledCount: regenerationIndices.length,
+    appliedIcps,
   };
 }

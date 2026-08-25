@@ -16,7 +16,6 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   getDefaultWorkspaceForUser,
   getUserByIdentity,
-  requireOwnedWorkspace,
   requireUser,
 } from "./lib/accessHelpers";
 import { hasRequiredWorkspaceAgentData } from "./lib/workspaceSetup";
@@ -24,7 +23,6 @@ import {
   buildPreviewProvisioningFailurePatch,
   buildSetupPreviewCapacityResetPatch,
   getActiveSetupSessionForUser,
-  getActiveSetupSessionByTargetWorkspaceId,
   getSetupSessionByTargetWorkspaceId,
   getSetupSessionByThreadId,
   getSetupSessionDisplayName,
@@ -36,7 +34,6 @@ import {
 } from "./lib/setupSessionCore";
 import {
   isSetupSessionAccessibleForUser,
-  resolveWorkspaceEntitlementSlot,
   resolveNextEntitlementSlotForUser,
 } from "./lib/workspaceEntitlements";
 import { getSetupWorkflowEventName } from "./lib/setupWorkflowEvents";
@@ -81,6 +78,7 @@ import {
   reconcileWorkspaceIcpUpdate,
 } from "./lib/workspaceIcpSignalsCore";
 import {
+  markWorkspaceProfilesAsAiGenerated,
   normalizeWorkspaceProfiles,
   validateWorkspaceProfiles,
 } from "./lib/workspaceProfileChangeCore";
@@ -715,26 +713,9 @@ async function applySetupPlanSelection(
 
 async function getAccessibleActiveSetupSessionForUser(
   ctx: ViewerCtx,
-  userId: Id<"users">,
-  options?: { includeRefine?: boolean }
+  userId: Id<"users">
 ): Promise<SetupSessionDoc | null> {
-  const session = await getActiveSetupSessionForUser(ctx.db, userId, options);
-  if (!session) {
-    return null;
-  }
-  return (await isSetupSessionAccessibleForUser(ctx, session)) ? session : null;
-}
-
-async function getAccessibleActiveSetupSessionForTargetWorkspace(
-  ctx: ViewerCtx,
-  workspaceId: Id<"workspaces">,
-  options?: { includeRefine?: boolean }
-): Promise<SetupSessionDoc | null> {
-  const session = await getActiveSetupSessionByTargetWorkspaceId(
-    ctx.db,
-    workspaceId,
-    options
-  );
+  const session = await getActiveSetupSessionForUser(ctx.db, userId);
   if (!session) {
     return null;
   }
@@ -819,13 +800,7 @@ export const getActiveSetupSession = query({
       return null;
     }
 
-    const session = await getAccessibleActiveSetupSessionForUser(
-      ctx,
-      user._id,
-      {
-        includeRefine: false,
-      }
-    );
+    const session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
     return session ? await toPublicSetupSessionState(ctx, session, user) : null;
   },
 });
@@ -848,9 +823,7 @@ export const getSetupSessionState = query({
         user._id
       );
     } else {
-      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id, {
-        includeRefine: false,
-      });
+      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
     }
 
     return session ? await toPublicSetupSessionState(ctx, session, user) : null;
@@ -875,9 +848,7 @@ export const getSetupPreviewSummaries = query({
         user._id
       );
     } else {
-      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id, {
-        includeRefine: false,
-      });
+      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
     }
 
     if (!session) {
@@ -915,9 +886,7 @@ export const getSetupBootstrapState = query({
     }
 
     const [activeSession, defaultWorkspace] = await Promise.all([
-      getAccessibleActiveSetupSessionForUser(ctx, user._id, {
-        includeRefine: false,
-      }),
+      getAccessibleActiveSetupSessionForUser(ctx, user._id),
       getDefaultWorkspaceForUser(ctx, user._id),
     ]);
     const requiresFirstWorkspace =
@@ -966,13 +935,7 @@ export const getNewWorkspaceDecisionState = query({
       return { activeDraft: null };
     }
 
-    const session = await getAccessibleActiveSetupSessionForUser(
-      ctx,
-      user._id,
-      {
-        includeRefine: false,
-      }
-    );
+    const session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
     return {
       activeDraft: session
         ? await toPublicSetupSessionState(ctx, session, user)
@@ -990,8 +953,7 @@ export const startSetupSession = mutation({
     const user = await requireViewerUser(ctx);
     const activeSession = await getAccessibleActiveSetupSessionForUser(
       ctx,
-      user._id,
-      { includeRefine: false }
+      user._id
     );
     if (activeSession) {
       return {
@@ -1092,103 +1054,6 @@ export const ensureSetupSessionWorkflow = mutation({
     }
 
     return { scheduled: false };
-  },
-});
-
-/**
- * Start a setup session anchored to an existing workspace for the Refine-audience flow (/workspace).
- */
-export const startWorkspaceRefineSession = mutation({
-  args: {
-    workspaceId: v.id("workspaces"),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireViewerUser(ctx);
-    const workspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
-      user,
-      notFoundMessage: "Workspace not found",
-      notAuthorizedMessage: "Not authorized",
-    });
-
-    const activeRefineSession =
-      await getAccessibleActiveSetupSessionForTargetWorkspace(
-        ctx,
-        workspace._id,
-        { includeRefine: true }
-      );
-    if (activeRefineSession?.refineFromWorkspace) {
-      return {
-        sessionId: activeRefineSession._id,
-        threadId: activeRefineSession.setupThreadId,
-        reused: true,
-      };
-    }
-
-    const activeSession =
-      await getAccessibleActiveSetupSessionForTargetWorkspace(
-        ctx,
-        workspace._id,
-        { includeRefine: false }
-      );
-    if (activeSession) {
-      return {
-        sessionId: activeSession._id,
-        threadId: activeSession.setupThreadId,
-        reused: true,
-      };
-    }
-
-    const resolvedUseCaseKey = resolveWorkspaceUseCaseKey(workspace.useCaseKey);
-    const now = getCurrentUTCTimestamp();
-    const [threadId, draftOrdinal, entitlementSlot] = await Promise.all([
-      createThread(ctx, components.agent, {
-        userId: user._id,
-        title: "Refine audience",
-        summary: "Refining ideal customer profiles for your workspace.",
-      }),
-      resolveNextSetupDraftOrdinal(ctx.db, user._id),
-      resolveWorkspaceEntitlementSlot(ctx, workspace),
-    ]);
-    const seed =
-      workspace.seedDescription?.trim() || workspace.description?.trim() || "";
-    const rawUserDescription =
-      workspace.rawUserDescription?.trim() || seed || undefined;
-    const improved =
-      workspace.improvedDescription?.trim() ||
-      workspace.description?.trim() ||
-      "";
-
-    const sessionId = await ctx.db.insert("workspaceSetupSessions", {
-      userId: user._id,
-      mode: "first_workspace",
-      status: "awaiting_input",
-      setupThreadId: threadId,
-      useCaseKey: resolvedUseCaseKey,
-      draftOrdinal,
-      existingWorkspaceId: workspace._id,
-      targetWorkspaceId: workspace._id,
-      entitlementSlot,
-      refineFromWorkspace: true,
-      draftName: workspace.name,
-      rawUserDescription,
-      seedDescription: seed,
-      improvedDescription: improved,
-      generatedProfiles: workspace.icps ?? [],
-      sourceUrl: workspace.sourceUrl,
-      lastUserActionAt: now,
-      lastActiveAt: now,
-      statusUpdatedAt: now,
-    });
-
-    await ctx.scheduler.runAfter(
-      0,
-      internal.setupSessions.startSetupSessionWorkflowInternal,
-      {
-        sessionId,
-      }
-    );
-
-    return { sessionId, threadId };
   },
 });
 
@@ -1792,6 +1657,11 @@ export const approveSetupGeneration = mutation({
     if (session.status !== "awaiting_preview_confirmation") {
       throw new Error("Preview people are not awaiting confirmation.");
     }
+    if (session.refineFromWorkspace) {
+      throw new Error(
+        "This legacy workspace update session is no longer supported."
+      );
+    }
     if (!session.targetWorkspaceId) {
       throw new Error("Preview workspace has not been provisioned yet.");
     }
@@ -1839,47 +1709,6 @@ export const approveSetupGeneration = mutation({
           workspaceId: session.targetWorkspaceId,
         }
       );
-    }
-
-    if (session.refineFromWorkspace) {
-      await ctx.db.patch(args.sessionId, {
-        status: "discarded",
-        previewWorkflowId: undefined,
-        previewProspectIds: approvedPreviewProspectIds,
-        discardedAt: now,
-        previewApprovedAt: now,
-        statusUpdatedAt: now,
-        lastUserActionAt: now,
-        lastActiveAt: now,
-      });
-      await maybeSignalStateChanged(ctx, {
-        ...session,
-        status: "discarded",
-        previewWorkflowId: undefined,
-        previewProspectIds: approvedPreviewProspectIds,
-        discardedAt: now,
-        previewApprovedAt: now,
-        statusUpdatedAt: now,
-        lastUserActionAt: now,
-        lastActiveAt: now,
-      });
-      if (session.previewWorkflowId) {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
-          {
-            workflowId: session.previewWorkflowId,
-          }
-        );
-      }
-      await ctx.scheduler.runAfter(
-        0,
-        internal.workspaces.restartProspectingWorkflowForSetupInternal,
-        {
-          workspaceId: session.targetWorkspaceId,
-        }
-      );
-      return { success: true as const };
     }
 
     const flowContext = await ctx.runQuery(
@@ -2505,7 +2334,7 @@ export const startPreviewWorkflowInternal = internalAction({
         sessionId,
         workspaceId: session.targetWorkspaceId,
         previewRevision: session.previewRevision,
-        source: session.refineFromWorkspace ? "refine" : "setup",
+        source: "setup",
         discoveryAttempt,
       },
       {
@@ -2682,6 +2511,9 @@ export const runSetupGenerationInternal = internalAction({
         initialGeneration?.improvedDescription ??
         session.improvedDescription ??
         sourceOfTruthSeed;
+      const generatedProfiles = markWorkspaceProfilesAsAiGenerated(
+        generation.icps
+      );
       const now = getCurrentUTCTimestamp();
 
       await ctx.runMutation(internal.agentTelemetry.insertUsageEvent, {
@@ -2708,7 +2540,7 @@ export const runSetupGenerationInternal = internalAction({
           sessionId,
           generationRevision,
           improvedDescription,
-          generatedProfiles: generation.icps,
+          generatedProfiles,
           draftName:
             session.draftName ??
             (isProfileRevision ? undefined : analyzedUrl?.businessName) ??
@@ -2725,7 +2557,7 @@ export const runSetupGenerationInternal = internalAction({
         ctx,
         session,
         buildSetupGenerationReadyMessage({
-          profileCount: generation.icps.length,
+          profileCount: generatedProfiles.length,
           useCaseKey: resolvedUseCaseKey,
         })
       );
@@ -2737,7 +2569,7 @@ export const runSetupGenerationInternal = internalAction({
           assistantMessageId,
           sourceMessageId: session.generationSourceMessageId,
           improvedDescription,
-          generatedProfiles: generation.icps,
+          generatedProfiles,
         }
       );
 
@@ -2921,6 +2753,7 @@ async function approveSetupIcpsForSession(
   const reconciliation = reconcileWorkspaceIcpUpdate({
     existingIcps: session.generatedProfiles ?? [],
     incomingIcps: normalizedProfiles,
+    markChangedProfilesManual: true,
   });
 
   const now = getCurrentUTCTimestamp();
@@ -3363,10 +3196,11 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
         session.targetWorkspaceId ?? session.existingWorkspaceId ?? null;
 
       if (linkedWorkspaceId) {
-        await ctx.runMutation(
-          internal.workspaces.captureRefineRollbackSnapshotInternal,
-          { workspaceId: linkedWorkspaceId }
-        );
+        if (session.refineFromWorkspace) {
+          throw new Error(
+            "This legacy workspace update session is no longer supported."
+          );
+        }
         await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
           workspaceId: linkedWorkspaceId,
           rawUserDescription: session.rawUserDescription,

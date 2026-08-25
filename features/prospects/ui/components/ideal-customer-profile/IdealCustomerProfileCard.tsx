@@ -6,6 +6,7 @@
 
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
+import { AGENT_GENERATED_PROFILE_LABEL } from "@/shared/lib/workspaceProfileProvenance";
 import { Badge } from "@/shared/ui/components/Badge";
 import { FilledLinkedinIcon, TwitterIcon } from "@/shared/ui/components/icons";
 
@@ -21,6 +22,7 @@ export type IdealCustomerProfileCardData = {
   description: string;
   painPoints: string[];
   channels: string[];
+  provenance?: "ai_generated" | "manual";
 };
 
 export interface IdealCustomerProfileCardProps {
@@ -90,14 +92,27 @@ export function IdealCustomerProfileCard({
       }
       aria-disabled={disabled ? true : undefined}
     >
-      <h3
-        className={cn(
-          "mb-1 text-sm leading-snug font-medium",
-          disabled ? "text-muted-foreground" : "text-foreground"
-        )}
-      >
-        {profile.title}
-      </h3>
+      <header className="mb-1 flex min-w-0 items-center gap-2">
+        <h3
+          title={profile.title}
+          className={cn(
+            "min-w-0 flex-1 truncate text-sm leading-snug font-medium",
+            disabled ? "text-muted-foreground" : "text-foreground"
+          )}
+        >
+          {profile.title}
+        </h3>
+        {profile.provenance ? (
+          <Badge
+            variant="outline"
+            className="text-muted-foreground font-normal"
+          >
+            {profile.provenance === "manual"
+              ? "Manual"
+              : AGENT_GENERATED_PROFILE_LABEL}
+          </Badge>
+        ) : null}
+      </header>
       {profile.description ? (
         <p
           className={cn(

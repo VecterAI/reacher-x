@@ -194,9 +194,7 @@ export const getAppShellState = query({
     }
 
     const [activeSession, defaultWorkspace, workspaces] = await Promise.all([
-      getActiveSetupSessionForUser(ctx.db, user._id, {
-        includeRefine: false,
-      }),
+      getActiveSetupSessionForUser(ctx.db, user._id),
       getDefaultWorkspaceForUser(ctx, user._id),
       ctx.db
         .query("workspaces")
@@ -258,8 +256,6 @@ export const getAppShellState = query({
         ctx,
         activeSession
       );
-      const isRefineFromWorkspace = Boolean(activeSession.refineFromWorkspace);
-
       switcherItems.unshift({
         kind: "draft" as const,
         value: String(activeSession._id),
@@ -293,9 +289,7 @@ export const getAppShellState = query({
 
         return {
           activeContextType: "setup_session" as const,
-          locked: isRefineFromWorkspace
-            ? false
-            : activeSession.status !== "ready",
+          locked: activeSession.status !== "ready",
           lockState: activeSession.status,
           redirect: {
             sessionId: String(activeSession._id),

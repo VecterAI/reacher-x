@@ -4,8 +4,12 @@ import {
   getWorkspaceProfileChannel,
   isSupportedWorkspaceProfileChannel,
 } from "../../shared/lib/workspaceProfileChannels";
+import { resolveWorkspaceProfileProvenance } from "../../shared/lib/workspaceProfileProvenance";
 
 export type WorkspaceProfile = NonNullable<Doc<"workspaces">["icps"]>[number];
+export type WorkspaceProfileProvenance = NonNullable<
+  WorkspaceProfile["provenance"]
+>;
 
 function normalizeText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -59,12 +63,28 @@ export function normalizeWorkspaceProfiles(
         )
       )
     ),
+    ...(profile.provenance ? { provenance: profile.provenance } : {}),
     ...(profile.syntheticPosts
       ? { syntheticPosts: profile.syntheticPosts }
       : {}),
     ...(profile.qualificationKeywords
       ? { qualificationKeywords: profile.qualificationKeywords }
       : {}),
+  }));
+}
+
+export function getWorkspaceProfileProvenance(
+  profile: WorkspaceProfile
+): WorkspaceProfileProvenance {
+  return resolveWorkspaceProfileProvenance(profile);
+}
+
+export function markWorkspaceProfilesAsAiGenerated(
+  profiles: WorkspaceProfile[]
+): WorkspaceProfile[] {
+  return profiles.map((profile) => ({
+    ...profile,
+    provenance: "ai_generated" as const,
   }));
 }
 

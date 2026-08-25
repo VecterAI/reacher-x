@@ -12,8 +12,8 @@
  *   document, agent autonomy setting, plan tier ("free"), and dialogs.
  * - WorkspacePlanLimitAlert is Convex-wired, so its free-tier "Upgrade plan"
  *   output is replicated statically with inert buttons.
- * - WorkspaceRefinePanel (Convex agent session) cannot run anonymously; the
- *   Refine button renders but is inert.
+ * - Description regeneration is represented locally because the demo does not
+ *   call the production AI action.
  */
 "use client";
 
@@ -100,6 +100,7 @@ import {
   MoreHorizIcon,
 } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils";
+import { AGENT_GENERATED_PROFILE_LABEL } from "@/shared/lib/workspaceProfileProvenance";
 import { WorkspaceUseCaseCombobox } from "@/features/webapp/workspace/WorkspaceUseCaseCombobox";
 import { WorkspaceIcpPainPointsField } from "@/features/webapp/workspace/WorkspaceIcpPainPointsField";
 import {
@@ -121,7 +122,7 @@ const DEMO_DRAFT_PLAN_COUNT = 3;
 
 interface DemoWorkspaceProfile {
   useCaseKey: WorkspaceUseCaseKey;
-  seedDescription: string;
+  rawUserDescription: string;
   improvedDescription: string;
   sourceUrl: string;
   icps: WorkspacePageFormValues["icps"];
@@ -135,7 +136,7 @@ interface DemoWorkspaceProfile {
 const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
   customers: {
     useCaseKey: "customer_prospecting",
-    seedDescription:
+    rawUserDescription:
       "Northstar Analytics is a pipeline analytics tool for B2B SaaS sales teams. It connects to the CRM and shows which deals are stalling and why.",
     improvedDescription:
       "Target: sales leaders (VP Sales, Head of Sales, RevOps) at B2B SaaS companies with 20 to 200 employees using Salesforce or HubSpot. Signals: posts about forecast misses, stalled deals, pipeline reviews, or hiring SDRs. Qualify on ICP fit with a fit score of 70 to 100, recent activity, and clear pain around pipeline visibility. Goal: start a conversation that leads to a booked demo.",
@@ -166,7 +167,7 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
   },
   investors: {
     useCaseKey: "investor_outreach",
-    seedDescription:
+    rawUserDescription:
       "Northstar Analytics is a pipeline analytics tool for B2B SaaS sales teams. The team is raising a pre-seed round and reaching out to investors directly.",
     improvedDescription:
       "Target: pre-seed and seed investors (VC partners, angels) who back B2B SaaS and sales tooling. Signals: posts about sales tech, PLG, outbound, or recent SaaS investments. Qualify on thesis fit, check size, stage preference, and recent activity. Goal: start a conversation that leads to a partner meeting.",
@@ -196,7 +197,7 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
   },
   candidates: {
     useCaseKey: "recruiting",
-    seedDescription:
+    rawUserDescription:
       "Northstar Analytics is a pipeline analytics tool for B2B SaaS sales teams. The team is growing from 6 to 12 people and hiring its first go-to-market and engineering roles.",
     improvedDescription:
       "Target: senior SDRs, growth marketers, and full-stack engineers open to early-stage startups. Signals: posts about job searches, open-to-work updates, layoffs, or building in public. Qualify on role fit, seniority, and visible interest in early-stage work. Goal: start a conversation that leads to an intro call.",
@@ -226,7 +227,7 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
   },
   creators: {
     useCaseKey: "creator_outreach",
-    seedDescription:
+    rawUserDescription:
       "Northstar Analytics is a pipeline analytics tool for B2B SaaS sales teams. The team wants to partner with creators who cover sales, startups, and SaaS growth.",
     improvedDescription:
       "Target: newsletter writers, YouTubers, and podcasters covering B2B sales and startups with 5k to 100k followers. Signals: recent content about prospecting, CRM, or outbound, plus steady engagement. Qualify on audience fit, posting cadence, and topic overlap. Goal: start a conversation that leads to a collaboration or sponsorship.",
@@ -253,7 +254,7 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
   },
   job_seekers: {
     useCaseKey: "recruiting",
-    seedDescription:
+    rawUserDescription:
       "A senior growth marketer looking for the next role, using ReacherX to find the people actually hiring instead of applying into the void.",
     improvedDescription:
       "Target: founders, heads of growth, and hiring managers at startups with 10 to 200 employees who are actively hiring for growth roles. Signals: job posts, we-are-hiring threads, and team expansion announcements. Qualify on role fit, company stage, and how recent the signal is. Goal: start a conversation that leads to an interview.",
@@ -291,10 +292,13 @@ function createDemoWorkspaceFormValues(
   return {
     name: workspaceName,
     useCaseKey: profile.useCaseKey,
-    seedDescription: profile.seedDescription,
+    rawUserDescription: profile.rawUserDescription,
     improvedDescription: profile.improvedDescription,
     sourceUrl: profile.sourceUrl,
-    icps: profile.icps,
+    icps: profile.icps.map((icp) => ({
+      ...icp,
+      provenance: icp.provenance ?? "ai_generated",
+    })),
   };
 }
 
@@ -306,6 +310,7 @@ function trimIcpDraft(icp: WorkspacePageFormValues["icps"][number]) {
       .map((painPoint) => painPoint.trim())
       .filter(Boolean),
     channels: icp.channels.filter(Boolean),
+    provenance: icp.provenance,
   };
 }
 
@@ -358,10 +363,8 @@ export function DemoWorkspacePage() {
   const [autonomyConfirmationOpen, setAutonomyConfirmationOpen] =
     useState(false);
 
-  // Demo is on the paid Base plan at the 2/2 workspace limit: rollback needs
-  // a snapshot and workspace creation is capped, so both stay disabled with
-  // real tooltips.
-  const canRollback = false;
+  // The demo is at the 2/2 workspace limit, so workspace creation stays
+  // disabled with the same tooltip as the real page.
   const canCreateWorkspace = false;
   const workspaceCreationBlockedReason =
     "Workspace limit reached for your current plan.";
@@ -448,8 +451,10 @@ export function DemoWorkspacePage() {
       const nextValues: WorkspacePageFormValues = {
         ...data,
         name: data.name.trim(),
-        seedDescription: data.seedDescription.trim(),
-        improvedDescription: data.improvedDescription.trim(),
+        rawUserDescription: data.rawUserDescription.trim(),
+        improvedDescription: form.formState.dirtyFields.rawUserDescription
+          ? data.rawUserDescription.trim()
+          : data.improvedDescription.trim(),
         sourceUrl: data.sourceUrl?.trim() || "",
         icps: profilesWereEdited
           ? normalizedIcps.map((icp) => ({
@@ -563,18 +568,6 @@ export function DemoWorkspacePage() {
                     <DropdownMenuContent align="end" className="min-w-48">
                       <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={!canRollback}
-                        title={
-                          !canRollback
-                            ? "Available on Base and Pro after you refine your audience."
-                            : undefined
-                        }
-                      >
-                        <ChangeHistoryIcon className="fill-current" />
-                        Rollback
-                      </DropdownMenuItem>
-
                       <DropdownMenuItem
                         onSelect={() => openMenuDialog(setDeleteOpen)}
                       >
@@ -710,97 +703,72 @@ export function DemoWorkspacePage() {
                           />
                         ) : null}
 
-                        {!isEditing ? (
-                          <FormField
-                            control={form.control}
-                            name="seedDescription"
-                            render={({ field }) => (
-                              <FormItem className={formFieldClassName}>
-                                <FormLabel className={formLabelClassName}>
-                                  Description
-                                </FormLabel>
-                                <FormControl>
-                                  <Textarea
-                                    {...field}
-                                    value={field.value ?? ""}
-                                    readOnly
-                                    rows={4}
-                                    autoResize={!isEditing}
-                                    className={cn(
-                                      "resize-y",
-                                      !isEditing && "overflow-hidden"
-                                    )}
-                                    disabled={!isEditing}
-                                  />
-                                </FormControl>
-                                <FormDescription
-                                  className={formDescriptionClassName}
-                                >
-                                  Seed description (manual or from URL).
-                                </FormDescription>
-                                <FormMessage className={formMessageClassName} />
-                              </FormItem>
-                            )}
-                          />
-                        ) : null}
-
                         <FormField
                           control={form.control}
-                          name="improvedDescription"
+                          name="rawUserDescription"
                           render={({ field }) => (
                             <FormItem className={formFieldClassName}>
                               <FormLabel className={formLabelClassName}>
-                                Agent-generated description
+                                Who are you looking for?
                               </FormLabel>
                               <FormControl>
                                 <Textarea
                                   {...field}
                                   value={field.value ?? ""}
-                                  disabled={!isEditing}
-                                  rows={4}
+                                  rows={5}
                                   autoResize={!isEditing}
                                   className={cn(
                                     "resize-y",
                                     !isEditing && "overflow-hidden"
                                   )}
+                                  disabled={!isEditing}
                                 />
                               </FormControl>
                               <FormDescription
                                 className={formDescriptionClassName}
                               >
-                                Used by the △ Agent to find{" "}
-                                {
-                                  selectedUseCase.promptContext.terminology
-                                    .entityPlural
-                                }
-                                .
+                                Your original instructions. Saving changes
+                                updates future targeting.
                               </FormDescription>
                               <FormMessage className={formMessageClassName} />
                             </FormItem>
                           )}
                         />
 
-                        {isEditing ? (
-                          <div className="border-border -mx-4 space-y-2 border-t px-4 pt-4">
-                            <div>
-                              <p className="text-sm font-medium">
-                                Refine audience
-                              </p>
-                              <p className="text-muted-foreground text-sm">
-                                Tweak your description to improve who the agent
-                                finds. This regenerates your profiles.
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              size="xs"
-                              variant="outline"
-                              disabled
-                              title="Refine is not available in this demo."
-                            >
-                              Refine
-                            </Button>
-                          </div>
+                        {!isEditing ? (
+                          <FormField
+                            control={form.control}
+                            name="improvedDescription"
+                            render={({ field }) => (
+                              <FormItem className={formFieldClassName}>
+                                <FormLabel className={formLabelClassName}>
+                                  Agent interpretation
+                                </FormLabel>
+                                <FormControl>
+                                  <Textarea
+                                    {...field}
+                                    value={field.value ?? ""}
+                                    disabled
+                                    rows={4}
+                                    autoResize
+                                    className="resize-y overflow-hidden"
+                                  />
+                                </FormControl>
+                                <FormDescription
+                                  className={formDescriptionClassName}
+                                >
+                                  Created from your instructions and used by the
+                                  △ Agent to find{" "}
+                                  {
+                                    selectedUseCase.promptContext.terminology
+                                      .entityPlural
+                                  }
+                                  .
+                                </FormDescription>
+                                <FormMessage className={formMessageClassName} />
+                              </FormItem>
+                            )}
+                          />
                         ) : null}
                       </form>
                     </Form>
@@ -811,8 +779,8 @@ export function DemoWorkspacePage() {
                       <Alert>
                         <AlertTitle>Note</AlertTitle>
                         <AlertDescription>
-                          Editing profiles updates how the agent qualifies
-                          prospects.
+                          Profiles you add or edit become manual profiles and
+                          stay unchanged when the description is updated.
                         </AlertDescription>
                       </Alert>
                     ) : null}
@@ -841,20 +809,24 @@ export function DemoWorkspacePage() {
                                   <AnimatedNumber
                                     value={index + 1}
                                     animateOnMount
-                                  />
+                                  />{" "}
+                                  ·{" "}
+                                  {field.provenance === "manual"
+                                    ? "Manual"
+                                    : AGENT_GENERATED_PROFILE_LABEL}
                                 </span>
                                 <Button
                                   type="button"
                                   size="xsIcon"
                                   variant="ghost"
-                                  disabled={index < 3}
+                                  disabled={fields.length <= 3}
                                   title={
-                                    index < 3
-                                      ? "The first three profiles cannot be deleted."
+                                    fields.length <= 3
+                                      ? "At least three profiles are required."
                                       : "Delete profile"
                                   }
                                   onClick={() => {
-                                    if (index >= 3) remove(index);
+                                    if (fields.length > 3) remove(index);
                                   }}
                                 >
                                   <DeleteIcon className="fill-current" />
@@ -946,6 +918,7 @@ export function DemoWorkspacePage() {
                                 description: "",
                                 painPoints: [],
                                 channels: ["X/Twitter", "LinkedIn"],
+                                provenance: "manual",
                               })
                             }
                           >
