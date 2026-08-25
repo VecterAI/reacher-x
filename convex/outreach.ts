@@ -1154,10 +1154,18 @@ export const createProspectsFoundNotification = internalMutation({
     prospectsFound: v.number(),
     twitterSaved: v.number(),
     linkedinSaved: v.number(),
+    failedPlatforms: v.optional(v.array(prospectPlatformValidator)),
   },
   handler: async (
     ctx,
-    { workspaceId, workflowId, prospectsFound, twitterSaved, linkedinSaved }
+    {
+      workspaceId,
+      workflowId,
+      prospectsFound,
+      twitterSaved,
+      linkedinSaved,
+      failedPlatforms,
+    }
   ) => {
     if (prospectsFound <= 0) {
       return null;
@@ -1177,6 +1185,15 @@ export const createProspectsFoundNotification = internalMutation({
     if (linkedinSaved > 0) {
       messageParts.push(`${linkedinSaved} on LinkedIn`);
     }
+    const failedPlatformNames = (failedPlatforms ?? []).map((platform) =>
+      platform === "twitter" ? "X/Twitter" : "LinkedIn"
+    );
+    const retryMessage =
+      failedPlatformNames.length > 0
+        ? `${failedPlatformNames.join(" and ")} ${
+            failedPlatformNames.length > 1 ? "searches" : "search"
+          } hit a problem and will retry automatically.`
+        : undefined;
 
     return await upsertNotificationByKey(ctx, {
       userId: workspace.userId,
@@ -1189,7 +1206,9 @@ export const createProspectsFoundNotification = internalMutation({
       title: `△ Agent found ${prospectsFound} new ${entityPluralLower}`,
       message:
         messageParts.length > 0
-          ? `${messageParts.join(", ")}. Review the strongest matches when you're ready.`
+          ? `${messageParts.join(", ")}. ${
+              retryMessage ?? "Review the strongest matches when you're ready."
+            }`
           : `Fresh ${entityPluralLower} are ready for review.`,
       targetHref: "/",
     });

@@ -175,6 +175,7 @@ import type * as lib_prospectProfileContextCore from "../lib/prospectProfileCont
 import type * as lib_prospectProfileContextHelpers from "../lib/prospectProfileContextHelpers.js";
 import type * as lib_prospectSearchMerge from "../lib/prospectSearchMerge.js";
 import type * as lib_prospectSearchText from "../lib/prospectSearchText.js";
+import type * as lib_prospectingCycleCore from "../lib/prospectingCycleCore.js";
 import type * as lib_prospectingHelpers from "../lib/prospectingHelpers.js";
 import type * as lib_prospectingSchedulingCore from "../lib/prospectingSchedulingCore.js";
 import type * as lib_providerReliability from "../lib/providerReliability.js";
@@ -526,6 +527,7 @@ declare const fullApi: ApiFromModules<{
   "lib/prospectProfileContextHelpers": typeof lib_prospectProfileContextHelpers;
   "lib/prospectSearchMerge": typeof lib_prospectSearchMerge;
   "lib/prospectSearchText": typeof lib_prospectSearchText;
+  "lib/prospectingCycleCore": typeof lib_prospectingCycleCore;
   "lib/prospectingHelpers": typeof lib_prospectingHelpers;
   "lib/prospectingSchedulingCore": typeof lib_prospectingSchedulingCore;
   "lib/providerReliability": typeof lib_providerReliability;
