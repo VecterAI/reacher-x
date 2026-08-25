@@ -130,20 +130,21 @@ Model variable names represent stable workloads, not permanent model families. C
 
 Values are OpenRouter model IDs unless otherwise noted.
 
-| Variable                      | Workload                                                                                                                          |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `AI_FAST_MODEL`               | Fast general generation path                                                                                                      |
-| `AI_REASONING_MODEL`          | Higher-judgment general reasoning path                                                                                            |
-| `AI_AUTOCOMPLETE_MODEL`       | Autocomplete and lightweight helper generation                                                                                    |
-| `INLINE_AUTOCOMPLETE_ENABLED` | Inline composer autocomplete. Production: `1`; development: `0`. When unset, defaults to on in production and off in development. |
-| `AI_SETUP_AGENT_MODEL`        | Workspace setup agent and lower-cost tool-calling work                                                                            |
-| `AI_MAIN_AGENT_MODEL`         | Main prospect conversation and outreach agent                                                                                     |
-| `AI_OUTREACH_ROUTER_MODEL`    | Routes outreach work to the appropriate generation lane                                                                           |
-| `AI_OUTREACH_FAST_MODEL`      | Fast outreach generation lane                                                                                                     |
-| `AI_OUTREACH_STANDARD_MODEL`  | Standard outreach generation lane                                                                                                 |
-| `AI_OUTREACH_RECOVERY_MODEL`  | Recovery lane for difficult or failed outreach generation                                                                         |
-| `AI_VISION_MODEL`             | Image/GIF understanding for multimodal turns                                                                                      |
-| `AI_TEXT_EMBEDDING_MODEL`     | Agent-memory and RAG embeddings                                                                                                   |
+| Variable                      | Code default                      | Workload                                                                                                       |
+| ----------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `AI_FAST_MODEL`               | Routing-preset `fast` model       | Fast general generation path                                                                                   |
+| `AI_REASONING_MODEL`          | Routing-preset `reasoning` model  | Higher-judgment general reasoning path                                                                         |
+| `AI_AUTOCOMPLETE_MODEL`       | `openai/gpt-oss-120b`             | Autocomplete and lightweight helper generation                                                                 |
+| `AI_ONBOARDING_MODEL`         | `openai/gpt-5.6-sol`              | High-judgment onboarding, setup classification, targeting profiles, revisions, and setup preview qualification |
+| `INLINE_AUTOCOMPLETE_ENABLED` | Production: `1`; development: `0` | Inline composer autocomplete. Accepts `1/0`, `true/false`, `yes/no`, or `on/off`.                              |
+| `AI_SETUP_AGENT_MODEL`        | Value of `AI_ONBOARDING_MODEL`    | Workspace setup chat agent                                                                                     |
+| `AI_MAIN_AGENT_MODEL`         | `openai/gpt-5.6-sol`              | Main and prospect-scoped Agent conversations, planning, and outreach                                           |
+| `AI_OUTREACH_ROUTER_MODEL`    | `openai/gpt-5.6-luna`             | Routes outreach work to the appropriate generation lane                                                        |
+| `AI_OUTREACH_FAST_MODEL`      | `openai/gpt-oss-120b`             | Fast outreach generation lane                                                                                  |
+| `AI_OUTREACH_STANDARD_MODEL`  | `openai/gpt-5.6-terra`            | Standard outreach generation lane                                                                              |
+| `AI_OUTREACH_RECOVERY_MODEL`  | `openai/gpt-5.6-sol`              | High-judgment outreach generation, planning, copy, and recovery lane                                           |
+| `AI_VISION_MODEL`             | `moonshotai/kimi-k2.6`            | Image/GIF understanding for multimodal turns                                                                   |
+| `AI_TEXT_EMBEDDING_MODEL`     | `openai/text-embedding-3-small`   | Agent-memory and RAG embeddings                                                                                |
 
 `OPENROUTER_ROUTING_PRESET` is the fallback for `AI_FAST_MODEL` and `AI_REASONING_MODEL` when those role variables are unset:
 

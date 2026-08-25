@@ -24,6 +24,7 @@ import {
 } from "../lib/functionBuilders";
 import {
   BATCH_LIMITS,
+  buildDiscoveryBusinessContext,
   buildPreviewTwitterRawGraphSeedQueries,
   checkProspectLimit,
   formatQualifiedProspectLimitReachedMessage,
@@ -361,7 +362,7 @@ export const prospectingWorkflow = workflow.define({
       {
         workspaceId: args.workspaceId,
         syntheticPosts: allSyntheticPosts,
-        businessContext: workspace.improvedDescription,
+        businessContext: buildDiscoveryBusinessContext(workspace),
         useCaseKey: workspace.useCaseKey,
       },
       { retry: runtimeConfig.retries.ai }
@@ -383,7 +384,7 @@ export const prospectingWorkflow = workflow.define({
         workspaceId: args.workspaceId,
         keywords: prospectingKeywords,
         platforms: ["twitter", "linkedin"],
-        businessContext: workspace.improvedDescription,
+        businessContext: buildDiscoveryBusinessContext(workspace),
         useCaseKey: workspace.useCaseKey,
       },
       { retry: runtimeConfig.retries.ai }
@@ -1815,7 +1816,7 @@ export const runPreviewDiscoveryBurstInternal = internalAction({
       {
         workspaceId: args.workspaceId,
         syntheticPosts: allSyntheticPosts,
-        businessContext: workspace.improvedDescription,
+        businessContext: buildDiscoveryBusinessContext(workspace),
         useCaseKey: workspace.useCaseKey,
         routing: "fast",
       }
@@ -1832,7 +1833,7 @@ export const runPreviewDiscoveryBurstInternal = internalAction({
         workspaceId: args.workspaceId,
         keywords: keywordsResult.prospectingKeywords,
         platforms: ["twitter"],
-        businessContext: workspace.improvedDescription,
+        businessContext: buildDiscoveryBusinessContext(workspace),
         useCaseKey: workspace.useCaseKey,
       }
     );

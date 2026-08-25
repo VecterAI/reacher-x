@@ -24,6 +24,10 @@ describe("setup generation boundaries", () => {
     expect(system).toContain("Description Fidelity Rules (NON-NEGOTIABLE)");
     expect(system).toContain("Never invent, infer, exaggerate, or add");
     expect(system).not.toContain("2-3 sentences");
+    expect(system).toContain("at least 2 strict posts");
+    expect(system).toContain("at least 2 balanced posts");
+    expect(system).toContain("at least 1 broad but accurate post");
+    expect(system).toContain("Final qualification must verify");
   });
 
   it("asks an ICP revision for profiles only", () => {

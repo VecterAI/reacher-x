@@ -21,7 +21,7 @@ export const analyzeUrl = createTool({
   description:
     "Analyze a website URL to extract business information including name, description, target audience, and key problems solved. Use this when a user provides their website URL.",
   inputSchema: z.object({
-    url: z.string().url().describe("The website URL to analyze"),
+    url: z.url().describe("The website URL to analyze"),
   }),
   execute: async (
     ctx,
@@ -43,7 +43,7 @@ export const analyzeUrl = createTool({
         includeArgKeys: ["url"],
       },
       async (logEvent) => {
-        const routingTelemetry = getRoutingTelemetry("fast");
+        const routingTelemetry = getRoutingTelemetry("onboarding");
 
         try {
           const analysis = await analyzeSetupUrl({
@@ -84,7 +84,7 @@ export const analyzeUrl = createTool({
           logEvent.error(error, {
             ai: {
               provider_hint: routingTelemetry.providerLabel,
-              routing: "fast",
+              routing: "onboarding",
               timeout_ms: routingTelemetry.timeoutMs,
             },
             url_analysis: {

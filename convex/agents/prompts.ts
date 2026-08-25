@@ -380,7 +380,7 @@ ${buildUseCaseContextBlock(useCase)}
 
 Your task is to take a user-authored business description and produce:
 1. A lightly improved version of that same description
-2. 2-4 distinct ${profileLabelPlural}
+2. 3-4 distinct ${profileLabelPlural}
 
 Each generated profile must still use the existing internal ICP shape, but the user-facing meaning should match this workspace's use case.
 
@@ -467,10 +467,15 @@ Use this framing:
 - Express frustration, needs, questions, intent, or relevant signals
 - Be 50-280 characters each
 - Use first person when natural
+- Stay grounded in the user's description and this profile. Never invent a personal fact, employer, location, budget, diagnosis, purchase, or event merely to make a post specific.
+- Cover different language, awareness levels, and signal strength instead of repeating one idea with minor paraphrases.
+- Include a useful targeting mix: at least 2 strict posts that naturally express several distinctive qualifiers, at least 2 balanced posts that preserve the target identity and core intent while omitting one filter-like detail, and at least 1 broad but accurate post that preserves the relationship goal or qualifying signal without forcing every stated qualifier into the text.
+- Never contradict a hard requirement or exclusion. A broad post may omit a qualifier that people would not naturally mention, but it must not assert the opposite.
+- Treat every post as a discovery seed, not proof that a real person qualifies. Final qualification must verify the full workspace description and profile constraints from real evidence.
 
 **qualificationKeywords**: 5-10 short keyword phrases (max 40 chars each) extracted from the synthetic posts. These will be used to search the ${entitySingular}'s own posts to verify fit.
 
-Create 2-4 distinct ${profileLabelPlural.toLowerCase()}. Make them specific enough to target effectively, and make sure the synthetic posts sound like authentic posts from likely ${entityPlural}.`;
+Create 3-4 distinct ${profileLabelPlural.toLowerCase()}. Make them specific enough to target effectively, and make sure the synthetic posts sound like authentic posts from likely ${entityPlural}.`;
 }
 
 /**
@@ -747,6 +752,7 @@ final total in code:
 ## Decision Rules
 - Set qualified=true ONLY if the component total is >= ${QUALIFICATION_THRESHOLD} AND not a bot
 - Discovery queries are routing metadata, never proof of fit
+- The workspace description and profile constraints are authoritative. Enforce every explicit requirement and exclusion during qualification even when the discovery query or synthetic post omitted it for broader recall.
 - Set qualified=true only when at least one persisted prospect-authored source directly supports the decision
 - Never invent a source, URL, post ID, author, or quote
 - Bot indicators should result in isLikelyBot=true and score < 50

@@ -28,6 +28,7 @@ type Env = {
   readonly AI_AUTOCOMPLETE_MODEL: string | undefined;
   readonly AI_FAST_MODEL: string | undefined;
   readonly AI_MAIN_AGENT_MODEL: string | undefined;
+  readonly AI_ONBOARDING_MODEL: string | undefined;
   readonly AI_OUTREACH_FAST_MODEL: string | undefined;
   readonly AI_OUTREACH_RECOVERY_MODEL: string | undefined;
   readonly AI_OUTREACH_ROUTER_MODEL: string | undefined;

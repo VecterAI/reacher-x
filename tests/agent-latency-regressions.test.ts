@@ -56,20 +56,23 @@ test("prospect-thread tags do not duplicate the canonical profile snapshot", () 
   );
 });
 
-test("agent provider routing avoids a degraded single-provider lane", () => {
-  assert.match(aiSource, /sort: "latency"/);
+test("setup agent uses the dedicated onboarding provider lane", () => {
   assert.match(
     aiSource,
-    /PINNED_AGENT_PROVIDER_OPTIONS[\s\S]*?OPENROUTER_PROVIDERS\.CEREBRAS,[\s\S]*?OPENROUTER_PROVIDERS\.GROQ,[\s\S]*?OPENROUTER_PROVIDERS\.BASETEN/
+    /PINNED_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_SETUP_AGENT_MODEL",[\s\S]*?ONBOARDING_MODEL/
+  );
+  assert.match(
+    aiSource,
+    /PINNED_AGENT_PROVIDER_OPTIONS[\s\S]*?defaultOptions: ONBOARDING_PROVIDER_OPTIONS/
   );
   assert.match(contextSource, /maxRetries: OUTREACH_AGENT_MAX_RETRIES/);
 });
 
-test("prospect agent keeps Terra as its safe default behind semantic routing", () => {
+test("prospect agent keeps Sol as its safe default behind semantic routing", () => {
   assert.match(aiSource, /GPT_5_6_TERRA: "openai\/gpt-5\.6-terra"/);
   assert.match(
     aiSource,
-    /OUTREACH_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_MAIN_AGENT_MODEL",[\s\S]*?MODELS\.GPT_5_6_TERRA/
+    /OUTREACH_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_MAIN_AGENT_MODEL",[\s\S]*?MODELS\.GPT_5_6_SOL/
   );
   assert.match(contextSource, /OUTREACH_AGENT_MODEL/);
   assert.match(contextSource, /OUTREACH_AGENT_PROVIDER_OPTIONS/);

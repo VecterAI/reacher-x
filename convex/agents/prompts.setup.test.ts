@@ -29,4 +29,11 @@ describe("chat-driven setup agent prompt", () => {
     expect(prompt).toContain("do not enumerate, restate, or invent profiles");
     expect(prompt).toContain("Let the inline setup card present");
   });
+
+  it("does not route workspace settings edits through setup chat", () => {
+    expect(prompt).not.toContain("refineFromWorkspace");
+    expect(prompt).not.toContain(
+      "current audience profiles are already loaded"
+    );
+  });
 });

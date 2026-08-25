@@ -14,6 +14,7 @@ const app = defineApp({
     AI_FAST_MODEL: v.optional(v.string()),
     AI_REASONING_MODEL: v.optional(v.string()),
     AI_AUTOCOMPLETE_MODEL: v.optional(v.string()),
+    AI_ONBOARDING_MODEL: v.optional(v.string()),
     INLINE_AUTOCOMPLETE_ENABLED: v.optional(v.string()),
     AI_SETUP_AGENT_MODEL: v.optional(v.string()),
     AI_MAIN_AGENT_MODEL: v.optional(v.string()),

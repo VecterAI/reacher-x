@@ -53,7 +53,8 @@ const socialQueriesSchema = z.object({
 
 const modelRoutingValidator = v.union(
   v.literal("fast"),
-  v.literal("reasoning")
+  v.literal("reasoning"),
+  v.literal("onboarding")
 );
 
 type GeneratedSocialQuery = z.infer<typeof socialQueryItemSchema> & {
@@ -504,6 +505,13 @@ Extract keywords that:
 3. Would match real posts from likely ${useCase.entityPlural.toLowerCase()}
 4. Are specific enough to filter out irrelevant results
 
+Generate a tiered mix instead of making every keyword equally narrow:
+- strict: preserves distinctive target, intent, and constraint language
+- balanced: preserves target identity and core intent while omitting one filter-like detail
+- broad but accurate: preserves the relationship goal or qualifying signal for recall without contradicting any requirement
+
+Order the first five keywords as strict, strict, balanced, balanced, broad. Repeat that mix for any remaining keywords so small search batches still contain both precision and recall.
+
 Focus on:
 - Problem-aware keywords
 - Outcome-seeking keywords
@@ -516,6 +524,8 @@ Treat that memory as a hard constraint:
 - prefer uncovered themes over already-saturated phrases
 - do not regenerate obvious variants of queries that already exist
 - avoid broad filler wording when memory shows it underperforms
+
+The original audience request and current workspace description may both appear in business context. Treat the original audience request as the source of truth for who the user wants to reach and why. Presets provide vocabulary and qualification guidance, but they must not override that intent.
 
 Do NOT extract:
 - Generic filler words
@@ -576,6 +586,7 @@ Extract 10-15 unique keywords or short phrases that:
 4. Are varied - don't repeat similar concepts
 
 Focus on extracting the core problem/need expressions from each post.
+Use the business context to keep the keywords aligned with the user's original target and relationship goal. Do not infer the target from synthetic posts alone.
 Only return net-new keywords in uncovered themes when memory indicates existing themes are already saturated.`;
     const routing = args.routing ?? (args.workspaceId ? "reasoning" : "fast");
     const routingTelemetry = getRoutingTelemetry(routing);
@@ -599,7 +610,7 @@ Only return net-new keywords in uncovered themes when memory indicates existing 
               prompt: userPrompt,
               temperature: 0.7,
               maxRetries: 2,
-              routing: "reasoning",
+              routing,
             });
       const { object, model, usage } = generation;
 
@@ -689,6 +700,15 @@ Each query should:
 - Avoid duplicates across all groups
 - Stay specific to this workspace's qualification lens
 
+Generate a tiered mix in every requested group:
+- strict queries preserve several distinctive target and intent signals
+- balanced queries preserve the target identity and core intent while dropping one filter-like detail
+- broad but accurate queries preserve the relationship goal or qualifying signal without contradicting a requirement
+
+Order the first five queries in each group as strict, strict, balanced, balanced, broad. Repeat that mix for additional queries. A broad discovery query improves recall, but final qualification still enforces the full workspace description and profile constraints.
+
+The original audience request in business context is the source of truth. Use-case presets must not change who the user is trying to find.
+
 The qualification lens for this workspace is: ${useCase.promptContext.qualificationLens}`;
 }
 
@@ -756,6 +776,8 @@ ${args.businessContext ? `\n**Business context:**\n${args.businessContext}` : ""
 ${formatDiscoveryContextBlock(discoveryContext)}
 
 Return grouped queries that are net-new relative to the operational memory above.
+
+Use the business context to preserve the user's original target and relationship goal. Build a precision-and-recall mix rather than making every query equally narrow.
 
 When Twitter is requested:
 - generate a balanced mix of post-like first-person phrasing and short role, company, profile, or topical terms
