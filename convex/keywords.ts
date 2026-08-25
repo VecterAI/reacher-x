@@ -15,6 +15,7 @@ import {
   keywordTypeValidator,
   linkedinSearchSurfaceValidator,
   socialQueryStyleValidator,
+  twitterProspectingSearchModeValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
@@ -37,6 +38,10 @@ import {
   prioritizeQueries,
   type QueryPriority,
 } from "./lib/queryPrioritizationCore";
+import {
+  resolveTwitterProspectingSearchMode,
+  type TwitterProspectingSearchMode,
+} from "./lib/twitterProspectingSearchCore";
 
 // ============================================================================
 // Types
@@ -134,6 +139,7 @@ async function getPrioritizedSocialQueries(
     value: string;
     lastSearchedAt?: number;
     priority: QueryPriority;
+    searchMode?: TwitterProspectingSearchMode;
   }>
 > {
   const [keywords, performanceRows] = await Promise.all([
@@ -152,6 +158,15 @@ async function getPrioritizedSocialQueries(
   ]);
   const performanceByQueryId = new Map(
     performanceRows.map((row) => [String(row.queryId), row])
+  );
+  const twitterSearchModeByQueryId = new Map(
+    keywords.map((keyword) => [
+      String(keyword._id),
+      resolveTwitterProspectingSearchMode({
+        query: keyword.originalValue ?? keyword.value,
+        requestedMode: keyword.twitterSearchMode,
+      }),
+    ])
   );
   const candidates = keywords
     .filter((keyword) => keyword.status !== "deprecated")
@@ -194,6 +209,10 @@ async function getPrioritizedSocialQueries(
     value: candidate.value,
     lastSearchedAt: candidate.lastSearchedAt,
     priority: candidate.priority,
+    searchMode:
+      args.platform === "twitter"
+        ? twitterSearchModeByQueryId.get(String(candidate.id))
+        : undefined,
   }));
 }
 
@@ -223,6 +242,7 @@ async function syncKeywordMemoryState(
     linkedinSurface?: "posts" | "people";
     linkedinSurfaceTargets?: Array<"posts" | "people">;
     queryStyle?: "natural_phrase" | "professional_keyword" | "role_title";
+    twitterSearchMode?: TwitterProspectingSearchMode;
   }
 ) {
   const queryCandidate = await upsertQueryCandidateRecord(ctx.db, {
@@ -233,6 +253,7 @@ async function syncKeywordMemoryState(
     linkedinSurface: args.linkedinSurface,
     linkedinSurfaceTargets: args.linkedinSurfaceTargets,
     queryStyle: args.queryStyle,
+    twitterSearchMode: args.twitterSearchMode,
     status: "activated",
     activatedKeywordId: args.keywordId,
   });
@@ -608,6 +629,7 @@ export const saveKeywordInternal = internalMutation({
     linkedinSurface: v.optional(linkedinSearchSurfaceValidator),
     linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
     queryStyle: v.optional(socialQueryStyleValidator),
+    twitterSearchMode: v.optional(twitterProspectingSearchModeValidator),
   },
   handler: async (ctx, args) => {
     const normalized = normalizeKeyword(args.value);
@@ -652,6 +674,8 @@ export const saveKeywordInternal = internalMutation({
               args.linkedinSurface ? [args.linkedinSurface] : undefined
             ) ?? existing.linkedinSurfaceTargets,
           queryStyle: args.queryStyle ?? existing.queryStyle,
+          twitterSearchMode:
+            args.twitterSearchMode ?? existing.twitterSearchMode,
         });
 
         await syncKeywordMemoryState(ctx, {
@@ -671,6 +695,8 @@ export const saveKeywordInternal = internalMutation({
               args.linkedinSurface ? [args.linkedinSurface] : undefined
             ) ?? existing.linkedinSurfaceTargets,
           queryStyle: args.queryStyle ?? existing.queryStyle,
+          twitterSearchMode:
+            args.twitterSearchMode ?? existing.twitterSearchMode,
         });
       }
       return existing._id;
@@ -704,6 +730,7 @@ export const saveKeywordInternal = internalMutation({
           args.linkedinSurface ? [args.linkedinSurface] : undefined
         ) ?? undefined,
       queryStyle: args.queryStyle,
+      twitterSearchMode: args.twitterSearchMode,
     });
 
     await syncKeywordMemoryState(ctx, {
@@ -719,6 +746,7 @@ export const saveKeywordInternal = internalMutation({
           args.linkedinSurface ? [args.linkedinSurface] : undefined
         ) ?? undefined,
       queryStyle: args.queryStyle,
+      twitterSearchMode: args.twitterSearchMode,
     });
 
     return keywordId;
@@ -757,6 +785,7 @@ export const saveKeywordsBatch = internalMutation({
           v.array(linkedinSearchSurfaceValidator)
         ),
         queryStyle: v.optional(socialQueryStyleValidator),
+        twitterSearchMode: v.optional(twitterProspectingSearchModeValidator),
       })
     ),
   },
@@ -817,6 +846,8 @@ export const saveKeywordsBatch = internalMutation({
                 keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
               ) ?? existing.linkedinSurfaceTargets,
             queryStyle: keyword.queryStyle ?? existing.queryStyle,
+            twitterSearchMode:
+              keyword.twitterSearchMode ?? existing.twitterSearchMode,
           });
           await syncKeywordMemoryState(ctx, {
             workspaceId: args.workspaceId,
@@ -838,6 +869,8 @@ export const saveKeywordsBatch = internalMutation({
                 keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
               ) ?? existing.linkedinSurfaceTargets,
             queryStyle: keyword.queryStyle ?? existing.queryStyle,
+            twitterSearchMode:
+              keyword.twitterSearchMode ?? existing.twitterSearchMode,
           });
           updated++;
         } else {
@@ -874,6 +907,7 @@ export const saveKeywordsBatch = internalMutation({
               keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
             ) ?? undefined,
           queryStyle: keyword.queryStyle,
+          twitterSearchMode: keyword.twitterSearchMode,
         });
         await syncKeywordMemoryState(ctx, {
           workspaceId: args.workspaceId,
@@ -888,6 +922,7 @@ export const saveKeywordsBatch = internalMutation({
               keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
             ) ?? undefined,
           queryStyle: keyword.queryStyle,
+          twitterSearchMode: keyword.twitterSearchMode,
         });
         // Add to map to prevent duplicates within batch
         existingMap.set(normalized, {
@@ -909,6 +944,7 @@ export const saveKeywordsBatch = internalMutation({
               keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
             ) ?? undefined,
           queryStyle: keyword.queryStyle,
+          twitterSearchMode: keyword.twitterSearchMode,
         });
         inserted++;
       }

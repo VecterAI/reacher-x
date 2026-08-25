@@ -2288,6 +2288,11 @@ export const socialQueryStyleValidator = v.union(
   v.literal("role_title")
 );
 
+export const twitterProspectingSearchModeValidator = v.union(
+  v.literal("exact"),
+  v.literal("raw")
+);
+
 // User timeline mode (used in socialapi.ts)
 export const userTimelineModeValidator = v.union(
   v.literal("posts"),

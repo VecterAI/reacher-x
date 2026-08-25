@@ -215,6 +215,7 @@ import type * as lib_triggers from "../lib/triggers.js";
 import type * as lib_twitterActionCatalog from "../lib/twitterActionCatalog.js";
 import type * as lib_twitterActionPolicy from "../lib/twitterActionPolicy.js";
 import type * as lib_twitterProfileLinkResolver from "../lib/twitterProfileLinkResolver.js";
+import type * as lib_twitterProspectingSearchCore from "../lib/twitterProspectingSearchCore.js";
 import type * as lib_twitterSearchResultCore from "../lib/twitterSearchResultCore.js";
 import type * as lib_twitterViewerStateService from "../lib/twitterViewerStateService.js";
 import type * as lib_typeGuards from "../lib/typeGuards.js";
@@ -565,6 +566,7 @@ declare const fullApi: ApiFromModules<{
   "lib/twitterActionCatalog": typeof lib_twitterActionCatalog;
   "lib/twitterActionPolicy": typeof lib_twitterActionPolicy;
   "lib/twitterProfileLinkResolver": typeof lib_twitterProfileLinkResolver;
+  "lib/twitterProspectingSearchCore": typeof lib_twitterProspectingSearchCore;
   "lib/twitterSearchResultCore": typeof lib_twitterSearchResultCore;
   "lib/twitterViewerStateService": typeof lib_twitterViewerStateService;
   "lib/typeGuards": typeof lib_typeGuards;

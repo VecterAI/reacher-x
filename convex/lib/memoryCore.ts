@@ -17,6 +17,7 @@ import {
   isEvaluatorRelevantEventType,
   resolveDefaultMemoryWorkflowEventStatus,
 } from "./memoryEvaluatorCore";
+import type { TwitterProspectingSearchMode } from "./twitterProspectingSearchCore";
 
 type MemoryDbWriter = GenericDatabaseWriter<DataModel>;
 
@@ -89,6 +90,7 @@ export async function upsertQueryCandidateRecord(
     linkedinSurface?: "posts" | "people";
     linkedinSurfaceTargets?: Array<"posts" | "people">;
     queryStyle?: "natural_phrase" | "professional_keyword" | "role_title";
+    twitterSearchMode?: TwitterProspectingSearchMode;
     noveltyScore?: number;
     status?: Doc<"queryCandidates">["status"];
     duplicateReason?: Doc<"queryCandidates">["duplicateReason"];
@@ -132,6 +134,7 @@ export async function upsertQueryCandidateRecord(
       linkedinSurfaceTargets:
         args.linkedinSurfaceTargets ?? existing.linkedinSurfaceTargets,
       queryStyle: args.queryStyle ?? existing.queryStyle,
+      twitterSearchMode: args.twitterSearchMode ?? existing.twitterSearchMode,
       noveltyScore: args.noveltyScore ?? existing.noveltyScore,
       status: nextStatus,
       duplicateReason: args.duplicateReason ?? existing.duplicateReason,
@@ -170,6 +173,7 @@ export async function upsertQueryCandidateRecord(
     linkedinSurface: args.linkedinSurface,
     linkedinSurfaceTargets: args.linkedinSurfaceTargets,
     queryStyle: args.queryStyle,
+    twitterSearchMode: args.twitterSearchMode,
     noveltyScore: args.noveltyScore,
     status,
     duplicateReason: args.duplicateReason,
