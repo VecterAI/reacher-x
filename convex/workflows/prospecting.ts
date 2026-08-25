@@ -49,12 +49,13 @@ import {
 import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { isWorkspaceInactive } from "../lib/workspaceSystem";
-import { getTwitterPostId } from "../../shared/lib/twitter/contracts";
 import { getSystemRuntimeConfig } from "../lib/runtimeConfigHelpers";
 import {
   getTwitterExactFallbackQueries,
+  mergeTwitterProspectingSearchResults,
   partitionTwitterProspectingQueries,
   stripTwitterExactPhraseQuotes,
+  type TwitterQueryStat,
   type TwitterProspectingSearchMode,
 } from "../lib/twitterProspectingSearchCore";
 
@@ -80,18 +81,16 @@ type TwitterQueueItem = {
   searchMode: TwitterProspectingSearchMode;
 };
 
-type TwitterQueryStat = {
-  query: string;
-  postsFound: number;
-  success: boolean;
-  error?: string;
-};
-
 type TwitterSearchResult = {
   saved: number;
   queryStats: TwitterQueryStat[];
   posts: TwitterPost[];
   matchedQueriesByPostId: Record<string, string[]>;
+  exactFallbackQueries: string[];
+  primaryQueryStats: TwitterQueryStat[];
+  graphSeedQueryStats: TwitterQueryStat[];
+  primaryPostsFound: number;
+  graphSeedPostsFound: number;
 };
 
 const PREVIEW_GRAPH_SEED_LOOKBACK_MS = 2 * 365 * 24 * 60 * 60 * 1000;
@@ -119,6 +118,11 @@ function createEmptyTwitterSearchResult(): TwitterSearchResult {
     queryStats: [],
     posts: [],
     matchedQueriesByPostId: {},
+    exactFallbackQueries: [],
+    primaryQueryStats: [],
+    graphSeedQueryStats: [],
+    primaryPostsFound: 0,
+    graphSeedPostsFound: 0,
   };
 }
 
@@ -126,38 +130,6 @@ function getPreviewGraphSeedSinceTimestampSeconds() {
   return Math.floor(
     (getCurrentUTCTimestamp() - PREVIEW_GRAPH_SEED_LOOKBACK_MS) / 1000
   );
-}
-
-function mergeTwitterSearchResults(
-  results: TwitterSearchResult[]
-): TwitterSearchResult {
-  const postsById = new Map<string, TwitterPost>();
-  const matchedQueriesByPostId: Record<string, string[]> = {};
-
-  for (const result of results) {
-    for (const post of result.posts) {
-      const postId = getTwitterPostId(post);
-      if (!postId) {
-        continue;
-      }
-
-      if (!postsById.has(postId)) {
-        postsById.set(postId, post);
-      }
-
-      matchedQueriesByPostId[postId] = dedupeQueries([
-        ...(matchedQueriesByPostId[postId] ?? []),
-        ...(result.matchedQueriesByPostId[postId] ?? []),
-      ]);
-    }
-  }
-
-  return {
-    saved: results.reduce((total, result) => total + result.saved, 0),
-    queryStats: results.flatMap((result) => result.queryStats),
-    posts: Array.from(postsById.values()),
-    matchedQueriesByPostId,
-  };
 }
 
 function normalizeTwitterSearchResultQueries(
@@ -478,40 +450,15 @@ export const prospectingWorkflow = workflow.define({
                 searchMode: query.searchMode,
               }))
             );
-            const runTwitterSearch = async (
-              queries: string[],
-              searchMode: TwitterProspectingSearchMode
-            ) => {
-              if (queries.length === 0) {
-                return createEmptyTwitterSearchResult();
-              }
-
-              return await step.runAction(
-                internal.workflows.prospecting.searchTwitterInternal,
-                {
-                  workspaceId: args.workspaceId,
-                  queries,
-                  searchMode,
-                },
-                { retry: runtimeConfig.retries.provider }
-              );
-            };
-            const [exactResult, rawResult] = await Promise.all([
-              runTwitterSearch(partitionedQueries.exact, "exact"),
-              runTwitterSearch(partitionedQueries.raw, "raw"),
-            ]);
-            const exactFallbackQueries = getTwitterExactFallbackQueries(
-              exactResult.queryStats
+            const result = await step.runAction(
+              internal.workflows.prospecting.searchTwitterInternal,
+              {
+                workspaceId: args.workspaceId,
+                exactQueries: partitionedQueries.exact,
+                rawQueries: partitionedQueries.raw,
+              },
+              { retry: runtimeConfig.retries.provider }
             );
-            const exactFallbackResult = await runTwitterSearch(
-              exactFallbackQueries,
-              "raw"
-            );
-            const result = mergeTwitterSearchResults([
-              exactResult,
-              rawResult,
-              exactFallbackResult,
-            ]);
 
             // Mark queries as searched
             await step.runMutation(internal.keywords.markQueriesAsSearched, {
@@ -963,12 +910,14 @@ export const saveKeywordsInternal = internalMutation({
 // ============================================================================
 
 /**
- * Search Twitter and save prospects
+ * Search Twitter, deduplicate all search paths, and save prospects.
  */
 export const searchTwitterInternal = internalAction({
   args: {
     workspaceId: v.id("workspaces"),
-    queries: v.array(v.string()),
+    exactQueries: v.array(v.string()),
+    rawQueries: v.array(v.string()),
+    graphSeedQueries: v.optional(v.array(v.string())),
     processingMode: v.optional(
       v.union(v.literal("normal"), v.literal("preview"))
     ),
@@ -981,7 +930,6 @@ export const searchTwitterInternal = internalAction({
     ),
     setupSessionId: v.optional(v.id("workspaceSetupSessions")),
     setupRevision: v.optional(v.number()),
-    searchMode: v.optional(twitterProspectingSearchModeValidator),
   },
   handler: async (ctx, args): Promise<TwitterSearchResult> => {
     // Get workspace for userId
@@ -993,84 +941,140 @@ export const searchTwitterInternal = internalAction({
       throw new Error("Workspace not found");
     }
 
-    const searchMode: TwitterProspectingSearchMode = args.searchMode ?? "exact";
-    const providerResult =
-      searchMode === "raw"
-        ? await ctx.runAction(
-            api.integrations.twitter.searchPosts.searchRawBatch,
-            {
-              queries: args.queries,
-              type: "Latest",
-              maxQueriesPerBatch: 10,
-            }
-          )
-        : await ctx.runAction(
-            api.integrations.twitter.searchPosts.searchBatch,
-            {
-              queries: args.queries,
-              type: "Latest",
-              maxQueriesPerBatch: 10,
-            }
-          );
-    const result = normalizeTwitterSearchResultQueries(
-      {
-        saved: 0,
-        queryStats: providerResult.queryStats ?? [],
-        posts: providerResult.posts ?? [],
-        matchedQueriesByPostId: providerResult.matchedQueriesByPostId ?? {},
-      },
-      searchMode
-    );
+    const runProviderSearch = async (
+      queries: string[],
+      searchMode: TwitterProspectingSearchMode
+    ): Promise<TwitterSearchResult> => {
+      if (queries.length === 0) {
+        return createEmptyTwitterSearchResult();
+      }
 
-    if (!providerResult.success || result.posts.length === 0) {
-      return {
-        saved: 0,
-        queryStats: result.queryStats,
-        posts: [],
-        matchedQueriesByPostId: {},
-      };
+      const providerResult =
+        searchMode === "raw"
+          ? await ctx.runAction(
+              api.integrations.twitter.searchPosts.searchRawBatch,
+              {
+                queries,
+                type: "Latest",
+                maxQueriesPerBatch: 10,
+              }
+            )
+          : await ctx.runAction(
+              api.integrations.twitter.searchPosts.searchBatch,
+              {
+                queries,
+                type: "Latest",
+                maxQueriesPerBatch: 10,
+              }
+            );
+      const result = normalizeTwitterSearchResultQueries(
+        {
+          ...createEmptyTwitterSearchResult(),
+          queryStats: providerResult.queryStats ?? [],
+          posts: providerResult.posts ?? [],
+          matchedQueriesByPostId: providerResult.matchedQueriesByPostId ?? {},
+        },
+        searchMode
+      );
+
+      if (!providerResult.success) {
+        return {
+          ...result,
+          posts: [],
+          matchedQueriesByPostId: {},
+        };
+      }
+
+      return result;
+    };
+
+    const [exactResult, rawResult, graphSeedResult] = await Promise.all([
+      runProviderSearch(args.exactQueries, "exact"),
+      runProviderSearch(args.rawQueries, "raw"),
+      runProviderSearch(args.graphSeedQueries ?? [], "raw"),
+    ]);
+    const exactFallbackQueries = getTwitterExactFallbackQueries(
+      exactResult.queryStats
+    );
+    const exactFallbackResult = await runProviderSearch(
+      exactFallbackQueries,
+      "raw"
+    );
+    const primaryResult = mergeTwitterProspectingSearchResults([
+      exactResult,
+      rawResult,
+      exactFallbackResult,
+    ]);
+    const mergedResult = mergeTwitterProspectingSearchResults([
+      primaryResult,
+      graphSeedResult,
+    ]);
+    const result: TwitterSearchResult = {
+      ...mergedResult,
+      saved: 0,
+      exactFallbackQueries,
+      primaryQueryStats: primaryResult.queryStats,
+      graphSeedQueryStats: graphSeedResult.queryStats,
+      primaryPostsFound: primaryResult.posts.length,
+      graphSeedPostsFound: graphSeedResult.posts.length,
+    };
+
+    if (result.posts.length === 0) {
+      return result;
     }
 
     // Transform and save prospects
+    const fallbackQueries = dedupeQueries([
+      ...args.exactQueries.map(stripTwitterExactPhraseQuotes),
+      ...args.rawQueries,
+      ...(args.graphSeedQueries ?? []),
+    ]).slice(0, 5);
     const prospectsToSave = result.posts.map((post: TwitterPost) => ({
       platform: "twitter" as const,
       externalId: post.id_str,
       data: post,
       matchedKeywords:
         result.matchedQueriesByPostId[post.id_str]?.slice(0, 5) ??
-        args.queries.slice(0, 5),
+        fallbackQueries,
       discoverySource: "search_post" as const,
       discoveryContext: {
         matchedQueries:
           result.matchedQueriesByPostId[post.id_str]?.slice(0, 5) ??
-          args.queries.slice(0, 5),
+          fallbackQueries,
         matchedReason: "Matched on X post",
         discoverySnippet: getTwitterPostText(post).slice(0, 240),
       },
     }));
 
-    const saveResult = await ctx.runMutation(
-      internal.prospects.createProspectsBatch,
-      {
-        userId: workspace.userId,
-        workspaceId: args.workspaceId,
-        processingMode: args.processingMode,
-        prospects: prospectsToSave.map(
-          (prospect: (typeof prospectsToSave)[number]) => ({
-            ...prospect,
-            origin: args.prospectOrigin,
-            setupSessionId: args.setupSessionId,
-            setupRevision: args.setupRevision,
-          })
-        ),
-      }
-    );
+    let saved = 0;
+    const saveBatchSize = PREVIEW_BATCH_LIMITS.previewProspectWriteBatch;
+    for (
+      let index = 0;
+      index < prospectsToSave.length;
+      index += saveBatchSize
+    ) {
+      const saveResult = await ctx.runMutation(
+        internal.prospects.createProspectsBatch,
+        {
+          userId: workspace.userId,
+          workspaceId: args.workspaceId,
+          processingMode: args.processingMode,
+          prospects: prospectsToSave
+            .slice(index, index + saveBatchSize)
+            .map((prospect: (typeof prospectsToSave)[number]) => ({
+              ...prospect,
+              origin: args.prospectOrigin,
+              setupSessionId: args.setupSessionId,
+              setupRevision: args.setupRevision,
+            })),
+        }
+      );
+      saved += saveResult.created + saveResult.updated;
+    }
 
     return {
-      saved: saveResult.created + saveResult.updated,
-      queryStats: result.queryStats,
-      posts: result.posts,
-      matchedQueriesByPostId: result.matchedQueriesByPostId,
+      ...result,
+      saved,
     };
   },
 });
@@ -1740,73 +1744,29 @@ export const runPreviewDiscoveryBurstInternal = internalAction({
       .filter((query) => !twitterQueryKeys.has(query.toLowerCase()))
       .slice(0, PREVIEW_BATCH_LIMITS.twitterGraphSeedSearchBatch);
 
-    const runPreviewTwitterSearch = async (
-      queries: string[],
-      label: string,
-      searchMode: TwitterProspectingSearchMode
-    ): Promise<TwitterSearchResult> => {
-      if (queries.length === 0) {
+    const twitterResult = await ctx
+      .runAction(internal.workflows.prospecting.searchTwitterInternal, {
+        workspaceId: args.workspaceId,
+        exactQueries: partitionedTwitterQueries.exact,
+        rawQueries: partitionedTwitterQueries.raw,
+        graphSeedQueries: twitterGraphSeedQueries,
+        processingMode: "preview",
+        prospectOrigin: "setup_preview",
+        setupSessionId: args.sessionId,
+        setupRevision: args.previewRevision,
+      })
+      .catch((error) => {
+        prospectingWorkflowLogger.error(
+          "Preview Twitter search failed",
+          {
+            workspaceId: args.workspaceId,
+            workspaceName: workspace.name,
+            previewRevision: args.previewRevision,
+          },
+          error
+        );
         return createEmptyTwitterSearchResult();
-      }
-
-      return await ctx
-        .runAction(internal.workflows.prospecting.searchTwitterInternal, {
-          workspaceId: args.workspaceId,
-          queries,
-          processingMode: "preview",
-          prospectOrigin: "setup_preview",
-          setupSessionId: args.sessionId,
-          setupRevision: args.previewRevision,
-          searchMode,
-        })
-        .catch((error) => {
-          prospectingWorkflowLogger.error(
-            "Preview Twitter search failed",
-            {
-              workspaceId: String(args.workspaceId),
-              workspaceName: workspace.name,
-              previewRevision: args.previewRevision,
-              label,
-              searchMode,
-            },
-            error
-          );
-          return createEmptyTwitterSearchResult();
-        });
-    };
-
-    const [exactTwitterResult, rawTwitterResult, graphSeedTwitterResult] =
-      await Promise.all([
-        runPreviewTwitterSearch(
-          partitionedTwitterQueries.exact,
-          "Twitter exact search",
-          "exact"
-        ),
-        runPreviewTwitterSearch(
-          partitionedTwitterQueries.raw,
-          "Twitter raw search",
-          "raw"
-        ),
-        runPreviewTwitterSearch(
-          twitterGraphSeedQueries,
-          "Twitter graph seed search",
-          "raw"
-        ),
-      ]);
-    const exactFallbackTwitterResult = await runPreviewTwitterSearch(
-      getTwitterExactFallbackQueries(exactTwitterResult.queryStats),
-      "Twitter exact fallback search",
-      "raw"
-    );
-    const primaryTwitterResult = mergeTwitterSearchResults([
-      exactTwitterResult,
-      rawTwitterResult,
-      exactFallbackTwitterResult,
-    ]);
-    const twitterResult = mergeTwitterSearchResults([
-      primaryTwitterResult,
-      graphSeedTwitterResult,
-    ]);
+      });
 
     const similarExpansion =
       twitterResult.posts.length > 0
@@ -1863,19 +1823,15 @@ export const runPreviewDiscoveryBurstInternal = internalAction({
               : partitionedTwitterQueries.exact.length > 0
                 ? "exact"
                 : "raw",
-          twitterExactFallbackQueries: getTwitterExactFallbackQueries(
-            exactTwitterResult.queryStats
-          ),
+          twitterExactFallbackQueries: twitterResult.exactFallbackQueries,
           twitterGraphSeedSearchMode: "raw",
           twitterQueryStats: twitterResult.queryStats,
-          twitterPrimaryQueryStats: primaryTwitterResult.queryStats,
-          twitterGraphSeedQueryStats: graphSeedTwitterResult.queryStats,
-          twitterPrimaryPostsFound: primaryTwitterResult.posts.length,
-          twitterGraphSeedPostsFound: graphSeedTwitterResult.posts.length,
+          twitterPrimaryQueryStats: twitterResult.primaryQueryStats,
+          twitterGraphSeedQueryStats: twitterResult.graphSeedQueryStats,
+          twitterPrimaryPostsFound: twitterResult.primaryPostsFound,
+          twitterGraphSeedPostsFound: twitterResult.graphSeedPostsFound,
           twitterPostsFound: twitterResult.posts.length,
           twitterSaved: twitterResult.saved,
-          twitterPrimarySaved: primaryTwitterResult.saved,
-          twitterGraphSeedSaved: graphSeedTwitterResult.saved,
           similarProfilesSaved: similarExpansion.saved,
           similarProfileStats: similarExpansion.similarStats,
           similarProfileEvidenceStats: similarExpansion.evidenceStats,

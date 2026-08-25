@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   getTwitterExactFallbackQueries,
+  mergeTwitterProspectingSearchResults,
   partitionTwitterProspectingQueries,
   resolveTwitterProspectingSearchMode,
   stripTwitterExactPhraseQuotes,
@@ -29,6 +30,8 @@ describe("twitter prospecting search mode", () => {
     "this exact phrase has far too many words",
     "screen recorder OR loom alternative",
     "screen recorder since_time:123",
+    'looking for "screen recorder"',
+    '"looking for screen recorder',
   ])("demotes unsafe exact phrase %s to raw", (query) => {
     expect(
       resolveTwitterProspectingSearchMode({
@@ -41,7 +44,7 @@ describe("twitter prospecting search mode", () => {
   test("partitions validated query plans by provider mode", () => {
     expect(
       partitionTwitterProspectingQueries([
-        { query: "looking for screen recorder", searchMode: "exact" },
+        { query: '"looking for screen recorder"', searchMode: "exact" },
         { query: "screen recorder mac", searchMode: "raw" },
       ])
     ).toEqual({
@@ -66,6 +69,62 @@ describe("twitter prospecting search mode", () => {
         },
       ])
     ).toEqual(["looking for screen recorder"]);
+  });
+
+  test("deduplicates overlapping search posts before they are saved", () => {
+    const exactPost = { id_str: "post-1", source: "exact" };
+    const rawPost = { id_str: "post-1", source: "raw" };
+    const uniquePost = { id_str: "post-2", source: "fallback" };
+
+    expect(
+      mergeTwitterProspectingSearchResults([
+        {
+          queryStats: [
+            {
+              query: "looking for screen recorder",
+              postsFound: 1,
+              success: true,
+            },
+          ],
+          posts: [exactPost],
+          matchedQueriesByPostId: {
+            "post-1": ["looking for screen recorder"],
+          },
+        },
+        {
+          queryStats: [
+            {
+              query: "screen recorder mac",
+              postsFound: 2,
+              success: true,
+            },
+          ],
+          posts: [rawPost, uniquePost],
+          matchedQueriesByPostId: {
+            "post-1": ["screen recorder mac"],
+            "post-2": ["screen recorder mac"],
+          },
+        },
+      ])
+    ).toEqual({
+      queryStats: [
+        {
+          query: "looking for screen recorder",
+          postsFound: 1,
+          success: true,
+        },
+        {
+          query: "screen recorder mac",
+          postsFound: 2,
+          success: true,
+        },
+      ],
+      posts: [exactPost, uniquePost],
+      matchedQueriesByPostId: {
+        "post-1": ["looking for screen recorder", "screen recorder mac"],
+        "post-2": ["screen recorder mac"],
+      },
+    });
   });
 
   test("removes only a complete pair of exact phrase quotes", () => {

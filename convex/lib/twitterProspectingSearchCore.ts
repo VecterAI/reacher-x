@@ -8,10 +8,17 @@ export type TwitterProspectingQueryPlan = {
   searchMode: TwitterProspectingSearchMode;
 };
 
-type TwitterQueryStat = {
+export type TwitterQueryStat = {
   query: string;
   postsFound: number;
   success: boolean;
+  error?: string;
+};
+
+export type UnsavedTwitterSearchResult<TPost extends { id_str: string }> = {
+  queryStats: TwitterQueryStat[];
+  posts: TPost[];
+  matchedQueriesByPostId: Record<string, string[]>;
 };
 
 const EXACT_PHRASE_MIN_WORDS = 2;
@@ -77,6 +84,7 @@ export function resolveTwitterProspectingSearchMode(args: {
     words.length > EXACT_PHRASE_MAX_WORDS ||
     !lastWord ||
     TRAILING_CONNECTORS.has(lastWord) ||
+    query.includes('"') ||
     hasSearchOperatorSyntax(query)
   ) {
     return "raw";
@@ -95,13 +103,48 @@ export function partitionTwitterProspectingQueries(
     const query = normalizeQuery(plan.query);
     if (!query) continue;
     if (plan.searchMode === "exact") {
-      exact.push(query);
+      exact.push(stripTwitterExactPhraseQuotes(query));
     } else {
       raw.push(query);
     }
   }
 
   return { exact, raw };
+}
+
+export function mergeTwitterProspectingSearchResults<
+  TPost extends { id_str: string },
+>(
+  results: UnsavedTwitterSearchResult<TPost>[]
+): UnsavedTwitterSearchResult<TPost> {
+  const postsById = new Map<string, TPost>();
+  const matchedQueriesByPostId = new Map<string, Set<string>>();
+
+  for (const result of results) {
+    for (const post of result.posts) {
+      if (!postsById.has(post.id_str)) {
+        postsById.set(post.id_str, post);
+      }
+
+      const matchedQueries =
+        matchedQueriesByPostId.get(post.id_str) ?? new Set<string>();
+      for (const query of result.matchedQueriesByPostId[post.id_str] ?? []) {
+        matchedQueries.add(query);
+      }
+      matchedQueriesByPostId.set(post.id_str, matchedQueries);
+    }
+  }
+
+  return {
+    queryStats: results.flatMap((result) => result.queryStats),
+    posts: Array.from(postsById.values()),
+    matchedQueriesByPostId: Object.fromEntries(
+      Array.from(matchedQueriesByPostId.entries()).map(([postId, queries]) => [
+        postId,
+        Array.from(queries),
+      ])
+    ),
+  };
 }
 
 export function getTwitterExactFallbackQueries(stats: TwitterQueryStat[]) {
