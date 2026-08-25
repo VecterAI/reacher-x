@@ -104,6 +104,9 @@ export function resolveOnboardingNavigationAction(args: {
     args.pathname === SETUP_ROUTE &&
     !isNewWorkspaceDecisionRoute
   ) {
+    if (new URLSearchParams(args.currentQueryString).has("threadId")) {
+      return { kind: "none" };
+    }
     return { kind: "replace", href: "/" };
   }
 

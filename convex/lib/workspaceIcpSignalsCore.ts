@@ -1,5 +1,6 @@
 import type { Doc } from "../_generated/dataModel";
 import { canonicalizeWorkspaceProfileChannels } from "../../shared/lib/workspaceProfileChannels";
+import { getWorkspaceProfileProvenance } from "./workspaceProfileChangeCore";
 
 export type WorkspaceIcp = NonNullable<Doc<"workspaces">["icps"]>[number];
 
@@ -130,6 +131,7 @@ export function restoreWorkspaceIcpSignalsFromReference(args: {
 export function reconcileWorkspaceIcpUpdate(args: {
   existingIcps: WorkspaceIcp[];
   incomingIcps: WorkspaceIcp[];
+  markChangedProfilesManual?: boolean;
 }): {
   nextIcps: WorkspaceIcp[];
   regenerationIndices: number[];
@@ -146,6 +148,7 @@ export function reconcileWorkspaceIcpUpdate(args: {
     if (exactMatch) {
       const mergedIcp: WorkspaceIcp = {
         ...incomingIcp,
+        provenance: getWorkspaceProfileProvenance(exactMatch),
         syntheticPosts: exactMatch.syntheticPosts,
         qualificationKeywords: exactMatch.qualificationKeywords,
       };
@@ -159,7 +162,9 @@ export function reconcileWorkspaceIcpUpdate(args: {
 
     regenerationIndexSet.add(index);
     const [invalidatedIcp] = invalidateWorkspaceIcpGeneratedSignals([
-      incomingIcp,
+      args.markChangedProfilesManual
+        ? { ...incomingIcp, provenance: "manual" }
+        : incomingIcp,
     ]);
     return invalidatedIcp!;
   });

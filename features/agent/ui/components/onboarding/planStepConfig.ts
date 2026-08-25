@@ -60,7 +60,6 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
     features: [
       "1000 qualified prospects per workspace / month",
       "2 workspaces",
-      "Workspace settings rollback",
       "Priority support",
     ],
     pricing: {
@@ -77,7 +76,6 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
     features: [
       "Unlimited qualified prospects per workspace / month",
       "5 workspaces",
-      "Workspace settings rollback",
       "Calendar integration (Coming soon)",
       "Priority support",
     ],

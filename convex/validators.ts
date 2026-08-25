@@ -46,11 +46,17 @@ export const linkedinMessageReactionResultValidator = v.union(
  * - agents/internal.ts (generateSeedKeywordsAction)
  * - schema.ts (workspaces table)
  */
+export const workspaceProfileProvenanceValidator = v.union(
+  v.literal("ai_generated"),
+  v.literal("manual")
+);
+
 export const icpValidator = v.object({
   title: v.string(),
   description: v.string(),
   painPoints: v.array(v.string()),
   channels: v.array(v.string()),
+  provenance: v.optional(workspaceProfileProvenanceValidator),
   syntheticPosts: v.optional(v.array(v.string())),
   qualificationKeywords: v.optional(v.array(v.string())),
 });
@@ -1092,7 +1098,7 @@ export const updateWorkspaceArgsValidator = v.object({
   lastGeneratedAt: v.optional(v.number()),
 });
 
-/** Single snapshot for rollback after a successful workspace refine (Base/Pro). */
+/** Legacy stored data retained until old workspace rows have been migrated. */
 export const refineRollbackSnapshotValidator = v.object({
   description: v.string(),
   seedDescription: v.optional(v.string()),
@@ -1123,20 +1129,6 @@ export const updateWorkspaceSettingsArgsValidator = v.object({
   ),
   lastGeneratedAt: v.optional(v.number()),
   reportingTimeZone: v.optional(v.string()),
-});
-
-/** Apply refine preview results: captures rollback snapshot then overwrites ICP-related config. */
-export const commitWorkspaceRefineArgsValidator = v.object({
-  workspaceId: v.id("workspaces"),
-  description: v.string(),
-  seedDescription: v.optional(v.string()),
-  improvedDescription: v.string(),
-  icps: v.array(icpValidator),
-  sourceUrl: v.optional(v.string()),
-  descriptionSource: v.optional(
-    v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
-  ),
-  useCaseKey: v.optional(workspaceUseCaseKeyValidator),
 });
 
 export const getWorkspaceArgsValidator = v.object({

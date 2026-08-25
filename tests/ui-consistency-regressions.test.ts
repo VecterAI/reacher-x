@@ -42,6 +42,68 @@ test("workspace and notification glyphs use the custom icon library", () => {
   assert.match(iconSource, /export const PsychologyAltIcon/);
 });
 
+test("workspace use-case field uses the shared outreach-goal label", () => {
+  const useCasesSource = readSource("shared/lib/workspaceUseCases.ts");
+
+  assert.match(
+    useCasesSource,
+    /WORKSPACE_USE_CASE_FIELD_LABEL = "Outreach goal"/
+  );
+  for (const file of [
+    "features/webapp/workspace/WorkspaceUseCaseCombobox.tsx",
+    "features/webapp/workspace/WorkspacePageSkeleton.tsx",
+  ]) {
+    const source = readSource(file);
+    assert.match(source, /WORKSPACE_USE_CASE_FIELD_LABEL/);
+    assert.doesNotMatch(source, /Who to find\/reach/);
+  }
+});
+
+test("workspace interpretation is hidden while editing and disabled while viewing", () => {
+  for (const file of [
+    "features/webapp/workspace/WorkspacePage.tsx",
+    "features/landing/ui/components/use-case-demo/pages/DemoWorkspacePage.tsx",
+  ]) {
+    const source = readSource(file);
+    assert.match(
+      source,
+      /\{!isEditing \? \([\s\S]{0,400}name="improvedDescription"[\s\S]{0,600}<Textarea[\s\S]{0,200}\bdisabled\b/,
+      `${file} must render the improved description only in disabled view mode`
+    );
+  }
+});
+
+test("pricing exposes the custom fallback and profile titles yield to the shared badge", () => {
+  const pricingSource = readSource(
+    "features/landing/ui/components/sections/PricingSection.tsx"
+  );
+  const profileCardSource = readSource(
+    "features/prospects/ui/components/ideal-customer-profile/IdealCustomerProfileCard.tsx"
+  );
+
+  assert.match(
+    pricingSource,
+    /For anything else[\s\S]*?value="general_outreach"[\s\S]*?>\s*Other\s*</
+  );
+  assert.match(profileCardSource, /from "@\/shared\/ui\/components\/Badge"/);
+  assert.match(profileCardSource, /min-w-0 flex-1 truncate/);
+  assert.match(profileCardSource, /<Badge[\s\S]*?variant="outline"/);
+  assert.match(profileCardSource, /AGENT_GENERATED_PROFILE_LABEL/);
+  assert.equal(
+    readSource("shared/lib/workspaceProfileProvenance.ts").includes(
+      'AGENT_GENERATED_PROFILE_LABEL = "△ Agent generated"'
+    ),
+    true
+  );
+  for (const file of [
+    "features/prospects/ui/components/ideal-customer-profile/IdealCustomerProfileCard.tsx",
+    "features/webapp/workspace/WorkspacePage.tsx",
+    "features/landing/ui/components/use-case-demo/pages/DemoWorkspacePage.tsx",
+  ]) {
+    assert.doesNotMatch(readSource(file), /:\s*"AI-generated"/);
+  }
+});
+
 test("the desktop upgrade panel separates from its content with a left border", () => {
   const source = readSource("features/billing/ui/PlansPage.tsx");
 
@@ -225,7 +287,6 @@ test("desktop side panels own a left divider and mobile panels have no side bord
     "app/(webapp)/post/x/[id]/page.tsx",
     "features/agent/ui/AgentPageShell.tsx",
     "features/webapp/ui/pages/UseCaseSuccessPage.tsx",
-    "features/webapp/workspace/WorkspaceRefinePanel.tsx",
   ]) {
     assert.match(
       readSource(file),

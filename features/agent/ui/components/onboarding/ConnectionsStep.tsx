@@ -21,8 +21,6 @@ import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 
 interface ConnectionsStepProps {
   sessionId: Id<"workspaceSetupSessions"> | null;
-  /** @deprecated Chat-first setup closes the panel via header ←; kept optional for callers. */
-  onBack?: () => void;
   onCompleteStep: (
     status: "awaiting_plan" | "awaiting_preferences" | "ready"
   ) => void;

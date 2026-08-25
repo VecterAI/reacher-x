@@ -5,9 +5,6 @@ import { getSetupStatusStepId, type SetupVisibleStepId } from "./setupFlowCore";
 
 type SetupSessionDoc = Doc<"workspaceSetupSessions">;
 type SetupSessionDb = QueryCtx["db"] | MutationCtx["db"];
-type ActiveSetupSessionOptions = {
-  includeRefine?: boolean;
-};
 type SetupPreviewProspectWriteSession = Pick<
   SetupSessionDoc,
   "_id" | "userId" | "targetWorkspaceId" | "previewRevision" | "status"
@@ -50,18 +47,13 @@ export function isActiveSetupSession(
   return Boolean(session && !isTerminalSetupSessionStatus(session.status));
 }
 
-function matchesActiveSetupSessionFilter(
-  session: SetupSessionDoc,
-  options?: ActiveSetupSessionOptions
-): boolean {
-  if (isTerminalSetupSessionStatus(session.status)) {
+function matchesActiveSetupSessionFilter(session: SetupSessionDoc): boolean {
+  if (
+    isTerminalSetupSessionStatus(session.status) ||
+    session.refineFromWorkspace
+  ) {
     return false;
   }
-
-  if (options?.includeRefine === false && session.refineFromWorkspace) {
-    return false;
-  }
-
   return true;
 }
 
@@ -201,8 +193,7 @@ export function getSetupSessionPanelStep(
 
 export async function getActiveSetupSessionForUser(
   db: SetupSessionDb,
-  userId: Id<"users">,
-  options?: ActiveSetupSessionOptions
+  userId: Id<"users">
 ): Promise<SetupSessionDoc | null> {
   const sessions = await db
     .query("workspaceSetupSessions")
@@ -211,9 +202,7 @@ export async function getActiveSetupSessionForUser(
     .collect();
 
   return (
-    sessions.find((session) =>
-      matchesActiveSetupSessionFilter(session, options)
-    ) ?? null
+    sessions.find((session) => matchesActiveSetupSessionFilter(session)) ?? null
   );
 }
 
@@ -239,26 +228,6 @@ export async function getSetupSessionByTargetWorkspaceId(
     .collect();
 
   return sessions.sort(compareSessionsByRecency)[0] ?? null;
-}
-
-export async function getActiveSetupSessionByTargetWorkspaceId(
-  db: SetupSessionDb,
-  targetWorkspaceId: Id<"workspaces">,
-  options?: ActiveSetupSessionOptions
-): Promise<SetupSessionDoc | null> {
-  const sessions = await db
-    .query("workspaceSetupSessions")
-    .withIndex("by_target_workspace", (q) =>
-      q.eq("targetWorkspaceId", targetWorkspaceId)
-    )
-    .collect();
-
-  return (
-    sessions
-      .sort(compareSessionsByRecency)
-      .find((session) => matchesActiveSetupSessionFilter(session, options)) ??
-    null
-  );
 }
 
 export async function resolveNextSetupDraftOrdinal(

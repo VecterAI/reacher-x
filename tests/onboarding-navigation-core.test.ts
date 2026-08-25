@@ -35,7 +35,7 @@ test("active setup corrects a stale or different setup thread", () => {
   );
 });
 
-test("selecting a completed workspace exits the setup route", () => {
+test("an explicit setup thread survives a workspace-context transition", () => {
   assert.deepEqual(
     resolveOnboardingNavigationAction({
       ...base,
@@ -45,7 +45,34 @@ test("selecting a completed workspace exits the setup route", () => {
       locked: false,
       targetLockedUrl: "/",
     }),
+    { kind: "none" }
+  );
+});
+
+test("a completed workspace exits the bare setup route", () => {
+  assert.deepEqual(
+    resolveOnboardingNavigationAction({
+      ...base,
+      activeContextType: "workspace",
+      pathname: "/agent/setup",
+      currentQueryString: "",
+      locked: false,
+      targetLockedUrl: "/",
+    }),
     { kind: "replace", href: "/" }
+  );
+});
+
+test("an unlocked refine session stays on its chat-first setup thread", () => {
+  assert.deepEqual(
+    resolveOnboardingNavigationAction({
+      ...base,
+      pathname: "/agent/setup",
+      currentQueryString: "threadId=refine-thread",
+      locked: false,
+      targetLockedUrl: "/agent/setup?threadId=refine-thread",
+    }),
+    { kind: "none" }
   );
 });
 

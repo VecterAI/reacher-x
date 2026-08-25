@@ -38,7 +38,6 @@ export const optionalDescriptionSchema = descriptionSchema.optional();
  * Common email validation used across forms
  */
 export const emailSchema = z
-  .string()
   .email({ error: "Please enter a valid email address." })
   .min(1, { error: "Email is required." })
   .transform((val) => val.toLowerCase());
@@ -100,6 +99,7 @@ export const icpFormEntrySchema = z.object({
   }),
   painPoints: z.array(z.string()),
   channels: z.array(z.string()),
+  provenance: z.enum(["ai_generated", "manual"]).optional(),
 });
 
 const editableWorkspaceProfileSchema = icpFormEntrySchema.extend({
@@ -158,8 +158,7 @@ export const workspacePageFormSchema = z
   .object({
     name: workspaceNameSchema,
     useCaseKey: workspaceUseCaseKeySchema,
-    /** Seed / user description */
-    seedDescription: z.string().max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH + 50),
+    rawUserDescription: descriptionSchema,
     improvedDescription: z
       .string()
       .max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH + 50),

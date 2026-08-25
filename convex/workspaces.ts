@@ -3,7 +3,6 @@ import type { WorkflowId } from "@convex-dev/workflow";
 import {
   updateWorkspaceArgsValidator,
   updateWorkspaceSettingsArgsValidator,
-  commitWorkspaceRefineArgsValidator,
   getWorkspaceArgsValidator,
   setDefaultWorkspaceArgsValidator,
   workspaceUseCaseKeyValidator,
@@ -51,7 +50,6 @@ import {
 } from "../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
 import { deleteWorkspaceCascade } from "./lib/deleteWorkspaceCascade";
-import { getOrCreateUserPlan } from "./lib/planCore";
 import { isPaidPlanTier } from "./lib/planConstants";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -90,6 +88,8 @@ import {
   scheduleWorkspacePlanStartRun,
 } from "./lib/workspacePlanStartCore";
 import { requestWorkspaceDeletion } from "./workflows/deleteWorkspace";
+import { buildRegeneratedWorkspaceTargetingPatch } from "./lib/workspaceTargetingUpdateCore";
+import { validateWorkspaceProfiles } from "./lib/workspaceProfileChangeCore";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceStyleProfileDoc = Doc<"workspaceStyleProfiles">;
@@ -193,9 +193,7 @@ export const getWorkspaceSetupStatus = query({
     }
 
     const [activeSession, workspace] = await Promise.all([
-      getActiveSetupSessionForUser(ctx.db, user._id, {
-        includeRefine: false,
-      }),
+      getActiveSetupSessionForUser(ctx.db, user._id),
       getDefaultWorkspaceForUser(ctx, user._id),
     ]);
     const preferWorkspaceContext = shouldPreferWorkspaceContext(
@@ -626,39 +624,6 @@ export const updateWorkspace = mutation({
   },
 });
 
-function buildRefineRollbackSnapshot(workspace: WorkspaceDoc) {
-  return {
-    description: workspace.description,
-    seedDescription: workspace.seedDescription,
-    improvedDescription: workspace.improvedDescription,
-    icps: workspace.icps,
-    useCaseKey: workspace.useCaseKey,
-    sourceUrl: workspace.sourceUrl,
-    descriptionSource: workspace.descriptionSource,
-    capturedAt: getCurrentUTCTimestamp(),
-  };
-}
-
-/**
- * Before applying setup preview updates to an existing workspace, capture rollback (Base/Pro).
- */
-export const captureRefineRollbackSnapshotInternal = internalMutation({
-  args: { workspaceId: v.id("workspaces") },
-  handler: async (ctx, { workspaceId }) => {
-    const workspace = await ctx.db.get(workspaceId);
-    if (!workspace) {
-      return;
-    }
-    const plan = await getOrCreateUserPlan(ctx, workspace.userId);
-    if (plan.tier !== "base" && plan.tier !== "pro") {
-      return;
-    }
-    await ctx.db.patch(workspaceId, {
-      refineRollbackSnapshot: buildRefineRollbackSnapshot(workspace),
-    });
-  },
-});
-
 /**
  * Combined workspace settings update (Workspace page: Details + Profiles).
  */
@@ -688,6 +653,42 @@ export const updateWorkspaceSettings = mutation({
       reportingTimeZone: args.reportingTimeZone,
     };
     return applyWorkspaceSettingsUpdateCore(ctx, { workspace, updates });
+  },
+});
+
+export const applyRegeneratedWorkspaceTargetingInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    name: v.string(),
+    sourceUrl: v.optional(v.string()),
+    rawUserDescription: v.string(),
+    improvedDescription: v.string(),
+    icps: v.array(icpValidator),
+    useCaseKey: workspaceUseCaseKeyValidator,
+  },
+  returns: v.id("workspaces"),
+  handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace || workspace.userId !== args.userId) {
+      throw new Error("Workspace not found");
+    }
+
+    validateWorkspaceProfiles(args.icps);
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(args.workspaceId, {
+      ...buildRegeneratedWorkspaceTargetingPatch({
+        rawUserDescription: args.rawUserDescription,
+        improvedDescription: args.improvedDescription,
+        profiles: args.icps,
+        useCaseKey: args.useCaseKey,
+        updatedAt: now,
+      }),
+      name: assertValidWorkspaceName(args.name),
+      ...(args.sourceUrl === undefined ? {} : { sourceUrl: args.sourceUrl }),
+    });
+
+    return args.workspaceId;
   },
 });
 
@@ -788,91 +789,6 @@ export const setWorkspaceReportingTimeZone = mutation({
     });
 
     return reportingTimeZone;
-  },
-});
-
-/**
- * Commit results from the Refine-audience panel: stores rollback snapshot (Base/Pro), then applies new ICPs and descriptions.
- */
-export const commitWorkspaceRefine = mutation({
-  args: commitWorkspaceRefineArgsValidator,
-  handler: async (ctx, args) => {
-    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
-    const workspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
-      user,
-      notFoundMessage: "Workspace not found",
-      notAuthorizedMessage: "Not authorized to update this workspace",
-    });
-
-    if (args.icps.length < 3) {
-      throw new Error("At least three ideal customer profiles are required.");
-    }
-
-    const plan = await getOrCreateUserPlan(ctx, user._id);
-    const now = getCurrentUTCTimestamp();
-
-    const patch: Record<string, unknown> = {
-      description: args.description,
-      improvedDescription: args.improvedDescription,
-      icps: args.icps,
-      lastGeneratedAt: now,
-      updatedAt: now,
-    };
-
-    if (args.seedDescription !== undefined)
-      patch.seedDescription = args.seedDescription;
-    if (args.sourceUrl !== undefined) patch.sourceUrl = args.sourceUrl;
-    if (args.descriptionSource !== undefined)
-      patch.descriptionSource = args.descriptionSource;
-    if (args.useCaseKey !== undefined) patch.useCaseKey = args.useCaseKey;
-
-    if (plan.tier === "base" || plan.tier === "pro") {
-      patch.refineRollbackSnapshot = buildRefineRollbackSnapshot(workspace);
-    }
-
-    await ctx.db.patch(workspace._id, patch);
-    return workspace._id;
-  },
-});
-
-/**
- * Restore workspace configuration from the last refine rollback snapshot (Base/Pro only).
- */
-export const rollbackWorkspace = mutation({
-  args: { workspaceId: v.id("workspaces") },
-  handler: async (ctx, args) => {
-    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
-    const workspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
-      user,
-      notFoundMessage: "Workspace not found",
-      notAuthorizedMessage: "Not authorized to update this workspace",
-    });
-
-    const plan = await getOrCreateUserPlan(ctx, user._id);
-    if (plan.tier !== "base" && plan.tier !== "pro") {
-      throw new Error("Rollback is available on Base and Pro plans.");
-    }
-
-    const snap = workspace.refineRollbackSnapshot;
-    if (!snap) {
-      throw new Error("No rollback snapshot available.");
-    }
-
-    const now = getCurrentUTCTimestamp();
-    await ctx.db.patch(workspace._id, {
-      description: snap.description,
-      seedDescription: snap.seedDescription,
-      improvedDescription: snap.improvedDescription,
-      icps: snap.icps,
-      useCaseKey: snap.useCaseKey,
-      sourceUrl: snap.sourceUrl,
-      descriptionSource: snap.descriptionSource,
-      lastGeneratedAt: now,
-      updatedAt: now,
-      refineRollbackSnapshot: undefined,
-    });
-
-    return workspace._id;
   },
 });
 
@@ -1383,6 +1299,16 @@ export const getWorkspaceInternal = internalQuery({
     return workspace
       ? await withResolvedWorkspaceUseCase(ctx, workspace)
       : null;
+  },
+});
+
+export const getWorkspaceForTargetingUpdateInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    return await getOwnedWorkspace(ctx, args.workspaceId, args.userId);
   },
 });
 

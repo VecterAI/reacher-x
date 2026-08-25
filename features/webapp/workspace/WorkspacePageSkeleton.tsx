@@ -3,6 +3,7 @@
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
 import { PageContent, PageScrollArea } from "@/features/webapp/ui/components";
+import { WORKSPACE_USE_CASE_FIELD_LABEL } from "@/shared/lib/workspaceUseCases";
 
 function WorkspaceFieldSkeleton({
   label,
@@ -60,7 +61,7 @@ export function WorkspacePageSkeleton({
               aria-label="Loading workspace"
             >
               <WorkspaceFieldSkeleton
-                label="Who to find/reach"
+                label={WORKSPACE_USE_CASE_FIELD_LABEL}
                 inputClassName="h-10 w-full rounded-md"
               />
 

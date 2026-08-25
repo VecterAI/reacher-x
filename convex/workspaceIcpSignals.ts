@@ -87,7 +87,7 @@ async function generateWorkspaceIcpSignals(args: {
     prompt: buildWorkspaceIcpSignalsUserPrompt(args),
     temperature: 0.6,
     maxRetries: 2,
-    routing: "fast",
+    routing: "onboarding",
   });
 
   return {

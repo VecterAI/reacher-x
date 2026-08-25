@@ -19,6 +19,7 @@ import {
   PopoverTrigger,
 } from "@/shared/ui/components/Popover";
 import {
+  WORKSPACE_USE_CASE_FIELD_LABEL,
   WORKSPACE_USE_CASE_KEYS,
   workspaceUseCaseRegistry,
   type WorkspaceUseCaseKey,
@@ -56,7 +57,7 @@ export function WorkspaceUseCaseCombobox({
   return (
     <div className={cn("space-y-0", className)}>
       <Label className="text-foreground mb-2.5 block" htmlFor={id}>
-        Who to find/reach
+        {WORKSPACE_USE_CASE_FIELD_LABEL}
       </Label>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>

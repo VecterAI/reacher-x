@@ -67,21 +67,12 @@ interface AgentOnboardingPanelProps {
   threadId?: string | null;
   /** Close panel → return to chat (chat-first setup). */
   onClose?: () => void;
-  /** Hides progress + step counter; used when panel is embedded from /workspace Refine. */
-  embedRefine?: boolean;
-  /** Called after preview approval when embedRefine (session discarded server-side). */
-  onRefineComplete?: () => void;
-  /** Cancel from Refine panel (workspace page exits edit mode). */
-  onRefineCancel?: () => void | Promise<void>;
 }
 
 export function AgentOnboardingPanel({
   className,
   threadId,
   onClose,
-  embedRefine = false,
-  onRefineComplete,
-  onRefineCancel,
 }: AgentOnboardingPanelProps) {
   const router = useRouter();
 
@@ -202,11 +193,7 @@ export function AgentOnboardingPanel({
       legacyPreferencesFinalizedRef.current = false;
       return;
     }
-    if (
-      legacyPreferencesFinalizedRef.current ||
-      isCompletingPreferences ||
-      embedRefine
-    ) {
+    if (legacyPreferencesFinalizedRef.current || isCompletingPreferences) {
       return;
     }
     legacyPreferencesFinalizedRef.current = true;
@@ -231,7 +218,6 @@ export function AgentOnboardingPanel({
         setIsCompletingPreferences(false);
       });
   }, [
-    embedRefine,
     isCompletingPreferences,
     openWorkspaceHome,
     selectSetupPreference,
@@ -508,14 +494,8 @@ export function AgentOnboardingPanel({
     setIsApprovingPreview(true);
     try {
       await approveSetupGeneration({ sessionId });
-      if (embedRefine) {
-        toast.success("Workspace updated", {
-          description: "Your audience and profiles were saved.",
-        });
-        onRefineComplete?.();
-      }
     } catch (error) {
-      toast.error(embedRefine ? "Could not save" : "Could not continue setup", {
+      toast.error("Could not continue setup", {
         description:
           error instanceof Error ? error.message : "Please try again.",
       });
@@ -523,21 +503,7 @@ export function AgentOnboardingPanel({
       approvingPreviewRef.current = false;
       setIsApprovingPreview(false);
     }
-  }, [approveSetupGeneration, embedRefine, onRefineComplete, sessionId]);
-
-  const handleInputStepDone = useCallback(async () => {
-    if (setupSession?.inputPhase === "awaiting_icp_approval") {
-      await handleConfirmIdealProfiles();
-      return;
-    }
-    if (setupSession?.inputPhase === "awaiting_preview_approval") {
-      await handleApproveGeneratedDraft();
-    }
-  }, [
-    handleApproveGeneratedDraft,
-    handleConfirmIdealProfiles,
-    setupSession?.inputPhase,
-  ]);
+  }, [approveSetupGeneration, sessionId]);
 
   const handlePlanChoice = useCallback(
     async (
@@ -632,10 +598,6 @@ export function AgentOnboardingPanel({
     setupSession?.status === "provisioning_preview_workspace" ||
     setupSession?.status === "discovering_preview_prospects" ||
     setupSession?.status === "preview_search_in_progress";
-  const canCompleteInputStep =
-    setupSession?.inputPhase === "awaiting_icp_approval" ||
-    setupSession?.inputPhase === "awaiting_preview_approval";
-
   if (previewSocialPanel) {
     return (
       <div
@@ -715,7 +677,7 @@ export function AgentOnboardingPanel({
             onInputModeChange={setInputMode}
             onSourceUrlChange={setSourceUrl}
             onOpenPreviewProfile={handleOpenPreviewProfile}
-            hidePromptComposer={!embedRefine}
+            hidePromptComposer
           />
         );
       case "connections":
@@ -758,67 +720,29 @@ export function AgentOnboardingPanel({
     >
       <div className="flex h-full min-h-0 w-full flex-col">
         <PageHeader
-          title={
-            embedRefine && step === "input"
-              ? "Your audience"
-              : STEP_TITLES[step]
-          }
+          title={STEP_TITLES[step]}
           titleSuffix={
-            embedRefine ? null : (
-              <span className="text-muted-foreground font-mono text-sm">
-                {" "}
-                · {stepNumber}/{stepTotal}
-              </span>
-            )
+            <span className="text-muted-foreground font-mono text-sm">
+              {" "}
+              · {stepNumber}/{stepTotal}
+            </span>
           }
-          backDisabled={embedRefine ? false : !onClose}
+          backDisabled={!onClose}
           className="rounded-none"
           onBack={
-            embedRefine && step === "input"
-              ? () => void onRefineCancel?.()
-              : onClose
-                ? () => onClose()
-                : previousVisibleStep
-                  ? () => setStepOverride(previousVisibleStep)
-                  : handleUseCaseStepHeaderBack
-          }
-          actions={
-            step === "input" && embedRefine ? (
-              <>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  onClick={() => void onRefineCancel?.()}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="xs"
-                  variant="secondary"
-                  disabled={
-                    !canCompleteInputStep ||
-                    setupSession?.status === "generating_profiles" ||
-                    setupSession?.status === "provisioning_preview_workspace" ||
-                    setupSession?.status === "discovering_preview_prospects" ||
-                    setupSession?.status === "preview_search_in_progress" ||
-                    isSubmittingInput
-                  }
-                  onClick={() => void handleInputStepDone()}
-                >
-                  Done
-                </Button>
-              </>
-            ) : undefined
+            onClose
+              ? () => onClose()
+              : previousVisibleStep
+                ? () => setStepOverride(previousVisibleStep)
+                : handleUseCaseStepHeaderBack
           }
         />
-        {!embedRefine ? (
-          <Progress
-            aria-label={`Setup progress: step ${stepNumber} of ${stepTotal}`}
-            className="h-0.5 rounded-none border-0"
-            indicatorClassName="bg-foreground rounded-none"
-            value={progressValue}
-          />
-        ) : null}
+        <Progress
+          aria-label={`Setup progress: step ${stepNumber} of ${stepTotal}`}
+          className="h-0.5 rounded-none border-0"
+          indicatorClassName="bg-foreground rounded-none"
+          value={progressValue}
+        />
         {step === "input" ? (
           <div className="min-h-0 flex-1">{renderStep()}</div>
         ) : step === "connections" ? (
@@ -842,11 +766,6 @@ export function AgentOnboardingPanel({
           ) : (
             <ConnectionsStep
               sessionId={sessionId}
-              onBack={() => {
-                if (previousVisibleStep) {
-                  setStepOverride(previousVisibleStep);
-                }
-              }}
               onCompleteStep={(status) => {
                 setStepOverride(null);
                 if (status === "ready") {
