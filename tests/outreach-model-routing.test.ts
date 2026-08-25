@@ -36,7 +36,7 @@ test("router context is compact, chronological, and excludes the current turn", 
   ]);
 });
 
-test("semantic lane selection defaults low-confidence decisions to Terra", () => {
+test("semantic lane selection defaults low-confidence decisions to Sol", () => {
   assert.equal(
     selectOutreachTextLane({
       lane: "fast",
@@ -44,7 +44,7 @@ test("semantic lane selection defaults low-confidence decisions to Terra", () =>
       reason: "simple_status_or_display",
       rationale: "Probably simple, but uncertain.",
     }).selectedLane,
-    "terra"
+    "sol"
   );
   assert.equal(
     selectOutreachTextLane({
@@ -81,6 +81,7 @@ test("router prompt distinguishes capability truth from basic plan operations", 
   assert.match(prompt, /semantic intent and conversational state/);
   assert.match(prompt, /workspace\/product capability checks/);
   assert.match(prompt, /not a simple plan operation/);
+  assert.match(prompt, /plan generation or refinement/);
   assert.match(prompt, /"pending":2/);
 });
 

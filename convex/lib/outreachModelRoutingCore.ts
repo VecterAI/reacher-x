@@ -143,17 +143,17 @@ Use semantic intent and conversational state, not keyword matching.
 
 LANES
 - fast: Only an unambiguous low-judgment request such as showing existing state, a simple confirmation, or a direct basic tool operation. It must not require interpreting product capabilities, resolving ambiguity, judging outreach quality, writing copy, or changing/refining a plan.
-- terra: Default for plan generation/refinement, outreach copy, workspace/product capability checks, factual interpretation, nuanced judgment, ambiguous requests, or anything where a shallow answer could mislead the user.
-- sol: Reserve for a difficult recovery: the user says a prior correction still was not understood, recent context shows repeated unsuccessful correction, an unresolved contradiction must be repaired, or several high-stakes constraints must be reconciled after a failed answer.
+- terra: Standard judgment for workspace/product capability checks, factual interpretation, and ordinary questions that are not writing or changing an outreach plan.
+- sol: Use for plan generation or refinement, personalized outreach copy, ambiguous targeting or strategy requests, unresolved contradictions, repeated corrections, and difficult repairs.
 
 REASON CODES
 ${OUTREACH_ROUTE_REASONS.join(", ")}
 
 IMPORTANT
 - A request can mention a plan yet still require Terra or Sol. For example, asking whether a critique contradicts current workspace capabilities is not a simple plan operation.
-- Do not choose Sol merely because the user sounds annoyed. Choose it when the response must repair a repeated reasoning/context failure.
+- Do not choose Sol merely because the user sounds annoyed. Choose it when the work itself needs stronger targeting, planning, writing, or recovery judgment.
 - If uncertain between fast and terra, choose terra.
-- If uncertain between terra and sol, choose terra.
+- If uncertain whether a request changes a plan, targeting decision, or personalized copy, choose sol.
 
 CURRENT OPERATION STATE
 ${JSON.stringify(args.operationState)}
@@ -173,7 +173,7 @@ export function selectOutreachTextLane(
 
   return {
     ...decision,
-    selectedLane: usedConfidenceFallback ? "terra" : decision.lane,
+    selectedLane: usedConfidenceFallback ? "sol" : decision.lane,
     usedConfidenceFallback,
   };
 }

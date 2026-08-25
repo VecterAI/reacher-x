@@ -41,7 +41,7 @@ export type SetupUrlAnalysisTelemetry = {
   pageTitle: string | null;
   providerHint: string;
   providerMetadata?: ProviderMetadata;
-  routing: "fast";
+  routing: "onboarding";
   timeoutMs: number;
   usage: SetupUrlAnalysisUsage;
   url: string;
@@ -88,7 +88,7 @@ export async function analyzeSetupUrl(args: {
 ${contentResult.content}
 
 Extract the business/product name, description, target audience, key problems solved, and unique value proposition.`;
-  const routing = "fast" as const;
+  const routing = "onboarding" as const;
   const routingTelemetry = getRoutingTelemetry(routing);
   const { object, model, usage, providerMetadata } = await robustGenerateObject(
     {

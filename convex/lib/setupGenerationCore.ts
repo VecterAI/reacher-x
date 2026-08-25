@@ -15,9 +15,9 @@ import { extractUsage, getRoutingTelemetry, robustGenerateObject } from "./ai";
 
 const icpsSchema = z
   .array(icpSchema)
-  .min(2)
+  .min(3)
   .max(4)
-  .describe("2-4 distinct Ideal Customer Profile segments");
+  .describe("3-4 distinct Ideal Customer Profile segments");
 
 const improvedDescriptionAndIcpsSchema = z.strictObject({
   improvedDescription: z
@@ -39,7 +39,7 @@ export type SetupGenerationTelemetry = {
   model: string;
   providerHint: string;
   providerMetadata?: ProviderMetadata;
-  routing: "fast";
+  routing: "onboarding";
   timeoutMs: number;
   usage: SetupGenerationUsage;
   request: {
@@ -141,13 +141,20 @@ export function buildInitialSetupGenerationUserPrompt(
 ): string {
   const useCase = getWorkspaceUseCase(args.useCaseKey);
 
-  return `Lightly improve the user's description and create 2-4 ${useCase.profileLabelPlural}.
+  let prompt = `Lightly improve the user's description and create 3-4 ${useCase.profileLabelPlural}.
 
 ${buildGroundedDescriptionContext(args)}
 
 Create:
 1. A lightly edited improved description. Preserve all material meaning and facts; do not add or infer anything.
-2. 2-4 distinct profiles with pain points and preferred social channels.`;
+2. 3-4 distinct profiles with pain points and preferred social channels.`;
+
+  const preservedProfiles = getCurrentProfiles(args);
+  if (preservedProfiles.length > 0) {
+    prompt += `\n\nThese manually maintained profiles will remain in the workspace. Create complementary profiles and do not duplicate their names or audiences:\n${formatCurrentProfiles(preservedProfiles)}`;
+  }
+
+  return prompt;
 }
 
 export function buildSetupProfileRevisionUserPrompt(
@@ -176,7 +183,7 @@ ${currentImprovedDescription}
 ${args.revisionFeedback.trim()}
 </revision_feedback>
 
-Return a full replacement set of 2-4 ${useCase.profileLabelPlural.toLowerCase()} only. Do not return a description field.`;
+Return a full replacement set of 3-4 ${useCase.profileLabelPlural.toLowerCase()} only. Do not return a description field.`;
 
   return prompt;
 }
@@ -189,7 +196,7 @@ function buildTelemetry(args: {
   system: string;
   usage: SetupGenerationUsage;
 }): SetupGenerationTelemetry {
-  const routing = "fast" as const;
+  const routing = "onboarding" as const;
   const routingTelemetry = getRoutingTelemetry(routing);
 
   return {
@@ -216,7 +223,7 @@ export async function generateInitialSetupDraft(
 ): Promise<SetupGenerationDraft> {
   const system = buildProfileGenerationPrompt(args.useCaseKey);
   const prompt = buildInitialSetupGenerationUserPrompt(args);
-  const routing = "fast" as const;
+  const routing = "onboarding" as const;
 
   const { object, model, usage, providerMetadata } = await robustGenerateObject(
     {
@@ -258,7 +265,7 @@ export async function generateSetupProfileRevision(
 ): Promise<SetupProfileRevision> {
   const system = buildProfileRevisionPrompt(args.useCaseKey);
   const prompt = buildSetupProfileRevisionUserPrompt(args);
-  const routing = "fast" as const;
+  const routing = "onboarding" as const;
 
   const { object, model, usage, providerMetadata } = await robustGenerateObject(
     {

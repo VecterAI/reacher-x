@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CLASSIFIER_SYSTEM_PROMPT,
   buildSetupInputClassificationPrompt,
   setupInputClassificationSchema,
 } from "./setupInputClassificationCore";
@@ -60,5 +61,23 @@ describe("setup input structured classification", () => {
     expect(prompt).toContain("Return only accepted, reason, and useCaseKey");
     expect(prompt).not.toContain("normalizedDescription");
     expect(prompt).not.toContain("userMessage");
+  });
+
+  it("classifies the desired relationship instead of topic words", () => {
+    expect(CLASSIFIER_SYSTEM_PROMPT).toContain(
+      "The target person and desired relationship control the result"
+    );
+    expect(CLASSIFIER_SYSTEM_PROMPT).toContain(
+      "hiring decision-makers as prospective buyers or leads"
+    );
+    expect(CLASSIFIER_SYSTEM_PROMPT).toContain(
+      "Never force a preset because it is the closest topic match"
+    );
+    expect(CLASSIFIER_SYSTEM_PROMPT).toContain(
+      "If the request names identifiable people or roles, accept it"
+    );
+    expect(CLASSIFIER_SYSTEM_PROMPT).toContain(
+      "is valid general_outreach when no buyer, candidate, or partnership relationship is stated"
+    );
   });
 });

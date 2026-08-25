@@ -68,7 +68,7 @@ export const generateImprovedDescriptionAndICPs = createTool({
           ctx,
           ctx.threadId
         );
-        const routingTelemetry = getRoutingTelemetry("fast");
+        const routingTelemetry = getRoutingTelemetry("onboarding");
 
         try {
           const generation = await generateSetupDraft({
@@ -103,7 +103,7 @@ export const generateImprovedDescriptionAndICPs = createTool({
           logEvent.error(error, {
             ai: {
               provider_hint: routingTelemetry.providerLabel,
-              routing: "fast",
+              routing: "onboarding",
               timeout_ms: routingTelemetry.timeoutMs,
             },
           });

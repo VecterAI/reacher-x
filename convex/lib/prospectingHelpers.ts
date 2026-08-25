@@ -64,6 +64,25 @@ export const BATCH_LIMITS = {
 
 export type Platform = "twitter" | "linkedin";
 
+type DiscoveryWorkspaceContext = Pick<
+  Doc<"workspaces">,
+  "description" | "improvedDescription" | "rawUserDescription"
+>;
+
+export function buildDiscoveryBusinessContext(
+  workspace: DiscoveryWorkspaceContext
+): string {
+  const originalRequest = workspace.rawUserDescription?.trim();
+  const currentDescription =
+    workspace.improvedDescription?.trim() || workspace.description.trim();
+
+  if (!originalRequest || originalRequest === currentDescription) {
+    return currentDescription;
+  }
+
+  return `Original audience request (source of truth):\n${originalRequest}\n\nCurrent workspace description:\n${currentDescription}`;
+}
+
 type PreviewTwitterGraphSeedWorkspace = Pick<
   Doc<"workspaces">,
   "icps" | "useCaseKey"

@@ -47,6 +47,7 @@ import {
   resolveLinkedInProspectProfileIdentifiers,
 } from "../integrations/linkedin/profileIdentity";
 import { AUTO_PLAN_GENERATION_THRESHOLD } from "../lib/outreachCore";
+import type { ModelRouting } from "../lib/ai";
 
 // ============================================================================
 // Constants
@@ -154,7 +155,13 @@ export const runTwitterEnrichmentCore = internalAction({
       })
     ),
     workspaceName: v.string(),
-    routing: v.optional(v.union(v.literal("fast"), v.literal("reasoning"))),
+    routing: v.optional(
+      v.union(
+        v.literal("fast"),
+        v.literal("reasoning"),
+        v.literal("onboarding")
+      )
+    ),
   },
   handler: async (_ctx, args) => {
     const result = await enrichTwitterProfile({
@@ -197,7 +204,13 @@ export const runLinkedInEnrichmentCore = internalAction({
       })
     ),
     workspaceName: v.string(),
-    routing: v.optional(v.union(v.literal("fast"), v.literal("reasoning"))),
+    routing: v.optional(
+      v.union(
+        v.literal("fast"),
+        v.literal("reasoning"),
+        v.literal("onboarding")
+      )
+    ),
   },
   handler: async (_ctx, args) => {
     const result = await enrichLinkedInProfile({
@@ -395,7 +408,7 @@ export const enrichmentWorkflow = workflow.define({
         includeExtendedBio: !useFastPreviewPath,
         includeFinanceSearch: !useFastPreviewPath,
         forcePartial: useFastPreviewPath,
-        routing: isSetupPreview ? "fast" : "reasoning",
+        routing: isSetupPreview ? "onboarding" : "reasoning",
       });
     } else if (platform === "linkedin") {
       preparedResult = await enrichLinkedInProspect(step, {
@@ -404,7 +417,7 @@ export const enrichmentWorkflow = workflow.define({
         qualificationEvidence,
         icps,
         workspaceName,
-        routing: isSetupPreview ? "fast" : "reasoning",
+        routing: isSetupPreview ? "onboarding" : "reasoning",
       });
     } else {
       await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
@@ -657,7 +670,7 @@ async function enrichTwitterProspect(
     includeExtendedBio?: boolean;
     includeFinanceSearch?: boolean;
     forcePartial?: boolean;
-    routing?: "fast" | "reasoning";
+    routing?: ModelRouting;
   }
 ) {
   const {
@@ -812,7 +825,7 @@ async function enrichLinkedInProspect(
     qualificationEvidence: EvidencePost[];
     icps: ICP[];
     workspaceName: string;
-    routing?: "fast" | "reasoning";
+    routing?: ModelRouting;
   }
 ) {
   const {

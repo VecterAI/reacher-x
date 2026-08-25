@@ -110,6 +110,9 @@ type OpenRouterRoutingPreset =
 
 const FAST_MODEL_TIMEOUT_MS = 10_000;
 const REASONING_MODEL_TIMEOUT_MS = 45_000;
+const ONBOARDING_MODEL_TIMEOUT_MS = 45_000;
+
+type RoutingPreset = "fast" | "reasoning";
 
 /**
  * The app supports two local routing presets:
@@ -230,7 +233,7 @@ type RoutingModelConfig = {
   timeoutMs: number;
 };
 
-type RoutingPresetConfig = Record<ModelRouting, RoutingModelConfig>;
+type RoutingPresetConfig = Record<RoutingPreset, RoutingModelConfig>;
 
 const CURRENT_ROUTING_CONFIG: RoutingPresetConfig = {
   fast: {
@@ -334,6 +337,28 @@ export const HELPER_PROVIDER_OPTIONS: OpenRouterProviderOptions =
 export const AUTOCOMPLETE_PROVIDER_OPTIONS = HELPER_PROVIDER_OPTIONS;
 
 /**
+ * Onboarding determines the audience, targeting profile, and durable workspace
+ * configuration. Keep it on the highest-judgment lane independently of the
+ * cost-optimized fast/reasoning preset.
+ */
+export const ONBOARDING_MODEL = getConfiguredModel(
+  "AI_ONBOARDING_MODEL",
+  MODELS.GPT_5_6_SOL
+);
+
+export const ONBOARDING_PROVIDER_OPTIONS: OpenRouterProviderOptions =
+  getConfiguredProviderOptions({
+    model: ONBOARDING_MODEL,
+    defaultModel: MODELS.GPT_5_6_SOL,
+    defaultOptions: createGpt56ProviderOptions({ requireParameters: false }),
+    requireParameters: false,
+  });
+
+const ONBOARDING_PROVIDER_LABEL = ONBOARDING_MODEL.startsWith("openai/gpt-5.6-")
+  ? `${OPENROUTER_PROVIDERS.OPENAI}/${OPENROUTER_PROVIDERS.AZURE}`
+  : "openrouter";
+
+/**
  * Tool-calling agents use a latency-ranked Cerebras/Groq/BaseTen pool.
  * OpenRouter chooses from rolling provider latency and can fail over inside
  * the request, preventing simultaneous endpoint throttling from stopping the
@@ -344,18 +369,14 @@ export const AUTOCOMPLETE_PROVIDER_OPTIONS = HELPER_PROVIDER_OPTIONS;
  */
 export const PINNED_AGENT_MODEL = getConfiguredModel(
   "AI_SETUP_AGENT_MODEL",
-  MODELS.GPT_OSS
+  ONBOARDING_MODEL
 );
 
 export const PINNED_AGENT_PROVIDER_OPTIONS: OpenRouterProviderOptions =
   getConfiguredProviderOptions({
     model: PINNED_AGENT_MODEL,
-    defaultModel: MODELS.GPT_OSS,
-    defaultOptions: createLatencySortedProviderOptions([
-      OPENROUTER_PROVIDERS.CEREBRAS,
-      OPENROUTER_PROVIDERS.GROQ,
-      OPENROUTER_PROVIDERS.BASETEN,
-    ]),
+    defaultModel: ONBOARDING_MODEL,
+    defaultOptions: ONBOARDING_PROVIDER_OPTIONS,
   });
 
 /**
@@ -365,13 +386,13 @@ export const PINNED_AGENT_PROVIDER_OPTIONS: OpenRouterProviderOptions =
  */
 export const OUTREACH_AGENT_MODEL = getConfiguredModel(
   "AI_MAIN_AGENT_MODEL",
-  MODELS.GPT_5_6_TERRA
+  MODELS.GPT_5_6_SOL
 );
 
 export const OUTREACH_AGENT_PROVIDER_OPTIONS: OpenRouterProviderOptions =
   getConfiguredProviderOptions({
     model: OUTREACH_AGENT_MODEL,
-    defaultModel: MODELS.GPT_5_6_TERRA,
+    defaultModel: MODELS.GPT_5_6_SOL,
     defaultOptions: createGpt56ProviderOptions(),
   });
 
@@ -459,7 +480,7 @@ export function supportsExplicitPromptCaching(model: string): boolean {
   return model.startsWith("openai/gpt-5.6-");
 }
 
-export type ModelRouting = "fast" | "reasoning";
+export type ModelRouting = RoutingPreset | "onboarding";
 type JsonFailureLogLevel = "error" | "warn" | "info";
 const aiLogger = logger.withScope("AI");
 
@@ -480,6 +501,15 @@ export function getOpenRouterExtraBody(
 }
 
 function getModelForRouting(routing: ModelRouting): RoutingModelConfig {
+  if (routing === "onboarding") {
+    return {
+      model: ONBOARDING_MODEL,
+      providerOptions: ONBOARDING_PROVIDER_OPTIONS,
+      providerLabel: ONBOARDING_PROVIDER_LABEL,
+      timeoutMs: ONBOARDING_MODEL_TIMEOUT_MS,
+    };
+  }
+
   return getRoutingPresetConfig()[routing];
 }
 
