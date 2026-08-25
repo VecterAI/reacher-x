@@ -16,9 +16,56 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function sanitizeWorkflowString(value: string): string {
+  let sanitized = "";
+
+  for (let index = 0; index < value.length; index++) {
+    const codeUnit = value.charCodeAt(index);
+
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1);
+      if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+        sanitized += value[index] + value[index + 1];
+        index++;
+      } else {
+        sanitized += "\ufffd";
+      }
+      continue;
+    }
+
+    sanitized +=
+      codeUnit >= 0xdc00 && codeUnit <= 0xdfff ? "\ufffd" : value[index];
+  }
+
+  return sanitized;
+}
+
+export function sanitizeWorkflowValue<T>(value: T): T {
+  if (typeof value === "string") {
+    return sanitizeWorkflowString(value) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeWorkflowValue(entry)) as T;
+  }
+
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .map(([key, entry]) => [
+          sanitizeWorkflowString(key),
+          sanitizeWorkflowValue(entry),
+        ])
+    ) as T;
+  }
+
+  return value;
+}
+
 function asString(value: unknown): string | undefined {
   if (typeof value === "string") {
-    const trimmed = value.trim();
+    const trimmed = sanitizeWorkflowString(value).trim();
     return trimmed.length > 0 ? trimmed : undefined;
   }
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -397,7 +444,7 @@ export function sanitizeLinkedInProfileForWorkflow(
 
   return compactObject({
     urn: asString(value.urn),
-    id: asString(value.id),
+    id: asString(value.id) ?? asString(value.profileID),
     username:
       asString(value.username) ??
       asString(value.publicIdentifier) ??
@@ -409,6 +456,7 @@ export function sanitizeLinkedInProfileForWorkflow(
     lastName: asString(value.lastName),
     name:
       (asString(value.name) ??
+        asString(value.fullName) ??
         [asString(value.firstName), asString(value.lastName)]
           .filter(Boolean)
           .join(" ")
@@ -425,7 +473,9 @@ export function sanitizeLinkedInProfileForWorkflow(
         ? {
             full: asString(geo.full),
           }
-        : undefined,
+        : asString(value.location)
+          ? { full: asString(value.location) }
+          : undefined,
     position: sanitizedPositions.length > 0 ? sanitizedPositions : undefined,
   });
 }

@@ -30,7 +30,12 @@ import {
   getProspectingRecoveryDelayMs,
 } from "../lib/prospectingHelpers";
 import { decideProspectingSchedule } from "../lib/prospectingSchedulingCore";
-import { LINKEDIN_PEOPLE_DEFAULT_COUNT } from "../lib/linkedinSearchHelpers";
+import {
+  chunkLinkedInItems,
+  chunkLinkedInProspectsForSave,
+  LINKEDIN_PEOPLE_DEFAULT_COUNT,
+  normalizeLinkedInPostQueryStats,
+} from "../lib/linkedinSearchHelpers";
 import { PREVIEW_BATCH_LIMITS } from "../lib/previewBatchLimits";
 import { hasRequiredWorkspaceAgentData } from "../lib/workspaceSetup";
 import type {
@@ -42,6 +47,7 @@ import type { LinkedInPerson } from "../integrations/linkedin/searchPeople";
 import {
   prospectingBootstrapCompletionReasonValidator,
   prospectingCycleStatusValidator,
+  prospectPlatformValidator,
   prospectingWorkflowPauseReasonValidator,
   twitterProspectingSearchModeValidator,
   workspaceWorkflowStatusValidator,
@@ -58,6 +64,19 @@ import {
   type TwitterQueryStat,
   type TwitterProspectingSearchMode,
 } from "../lib/twitterProspectingSearchCore";
+import {
+  getWorkflowEvidencePostId,
+  getWorkflowEvidencePostText,
+  sanitizeProspectDataForWorkflow,
+  sanitizeProspectEvidencePostsForWorkflow,
+  sanitizeWorkflowString,
+  sanitizeWorkflowValue,
+} from "../lib/workflowSafeProspect";
+import {
+  buildProspectingCycleOutcome,
+  type ProspectingPlatform,
+} from "../lib/prospectingCycleCore";
+import { stringifyUnknownError } from "../lib/errorHelpers";
 
 type QueryMetadataRecord = {
   query: string;
@@ -177,6 +196,7 @@ export const prospectingWorkflow = workflow.define({
     prospectsFound: v.optional(v.number()),
     twitterSaved: v.optional(v.number()),
     linkedinSaved: v.optional(v.number()),
+    failedPlatforms: v.optional(v.array(prospectPlatformValidator)),
     shouldContinue: v.boolean(),
   }),
   handler: async (
@@ -188,6 +208,7 @@ export const prospectingWorkflow = workflow.define({
     prospectsFound?: number;
     twitterSaved?: number;
     linkedinSaved?: number;
+    failedPlatforms?: ProspectingPlatform[];
     shouldContinue: boolean;
   }> => {
     const workflowSourceId = String(step.workflowId);
@@ -468,9 +489,10 @@ export const prospectingWorkflow = workflow.define({
               queryStats: result.queryStats,
             });
 
-            return result;
+            return { ...result, platformFailed: false };
           }
           return {
+            platformFailed: false,
             saved: 0,
             queryStats: [] as Array<{
               query: string;
@@ -501,6 +523,7 @@ export const prospectingWorkflow = workflow.define({
             err
           );
           return {
+            platformFailed: true,
             saved: 0,
             queryStats: [] as Array<{
               query: string;
@@ -579,9 +602,32 @@ export const prospectingWorkflow = workflow.define({
               });
             }
 
+            if (!result.success) {
+              onboardingIssueRaised = true;
+              searchIssueRaised = true;
+              await step.runMutation(
+                internal.workspaces.setOnboardingIssueStateInternal,
+                {
+                  workspaceId: args.workspaceId,
+                  statusCode: "search_failed",
+                  source: "search",
+                }
+              );
+              prospectingWorkflowLogger.error(
+                "LinkedIn search completed with persistence errors",
+                {
+                  workspaceId: String(args.workspaceId),
+                  workspaceName: workspace.name,
+                  linkedinSaved: result.saved,
+                  error: result.error,
+                }
+              );
+            }
+
             return result;
           }
           return {
+            success: true,
             saved: 0,
             postQueryStats: [] as Array<{
               query: string;
@@ -616,6 +662,8 @@ export const prospectingWorkflow = workflow.define({
             err
           );
           return {
+            success: false,
+            error: stringifyUnknownError(err),
             saved: 0,
             postQueryStats: [] as Array<{
               query: string;
@@ -638,6 +686,14 @@ export const prospectingWorkflow = workflow.define({
     twitterSeedCandidates = twitterResult.posts;
     twitterMatchedQueriesByPostId = twitterResult.matchedQueriesByPostId;
     linkedinSaved = linkedinResult.saved;
+    const failedPlatforms: ProspectingPlatform[] = [];
+
+    if (twitterResult.platformFailed) {
+      failedPlatforms.push("twitter");
+    }
+    if (!linkedinResult.success) {
+      failedPlatforms.push("linkedin");
+    }
 
     if (!searchIssueRaised) {
       await step.runMutation(
@@ -699,7 +755,11 @@ export const prospectingWorkflow = workflow.define({
     // Note: Qualification now happens automatically per-prospect via streaming workflows
     // triggered immediately when prospects are saved (no batch step needed)
 
-    const totalSaved = twitterSaved + linkedinSaved;
+    const outcome = buildProspectingCycleOutcome({
+      twitterSaved,
+      linkedinSaved,
+      failedPlatforms,
+    });
 
     if (!onboardingIssueRaised) {
       await step.runMutation(
@@ -712,30 +772,30 @@ export const prospectingWorkflow = workflow.define({
 
     await step.runMutation(internal.memory.recordMemoryWorkflowEventInternal, {
       workspaceId: args.workspaceId,
-      eventType: "prospecting_cycle_completed",
+      eventType:
+        outcome.status === "error"
+          ? "prospecting_cycle_failed"
+          : "prospecting_cycle_completed",
       sourceType: "workflow_event",
       sourceId: workflowSourceId,
       workflowName: "prospectingWorkflow",
       payload: {
-        prospectsFound: totalSaved,
+        prospectsFound: outcome.prospectsFound,
         twitterSaved,
         linkedinSaved,
+        failedPlatforms,
         promotedSeedCount,
         generatedQueryCount: socialQueries.length,
         acceptedQueryCount: acceptedSocialQueries.length,
         exactDuplicateCount: noveltyScreening.counts.exactDuplicates,
         semanticDuplicateCount: noveltyScreening.counts.semanticDuplicates,
       },
-      eventKey: `prospecting:${workflowSourceId}:completed`,
+      eventKey: `prospecting:${workflowSourceId}:${
+        outcome.status === "error" ? "failed" : "completed"
+      }`,
     });
 
-    return {
-      status: "completed",
-      prospectsFound: totalSaved,
-      twitterSaved,
-      linkedinSaved,
-      shouldContinue: true, // Schedule next run
-    };
+    return outcome;
   },
 });
 
@@ -1104,6 +1164,8 @@ export const searchLinkedInInternal = internalAction({
     ctx,
     args
   ): Promise<{
+    success: boolean;
+    error?: string;
     saved: number;
     postQueryStats: Array<{
       query: string;
@@ -1127,162 +1189,218 @@ export const searchLinkedInInternal = internalAction({
       throw new Error("Workspace not found");
     }
 
-    const [postResult, peopleResult] = await Promise.all([
+    const [postSettlement, peopleSettlement] = await Promise.allSettled([
       args.postQueries.length > 0
         ? ctx.runAction(api.integrations.linkedin.searchPosts.searchBatch, {
             queries: args.postQueries,
             sortBy: "relevance",
             maxQueriesPerBatch: 10,
           })
-        : Promise.resolve({
-            success: false,
-            posts: [] as LinkedInPost[],
-            matchedQueriesByPostId: {} as Record<string, string[]>,
-            errors: [] as Array<{ query: string; error: string }>,
-            queryStats: [] as Array<{
-              query: string;
-              postsFound: number;
-              success: boolean;
-              error?: string;
-            }>,
-            queryResults: [] as Array<{
-              query: string;
-              postsFound: number;
-              searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
-            }>,
-            stats: {
-              queriesExecuted: 0,
-              queriesSucceeded: 0,
-              queriesFailed: 0,
-              totalPostsFound: 0,
-              uniquePosts: 0,
-              durationMs: 0,
-            },
-          }),
+        : Promise.resolve(null),
       args.peopleQueries.length > 0
         ? ctx.runAction(api.integrations.linkedin.searchPeople.searchBatch, {
             queries: args.peopleQueries,
             count: LINKEDIN_PEOPLE_DEFAULT_COUNT,
             maxQueriesPerBatch: 10,
           })
-        : Promise.resolve({
-            success: false,
-            people: [] as LinkedInPerson[],
-            matchedQueriesByPersonUrn: {} as Record<string, string[]>,
-            errors: [] as Array<{ query: string; error: string }>,
-            queryStats: [] as Array<{
-              query: string;
-              peopleFound: number;
-              success: boolean;
-              searchMode: "title" | "keyword";
-              error?: string;
-            }>,
-            queryResults: [] as Array<{
-              query: string;
-              searchMode: "title" | "keyword";
-              peopleFound: number;
-            }>,
-            stats: {
-              queriesExecuted: 0,
-              queriesSucceeded: 0,
-              queriesFailed: 0,
-              totalPeopleFound: 0,
-              uniquePeople: 0,
-              durationMs: 0,
-            },
-          }),
+        : Promise.resolve(null),
     ]);
-    const postProspectsToSave = postResult.posts.map((post: LinkedInPost) => ({
-      platform: "linkedin" as const,
-      externalId: post.postID || "",
-      data: post,
-      matchedKeywords:
-        postResult.matchedQueriesByPostId[post.postID]?.slice(0, 5) ?? [],
-      matchReason: "Matched on LinkedIn post",
-      discoverySource: "search_post" as const,
-      discoveryContext: {
-        matchedQueries:
-          postResult.matchedQueriesByPostId[post.postID]?.slice(0, 5) ?? [],
-        matchedReason: "Matched on LinkedIn post",
-        discoverySnippet: post.text?.slice(0, 240),
-        linkedinSurface: "posts" as const,
-        linkedinHeadline: post.author?.headline,
-        linkedinProfileUrl: post.author?.url,
-      },
-    }));
+    const postResult =
+      postSettlement.status === "fulfilled" ? postSettlement.value : null;
+    const peopleResult =
+      peopleSettlement.status === "fulfilled" ? peopleSettlement.value : null;
+    const postProviderError =
+      postSettlement.status === "rejected"
+        ? sanitizeWorkflowString(stringifyUnknownError(postSettlement.reason))
+        : undefined;
+    const peopleProviderError =
+      peopleSettlement.status === "rejected"
+        ? sanitizeWorkflowString(stringifyUnknownError(peopleSettlement.reason))
+        : undefined;
 
-    const peopleProspectsToSave = peopleResult.people.map(
-      (person: LinkedInPerson) => ({
-        platform: "linkedin" as const,
-        externalId: person.profileID || person.urn || person.url,
-        data: person,
-        matchedKeywords:
-          peopleResult.matchedQueriesByPersonUrn[
-            person.urn || person.profileID || person.url
-          ]?.slice(0, 5) ?? [],
-        matchReason: "Matched on LinkedIn title/headline",
-        discoverySource: "search_people" as const,
-        discoveryContext: {
-          matchedQueries:
-            peopleResult.matchedQueriesByPersonUrn[
-              person.urn || person.profileID || person.url
-            ]?.slice(0, 5) ?? [],
-          matchedReason: "Matched on LinkedIn title/headline",
-          discoverySnippet: person.headline,
-          linkedinSurface: "people" as const,
-          linkedinHeadline: person.headline,
-          linkedinProfileUrl: person.url,
+    type LinkedInProspectToSave = {
+      platform: "linkedin";
+      externalId: string;
+      data: Record<string, unknown>;
+      evidencePosts?: Array<Record<string, unknown>>;
+      matchedKeywords: string[];
+      matchReason: string;
+      discoverySource: "search_post" | "search_people";
+      discoveryContext: {
+        matchedQueries: string[];
+        matchedReason: string;
+        discoverySnippet?: string;
+        linkedinSurface: "posts" | "people";
+        linkedinHeadline?: string;
+        linkedinProfileUrl?: string;
+      };
+    };
+
+    const postProspectsToSave: LinkedInProspectToSave[] = (
+      postResult?.posts ?? []
+    ).flatMap((post: LinkedInPost) => {
+      const evidencePosts = sanitizeProspectEvidencePostsForWorkflow(
+        [post],
+        "linkedin"
+      );
+      const evidencePost = evidencePosts[0];
+      const externalId = evidencePost
+        ? getWorkflowEvidencePostId(evidencePost)
+        : undefined;
+      if (!evidencePost || !externalId) {
+        return [];
+      }
+
+      const matchedQueries = (
+        postResult?.matchedQueriesByPostId[post.postID] ?? []
+      )
+        .slice(0, 5)
+        .map(sanitizeWorkflowString);
+      const data = sanitizeProspectDataForWorkflow(
+        { author: post.author },
+        "linkedin"
+      );
+      const author =
+        data.author && typeof data.author === "object"
+          ? (data.author as Record<string, unknown>)
+          : undefined;
+
+      return [
+        {
+          platform: "linkedin" as const,
+          externalId,
+          data,
+          evidencePosts,
+          matchedKeywords: matchedQueries,
+          matchReason: "Matched on LinkedIn post",
+          discoverySource: "search_post" as const,
+          discoveryContext: {
+            matchedQueries,
+            matchedReason: "Matched on LinkedIn post",
+            discoverySnippet: getWorkflowEvidencePostText(evidencePost).slice(
+              0,
+              240
+            ),
+            linkedinSurface: "posts" as const,
+            linkedinHeadline:
+              typeof author?.headline === "string"
+                ? author.headline
+                : undefined,
+            linkedinProfileUrl:
+              typeof author?.url === "string" ? author.url : undefined,
+          },
         },
-      })
-    );
+      ];
+    });
+
+    const peopleProspectsToSave: LinkedInProspectToSave[] = (
+      peopleResult?.people ?? []
+    ).flatMap((person: LinkedInPerson) => {
+      const data = sanitizeProspectDataForWorkflow(person, "linkedin");
+      const externalId = [data.id, data.urn, data.url, data.linkedinUrl].find(
+        (value): value is string =>
+          typeof value === "string" && value.length > 0
+      );
+      if (!externalId) {
+        return [];
+      }
+
+      const providerKey = person.urn || person.profileID || person.url;
+      const matchedQueries = (
+        peopleResult?.matchedQueriesByPersonUrn[providerKey] ?? []
+      )
+        .slice(0, 5)
+        .map(sanitizeWorkflowString);
+      const headline =
+        typeof data.headline === "string" ? data.headline : undefined;
+      const profileUrl =
+        typeof data.url === "string"
+          ? data.url
+          : typeof data.linkedinUrl === "string"
+            ? data.linkedinUrl
+            : undefined;
+
+      return [
+        {
+          platform: "linkedin" as const,
+          externalId,
+          data,
+          matchedKeywords: matchedQueries,
+          matchReason: "Matched on LinkedIn title/headline",
+          discoverySource: "search_people" as const,
+          discoveryContext: {
+            matchedQueries,
+            matchedReason: "Matched on LinkedIn title/headline",
+            discoverySnippet: headline,
+            linkedinSurface: "people" as const,
+            linkedinHeadline: headline,
+            linkedinProfileUrl: profileUrl,
+          },
+        },
+      ];
+    });
 
     let totalSaved = 0;
+    const savedPeopleProspectIds: Id<"prospects">[] = [];
+    const persistenceErrors: string[] = [];
+    const failedPersistenceSurfaces = new Set<"posts" | "people">();
 
-    if (postProspectsToSave.length > 0) {
-      const savePostResult = await ctx.runMutation(
-        internal.prospects.createProspectsBatch,
-        {
-          userId: workspace.userId,
-          workspaceId: args.workspaceId,
-          processingMode: args.processingMode,
-          prospects: postProspectsToSave.map(
-            (prospect: (typeof postProspectsToSave)[number]) => ({
-              ...prospect,
-              origin: args.prospectOrigin,
-              setupSessionId: args.setupSessionId,
-              setupRevision: args.setupRevision,
-            })
-          ),
+    const saveProspectBatches = async (
+      surface: "posts" | "people",
+      prospects: LinkedInProspectToSave[]
+    ) => {
+      for (const batch of chunkLinkedInProspectsForSave(prospects)) {
+        try {
+          const saveResult = await ctx.runMutation(
+            internal.prospects.createProspectsBatch,
+            {
+              userId: workspace.userId,
+              workspaceId: args.workspaceId,
+              processingMode: args.processingMode,
+              prospects: batch.map((prospect) =>
+                sanitizeWorkflowValue({
+                  ...prospect,
+                  origin: args.prospectOrigin,
+                  setupSessionId: args.setupSessionId,
+                  setupRevision: args.setupRevision,
+                })
+              ),
+            }
+          );
+          totalSaved += saveResult.created + saveResult.updated;
+          if (surface === "people") {
+            savedPeopleProspectIds.push(...saveResult.prospectIds);
+          }
+        } catch (error) {
+          failedPersistenceSurfaces.add(surface);
+          persistenceErrors.push(
+            sanitizeWorkflowString(
+              `LinkedIn ${surface} save failed: ${stringifyUnknownError(error)}`
+            )
+          );
+          break;
         }
-      );
-      totalSaved += savePostResult.created + savePostResult.updated;
-    }
+      }
+    };
 
-    if (peopleProspectsToSave.length > 0) {
-      const savePeopleResult = await ctx.runMutation(
-        internal.prospects.createProspectsBatch,
-        {
-          userId: workspace.userId,
-          workspaceId: args.workspaceId,
-          processingMode: args.processingMode,
-          prospects: peopleProspectsToSave.map(
-            (prospect: (typeof peopleProspectsToSave)[number]) => ({
-              ...prospect,
-              origin: args.prospectOrigin,
-              setupSessionId: args.setupSessionId,
-              setupRevision: args.setupRevision,
-            })
-          ),
-        }
-      );
-      totalSaved += savePeopleResult.created + savePeopleResult.updated;
+    await saveProspectBatches("posts", postProspectsToSave);
+    await saveProspectBatches("people", peopleProspectsToSave);
 
-      if (args.processingMode !== "preview") {
+    if (
+      args.processingMode !== "preview" &&
+      savedPeopleProspectIds.length > 0
+    ) {
+      const enrichmentEnqueueBatchSize =
+        getSystemRuntimeConfig().workpools.enrichment.maxParallelism;
+      for (const prospectIds of chunkLinkedInItems(
+        savedPeopleProspectIds,
+        enrichmentEnqueueBatchSize
+      )) {
         await Promise.all(
-          savePeopleResult.prospectIds.map((prospectId: Id<"prospects">) =>
+          prospectIds.map((prospectId: Id<"prospects">) =>
             ctx
               .runAction(internal.workflows.enrichment.startEnrichment, {
-                prospectId: prospectId as Id<"prospects">,
+                prospectId,
                 workspaceId: args.workspaceId,
               })
               .catch((error) => {
@@ -1300,22 +1418,75 @@ export const searchLinkedInInternal = internalAction({
         );
       }
     }
+
+    const postSearchSucceeded =
+      args.postQueries.length === 0 ||
+      (postSettlement.status === "fulfilled" && postResult?.success === true);
+    const peopleSearchSucceeded =
+      args.peopleQueries.length === 0 ||
+      (peopleSettlement.status === "fulfilled" &&
+        peopleResult?.success === true);
+    const postPersistenceError = failedPersistenceSurfaces.has("posts")
+      ? "LinkedIn post results could not be saved"
+      : undefined;
+    const peoplePersistenceError = failedPersistenceSurfaces.has("people")
+      ? "LinkedIn people results could not be saved"
+      : undefined;
+    const postQueryStats = normalizeLinkedInPostQueryStats(
+      (
+        postResult?.queryStats ??
+        args.postQueries.map((query) => ({
+          query,
+          postsFound: 0,
+          success: false,
+          error: postProviderError ?? "LinkedIn post search failed",
+        }))
+      ).map((stat) => ({
+        query: sanitizeWorkflowString(stat.query),
+        postsFound: stat.postsFound,
+        success: stat.success,
+        error: stat.error ? sanitizeWorkflowString(stat.error) : undefined,
+      })),
+      postPersistenceError
+    );
+    const peopleQueryStats = (
+      peopleResult?.queryStats ??
+      args.peopleQueries.map((query) => ({
+        query,
+        peopleFound: 0,
+        success: false,
+        error: peopleProviderError ?? "LinkedIn people search failed",
+      }))
+    ).map((item) => ({
+      query: sanitizeWorkflowString(item.query),
+      postsFound: item.peopleFound,
+      success: peoplePersistenceError ? false : item.success,
+      error:
+        peoplePersistenceError ??
+        (item.error ? sanitizeWorkflowString(item.error) : undefined),
+    }));
+    const errors = [
+      postProviderError,
+      peopleProviderError,
+      ...(postResult?.success === false
+        ? postResult.errors.map(({ error }) => sanitizeWorkflowString(error))
+        : []),
+      ...(peopleResult?.success === false
+        ? peopleResult.errors.map(({ error }) => sanitizeWorkflowString(error))
+        : []),
+      ...persistenceErrors,
+    ].filter((error): error is string => Boolean(error));
+    const success =
+      postSearchSucceeded &&
+      peopleSearchSucceeded &&
+      persistenceErrors.length === 0;
+
     return {
+      success,
+      error: errors.length > 0 ? errors.join("; ") : undefined,
       saved: totalSaved,
-      postQueryStats: postResult.queryStats ?? [],
-      peopleQueryStats: (peopleResult.queryStats ?? []).map(
-        (item: {
-          query: string;
-          peopleFound: number;
-          success: boolean;
-          error?: string;
-        }) => ({
-          query: item.query,
-          postsFound: item.peopleFound,
-          success: item.success,
-          error: item.error,
-        })
-      ),
+      postQueryStats,
+      peopleQueryStats,
     };
   },
 });
@@ -2216,6 +2387,7 @@ export const handleWorkflowComplete = internalMutation({
         prospectsFound?: number;
         twitterSaved?: number;
         linkedinSaved?: number;
+        failedPlatforms?: ProspectingPlatform[];
       };
 
       if ((returnValue.prospectsFound ?? 0) > 0 && workspace) {
@@ -2227,6 +2399,7 @@ export const handleWorkflowComplete = internalMutation({
             prospectsFound: returnValue.prospectsFound ?? 0,
             twitterSaved: returnValue.twitterSaved ?? 0,
             linkedinSaved: returnValue.linkedinSaved ?? 0,
+            failedPlatforms: returnValue.failedPlatforms,
           }
         );
       }
