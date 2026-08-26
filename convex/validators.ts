@@ -1539,9 +1539,12 @@ export const agentMessageTaggedEntityValidator = v.object({
   taskId: v.optional(v.string()),
   attachmentUrl: v.optional(v.union(v.string(), v.null())),
   attachmentMimeType: v.optional(v.union(v.string(), v.null())),
+  attachmentSize: v.optional(v.union(v.number(), v.null())),
   attachmentMediaKind: v.optional(
     v.union(mentionAttachmentMediaKindValidator, v.null())
   ),
+  attachmentDisabled: v.optional(v.boolean()),
+  attachmentDisabledReason: v.optional(v.union(v.string(), v.null())),
   postId: v.optional(v.string()),
   postUrl: v.optional(v.union(v.string(), v.null())),
   postPlatform: v.optional(v.union(mentionPostPlatformValidator, v.null())),
