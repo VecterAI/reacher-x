@@ -78,7 +78,6 @@ describe("current plan usage reconciliation migration", () => {
         currentProspectsCount: 32,
         currentProspectsCycleStart: currentWindow.cycleStart,
         currentProspectsCycleEnd: currentWindow.cycleEnd,
-        currentWorkspacesCount: 1,
         updatedAt: 1,
       });
       await ctx.db.insert("planUsageCycles", {
@@ -167,7 +166,6 @@ describe("current plan usage reconciliation migration", () => {
       currentProspectsCount: 24,
       currentProspectsCycleStart: currentWindow.cycleStart,
       currentProspectsCycleEnd: currentWindow.cycleEnd,
-      currentWorkspacesCount: 1,
     });
     expect(firstState.currentCycle).toMatchObject({
       prospectsUsed: 24,

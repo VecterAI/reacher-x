@@ -299,7 +299,6 @@ describe("durable workspace deletion", () => {
     expect(state.setupSession?.existingWorkspaceId).toBeUndefined();
     expect(state.setupSession?.targetWorkspaceId).toBeUndefined();
     expect(state.setupSession?.previewProspectIds).toBeUndefined();
-    expect(state.userPlan).not.toHaveProperty("currentWorkspacesCount");
     expect(state.userPlan?.currentProspectsCount).toBe(1);
     expect(state.userPlan?.currentProspectsCycleStart).toBe(
       currentWindow.cycleStart

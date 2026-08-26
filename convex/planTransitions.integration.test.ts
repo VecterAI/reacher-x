@@ -30,7 +30,6 @@ async function seedBaseTester(t: ReturnType<typeof convexTest>) {
       currentProspectsCount: 0,
       currentProspectsCycleStart: currentWindow.cycleStart,
       currentProspectsCycleEnd: currentWindow.cycleEnd,
-      currentWorkspacesCount: 0,
       externalSubscriptionId: "tester_free_access",
       updatedAt: now,
     });

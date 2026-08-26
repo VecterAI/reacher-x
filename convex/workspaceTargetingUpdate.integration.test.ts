@@ -39,7 +39,6 @@ async function seedWorkspace(t: ReturnType<typeof convexTest>, suffix: string) {
       prospectsLimit: 500,
       workspacesLimit: 5,
       currentProspectsCount: 0,
-      currentWorkspacesCount: 1,
       updatedAt: 1,
     });
     const workspaceId = await ctx.db.insert("workspaces", {

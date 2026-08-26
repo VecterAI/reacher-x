@@ -61,7 +61,6 @@ async function seedOutreach(
       prospectsLimit: -1,
       workspacesLimit: -1,
       currentProspectsCount: 0,
-      currentWorkspacesCount: 1,
       updatedAt: 1,
     });
     const prospectId = await ctx.db.insert("prospects", {
