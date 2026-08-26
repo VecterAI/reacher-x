@@ -119,24 +119,6 @@ export const reconcileCurrentPlanUsage = migrations.define({
   },
 });
 
-/**
- * Phase one of removing the unused currentWorkspacesCount snapshot. Current
- * workspace capacity and usage are derived from canonical workspace records,
- * so clearing this duplicate field cannot affect enforcement or reporting.
- */
-export const removeLegacyCurrentWorkspacesCount = migrations.define({
-  table: "userPlans",
-  batchSize: 25,
-  migrateOne: async (ctx, plan) => {
-    if (plan.currentWorkspacesCount === undefined) {
-      return;
-    }
-    await ctx.db.patch(plan._id, {
-      currentWorkspacesCount: undefined,
-    });
-  },
-});
-
 function defineQualifiedProspectDisplayNameBackfill(
   workspaceId: Id<"workspaces">
 ) {

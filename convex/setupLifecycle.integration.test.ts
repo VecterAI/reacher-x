@@ -33,7 +33,6 @@ async function seedUser(t: ReturnType<typeof convexTest>, suffix: string) {
       prospectsLimit: 500,
       workspacesLimit: 10,
       currentProspectsCount: 0,
-      currentWorkspacesCount: 0,
       updatedAt: 1,
     });
     return { userId, workosUserId };
