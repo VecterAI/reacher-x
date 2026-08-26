@@ -638,16 +638,21 @@ export const saveKeywordInternal = internalMutation({
       value: args.value,
     });
 
-    // Check for existing keyword with same value in workspace
+    // Keyword types have different behavior: seed/discovered terms inform query
+    // generation, while social_query rows are executable. Preserve both when
+    // their normalized text is identical.
     const existing = await ctx.db
       .query("keywords")
-      .withIndex("by_workspace_value", (q) =>
-        q.eq("workspaceId", args.workspaceId).eq("value", normalized)
+      .withIndex("by_workspace_type_and_value", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("type", args.type)
+          .eq("value", normalized)
       )
       .first();
 
     if (existing) {
-      // Update existing keyword if it's the same type, otherwise skip
+      // The compound index guarantees this, but keep the guard defensive.
       if (existing.type === args.type) {
         await ctx.db.patch(existing._id, {
           canonicalValue: canonical.canonicalValue,
@@ -803,7 +808,11 @@ export const saveKeywordsBatch = internalMutation({
 
     const existingMap = new Map<string, (typeof existingKeywords)[0]>();
     for (const kw of existingKeywords) {
-      existingMap.set(kw.value, kw);
+      const canonical = buildKeywordCanonicalRecord({
+        type: kw.type,
+        value: kw.value,
+      });
+      existingMap.set(canonical.canonicalKey, kw);
     }
 
     for (const keyword of args.keywords) {
@@ -812,10 +821,9 @@ export const saveKeywordsBatch = internalMutation({
         type: keyword.type,
         value: keyword.value,
       });
-      const existing = existingMap.get(normalized);
+      const existing = existingMap.get(canonical.canonicalKey);
 
       if (existing) {
-        // Update if same type, otherwise skip
         if (existing.type === keyword.type) {
           await ctx.db.patch(existing._id, {
             canonicalValue: canonical.canonicalValue,
@@ -925,7 +933,7 @@ export const saveKeywordsBatch = internalMutation({
           twitterSearchMode: keyword.twitterSearchMode,
         });
         // Add to map to prevent duplicates within batch
-        existingMap.set(normalized, {
+        existingMap.set(canonical.canonicalKey, {
           _id: newId,
           _creationTime: now,
           workspaceId: args.workspaceId,
@@ -968,12 +976,15 @@ export const updateKeywordMonitorId = internalMutation({
 
     const keyword = await ctx.db
       .query("keywords")
-      .withIndex("by_workspace_value", (q) =>
-        q.eq("workspaceId", args.workspaceId).eq("value", normalized)
+      .withIndex("by_workspace_type_and_value", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("type", "social_query")
+          .eq("value", normalized)
       )
       .first();
 
-    if (keyword && keyword.type === "social_query") {
+    if (keyword) {
       await ctx.db.patch(keyword._id, { monitorId: args.monitorId });
       return { success: true };
     }
