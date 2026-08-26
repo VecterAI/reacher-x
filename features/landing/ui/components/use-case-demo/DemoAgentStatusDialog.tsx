@@ -40,6 +40,11 @@ import {
   TooltipTrigger,
 } from "@/shared/ui/components/Tooltip";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
+import { formatProspectPlatformSummary } from "@/shared/lib/platforms/prospectPlatformSummary";
+import {
+  formatAverageFitScoreDetail,
+  formatEnrichedProfilesDetail,
+} from "@/shared/lib/workspaceProgressDetails";
 import { useDemoShell } from "./demoShellContext";
 
 // Same stage list as OnboardingProgressCard.
@@ -66,6 +71,8 @@ const STATUS_DOT_CLASS_NAME = {
 
 const DEMO_PROGRESS = {
   found: 128,
+  twitterProspectsCount: 82,
+  linkedInProspectsCount: 46,
   qualified: 46,
   enriched: 24,
   plansGenerated: 8,
@@ -258,17 +265,27 @@ export function DemoAgentStatusDialog({
               <StatCell
                 label="Found"
                 value={DEMO_PROGRESS.found}
-                detail="1 platf."
+                detail={
+                  formatProspectPlatformSummary({
+                    twitterProspectsCount: DEMO_PROGRESS.twitterProspectsCount,
+                    linkedInProspectsCount:
+                      DEMO_PROGRESS.linkedInProspectsCount,
+                  }) ?? "\u00A0"
+                }
               />
               <StatCell
                 label="Qualified"
                 value={DEMO_PROGRESS.qualified}
-                detail={`avg: ${DEMO_PROGRESS.avgQualificationScore}`}
+                detail={
+                  formatAverageFitScoreDetail(
+                    DEMO_PROGRESS.avgQualificationScore
+                  ) ?? "\u00A0"
+                }
               />
               <StatCell
                 label="Enriched"
                 value={DEMO_PROGRESS.enriched}
-                detail={`${DEMO_PROGRESS.enriched} prof.`}
+                detail={formatEnrichedProfilesDetail(DEMO_PROGRESS.enriched)}
               />
             </CardContent>
 
