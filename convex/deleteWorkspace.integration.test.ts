@@ -62,7 +62,6 @@ describe("durable workspace deletion", () => {
         currentProspectsCount: 3,
         currentProspectsCycleStart: currentWindow.cycleStart,
         currentProspectsCycleEnd: currentWindow.cycleEnd,
-        currentWorkspacesCount: 2,
         updatedAt: 1,
       });
       const usageCycleId = await ctx.db.insert("planUsageCycles", {
@@ -300,7 +299,7 @@ describe("durable workspace deletion", () => {
     expect(state.setupSession?.existingWorkspaceId).toBeUndefined();
     expect(state.setupSession?.targetWorkspaceId).toBeUndefined();
     expect(state.setupSession?.previewProspectIds).toBeUndefined();
-    expect(state.userPlan?.currentWorkspacesCount).toBe(1);
+    expect(state.userPlan).not.toHaveProperty("currentWorkspacesCount");
     expect(state.userPlan?.currentProspectsCount).toBe(1);
     expect(state.userPlan?.currentProspectsCycleStart).toBe(
       currentWindow.cycleStart

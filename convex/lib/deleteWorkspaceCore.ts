@@ -4,7 +4,6 @@ import type { Doc, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { polar } from "../polar";
 import { internalMutation, internalQuery } from "./functionBuilders";
-import { decrementWorkspaceCount } from "./planCore";
 import { reconcilePlanUsageForUser } from "./planUsageCore";
 import { deleteWorkspaceAgentMemoryBatch } from "./agentMemoryCore";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
@@ -750,9 +749,6 @@ export const finalizeWorkspaceDeletionInternal = internalMutation({
     }
     if (!workspace.deletionWorkflowId) {
       throw new Error("Workspace deletion was not requested");
-    }
-    if (workspace.setupCompletedAt) {
-      await decrementWorkspaceCount(ctx, args.userId);
     }
     await ctx.db.delete(workspace._id);
 
