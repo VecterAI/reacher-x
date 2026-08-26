@@ -157,9 +157,10 @@ export const saveMonitor = internalMutation({
     if (existing) {
       const keyword = await ctx.db
         .query("keywords")
-        .withIndex("by_workspace_value", (q) =>
+        .withIndex("by_workspace_type_and_value", (q) =>
           q
             .eq("workspaceId", args.workspaceId)
+            .eq("type", "social_query")
             .eq("value", normalizeMemoryText(args.query))
         )
         .first();
@@ -182,9 +183,10 @@ export const saveMonitor = internalMutation({
 
     const keyword = await ctx.db
       .query("keywords")
-      .withIndex("by_workspace_value", (q) =>
+      .withIndex("by_workspace_type_and_value", (q) =>
         q
           .eq("workspaceId", args.workspaceId)
+          .eq("type", "social_query")
           .eq("value", normalizeMemoryText(args.query))
       )
       .first();

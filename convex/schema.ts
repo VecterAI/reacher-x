@@ -643,6 +643,7 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_workspace_type", ["workspaceId", "type"])
     .index("by_workspace_value", ["workspaceId", "value"])
+    .index("by_workspace_type_and_value", ["workspaceId", "type", "value"])
     .index("by_workspace_canonical_hash", ["workspaceId", "canonicalHash"])
     .index("by_workspace_canonical_key", ["workspaceId", "canonicalKey"])
     .index("by_workspace_type_status", ["workspaceId", "type", "status"])
