@@ -63,7 +63,6 @@ export type UserPlan = {
   currentProspectsCount: number;
   currentProspectsCycleStart?: number;
   currentProspectsCycleEnd?: number;
-  currentWorkspacesCount: number;
   updatedAt: number;
   externalSubscriptionId?: string;
   polarCustomerId?: string;

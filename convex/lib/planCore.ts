@@ -58,7 +58,6 @@ export async function getOrCreateUserPlan(
       currentProspectsCount: 0,
       currentProspectsCycleStart: undefined,
       currentProspectsCycleEnd: undefined,
-      currentWorkspacesCount: 0,
       updatedAt: now,
     });
     const createdPlan = await mutationCtx.db.get(planId);
@@ -78,7 +77,6 @@ export async function getOrCreateUserPlan(
     currentProspectsCount: 0,
     currentProspectsCycleStart: undefined,
     currentProspectsCycleEnd: undefined,
-    currentWorkspacesCount: 0,
     updatedAt: now,
     polarCustomerId: undefined,
   };
@@ -131,49 +129,6 @@ export async function decrementProspectCount(
 }
 
 /**
- * Increment workspace count for a user
- */
-export async function incrementWorkspaceCount(
-  ctx: MutationCtx,
-  userId: Id<"users">
-) {
-  const plan = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  if (!plan) {
-    await getOrCreateUserPlan(ctx, userId);
-    return incrementWorkspaceCount(ctx, userId);
-  }
-
-  await ctx.db.patch(plan._id, {
-    currentWorkspacesCount: plan.currentWorkspacesCount + 1,
-    updatedAt: getCurrentUTCTimestamp(),
-  });
-}
-
-/**
- * Decrement workspace count for a user
- */
-export async function decrementWorkspaceCount(
-  ctx: MutationCtx,
-  userId: Id<"users">
-) {
-  const plan = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  if (!plan) return;
-
-  await ctx.db.patch(plan._id, {
-    currentWorkspacesCount: Math.max(0, plan.currentWorkspacesCount - 1),
-    updatedAt: getCurrentUTCTimestamp(),
-  });
-}
-
-/**
  * Upgrade a user's plan tier
  */
 export async function upgradePlan(
@@ -203,7 +158,6 @@ export async function upgradePlan(
       currentProspectsCount: 0,
       currentProspectsCycleStart: undefined,
       currentProspectsCycleEnd: undefined,
-      currentWorkspacesCount: 0,
       externalSubscriptionId,
       expiresAt,
       updatedAt: now,

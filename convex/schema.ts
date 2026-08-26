@@ -951,7 +951,12 @@ export default defineSchema({
     currentProspectsCount: v.number(),
     currentProspectsCycleStart: v.optional(v.number()),
     currentProspectsCycleEnd: v.optional(v.number()),
-    currentWorkspacesCount: v.number(),
+    /**
+     * @deprecated Workspace capacity and usage are derived from canonical
+     * workspace entitlements and completed workspaces. Kept optional only
+     * until removeLegacyCurrentWorkspacesCount clears deployed documents.
+     */
+    currentWorkspacesCount: v.optional(v.number()),
     // External subscription ID (for future billing integration)
     externalSubscriptionId: v.optional(v.string()),
     /** Polar customer UUID for server-side order history and billing APIs */
