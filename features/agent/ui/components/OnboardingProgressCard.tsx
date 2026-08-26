@@ -30,6 +30,11 @@ import {
   getCurrentUTCTimestamp,
   isSameDay,
 } from "@/shared/lib/utils";
+import { formatProspectPlatformSummary } from "@/shared/lib/platforms/prospectPlatformSummary";
+import {
+  formatAverageFitScoreDetail,
+  formatEnrichedProfilesDetail,
+} from "@/shared/lib/workspaceProgressDetails";
 
 const STAGES = [
   { id: "searching", label: "Search", step: 1 },
@@ -40,6 +45,8 @@ const STAGES = [
 
 type OnboardingProgressData = {
   found: number;
+  twitterProspectsCount: number;
+  linkedInProspectsCount: number;
   qualified: number;
   enriched: number;
   plansGenerated: number;
@@ -63,6 +70,8 @@ type OnboardingProgressData = {
 
 export type OnboardingProgressPreviewData = {
   found: number;
+  twitterProspectsCount: number;
+  linkedInProspectsCount: number;
   qualified: number;
   enriched: number;
   plansGenerated?: number;
@@ -95,6 +104,8 @@ interface OnboardingProgressCardProps {
 
 const DEFAULT_PROGRESS_DATA: OnboardingProgressData = {
   found: 0,
+  twitterProspectsCount: 0,
+  linkedInProspectsCount: 0,
   qualified: 0,
   enriched: 0,
   plansGenerated: 0,
@@ -186,6 +197,8 @@ export function OnboardingProgressCard({
     ? {
         ...DEFAULT_PROGRESS_DATA,
         found: previewData.found,
+        twitterProspectsCount: previewData.twitterProspectsCount,
+        linkedInProspectsCount: previewData.linkedInProspectsCount,
         qualified: previewData.qualified,
         enriched: previewData.enriched,
         plansGenerated: previewData.plansGenerated ?? 0,
@@ -337,21 +350,24 @@ export function OnboardingProgressCard({
         <StatCell
           label="Found"
           value={data.found}
-          detail={`${platformCount(data.found)} platf.`}
+          detail={
+            formatProspectPlatformSummary({
+              twitterProspectsCount: data.twitterProspectsCount,
+              linkedInProspectsCount: data.linkedInProspectsCount,
+            }) ?? "\u00A0"
+          }
         />
         <StatCell
           label="Qualified"
           value={data.qualified}
           detail={
-            data.avgQualificationScore > 0
-              ? `avg: ${data.avgQualificationScore}`
-              : "\u00A0"
+            formatAverageFitScoreDetail(data.avgQualificationScore) ?? "\u00A0"
           }
         />
         <StatCell
           label="Enriched"
           value={data.enriched}
-          detail={data.enriched > 0 ? `${data.enriched} prof.` : "\u00A0"}
+          detail={formatEnrichedProfilesDetail(data.enriched)}
         />
       </CardContent>
 
@@ -443,8 +459,4 @@ function StatCell({
       <p className="text-muted-foreground mt-0.5 text-[11px]">{detail}</p>
     </article>
   );
-}
-
-function platformCount(found: number): number {
-  return found > 0 ? 1 : 0;
 }

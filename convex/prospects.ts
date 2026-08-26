@@ -912,6 +912,8 @@ export const getOnboardingProgress = query({
     const actionableReadyCount =
       getWorkspaceStatsActionableReadyCount(workspaceStats);
     const found = workspaceStats.totalProspectsCount;
+    const twitterProspectsCount = workspaceStats.twitterProspectsCount;
+    const linkedInProspectsCount = workspaceStats.linkedInProspectsCount;
     const avgQualificationScore = workspaceStats.avgQualificationScore;
     const disqualifiedCount = analyticsRows.reduce(
       (total, row) => total + (row.qualificationDisqualifiedCount ?? 0),
@@ -945,6 +947,8 @@ export const getOnboardingProgress = query({
 
     return {
       found,
+      twitterProspectsCount,
+      linkedInProspectsCount,
       qualified,
       enriched,
       plansGenerated,
