@@ -2,8 +2,10 @@ import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { polar } from "../polar";
 import { internalMutation, internalQuery } from "./functionBuilders";
 import { decrementWorkspaceCount } from "./planCore";
+import { reconcilePlanUsageForUser } from "./planUsageCore";
 import { deleteWorkspaceAgentMemoryBatch } from "./agentMemoryCore";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
@@ -753,6 +755,15 @@ export const finalizeWorkspaceDeletionInternal = internalMutation({
       await decrementWorkspaceCount(ctx, args.userId);
     }
     await ctx.db.delete(workspace._id);
+
+    const subscription = await polar.getCurrentSubscription(ctx, {
+      userId: args.userId,
+    });
+    await reconcilePlanUsageForUser(ctx, {
+      userId: args.userId,
+      subscription,
+    });
+
     return { deleted: true };
   },
 });

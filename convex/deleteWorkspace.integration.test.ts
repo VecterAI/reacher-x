@@ -4,6 +4,8 @@ import { createThread, saveMessage } from "@convex-dev/agent";
 import { convexTest } from "convex-test";
 import { describe, expect, test, vi } from "vitest";
 import { api, components } from "./_generated/api";
+import { computeUsageCycleWindow } from "./lib/planCycleUtils";
+import { buildProspectSummaryRecord } from "./lib/readModelHelpers";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -28,13 +30,25 @@ async function registerComponents(t: ReturnType<typeof convexTest>) {
     default: { register: (instance: typeof t) => void };
   };
   ragTest.default.register(t);
+
+  const polarTestPath = ["@convex-dev/polar", "test"].join("/");
+  const polarTest = (await import(polarTestPath)) as {
+    default: { register: (instance: typeof t) => void };
+  };
+  polarTest.default.register(t);
 }
 
 describe("durable workspace deletion", () => {
-  test("deduplicates requests and deletes bounded child batches plus Agent messages", async () => {
+  test("deduplicates requests, deletes bounded children, and reconciles plan usage", async () => {
     vi.useFakeTimers();
     const t = convexTest(schema, modules);
     await registerComponents(t);
+    const now = Date.now();
+    const currentWindow = computeUsageCycleWindow({
+      now,
+      tier: "pro",
+      subscription: null,
+    });
     const seeded = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "workspace-delete-owner",
@@ -45,8 +59,22 @@ describe("durable workspace deletion", () => {
         tier: "pro",
         prospectsLimit: 500,
         workspacesLimit: 10,
-        currentProspectsCount: 1,
+        currentProspectsCount: 3,
+        currentProspectsCycleStart: currentWindow.cycleStart,
+        currentProspectsCycleEnd: currentWindow.cycleEnd,
         currentWorkspacesCount: 2,
+        updatedAt: 1,
+      });
+      const usageCycleId = await ctx.db.insert("planUsageCycles", {
+        userId,
+        tier: "pro",
+        cycleStart: currentWindow.cycleStart,
+        cycleEnd: currentWindow.cycleEnd,
+        prospectsUsed: 3,
+        prospectsLimit: 500,
+        workspacesUsed: 2,
+        workspacesLimit: 10,
+        isCurrent: true,
         updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
@@ -74,8 +102,39 @@ describe("durable workspace deletion", () => {
         externalId: "delete-prospect",
         data: {},
         status: "new",
+        qualificationStatus: "qualified",
+        qualifiedAt: now,
         updatedAt: 1,
       });
+      const prospect = await ctx.db.get("prospects", prospectId);
+      if (!prospect) throw new Error("Failed to seed deleting prospect");
+      await ctx.db.insert(
+        "prospectSummaries",
+        buildProspectSummaryRecord(prospect)
+      );
+      const remainingProspectId = await ctx.db.insert("prospects", {
+        workspaceId: replacementId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "remaining-prospect",
+        data: {},
+        status: "new",
+        qualificationStatus: "qualified",
+        qualifiedAt: now,
+        updatedAt: 1,
+      });
+      const remainingProspect = await ctx.db.get(
+        "prospects",
+        remainingProspectId
+      );
+      if (!remainingProspect) {
+        throw new Error("Failed to seed remaining prospect");
+      }
+      await ctx.db.insert(
+        "prospectSummaries",
+        buildProspectSummaryRecord(remainingProspect)
+      );
       for (let index = 0; index < 31; index += 1) {
         await ctx.db.insert("keywords", {
           workspaceId,
@@ -135,9 +194,11 @@ describe("durable workspace deletion", () => {
       return {
         planId,
         prospectId,
+        remainingProspectId,
         replacementId,
         setupSessionId,
         threadId,
+        usageCycleId,
         userId,
         workspaceId,
       };
@@ -211,6 +272,11 @@ describe("durable workspace deletion", () => {
         .query("userPlans")
         .withIndex("by_user", (q) => q.eq("userId", seeded.userId))
         .unique(),
+      usageCycle: await ctx.db.get("planUsageCycles", seeded.usageCycleId),
+      remainingProspect: await ctx.db.get(
+        "prospects",
+        seeded.remainingProspectId
+      ),
       keywords: await ctx.db
         .query("keywords")
         .withIndex("by_workspace", (q) =>
@@ -235,6 +301,19 @@ describe("durable workspace deletion", () => {
     expect(state.setupSession?.targetWorkspaceId).toBeUndefined();
     expect(state.setupSession?.previewProspectIds).toBeUndefined();
     expect(state.userPlan?.currentWorkspacesCount).toBe(1);
+    expect(state.userPlan?.currentProspectsCount).toBe(1);
+    expect(state.userPlan?.currentProspectsCycleStart).toBe(
+      currentWindow.cycleStart
+    );
+    expect(state.userPlan?.currentProspectsCycleEnd).toBe(
+      currentWindow.cycleEnd
+    );
+    expect(state.usageCycle).toMatchObject({
+      prospectsUsed: 1,
+      workspacesUsed: 1,
+      isCurrent: true,
+    });
+    expect(state.remainingProspect?.workspaceId).toBe(seeded.replacementId);
     expect(componentThread).toBeNull();
     expect(deletionsAfterWorkflow).toEqual([]);
     vi.useRealTimers();

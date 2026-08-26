@@ -23,6 +23,8 @@ import {
   updateWorkspaceAttachmentStats,
 } from "./lib/workspaceAttachmentCore";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { polar } from "./polar";
+import { reconcilePlanUsageForUser } from "./lib/planUsageCore";
 
 export const migrations = new Migrations<DataModel, typeof schema>(
   components.migrations,
@@ -94,6 +96,25 @@ export const backfillPlanBatchReferenceKeys = migrations.define({
     }
     await ctx.db.patch("planBatchRuns", run._id, {
       referenceKey: createPlanBatchReferenceKey(),
+    });
+  },
+});
+
+/**
+ * Rerunnable repair for current usage snapshots that drifted from canonical
+ * qualified prospects. One user is reconciled per transaction to keep each
+ * user's prospect recount within an isolated Convex transaction budget.
+ */
+export const reconcileCurrentPlanUsage = migrations.define({
+  table: "userPlans",
+  batchSize: 1,
+  migrateOne: async (ctx, plan) => {
+    const subscription = await polar.getCurrentSubscription(ctx, {
+      userId: plan.userId,
+    });
+    await reconcilePlanUsageForUser(ctx, {
+      userId: plan.userId,
+      subscription,
     });
   },
 });
