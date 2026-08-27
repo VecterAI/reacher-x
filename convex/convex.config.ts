@@ -10,6 +10,7 @@ import polar from "@convex-dev/polar/convex.config";
 import migrations from "@convex-dev/migrations/convex.config";
 import batchWorker from "@convex-dev/batch-worker/convex.config";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config";
+import aggregate from "@convex-dev/aggregate/convex.config";
 
 const app = defineApp({
   env: {
@@ -88,6 +89,7 @@ app.use(actionRetrier);
 app.use(migrations);
 app.use(batchWorker, { env: { LOG_LEVEL: "REPORT" } });
 app.use(rateLimiter);
+app.use(aggregate, { name: "fitScoreHistogramAggregate" });
 // Workpools for throttling (prevents OCC errors on rate limit table)
 app.use(workpool, { name: "qualificationPool" });
 app.use(workpool, { name: "enrichmentPool" });

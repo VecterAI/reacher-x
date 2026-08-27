@@ -26,6 +26,10 @@ import {
   prospectTypeValidator,
   prospectVisibilityModeValidator,
 } from "./validators";
+import {
+  FIT_SCORE_AGGREGATE_VERSION,
+  getFitScoreHistogramFromAggregate,
+} from "./lib/prospectFitScoreAggregate";
 
 export type SummaryDb = QueryCtx["db"] | MutationCtx["db"];
 export type PaginationOpts = {
@@ -1297,6 +1301,7 @@ export const getWorkspaceFitScoreHistogram = query({
     createdAfterMs: v.optional(v.number()),
     createdBeforeMs: v.optional(v.number()),
   },
+  returns: v.object({ binCounts: v.array(v.number()) }),
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, { notFoundMessage: "User not found" });
     await requireOwnedWorkspace(ctx, args.workspaceId, {
@@ -1304,6 +1309,19 @@ export const getWorkspaceFitScoreHistogram = query({
       notFoundMessage: "Workspace not found",
       notAuthorizedMessage: "Not authorized to view this workspace",
     });
+
+    const aggregateRollout = await ctx.db
+      .query("fitScoreAggregateRollouts")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .unique();
+    if (
+      aggregateRollout?.status === "verified" &&
+      aggregateRollout.aggregateVersion === FIT_SCORE_AGGREGATE_VERSION
+    ) {
+      return {
+        binCounts: await getFitScoreHistogramFromAggregate(ctx, args),
+      };
+    }
 
     const baseQuery =
       args.platform && args.status

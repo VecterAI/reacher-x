@@ -368,6 +368,49 @@ then stop the raw scan. It is intentionally not bundled into the rollup cutover
 because its multi-filter namespace design and 60,000-row historical population
 need their own load and migration gates.
 
+### Fit-score Aggregate implementation (2026-08-28)
+
+The separate `codex/fit-score-aggregate` phase implements the additive and
+migration-safe portion without touching production data:
+
+- mounts `@convex-dev/aggregate` as `fitScoreHistogramAggregate`;
+- stores one item per non-preview prospect with a numeric score, namespaced by
+  Aggregate version, workspace, platform, normalized prospect type, and status;
+- keeps live write amplification to one idempotent Aggregate operation and
+  skips all workspaces until an explicit rollout row exists;
+- backfills only one paused/stopped workspace at a time in pages of at most 25;
+- runs a separate source verification pass in pages of at most 100 and compares
+  all ten bins with Aggregate before marking the workspace verified;
+- uses revision plus cursor tokens so duplicate or superseded scheduled pages
+  stop without starting duplicate chains;
+- falls back to the existing raw histogram reader for absent, failed,
+  backfilling, old-version, or unverified rollouts;
+- cuts the existing authenticated query to Aggregate only when that exact
+  workspace and Aggregate version are verified; and
+- retains the rollout row until workspace prospect deletion has removed the
+  corresponding component items, then removes the checkpoint during final
+  workspace deletion.
+
+The namespace deliberately stores exact filter dimensions instead of eight
+wildcard copies per prospect. The worst unfiltered request is 300 bounded count
+operations in one component query (2 platforms × 3 normalized prospect types ×
+5 statuses × 10 score bins), while a normal filtered list is smaller. This is a
+fixed read bound and avoids multiplying every qualification write.
+
+Rollout remains a separate approval step:
+
+1. Deploy the additive component, table, dual-write gate, and fallback reader.
+2. Confirm there are no new prospect-write OCC regressions while no workspaces
+   are opted in.
+3. Pause one low-traffic workspace and start its internal migration.
+4. Wait for `verified`; require exact expected/Aggregate bin parity and no new
+   permanent component or prospect mutation failures.
+5. Exercise unfiltered, platform, type, status, and creation-time histogram
+   filters, then resume the workspace.
+6. Repeat per workspace. Do not run a global 60,000-row scan.
+7. Keep `prospectSummaries` and the raw fallback through the observation window;
+   any narrowing or component-state cleanup is a separate destructive phase.
+
 ## Additive rollout
 
 No full prospect scan or backup is required for this phase.

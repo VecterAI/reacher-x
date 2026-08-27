@@ -75,6 +75,7 @@ import {
   hourlyAnalyticsCountsValidator,
   readModelRolloutScopeValidator,
   readModelRolloutStatusValidator,
+  fitScoreAggregateRolloutStatusValidator,
   memorySourceTypeValidator,
   memoryEvaluatorRunStatusValidator,
   memorySuggestionStatusValidator,
@@ -2633,6 +2634,32 @@ export default defineSchema({
     .index("by_current_workspace", ["currentWorkspaceId"])
     .index("by_last_completed_workspace", ["lastCompletedWorkspaceId"])
     .index("by_workflow", ["workflowId"]),
+
+  /**
+   * Per-workspace checkpoint for the bounded fit-score Aggregate migration.
+   * Histogram reads cut over only after an independent verification pass.
+   */
+  fitScoreAggregateRollouts: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    status: fitScoreAggregateRolloutStatusValidator,
+    aggregateVersion: v.number(),
+    revision: v.number(),
+    backfillCursor: v.optional(v.string()),
+    verifyCursor: v.optional(v.string()),
+    backfillBatchSize: v.number(),
+    verifyBatchSize: v.number(),
+    backfilledCount: v.number(),
+    verifiedSourceCount: v.number(),
+    expectedBinCounts: v.array(v.number()),
+    aggregateBinCounts: v.optional(v.array(v.number())),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    verifiedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_status_updated", ["status", "updatedAt"]),
 
   /**
    * Candidate discovery terms before or after activation, with deterministic

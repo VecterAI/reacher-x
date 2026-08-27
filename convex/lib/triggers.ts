@@ -28,6 +28,7 @@ import {
 } from "./agentOpsReadModelHelpers";
 import { buildOutreachProgressSummary } from "./outreachProgressHelpers";
 import { getReadModelStripe } from "./readModelStripeHelpers";
+import { syncProspectFitScoreAggregate } from "./prospectFitScoreAggregate";
 
 export const triggers = new Triggers<DataModel>();
 
@@ -412,6 +413,11 @@ triggers.register("prospects", async (ctx, change) => {
   }
 
   await syncProspectSummary(ctx.innerDb, {
+    oldDoc: change.oldDoc,
+    newDoc: change.newDoc,
+  });
+
+  await syncProspectFitScoreAggregate(ctx, {
     oldDoc: change.oldDoc,
     newDoc: change.newDoc,
   });

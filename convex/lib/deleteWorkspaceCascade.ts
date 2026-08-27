@@ -376,5 +376,13 @@ export async function deleteWorkspaceCascade(
     });
   }
 
+  const fitScoreAggregateRollout = await ctx.db
+    .query("fitScoreAggregateRollouts")
+    .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+    .unique();
+  if (fitScoreAggregateRollout) {
+    await ctx.db.delete(fitScoreAggregateRollout._id);
+  }
+
   await ctx.db.delete(workspaceId);
 }
