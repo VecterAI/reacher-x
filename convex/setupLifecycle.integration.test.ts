@@ -251,6 +251,58 @@ describe("setup session and workspace lifecycle", () => {
     });
   });
 
+  test("persists AI-generated profile provenance when generation completes", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedUser(t, "generated-profile-provenance");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "generated-profile-provenance",
+    });
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, {
+        status: "generating_profiles",
+        generationRevision: 1,
+        errorCode: "generation_failed",
+        errorMessage: "A previous generation attempt failed.",
+      })
+    );
+    const generatedProfiles = [
+      {
+        title: "Hands-on SaaS founders",
+        description: "Founders actively improving product-led acquisition.",
+        painPoints: ["Finding qualified buyers"],
+        channels: ["X"],
+        provenance: "ai_generated" as const,
+        syntheticPosts: ["How do I find buyers for my SaaS?"],
+        qualificationKeywords: ["saas founder"],
+      },
+    ];
+
+    const result = await t.mutation(
+      internal.setupSessions.recordGenerationResultInternal,
+      {
+        sessionId,
+        generationRevision: 1,
+        improvedDescription: "Find hands-on SaaS founders with buying intent.",
+        generatedProfiles,
+        generationCompletedAt: 42,
+      }
+    );
+
+    expect(result).toEqual({ updated: true });
+    const session = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(session).toMatchObject({
+      status: "awaiting_icp_confirmation",
+      improvedDescription: "Find hands-on SaaS founders with buying intent.",
+      generatedProfiles,
+      generationCompletedAt: 42,
+    });
+    expect(session?.errorCode).toBeUndefined();
+    expect(session?.errorMessage).toBeUndefined();
+  });
+
   test("repairs legacy setup descriptions without changing generated profiles", async () => {
     const t = convexTest(schema, modules);
     const { userId } = await seedUser(t, "repair-description");
