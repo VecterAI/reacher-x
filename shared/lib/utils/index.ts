@@ -126,6 +126,7 @@ export {
 } from "./text";
 export type { HighlightOptions, HighlightResult } from "./text";
 export { getVisibleTweetPlainText, parseTweetSource } from "./text";
+export { truncateText } from "./text";
 export type { ParsedTweetSource } from "./text";
 
 // ============================================================================

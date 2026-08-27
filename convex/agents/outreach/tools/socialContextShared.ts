@@ -30,6 +30,7 @@ import {
   MISSING_PROSPECT_SELECTION_MESSAGE,
 } from "./helpers";
 import { getCurrentUTCTimestamp } from "../../../../shared/lib/utils/time/timeUtils";
+import { truncateText } from "../../../../shared/lib/utils/text/truncateText";
 
 export type SocialContextMode =
   | "prospect_profile"
@@ -308,14 +309,6 @@ function toTimestampMs(value: unknown): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;
-}
-
-function truncateText(value: string, maxLength = 280): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= maxLength) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 function parseDateBoundary(value: string | undefined): number | undefined {
