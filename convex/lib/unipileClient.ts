@@ -292,6 +292,12 @@ export type LinkedInUnipileCommentList = {
   };
 };
 
+export type LinkedInUnipilePostList = {
+  object?: "PostList";
+  items: LinkedInUnipilePost[];
+  cursor: string | null;
+};
+
 type UnipileClientConfig = {
   baseUrl: string;
   apiKey: string;
@@ -1037,6 +1043,44 @@ export async function getLinkedInPost(args: {
       method: "GET",
       query: {
         account_id: args.accountId,
+      },
+    }
+  );
+}
+
+export async function listLinkedInUserPosts(args: {
+  accountId: string;
+  userId: string;
+  cursor?: string;
+  limit?: number;
+}) {
+  return await requestUnipile<LinkedInUnipilePostList>(
+    `/api/v1/users/${encodeURIComponent(args.userId)}/posts`,
+    {
+      method: "GET",
+      query: {
+        account_id: args.accountId,
+        cursor: args.cursor,
+        limit: args.limit,
+      },
+    }
+  );
+}
+
+export async function listLinkedInUserComments(args: {
+  accountId: string;
+  userId: string;
+  cursor?: string;
+  limit?: number;
+}) {
+  return await requestUnipile<LinkedInUnipileCommentList>(
+    `/api/v1/users/${encodeURIComponent(args.userId)}/comments`,
+    {
+      method: "GET",
+      query: {
+        account_id: args.accountId,
+        cursor: args.cursor,
+        limit: args.limit,
       },
     }
   );

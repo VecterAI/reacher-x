@@ -103,7 +103,10 @@ import {
   getDmTextLimitError,
   hasDmBody,
 } from "../shared/lib/twitter/xPostTextLimit";
-import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
+import {
+  buildTwitterReplyInteractionParticipants,
+  resolveProspectTwitterIdentity,
+} from "../shared/lib/twitter/prospectTwitterIdentity";
 
 const xLogger = logger.withScope("X/Twitter");
 
@@ -1953,11 +1956,20 @@ export const replyToPost = action({
     mediaUrls: v.optional(v.array(v.string())),
     mediaDescriptions: v.optional(v.array(v.string())),
     parentAuthorId: v.optional(v.string()),
+    parentAuthorHandle: v.optional(v.string()),
+    prospectId: v.optional(v.id("prospects")),
+    conversationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const mediaUrls = normalizeMediaUrls(args.mediaUrls);
     assertValidMediaDescriptions(mediaUrls, args.mediaDescriptions);
     const userId = await getCurrentUserId(ctx);
+    const prospect = args.prospectId
+      ? await getOwnedTwitterProspectForUser(ctx, userId, args.prospectId)
+      : null;
+    if (args.prospectId && !prospect) {
+      throw new Error("X prospect not found or not authorized.");
+    }
     const postLimit = await ctx.runQuery(
       internal.xPostLimits.getEffectivePostLimitInternal,
       { userId }
@@ -1968,8 +1980,9 @@ export const replyToPost = action({
       userId,
       requiredScopes: entry.requiredScopes,
     });
+    let result;
     try {
-      const result = await executeCuratedTwitterAction(provider, {
+      result = await executeCuratedTwitterAction(provider, {
         actionKey: "reply_to_post",
         toolSlug: entry.toolSlug,
         toolVersion: entry.toolVersion,
@@ -1978,6 +1991,11 @@ export const replyToPost = action({
         mediaUrls,
         mediaDescriptions: args.mediaDescriptions,
       });
+    } catch (error) {
+      throw await handleDirectXWriteActionError(ctx, userId, error);
+    }
+
+    try {
       await ctx.runMutation(
         internal.twitterEngagement.upsertPostEngagementInternal,
         {
@@ -1994,10 +2012,68 @@ export const replyToPost = action({
         message: args.text.trim(),
         actionId: result.createdTweetId ?? args.tweetId,
       });
-      return result;
     } catch (error) {
-      throw await handleDirectXWriteActionError(ctx, userId, error);
+      console.error("[XReplyToPost] Failed to record local engagement", error);
     }
+
+    if (prospect && result.createdTweetId) {
+      try {
+        const now = getCurrentUTCTimestamp();
+        const prospectIdentity = resolveProspectTwitterIdentity(
+          prospect as Record<string, unknown>
+        );
+        const conversationId = args.conversationId?.trim() || args.tweetId;
+        await ctx.runMutation(internal.outreach.upsertTwitterInteraction, {
+          userId,
+          prospectId: prospect._id,
+          sourcePostRef: {
+            platform: "twitter",
+            postId: args.tweetId,
+            conversationId,
+            authorId: args.parentAuthorId,
+            authorHandle: args.parentAuthorHandle,
+          },
+          replyPostRef: {
+            platform: "twitter",
+            postId: result.createdTweetId,
+            conversationId,
+          },
+          replyPostSummary: {
+            platform: "twitter",
+            ref: {
+              platform: "twitter",
+              postId: result.createdTweetId,
+              conversationId,
+            },
+            url: `https://x.com/i/status/${result.createdTweetId}`,
+            textPreview: args.text.trim(),
+            createdAt: now,
+            inReplyToPostId: args.tweetId,
+            inReplyToHandle: args.parentAuthorHandle,
+          },
+          threadId: conversationId,
+          repliedAt: now,
+          origin: "manual_reacherx",
+          discoveredVia: "action_request",
+          status: "active",
+          direction: "outgoing",
+          discoveredAt: now,
+          lastSeenAt: now,
+          participants: buildTwitterReplyInteractionParticipants({
+            prospect: prospectIdentity,
+            parentAuthorId: args.parentAuthorId,
+            parentAuthorHandle: args.parentAuthorHandle,
+          }),
+        });
+      } catch (error) {
+        console.error(
+          "[XReplyToPost] Failed to record prospect interaction",
+          error
+        );
+      }
+    }
+
+    return result;
   },
 });
 

@@ -7,6 +7,7 @@ import {
   getTwitterProfileWebsiteEntity,
   selectProfileWebsiteHref,
 } from "./profileLinks";
+import type { TwitterConversationParticipant } from "./contracts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
@@ -39,7 +40,7 @@ function readTwitterUserId(user: Record<string, unknown>): string | undefined {
   const restId = asString(user.rest_id);
   if (restId) return restId;
   const id = user.id;
-  if (typeof id === "number" && Number.isFinite(id)) {
+  if (typeof id === "number" && Number.isSafeInteger(id)) {
     return String(Math.trunc(id));
   }
   if (typeof id === "string" && /^\d+$/.test(id.trim())) {
@@ -135,4 +136,36 @@ export function resolveProspectTwitterIdentity(
     canDm,
     userId,
   };
+}
+
+export function buildTwitterReplyInteractionParticipants(args: {
+  prospect: ProspectTwitterIdentity;
+  parentAuthorId?: string;
+  parentAuthorHandle?: string;
+}): TwitterConversationParticipant[] {
+  const prospectHandle = args.prospect.username?.toLowerCase();
+  const parentAuthorHandle = args.parentAuthorHandle?.toLowerCase();
+  const parentIsProspect =
+    args.prospect.userId && args.parentAuthorId
+      ? args.prospect.userId === args.parentAuthorId
+      : Boolean(prospectHandle && parentAuthorHandle === prospectHandle);
+  const participants: TwitterConversationParticipant[] = [
+    {
+      id: args.prospect.userId,
+      handle: args.prospect.username,
+      name: args.prospect.displayName,
+      avatarUrl: args.prospect.avatarUrl,
+    },
+  ];
+
+  if (!parentIsProspect && (args.parentAuthorId || args.parentAuthorHandle)) {
+    participants.push({
+      id: args.parentAuthorId,
+      handle: args.parentAuthorHandle,
+      name: args.parentAuthorHandle,
+    });
+  }
+
+  participants.push({ name: "You", isViewer: true });
+  return participants;
 }
