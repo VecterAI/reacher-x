@@ -113,6 +113,41 @@ even though the queue later drained cleanly. Global enforcement remains blocked
 until both the mixed-memory-ID reader and resume/recovery contention fixes pass
 another enforced canary.
 
+### Corrected rollout and fresh production window — 2026-08-28
+
+PR #40 deployed the mixed-memory-ID and asynchronous resume fixes. After the
+approved canary sequence passed, global enforcement was restored. A fresh
+read-only production check against `effervescent-viper-357` on 2026-08-28
+confirmed:
+
+- global mode `enforced`, 36 configured tenant slots, and zero overrides;
+- 0 queued, running, or claimed jobs; 36/36 slots free;
+- 0 expired leases, unresolved enqueue failures, or pool/slot drift;
+- one intentionally paused old lane and no ready lane; and
+- no permanent scheduler enqueue/resume OCC event newer than the pre-fix
+  incident timestamps.
+
+The same Insights window provided the evidence for the next migration:
+
+- `workspaceAgentOpsDaily`: 85 permanent OCC failures (29 apply, 27 finalize,
+  29 claim) plus 8,837 Workpool wrapper retries and hundreds of direct retries;
+- `workspaceAnalyticsDaily`: 12 permanent failures plus 23,110 Workpool wrapper
+  retries and 200 direct `createProspectsBatch` retries;
+- `workspaceStats`: 3 permanent failures plus 42 wrapper and 22 direct retries;
+- `prospects:createProspectsBatch`: 74 historical bytes-read failures, newest
+  at 2026-08-27 17:31:44 UTC, with no newer event after the batch-size rollout;
+- `getWorkspaceFitScoreHistogram`: one 18.6 MB / 18,163-row read failure; and
+- Action Retrier `cleanupExpiredRuns`: three daily 16,864,513-byte failures over
+  1,040 component rows. Version 0.3.1 retains the same 1,024-row cleanup shape,
+  so upgrading alone does not clear this backlog.
+
+These rollup numbers cross the previously documented migration threshold. The
+local follow-up therefore widens the schema with 32 deterministic stripes for
+the three multi-field rollups. Existing rows remain immutable baselines; new
+source-document changes write signed deltas, and readers combine baseline plus
+stripes before clamping user-visible totals. This makes the cutover correct for
+updates and deletes of pre-cutover rows without scanning 60,000+ prospects.
+
 ## Changes and invariants
 
 ### Tenant enqueue contention
@@ -212,39 +247,82 @@ reports the expected split and the repair pass bounds external drift.
 
 ## Contention audit
 
-| State                     | Write shape               | Finding                                                                         | Decision                                                                                       |
-| ------------------------- | ------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `prospectSummaries`       | One row per prospect      | Naturally partitioned; the large batch amplified reads, not one global write    | Keep; batch writers at 5                                                                       |
-| `workspaceStats`          | One row per workspace     | Every material prospect/notification change can contend within a busy workspace | Do not migrate without fresh per-table conflict evidence; candidate for striped workspace rows |
-| `workspaceAnalyticsDaily` | One row per workspace/day | Prospect, activity, plan, and task triggers converge on today's row             | Same staged striped-row candidate                                                              |
-| `workspaceAgentOpsDaily`  | One row per workspace/day | Keywords, candidates, evaluator runs, suggestions, and events converge          | Same staged striped-row candidate                                                              |
-| Provider budget state     | One row per provider      | Deliberate serialization enforces exact request spacing                         | Keep; existing action-level bounded OCC retry is appropriate                                   |
-| Provider circuit state    | One row per provider      | Healthy calls caused unnecessary writes                                         | Fixed by writing only state transitions                                                        |
-| Action Retrier            | Component-owned run rows  | Component has indexed automatic cleanup after seven days                        | Keep; no duplicate app cleanup                                                                 |
-| Scheduler resume          | One lane + queued range   | Two permanent conflicts while enqueue traffic continued                         | Fixed by durable, idempotent reconciliation outside the caller transaction                     |
-| Memory RAG ID hydration   | Up to 64 indexed reads    | Stale component IDs failed strict canonical-ID argument validation               | Widen reader; resolve through the existing workspace-scoped legacy-ID index                     |
+| State                     | Write shape               | Finding                                                                      | Decision                                                                              |
+| ------------------------- | ------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `prospectSummaries`       | One row per prospect      | Naturally partitioned; the large batch amplified reads, not one global write | Keep; batch writers at 5                                                              |
+| `workspaceStats`          | One row per workspace     | 3 permanent failures and 64 measured retries                                 | Widen to 32 deterministic signed-delta stripes                                        |
+| `workspaceAnalyticsDaily` | One row per workspace/day | 12 permanent failures and 23,000+ measured retries                           | Widen to 32 deterministic signed-delta stripes                                        |
+| `workspaceAgentOpsDaily`  | One row per workspace/day | 85 permanent failures and 10,000+ measured retries                           | Widen to 32 deterministic signed-delta stripes                                        |
+| Provider budget state     | One row per provider      | Deliberate serialization enforces exact request spacing                      | Keep; existing action-level bounded OCC retry is appropriate                          |
+| Provider circuit state    | One row per provider      | Healthy calls caused unnecessary writes                                      | Fixed by writing only state transitions                                               |
+| Action Retrier            | Component-owned run rows  | Automatic cleanup permanently exceeds bytes read at 1,040 large rows         | Upgrade to 0.3.1 and schedule per-run cleanup after terminal state is safely observed |
+| Scheduler resume          | One lane + queued range   | Two permanent conflicts while enqueue traffic continued                      | Fixed by durable, idempotent reconciliation outside the caller transaction            |
+| Memory RAG ID hydration   | Up to 64 indexed reads    | Stale component IDs failed strict canonical-ID argument validation           | Widen reader; resolve through the existing workspace-scoped legacy-ID index           |
 
-Aggregate is a good fit for simple indexed counts, but these read models contain
-reversible multi-field contributions, sums, and averages. A sharded/striped
-read model is the safer candidate if production evidence crosses the migration
-threshold below; neither component is introduced speculatively in this phase.
+Aggregate is a good fit for the exact fit-score histogram: it can namespace by
+workspace/filter scope and count ten bounded score bins without reading every
+summary. It is not the right representation for the three hot read models,
+which contain reversible multi-field contributions, hourly arrays, sums, and
+averages. A Sharded Counter would require a separate counter for every field and
+would lose coherent snapshots. The measured rollup contention therefore uses
+striped application rows; the histogram remains a separate Aggregate migration
+with dual writes, bounded per-workspace backfill, reconciliation, and only then
+a read cutover.
 
 ### Evidence threshold and widen–migrate–narrow outline
 
-Start the migration only after read-only Insights attributes sustained permanent
-OCC failures or material retry latency to one of the three workspace rows.
+The 2026-08-28 Insights snapshot crossed this threshold for all three workspace
+rows. The implementation uses this no-global-scan variant:
 
-1. **Widen:** add striped rows and indexes; keep existing readers. Do not require
-   a deployment-wide scan.
-2. **Migrate:** dual-write deterministic source-based stripes. Backfill one
-   workspace at a time with cursors and checkpoints, then reconcile old totals
-   against summed stripes.
-3. **Read cutover:** read summed stripes after per-workspace verification, with
-   the old row as a temporary fallback.
-4. **Narrow writes:** stop writes to the old row and observe at least one full
-   analytics retention window.
-5. **Cleanup:** remove old data/schema only in a separately approved destructive
-   phase.
+1. **Widen:** add the three stripe tables and indexes while retaining the old
+   baseline tables.
+2. **Write/read cutover:** stop normal writes to the hot baseline row. Route each
+   source document to one stable stripe and store signed change deltas. Readers
+   atomically combine the old baseline with every stripe in range.
+3. **Verify:** compare public/internal snapshots before and after insert, update,
+   and delete traffic; monitor permanent OCC and retry counts by table.
+4. **Compact later:** after an observation window, rebuild one workspace at a
+   time into a fresh baseline and clear only that workspace's stripes while its
+   writers are paused. This is optional for correctness, not a deployment gate.
+5. **Narrow/cleanup:** remove old compatibility helpers or tables only in a
+   separately approved destructive phase after a full retention window.
+
+The Action Retrier follow-up similarly avoids a global component scan. Once a
+caller observes a terminal result, it schedules idempotent cleanup one hour
+later, after the caller has had time to persist its own outcome. This prevents
+new terminal rows from feeding the oversized seven-day component cleanup. The
+existing 1,040-row backlog still needs a bounded upstream/component maintenance
+path; it is not safe to pretend the package upgrade alone repairs historical
+state.
+
+### Stripe rollout and rollback gates
+
+This follow-up has not been pushed or deployed. When it is approved, treat the
+baseline-plus-delta cutover as a data migration even though it needs no prospect
+backfill:
+
+1. Deploy the additive tables, readers, and writers together during a monitored
+   window. The first post-deploy write creates a stripe lazily; untouched rows
+   remain represented by the old baseline.
+2. Compare the public/internal stats, analytics, and Agent Ops snapshots for a
+   low-traffic workspace before and after insert/update/delete traffic.
+3. Gate expansion on zero new permanent OCC for the three old hot tables, exact
+   snapshot parity, bounded stripe counts (at most 32 per workspace/day), and no
+   material increase in read latency.
+4. Do not roll code back to a version that ignores stripes after stripe writes
+   exist. A rollback must first pause the affected workspace writers and run the
+   existing per-workspace stats/analytics rebuild plus the Agent Ops rebuild to
+   fold current source truth into fresh baseline rows and clear that
+   workspace's stripes. Only then is an old reader safe.
+5. Keep the baseline and stripe schemas through at least one complete analytics
+   retention window. Narrowing/removal is a separately approved cleanup phase.
+
+The fit-score Aggregate follows a separate widen–migrate–narrow sequence: mount
+and dual-write idempotently, backfill one indexed workspace page at a time,
+reconcile counts, cut over the histogram query only for verified workspaces,
+then stop the raw scan. It is intentionally not bundled into the rollup cutover
+because its multi-filter namespace design and 60,000-row historical population
+need their own load and migration gates.
 
 ## Additive rollout
 
@@ -308,11 +386,50 @@ them during rollback.
   issues in unrelated existing files, including bundled `.agents` scripts and
   pre-existing React compiler findings. This change does not modify them.
 
-Fresh production Insights were captured after the control rollback as recorded
-above. Production evidence for the follow-up mixed-memory-ID and asynchronous
-resume fixes remains pending because those changes have not been deployed.
+Fresh production Insights were captured after both the control rollback and the
+corrected rollout as recorded above. No scheduler enqueue/resume permanent OCC
+event is newer than the pre-fix incident window.
+
+### Follow-up verification — 2026-08-28
+
+- Full Convex suite: 107 files and 538 tests passed. New tests cover stable
+  32-way distribution, signed baseline cutover updates/deletes, exact hourly
+  analytics, exact Agent Ops failure reversal, and an end-to-end triggered
+  prospect status transition against a pre-cutover baseline.
+- TypeScript, strict Oxlint, changed-file ESLint, and `git diff --check` passed.
+- The production Next.js build passed all 74 static/PPR pages.
+- React Doctor scored 83/100. Its 22 findings are backend `await`-in-loop
+  warnings; the changed loops intentionally serialize Convex writes, ordered
+  component calls, or bounded deletion/rebuild operations. No React/TSX file
+  changed in this follow-up.
+- Convex/security review found no new public function, authorization surface, or
+  client-supplied document ID. Public rollup readers retain their existing
+  workspace ownership checks; the new Action Retrier cleanup entry point is
+  internal and validates the component run ID with the package validator.
+- Realtime behavior is preserved because the public readers remain reactive
+  Convex queries; they now subscribe to both baseline and stripe index ranges.
 
 ## Cleanup candidates — no deletion in this phase
+
+The 2026-08-28 static call-site audit produced three different outcomes; they
+must not be treated as the same kind of “unused” code:
+
+- `setupSessions:markWorkflowStartedInternal` and
+  `PREVIEW_BATCH_LIMITS.previewProspectWriteBatch` have definition-only static
+  matches. Production function/config history is still required before removal.
+- The six legacy Workpool modules have live imports in qualification,
+  enrichment, outreach-plan, preview, and memory workflows, and the scheduler
+  still updates their configuration for legacy/shadow rollback. They are active
+  compatibility paths, not cleanup-ready.
+- `planBatches:dispatchPlanBatchPage` is still reachable through
+  `dispatchPlanBatchPageWithRetryInternal` from persisted workflow steps. Static
+  reachability confirms it cannot yet be removed.
+
+The audit also reconfirmed that workspace deletion does not own tenant scheduler
+lanes/bindings. Adding blind row deletion would be unsafe because durable jobs
+can still reference a lane. A future cleanup step must first pause admission,
+cancel or drain the workspace's jobs, prove zero queued/running references, and
+only then delete the binding and idle lane.
 
 - `setupSessions:markWorkflowStartedInternal` has no current call site after
   atomic workflow start. Prove absence in production function logs before a
@@ -330,8 +447,10 @@ resume fixes remains pending because those changes have not been deployed.
   with the old mutation step. New workflows use per-item atomic retry. Prove no
   old workflow history can replay that step before removing the compatibility
   function in a later commit.
-- Workflow/component records need a separate retention audit. Action Retrier is
-  already covered by its component cleanup; do not add a competing cleanup job.
+- New Action Retrier terminal rows now receive delayed per-run cleanup. The
+  historical component backlog remains a cleanup candidate because the
+  component's own 1,024-row mutation exceeds the bytes limit; clear it only via
+  a reviewed bounded component/upstream path.
 - Workspace deletion currently does not include scheduler lanes or their new
   immutable bindings. Add both to a separately tested scheduler-retention
   cleanup only after proving no queued/running references remain.
