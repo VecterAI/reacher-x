@@ -175,6 +175,36 @@ export const getProspectInteractionSyncStateInternal = internalQuery({
   },
 });
 
+export const getProspectInteractionsInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    platform: prospectInteractionHistoryPlatformValidator,
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (!prospect || prospect.userId !== args.userId) {
+      return [];
+    }
+
+    const limit = Math.min(100, Math.max(1, Math.floor(args.limit)));
+    const interactions = await ctx.db
+      .query("prospectInteractions")
+      .withIndex("by_user_prospect_replied", (q) =>
+        q.eq("userId", args.userId).eq("prospectId", args.prospectId)
+      )
+      .order("desc")
+      .take(limit);
+
+    return args.platform === "all"
+      ? interactions
+      : interactions.filter(
+          (interaction) => interaction.platform === args.platform
+        );
+  },
+});
+
 export const upsertProspectInteractionSyncStateInternal = internalMutation({
   args: {
     userId: v.id("users"),
@@ -296,6 +326,8 @@ export const getProspectInteractionsPage = query({
           platform: interaction.platform,
           interactionType: interaction.interactionType,
           threadId: interaction.threadId,
+          sourcePostId: interaction.sourcePostId,
+          replyPostId: interaction.replyPostId,
           repliedAt: interaction.repliedAt,
           originalPost: originalSummary
             ? toFallbackTweetFromSummary(originalSummary)
