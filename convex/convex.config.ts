@@ -8,6 +8,8 @@ import workpool from "@convex-dev/workpool/convex.config";
 import rag from "@convex-dev/rag/convex.config";
 import polar from "@convex-dev/polar/convex.config";
 import migrations from "@convex-dev/migrations/convex.config";
+import batchWorker from "@convex-dev/batch-worker/convex.config";
+import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 
 const app = defineApp({
   env: {
@@ -84,6 +86,8 @@ app.use(workflow);
 app.use(agent);
 app.use(actionRetrier);
 app.use(migrations);
+app.use(batchWorker, { env: { LOG_LEVEL: "REPORT" } });
+app.use(rateLimiter);
 // Workpools for throttling (prevents OCC errors on rate limit table)
 app.use(workpool, { name: "qualificationPool" });
 app.use(workpool, { name: "enrichmentPool" });
@@ -91,6 +95,8 @@ app.use(workpool, { name: "previewQualificationPool" });
 app.use(workpool, { name: "previewEnrichmentPool" });
 app.use(workpool, { name: "outreachPlanPool" });
 app.use(workpool, { name: "memoryEvaluationPool" });
+// Consolidated execution pool used when tenant-fair scheduling is enforced.
+app.use(workpool, { name: "tenantExecutionPool" });
 // RAG for semantic search in outreach
 app.use(rag);
 // Polar for subscription payments

@@ -2641,6 +2641,18 @@ export const recordGenerationResultInternal = internalMutation({
       errorMessage: undefined,
     });
 
+    await maybeSignalStateChanged(ctx, {
+      ...session,
+      status: "awaiting_icp_confirmation",
+      improvedDescription: args.improvedDescription,
+      generatedProfiles: args.generatedProfiles,
+      draftName: args.draftName,
+      generationCompletedAt: args.generationCompletedAt,
+      statusUpdatedAt: now,
+      lastAgentActionAt: now,
+      lastActiveAt: now,
+    });
+
     return { updated: true as const };
   },
 });
@@ -3297,6 +3309,18 @@ export const markGenerationFailedInternal = internalMutation({
 
     const now = getCurrentUTCTimestamp();
     await ctx.db.patch(sessionId, {
+      status: "awaiting_input",
+      generationCompletedAt: undefined,
+      generationErrorAt: now,
+      lastAgentActionAt: now,
+      lastActiveAt: now,
+      statusUpdatedAt: now,
+      errorCode: "generation_failed",
+      errorMessage,
+    });
+
+    await maybeSignalStateChanged(ctx, {
+      ...session,
       status: "awaiting_input",
       generationCompletedAt: undefined,
       generationErrorAt: now,

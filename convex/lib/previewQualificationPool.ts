@@ -4,7 +4,7 @@ import { components } from "../_generated/api";
 export const previewQualificationPool = new Workpool(
   components.previewQualificationPool,
   {
-    maxParallelism: 15,
+    // Parallelism is controlled centrally by tenantScheduler.setControlInternal.
     retryActionsByDefault: true,
     defaultRetryBehavior: {
       maxAttempts: 3,

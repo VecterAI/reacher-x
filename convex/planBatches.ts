@@ -7,6 +7,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, query } from "./lib/functionBuilders";
 import { getOutreachPlanPool } from "./lib/outreachPlanPool";
+import { TENANT_JOB_PRIORITY } from "./lib/tenantSchedulerCore";
+import { completeTenantJob } from "./lib/tenantSchedulerHelpers";
 import {
   dismissNotificationsByKey,
   upsertNotificationByKey,
@@ -1158,7 +1160,13 @@ export const cancelQueuedPlanBatchItemsPage = internalMutation({
 
     for (const item of queuedItems) {
       if (item.workId) {
-        await getOutreachPlanPool().cancel(ctx, item.workId as WorkId);
+        const schedulerCancellation = await ctx.runMutation(
+          internal.tenantScheduler.cancelJobByExternalIdInternal,
+          { workId: item.workId }
+        );
+        if (!schedulerCancellation.handled) {
+          await getOutreachPlanPool().cancel(ctx, item.workId as WorkId);
+        }
       }
     }
     const now = getCurrentUTCTimestamp();
@@ -1215,19 +1223,40 @@ export const dispatchPlanBatchPage = internalMutation({
     }
 
     for (const item of items) {
-      const workId = await getOutreachPlanPool().enqueueAction(
-        ctx,
-        internal.planBatchActions.processPlanBatchItem,
-        { itemId: item._id },
+      const tenantRoute = await ctx.runMutation(
+        internal.tenantScheduler.enqueueTenantJobInternal,
         {
-          onComplete: internal.planBatches.handlePlanBatchItemComplete,
-          context: { runId, itemId: item._id },
-          retry: true,
+          workspaceId: run.workspaceId,
+          userId: run.userId,
+          class: "background",
+          priority: TENANT_JOB_PRIORITY.background,
+          idempotencyKey: `plan-batch-item:${String(item._id)}`,
+          payload: {
+            kind: "plan_batch_item",
+            workspaceId: run.workspaceId,
+            runId,
+            itemId: item._id,
+          },
         }
       );
+      const workId =
+        tenantRoute.route === "enforced"
+          ? String(tenantRoute.jobId)
+          : String(
+              await getOutreachPlanPool().enqueueAction(
+                ctx,
+                internal.planBatchActions.processPlanBatchItem,
+                { itemId: item._id },
+                {
+                  onComplete: internal.planBatches.handlePlanBatchItemComplete,
+                  context: { runId, itemId: item._id },
+                  retry: true,
+                }
+              )
+            );
       await ctx.db.patch("planBatchItems", item._id, {
         status: "queued",
-        workId: String(workId),
+        workId,
         updatedAt: getCurrentUTCTimestamp(),
       });
     }
@@ -1421,13 +1450,34 @@ export const handlePlanBatchItemComplete = internalMutation({
       ctx.db.get("planBatchRuns", args.context.runId),
       ctx.db.get("planBatchItems", args.context.itemId),
     ]);
-    if (!run || !item) return null;
+    if (!run || !item) {
+      if (args.context.tenantJobId) {
+        await completeTenantJob(ctx, {
+          jobId: args.context.tenantJobId,
+          status: "failed",
+          errorMessage: "Plan batch state was missing",
+        });
+      }
+      return null;
+    }
     if (
       item.status === "succeeded" ||
       item.status === "failed" ||
       item.status === "skipped" ||
       item.status === "cancelled"
     ) {
+      if (args.context.tenantJobId) {
+        await completeTenantJob(ctx, {
+          jobId: args.context.tenantJobId,
+          status:
+            item.status === "cancelled"
+              ? "cancelled"
+              : item.status === "failed"
+                ? "failed"
+                : "succeeded",
+          errorMessage: item.errorMessage,
+        });
+      }
       return null;
     }
 
@@ -1505,6 +1555,18 @@ export const handlePlanBatchItemComplete = internalMutation({
       updatedAt: now,
     };
     await ctx.db.patch("planBatchRuns", run._id, nextRunPatch);
+    if (args.context.tenantJobId) {
+      await completeTenantJob(ctx, {
+        jobId: args.context.tenantJobId,
+        status:
+          nextStatus === "cancelled"
+            ? "cancelled"
+            : nextStatus === "failed"
+              ? "failed"
+              : "succeeded",
+        errorMessage,
+      });
+    }
 
     if (run.status === "cancelled" || finishedCount < run.eligibleCount) {
       return null;

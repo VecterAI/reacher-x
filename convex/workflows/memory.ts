@@ -6,6 +6,8 @@ import type { ActionCtx, MutationCtx } from "../_generated/server";
 import { internalAction, internalMutation } from "../lib/functionBuilders";
 import { memoryEvaluationPool } from "../lib/memoryEvaluationPool";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
+import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
 
 type MemoryEvaluationEnqueueReason =
   | "missing_event"
@@ -65,6 +67,33 @@ async function enqueueWorkspaceMemoryEvaluation(
       enqueued: false as const,
       reason: prepared.reason,
     };
+  }
+
+  const workspace = await ctx.runQuery(internal.workspaces.getById, {
+    workspaceId,
+  });
+  if (!workspace) {
+    return { enqueued: false as const, reason: "missing_event" as const };
+  }
+
+  const tenantRoute = await ctx.runMutation(
+    internal.tenantScheduler.enqueueTenantJobInternal,
+    {
+      workspaceId,
+      userId: workspace.userId,
+      class: "background",
+      priority: TENANT_JOB_PRIORITY.background,
+      idempotencyKey: `memory-evaluation:${String(workspaceId)}:${getCurrentUTCTimestamp()}`,
+      payload: { kind: "memory_evaluation", workspaceId },
+    }
+  );
+  if (tenantRoute.route === "enforced") {
+    const schedulerWorkId = String(tenantRoute.jobId);
+    await ctx.runMutation(
+      internal.workflows.memory.setMemoryEvaluationQueueWorkIdInternal,
+      { workspaceId, workId: schedulerWorkId }
+    );
+    return { enqueued: true as const, workId: schedulerWorkId };
   }
 
   const workId: string = await memoryEvaluationPool.enqueueAction(
@@ -438,12 +467,29 @@ export const handleMemoryEvaluationQueueWorkCompletionInternal =
     args: vOnCompleteArgs(
       v.object({
         workspaceId: v.id("workspaces"),
+        tenantJobId: v.optional(v.id("tenantJobs")),
       })
     ),
     handler: async (ctx, args) => {
       const workspaceId = args.context.workspaceId;
+      const expectedWorkId = args.context.tenantJobId
+        ? String(args.context.tenantJobId)
+        : args.workId;
+      if (args.context.tenantJobId) {
+        await completeTenantJob(ctx, {
+          jobId: args.context.tenantJobId,
+          status:
+            args.result.kind === "success"
+              ? "succeeded"
+              : args.result.kind === "canceled"
+                ? "cancelled"
+                : "failed",
+          errorMessage:
+            args.result.kind === "failed" ? args.result.error : undefined,
+        });
+      }
       const queue = await getWorkspaceQueueRow(ctx, workspaceId);
-      if (!queue || queue.workId !== args.workId) {
+      if (!queue || queue.workId !== expectedWorkId) {
         return { recovered: false as const };
       }
 
@@ -455,7 +501,7 @@ export const handleMemoryEvaluationQueueWorkCompletionInternal =
         if (
           event &&
           event.status === "processing" &&
-          event.evaluatorWorkflowId === args.workId
+          event.evaluatorWorkflowId === expectedWorkId
         ) {
           await ctx.db.patch(event._id, {
             status: "pending",
@@ -470,7 +516,7 @@ export const handleMemoryEvaluationQueueWorkCompletionInternal =
           .query("memoryEvaluatorRuns")
           .withIndex("by_event", (q) => q.eq("eventId", activeEventId))
           .first();
-        if (existingRun && existingRun.workflowId === args.workId) {
+        if (existingRun && existingRun.workflowId === expectedWorkId) {
           await ctx.db.patch(existingRun._id, {
             status: "failed",
             error:

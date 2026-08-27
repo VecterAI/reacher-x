@@ -14,13 +14,13 @@ import { getSystemRuntimeConfig } from "./runtimeConfigHelpers";
  * 2. Downstream API spikes while the shared SocialAPI budget gate smooths egress
  *
  * Configuration:
- * - maxParallelism: ENRICHMENT_MAX_PARALLELISM (default 10)
+ * - maxParallelism: runtime scheduler control (legacy/shadow 10, enforced 0)
  * - retryActionsByDefault: true - Auto-retry failed enrichments
  */
 export function getEnrichmentPool() {
   const config = getSystemRuntimeConfig().workpools.enrichment;
   return new Workpool(components.enrichmentPool, {
-    maxParallelism: config.maxParallelism,
+    // Parallelism is controlled centrally by tenantScheduler.setControlInternal.
     retryActionsByDefault: true,
     defaultRetryBehavior: {
       maxAttempts: config.maxAttempts,

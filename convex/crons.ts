@@ -52,4 +52,16 @@ crons.interval(
   {}
 );
 
+crons.interval(
+  "recover expired tenant scheduler leases",
+  { minutes: 10 },
+  internal.tenantScheduler.reapExpiredJobsInternal
+);
+
+crons.interval(
+  "delete expired tenant scheduler history",
+  { hours: 1 },
+  internal.tenantScheduler.cleanupCompletedJobsInternal
+);
+
 export default crons;

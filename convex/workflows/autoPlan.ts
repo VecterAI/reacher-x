@@ -13,6 +13,7 @@ import {
 import { getProspectDisplayLabel } from "../lib/prospectIdentityCore";
 import { autoPlanWorkCompletionContextValidator } from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
 
 function buildAutoPlanFailureNotificationKey(prospectId: string) {
   return `auto-plan-failed:${prospectId}`;
@@ -21,11 +22,22 @@ function buildAutoPlanFailureNotificationKey(prospectId: string) {
 export const handleAutoPlanWorkComplete = internalMutation({
   args: vOnCompleteArgs(autoPlanWorkCompletionContextValidator),
   handler: async (ctx, args) => {
+    const tenantJobId = args.context.tenantJobId;
     const [prospect, run] = await Promise.all([
       ctx.db.get(args.context.prospectId),
       ctx.db.get(args.context.runId),
     ]);
     if (!prospect || !run || run.status === "completed") {
+      if (tenantJobId) {
+        await completeTenantJob(ctx, {
+          jobId: tenantJobId,
+          status: run?.status === "completed" ? "succeeded" : "failed",
+          errorMessage:
+            run?.status === "completed"
+              ? undefined
+              : "Automatic plan state was missing",
+        });
+      }
       return null;
     }
 
@@ -59,6 +71,12 @@ export const handleAutoPlanWorkComplete = internalMutation({
           notificationKey,
         }),
       ]);
+      if (tenantJobId) {
+        await completeTenantJob(ctx, {
+          jobId: tenantJobId,
+          status: "succeeded",
+        });
+      }
       return null;
     }
 
@@ -107,6 +125,14 @@ export const handleAutoPlanWorkComplete = internalMutation({
       errorCode: failure.code,
       error: errorMessage,
     });
+
+    if (tenantJobId) {
+      await completeTenantJob(ctx, {
+        jobId: tenantJobId,
+        status: args.result.kind === "canceled" ? "cancelled" : "failed",
+        errorMessage,
+      });
+    }
 
     return null;
   },

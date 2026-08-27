@@ -22,6 +22,8 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { parseQualificationModelFailure } from "../lib/qualificationFailureCore";
+import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
+import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
 const qualificationWorkflowLogger = logger.withScope("QualificationWorkflow");
 
 async function hasValidatedSetupPreviewContext(
@@ -549,6 +551,7 @@ export const runQualificationWorkflow = internalAction({
   args: {
     prospectId: v.id("prospects"),
     workspaceId: v.id("workspaces"),
+    tenantJobId: v.optional(v.id("tenantJobs")),
   },
   handler: async (ctx, args): Promise<{ workflowId: string }> => {
     const prospect = await ctx.runQuery(
@@ -594,7 +597,10 @@ export const runQualificationWorkflow = internalAction({
       {
         onComplete:
           internal.workflows.qualification.handleQualificationComplete,
-        context: { prospectId: args.prospectId },
+        context: {
+          prospectId: args.prospectId,
+          tenantJobId: args.tenantJobId,
+        },
       }
     );
 
@@ -615,18 +621,50 @@ export const handleQualificationComplete = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    if (args.result.kind === "success") return null;
+    const tenantJobId = (
+      args.context as {
+        prospectId: Id<"prospects">;
+        tenantJobId?: Id<"tenantJobs">;
+      }
+    ).tenantJobId;
+    if (args.result.kind === "success") {
+      if (tenantJobId) {
+        await completeTenantJob(ctx, {
+          jobId: tenantJobId,
+          status: "succeeded",
+        });
+      }
+      return null;
+    }
 
     const prospectId = (args.context as { prospectId: Id<"prospects"> })
       .prospectId;
     const prospect = await ctx.db.get(prospectId);
-    if (!prospect) return null;
+    if (!prospect) {
+      if (tenantJobId) {
+        await completeTenantJob(ctx, {
+          jobId: tenantJobId,
+          status: args.result.kind === "canceled" ? "cancelled" : "failed",
+          errorMessage:
+            args.result.kind === "failed" ? args.result.error : undefined,
+        });
+      }
+      return null;
+    }
 
     const workflowId = String(args.workflowId);
     if (
       prospect.qualificationWorkflowId &&
       prospect.qualificationWorkflowId !== workflowId
     ) {
+      if (tenantJobId) {
+        await completeTenantJob(ctx, {
+          jobId: tenantJobId,
+          status: args.result.kind === "canceled" ? "cancelled" : "failed",
+          errorMessage:
+            args.result.kind === "failed" ? args.result.error : undefined,
+        });
+      }
       return null;
     }
 
@@ -648,6 +686,13 @@ export const handleQualificationComplete = internalMutation({
         },
         updatedAt: now,
       });
+      if (tenantJobId) {
+        await completeTenantJob(ctx, {
+          jobId: tenantJobId,
+          status: "failed",
+          errorMessage: args.result.error,
+        });
+      }
       return null;
     }
 
@@ -655,6 +700,12 @@ export const handleQualificationComplete = internalMutation({
       qualificationWorkflowId: undefined,
       updatedAt: now,
     });
+    if (tenantJobId) {
+      await completeTenantJob(ctx, {
+        jobId: tenantJobId,
+        status: "cancelled",
+      });
+    }
     return null;
   },
 });
@@ -702,6 +753,26 @@ export const startQualification = internalAction({
       return { workId: "" };
     }
 
+    const tenantRoute = await ctx.runMutation(
+      internal.tenantScheduler.enqueueTenantJobInternal,
+      {
+        workspaceId: args.workspaceId,
+        userId: prospect.userId,
+        class: "background",
+        priority: TENANT_JOB_PRIORITY.background,
+        idempotencyKey: `qualification:${String(args.prospectId)}:${prospect.updatedAt}`,
+        payload: {
+          kind: "qualification",
+          prospectId: args.prospectId,
+          workspaceId: args.workspaceId,
+          preview: false,
+        },
+      }
+    );
+    if (tenantRoute.route === "enforced") {
+      return { workId: String(tenantRoute.jobId) };
+    }
+
     const workId = await getQualificationPool().enqueueAction(
       ctx,
       internal.workflows.qualification.runQualificationWorkflow,
@@ -741,6 +812,26 @@ export const startPreviewQualification = internalAction({
       !(await hasValidatedSetupPreviewContext(ctx, prospect, args.workspaceId))
     ) {
       return { workId: "" };
+    }
+
+    const tenantRoute = await ctx.runMutation(
+      internal.tenantScheduler.enqueueTenantJobInternal,
+      {
+        workspaceId: args.workspaceId,
+        userId: prospect.userId,
+        class: "preview",
+        priority: TENANT_JOB_PRIORITY.preview,
+        idempotencyKey: `preview-qualification:${String(args.prospectId)}:${prospect.setupRevision ?? prospect.updatedAt}`,
+        payload: {
+          kind: "qualification",
+          prospectId: args.prospectId,
+          workspaceId: args.workspaceId,
+          preview: true,
+        },
+      }
+    );
+    if (tenantRoute.route === "enforced") {
+      return { workId: String(tenantRoute.jobId) };
     }
 
     const workId = await previewQualificationPool.enqueueAction(

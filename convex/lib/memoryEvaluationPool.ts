@@ -10,7 +10,7 @@ import { components } from "../_generated/api";
 export const memoryEvaluationPool = new Workpool(
   components.memoryEvaluationPool,
   {
-    maxParallelism: 4,
+    // Parallelism is controlled centrally by tenantScheduler.setControlInternal.
     retryActionsByDefault: true,
     defaultRetryBehavior: {
       maxAttempts: 3,
