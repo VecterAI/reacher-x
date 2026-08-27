@@ -9,7 +9,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { fetchSocialApi } from "./lib/socialApiFetch";
 import { distillWritingStyleProfile } from "./lib/styleDistillation";
-import { retrier } from "./lib/retrier";
+import { getRetriedActionStatus, runRetriedAction } from "./lib/retrier";
 import { BATCH_ANALYSIS_THRESHOLD } from "./lib/workspaceStyleProfileCore";
 import {
   getStyleDisplayLabel,
@@ -229,14 +229,14 @@ async function fetchUserTimelinePageWithRetry(
     cursor?: string;
   }
 ): Promise<SocialApiTimelineFetchResult> {
-  const runId = await retrier.run(
+  const runId = await runRetriedAction(
     ctx,
     internal.styleAnalysisActions.fetchUserTimelinePage,
     args
   );
 
   while (true) {
-    const status = await retrier.status(ctx, runId);
+    const status = await getRetriedActionStatus(ctx, runId);
     if (status.type === "inProgress") {
       await new Promise((resolve) => setTimeout(resolve, 500));
       continue;
