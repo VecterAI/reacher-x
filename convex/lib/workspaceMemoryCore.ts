@@ -743,6 +743,61 @@ export async function listCanonicalLegacyMemoryIds(
     );
 }
 
+/**
+ * Resolve RAG metadata written before or after the canonical memory rollout.
+ *
+ * Older RAG entries point at Agent-component `memories` rows while current
+ * entries point directly at `workspaceMemories`. Keep this read path
+ * widen-compatible until stale component entries have been reindexed.
+ */
+export async function listCanonicalWorkspaceMemoriesByStoredIds(
+  db: MemoryDbReader,
+  args: {
+    workspaceId: Id<"workspaces">;
+    userId: Id<"users">;
+    memoryIds: string[];
+  }
+): Promise<CanonicalWorkspaceMemory[]> {
+  const workspace = await db.get("workspaces", args.workspaceId);
+  if (!workspace || workspace.userId !== args.userId) {
+    return [];
+  }
+
+  const uniqueIds = [...new Set(args.memoryIds)].slice(0, 64);
+  const rows = await Promise.all(
+    uniqueIds.map(async (memoryId) => {
+      const canonicalId = db.normalizeId("workspaceMemories", memoryId);
+      if (canonicalId) {
+        return await db.get("workspaceMemories", canonicalId);
+      }
+      return await db
+        .query("workspaceMemories")
+        .withIndex("by_workspace_and_legacy_memory_id", (query: any) =>
+          query
+            .eq("workspaceId", args.workspaceId)
+            .eq("legacyMemoryId", memoryId)
+        )
+        .first();
+    })
+  );
+
+  const seen = new Set<string>();
+  return rows
+    .filter((row): row is NonNullable<typeof row> => {
+      if (
+        !row ||
+        row.workspaceId !== args.workspaceId ||
+        row.userId !== args.userId ||
+        seen.has(String(row._id))
+      ) {
+        return false;
+      }
+      seen.add(String(row._id));
+      return true;
+    })
+    .map(toCanonicalWorkspaceMemory);
+}
+
 export async function markCanonicalWorkspaceMemoryIndexResult(
   db: MemoryDbWriter,
   args: {

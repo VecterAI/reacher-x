@@ -45,9 +45,9 @@ import {
   claimFailedCanonicalWorkspaceMemoryIndexRetries,
   listCanonicalWorkspaceMemoryCandidates,
   listCanonicalLegacyMemoryIds,
+  listCanonicalWorkspaceMemoriesByStoredIds,
   markCanonicalWorkspaceMemoryIndexResult,
   searchCanonicalWorkspaceMemories,
-  toCanonicalWorkspaceMemory,
   type CanonicalWorkspaceMemory,
   type WorkspaceMemoryContext,
   type WorkspaceMemoryContextRequest,
@@ -951,28 +951,10 @@ export const getCanonicalWorkspaceMemoriesByIdsInternal = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
-    memoryIds: v.array(v.id("workspaceMemories")),
+    memoryIds: v.array(v.string()),
   },
-  handler: async (ctx, args): Promise<CanonicalWorkspaceMemory[]> => {
-    const workspace = await ctx.db.get("workspaces", args.workspaceId);
-    if (!workspace || workspace.userId !== args.userId) {
-      return [];
-    }
-
-    const uniqueIds = [...new Set(args.memoryIds)].slice(0, 64);
-    const rows = await Promise.all(
-      uniqueIds.map((memoryId) => ctx.db.get("workspaceMemories", memoryId))
-    );
-    return rows
-      .filter((row): row is NonNullable<typeof row> =>
-        Boolean(
-          row &&
-          row.workspaceId === args.workspaceId &&
-          row.userId === args.userId
-        )
-      )
-      .map(toCanonicalWorkspaceMemory);
-  },
+  handler: async (ctx, args): Promise<CanonicalWorkspaceMemory[]> =>
+    await listCanonicalWorkspaceMemoriesByStoredIds(ctx.db, args),
 });
 
 const SHARED_MEMORY_SEMANTIC_THRESHOLD = 0.55;
@@ -1122,7 +1104,7 @@ async function buildWorkspaceMemoryContextFromStore(
   const semanticMemoryIds = [...new Set(semanticMemoryIdGroups.flat())].slice(
     0,
     64
-  ) as Id<"workspaceMemories">[];
+  );
   const semanticMemories = semanticMemoryIds.length
     ? await ctx.runQuery(
         internal.memory.getCanonicalWorkspaceMemoriesByIdsInternal,
