@@ -2604,16 +2604,7 @@ export const recordGenerationResultInternal = internalMutation({
     sessionId: v.id("workspaceSetupSessions"),
     generationRevision: v.optional(v.number()),
     improvedDescription: v.string(),
-    generatedProfiles: v.array(
-      v.object({
-        title: v.string(),
-        description: v.string(),
-        painPoints: v.array(v.string()),
-        channels: v.array(v.string()),
-        syntheticPosts: v.optional(v.array(v.string())),
-        qualificationKeywords: v.optional(v.array(v.string())),
-      })
-    ),
+    generatedProfiles: v.array(icpValidator),
     draftName: v.optional(v.string()),
     generationCompletedAt: v.number(),
   },
