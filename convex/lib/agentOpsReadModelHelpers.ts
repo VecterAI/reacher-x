@@ -286,6 +286,31 @@ export function normalizeWorkspaceAgentOpsDailyRecord(
   return next;
 }
 
+function normalizeSignedWorkspaceAgentOpsDailyRecord(
+  existing: WorkspaceAgentOpsDailyRecord
+): WorkspaceAgentOpsDailyRecord {
+  const next = createEmptyWorkspaceAgentOpsDailyRecord({
+    workspaceId: existing.workspaceId,
+    dayStartUtcMs: existing.dayStartUtcMs,
+  });
+
+  for (const field of AGENT_OPS_NUMERIC_FIELDS) {
+    const value = existing[field];
+    next[field] = Number.isFinite(value) ? value : 0;
+  }
+  for (const field of AGENT_OPS_HOURLY_FIELDS) {
+    const values = existing[field];
+    next[field] = createEmptyHourlyAnalyticsCounts().map((_, index) => {
+      const value = values?.[index];
+      return Number.isFinite(value) ? (value ?? 0) : 0;
+    });
+  }
+
+  next.dayKey = existing.dayKey;
+  next.updatedAt = existing.updatedAt;
+  return next;
+}
+
 function createEmptyWorkspaceQueryPerformanceDailyRecord(args: {
   workspaceId: Id<"workspaces">;
   queryId: Id<"keywords">;
@@ -798,6 +823,99 @@ export function mergeWorkspaceAgentOpsContributions(
   next.updatedAt = now;
 
   return next;
+}
+
+export function mergeWorkspaceAgentOpsStripeContributions(
+  existing: WorkspaceAgentOpsDailyRecord | null,
+  args: {
+    workspaceId: Id<"workspaces">;
+    dayStartUtcMs: number;
+    remove?: WorkspaceAgentOpsDailyContribution[];
+    add?: WorkspaceAgentOpsDailyContribution[];
+  }
+): WorkspaceAgentOpsDailyRecord {
+  const next = existing
+    ? normalizeSignedWorkspaceAgentOpsDailyRecord(existing)
+    : createEmptyWorkspaceAgentOpsDailyRecord({
+        workspaceId: args.workspaceId,
+        dayStartUtcMs: args.dayStartUtcMs,
+      });
+
+  const apply = (
+    contribution: WorkspaceAgentOpsDailyContribution,
+    direction: 1 | -1
+  ) => {
+    for (const field of AGENT_OPS_NUMERIC_FIELDS) {
+      next[field] += contribution[field] * direction;
+    }
+    for (const field of AGENT_OPS_HOURLY_FIELDS) {
+      next[field] = next[field].map(
+        (value, index) => value + contribution[field][index] * direction
+      );
+    }
+  };
+
+  for (const contribution of args.remove ?? []) apply(contribution, -1);
+  for (const contribution of args.add ?? []) apply(contribution, 1);
+
+  next.workspaceId = args.workspaceId;
+  next.dayStartUtcMs = args.dayStartUtcMs;
+  next.dayKey = getUtcDayKeyFromStart(args.dayStartUtcMs);
+  next.updatedAt = getCurrentUTCTimestamp();
+  return next;
+}
+
+export function combineWorkspaceAgentOpsRecords(args: {
+  workspaceId: Id<"workspaces">;
+  dayStartUtcMs: number;
+  baseline: WorkspaceAgentOpsDailyRecord | null;
+  stripes: WorkspaceAgentOpsDailyRecord[];
+}): WorkspaceAgentOpsDailyRecord {
+  const next = createEmptyWorkspaceAgentOpsDailyRecord({
+    workspaceId: args.workspaceId,
+    dayStartUtcMs: args.dayStartUtcMs,
+  });
+
+  const records = [
+    args.baseline ? normalizeWorkspaceAgentOpsDailyRecord(args.baseline) : null,
+    ...args.stripes.map(normalizeSignedWorkspaceAgentOpsDailyRecord),
+  ];
+  for (const normalized of records) {
+    if (!normalized) continue;
+    for (const field of AGENT_OPS_NUMERIC_FIELDS) {
+      next[field] += normalized[field];
+    }
+    for (const field of AGENT_OPS_HOURLY_FIELDS) {
+      next[field] = next[field].map(
+        (value, index) => value + normalized[field][index]
+      );
+    }
+  }
+
+  for (const field of AGENT_OPS_NUMERIC_FIELDS) {
+    next[field] = Math.max(0, next[field]);
+  }
+  for (const field of AGENT_OPS_HOURLY_FIELDS) {
+    next[field] = next[field].map((value) => Math.max(0, value));
+  }
+  next.updatedAt = Math.max(
+    0,
+    args.baseline?.updatedAt ?? 0,
+    ...args.stripes.map((stripe) => stripe.updatedAt)
+  );
+  return next;
+}
+
+export function isWorkspaceAgentOpsStripeEmpty(
+  row: WorkspaceAgentOpsDailyRecord
+) {
+  const normalized = normalizeSignedWorkspaceAgentOpsDailyRecord(row);
+  return (
+    AGENT_OPS_NUMERIC_FIELDS.every((field) => normalized[field] === 0) &&
+    AGENT_OPS_HOURLY_FIELDS.every((field) =>
+      normalized[field].every((value) => value === 0)
+    )
+  );
 }
 
 export function isWorkspaceAgentOpsDailyRecordEmpty(

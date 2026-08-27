@@ -380,6 +380,15 @@ export const replaceWorkspaceAgentOpsReadModelsInternal = internalMutation({
     for (const row of existingAgentOpsRows) {
       await ctx.db.delete(row._id);
     }
+    const existingAgentOpsStripes = await ctx.db
+      .query("workspaceAgentOpsDailyStripes")
+      .withIndex("by_workspace_day_and_stripe", (q) =>
+        q.eq("workspaceId", args.workspaceId)
+      )
+      .collect();
+    for (const stripe of existingAgentOpsStripes) {
+      await ctx.db.delete(stripe._id);
+    }
 
     const existingQueryPerformanceRows = await ctx.db
       .query("workspaceQueryPerformanceDaily")

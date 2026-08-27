@@ -25,7 +25,7 @@
     "@calcom/embed-react": "^1.5.3",
     "@composio/core": "^0.10.0",
     "@composio/vercel": "^0.9.2",
-    "@convex-dev/action-retrier": "^0.3.0",
+    "@convex-dev/action-retrier": "^0.3.1",
     "@convex-dev/agent": "^0.6.3",
     "@convex-dev/batch-worker": "^0.3.2",
     "@convex-dev/migrations": "^0.3.5",

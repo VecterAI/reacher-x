@@ -3,17 +3,16 @@ import type { GenericDatabaseWriter } from "convex/server";
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import {
   buildProspectSummaryRecord,
-  coerceWorkspaceStatsRecord,
   getWorkspaceAnalyticsContributionFromActivityLog,
   getWorkspaceAnalyticsContributionsFromProspect,
   getWorkspaceAnalyticsContributionsFromPlan,
   getWorkspaceAnalyticsContributionsFromTask,
   getWorkspaceStatsContributionFromNotification,
   getWorkspaceStatsContributionFromProspect,
-  coerceWorkspaceAnalyticsDailyForMerge,
-  isWorkspaceAnalyticsRecordEmpty,
-  mergeWorkspaceAnalyticsContributions,
-  mergeWorkspaceStatsContributions,
+  isWorkspaceAnalyticsStripeEmpty,
+  isWorkspaceStatsStripeEmpty,
+  mergeWorkspaceAnalyticsStripeContributions,
+  mergeWorkspaceStatsStripeContributions,
   type TargetedWorkspaceAnalyticsContribution,
   type WorkspaceStatsContribution,
 } from "./readModelHelpers";
@@ -23,11 +22,12 @@ import {
   getWorkspaceAgentOpsContributionsFromMemorySuggestion,
   getWorkspaceAgentOpsContributionsFromQueryCandidate,
   getWorkspaceAgentOpsContributionsFromWorkflowEvent,
-  isWorkspaceAgentOpsDailyRecordEmpty,
-  mergeWorkspaceAgentOpsContributions,
+  isWorkspaceAgentOpsStripeEmpty,
+  mergeWorkspaceAgentOpsStripeContributions,
   type TargetedWorkspaceAgentOpsContribution,
 } from "./agentOpsReadModelHelpers";
 import { buildOutreachProgressSummary } from "./outreachProgressHelpers";
+import { getReadModelStripe } from "./readModelStripeHelpers";
 
 export const triggers = new Triggers<DataModel>();
 
@@ -170,6 +170,7 @@ async function syncProspectSummary(
 async function applyWorkspaceStatsChanges(
   db: TriggerDb,
   args: {
+    sourceKey: string;
     remove?: TargetedWorkspaceStatsContribution[];
     add?: TargetedWorkspaceStatsContribution[];
   }
@@ -179,16 +180,19 @@ async function applyWorkspaceStatsChanges(
     {
       workspaceId: Id<"workspaces">;
       userId: Id<"users">;
+      stripe: number;
       remove: WorkspaceStatsContribution[];
       add: WorkspaceStatsContribution[];
     }
   >();
+  const stripe = getReadModelStripe(args.sourceKey);
 
   for (const entry of args.remove ?? []) {
-    const key = String(entry.workspaceId);
+    const key = `${entry.workspaceId}:${stripe}`;
     const group = groups.get(key) ?? {
       workspaceId: entry.workspaceId,
       userId: entry.userId,
+      stripe,
       remove: [],
       add: [],
     };
@@ -197,10 +201,11 @@ async function applyWorkspaceStatsChanges(
   }
 
   for (const entry of args.add ?? []) {
-    const key = String(entry.workspaceId);
+    const key = `${entry.workspaceId}:${stripe}`;
     const group = groups.get(key) ?? {
       workspaceId: entry.workspaceId,
       userId: entry.userId,
+      stripe,
       remove: [],
       add: [],
     };
@@ -211,24 +216,28 @@ async function applyWorkspaceStatsChanges(
 
   for (const group of groups.values()) {
     const existing = await db
-      .query("workspaceStats")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", group.workspaceId))
-      .first();
+      .query("workspaceStatsStripes")
+      .withIndex("by_workspace_and_stripe", (q) =>
+        q.eq("workspaceId", group.workspaceId).eq("stripe", group.stripe)
+      )
+      .unique();
 
-    const next = mergeWorkspaceStatsContributions(
-      existing ? coerceWorkspaceStatsRecord(existing) : null,
-      {
-        workspaceId: group.workspaceId,
-        userId: group.userId,
-        remove: group.remove,
-        add: group.add,
-      }
-    );
+    const next = mergeWorkspaceStatsStripeContributions(existing, {
+      workspaceId: group.workspaceId,
+      userId: group.userId,
+      remove: group.remove,
+      add: group.add,
+    });
 
-    if (existing) {
+    if (isWorkspaceStatsStripeEmpty(next)) {
+      if (existing) await db.delete(existing._id);
+    } else if (existing) {
       await db.patch(existing._id, next);
     } else {
-      await db.insert("workspaceStats", next);
+      await db.insert("workspaceStatsStripes", {
+        ...next,
+        stripe: group.stripe,
+      });
     }
   }
 }
@@ -236,6 +245,7 @@ async function applyWorkspaceStatsChanges(
 async function applyWorkspaceAnalyticsChanges(
   db: TriggerDb,
   args: {
+    sourceKey: string;
     remove?: TargetedWorkspaceAnalyticsContribution[];
     add?: TargetedWorkspaceAnalyticsContribution[];
   }
@@ -245,16 +255,19 @@ async function applyWorkspaceAnalyticsChanges(
     {
       workspaceId: Id<"workspaces">;
       dayStartUtcMs: number;
+      stripe: number;
       remove: TargetedWorkspaceAnalyticsContribution["contribution"][];
       add: TargetedWorkspaceAnalyticsContribution["contribution"][];
     }
   >();
+  const stripe = getReadModelStripe(args.sourceKey);
 
   for (const entry of args.remove ?? []) {
-    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}`;
+    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}:${stripe}`;
     const group = groups.get(key) ?? {
       workspaceId: entry.workspaceId,
       dayStartUtcMs: entry.dayStartUtcMs,
+      stripe,
       remove: [],
       add: [],
     };
@@ -263,10 +276,11 @@ async function applyWorkspaceAnalyticsChanges(
   }
 
   for (const entry of args.add ?? []) {
-    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}`;
+    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}:${stripe}`;
     const group = groups.get(key) ?? {
       workspaceId: entry.workspaceId,
       dayStartUtcMs: entry.dayStartUtcMs,
+      stripe,
       remove: [],
       add: [],
     };
@@ -276,25 +290,23 @@ async function applyWorkspaceAnalyticsChanges(
 
   for (const group of groups.values()) {
     const existing = await db
-      .query("workspaceAnalyticsDaily")
-      .withIndex("by_workspace_day", (q) =>
+      .query("workspaceAnalyticsDailyStripes")
+      .withIndex("by_workspace_day_and_stripe", (q) =>
         q
           .eq("workspaceId", group.workspaceId)
           .eq("dayStartUtcMs", group.dayStartUtcMs)
+          .eq("stripe", group.stripe)
       )
-      .first();
+      .unique();
 
-    const next = mergeWorkspaceAnalyticsContributions(
-      existing ? coerceWorkspaceAnalyticsDailyForMerge(existing) : null,
-      {
-        workspaceId: group.workspaceId,
-        dayStartUtcMs: group.dayStartUtcMs,
-        remove: group.remove,
-        add: group.add,
-      }
-    );
+    const next = mergeWorkspaceAnalyticsStripeContributions(existing, {
+      workspaceId: group.workspaceId,
+      dayStartUtcMs: group.dayStartUtcMs,
+      remove: group.remove,
+      add: group.add,
+    });
 
-    if (isWorkspaceAnalyticsRecordEmpty(next)) {
+    if (isWorkspaceAnalyticsStripeEmpty(next)) {
       if (existing) {
         await db.delete(existing._id);
       }
@@ -304,7 +316,10 @@ async function applyWorkspaceAnalyticsChanges(
     if (existing) {
       await db.patch(existing._id, next);
     } else {
-      await db.insert("workspaceAnalyticsDaily", next);
+      await db.insert("workspaceAnalyticsDailyStripes", {
+        ...next,
+        stripe: group.stripe,
+      });
     }
   }
 }
@@ -312,6 +327,7 @@ async function applyWorkspaceAnalyticsChanges(
 async function applyWorkspaceAgentOpsChanges(
   db: TriggerDb,
   args: {
+    sourceKey: string;
     remove?: TargetedWorkspaceAgentOpsContribution[];
     add?: TargetedWorkspaceAgentOpsContribution[];
   }
@@ -321,16 +337,19 @@ async function applyWorkspaceAgentOpsChanges(
     {
       workspaceId: Id<"workspaces">;
       dayStartUtcMs: number;
+      stripe: number;
       remove: TargetedWorkspaceAgentOpsContribution["contribution"][];
       add: TargetedWorkspaceAgentOpsContribution["contribution"][];
     }
   >();
+  const stripe = getReadModelStripe(args.sourceKey);
 
   for (const entry of args.remove ?? []) {
-    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}`;
+    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}:${stripe}`;
     const group = groups.get(key) ?? {
       workspaceId: entry.workspaceId,
       dayStartUtcMs: entry.dayStartUtcMs,
+      stripe,
       remove: [],
       add: [],
     };
@@ -339,10 +358,11 @@ async function applyWorkspaceAgentOpsChanges(
   }
 
   for (const entry of args.add ?? []) {
-    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}`;
+    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}:${stripe}`;
     const group = groups.get(key) ?? {
       workspaceId: entry.workspaceId,
       dayStartUtcMs: entry.dayStartUtcMs,
+      stripe,
       remove: [],
       add: [],
     };
@@ -352,22 +372,23 @@ async function applyWorkspaceAgentOpsChanges(
 
   for (const group of groups.values()) {
     const existing = await db
-      .query("workspaceAgentOpsDaily")
-      .withIndex("by_workspace_day", (q) =>
+      .query("workspaceAgentOpsDailyStripes")
+      .withIndex("by_workspace_day_and_stripe", (q) =>
         q
           .eq("workspaceId", group.workspaceId)
           .eq("dayStartUtcMs", group.dayStartUtcMs)
+          .eq("stripe", group.stripe)
       )
-      .first();
+      .unique();
 
-    const next = mergeWorkspaceAgentOpsContributions(existing, {
+    const next = mergeWorkspaceAgentOpsStripeContributions(existing, {
       workspaceId: group.workspaceId,
       dayStartUtcMs: group.dayStartUtcMs,
       remove: group.remove,
       add: group.add,
     });
 
-    if (isWorkspaceAgentOpsDailyRecordEmpty(next)) {
+    if (isWorkspaceAgentOpsStripeEmpty(next)) {
       if (existing) {
         await db.delete(existing._id);
       }
@@ -377,7 +398,10 @@ async function applyWorkspaceAgentOpsChanges(
     if (existing) {
       await db.patch(existing._id, next);
     } else {
-      await db.insert("workspaceAgentOpsDaily", next);
+      await db.insert("workspaceAgentOpsDailyStripes", {
+        ...next,
+        stripe: group.stripe,
+      });
     }
   }
 }
@@ -393,6 +417,7 @@ triggers.register("prospects", async (ctx, change) => {
   });
 
   await applyWorkspaceStatsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: change.oldDoc
       ? [
           {
@@ -418,6 +443,7 @@ triggers.register("prospects", async (ctx, change) => {
   });
 
   await applyWorkspaceAnalyticsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: change.oldDoc
       ? getWorkspaceAnalyticsContributionsFromProspect(change.oldDoc)
       : [],
@@ -429,6 +455,7 @@ triggers.register("prospects", async (ctx, change) => {
 
 triggers.register("prospectActivityLog", async (ctx, change) => {
   await applyWorkspaceAnalyticsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: toArray(
       change.oldDoc
         ? getWorkspaceAnalyticsContributionFromActivityLog(change.oldDoc)
@@ -444,6 +471,7 @@ triggers.register("prospectActivityLog", async (ctx, change) => {
 
 triggers.register("outreachPlans", async (ctx, change) => {
   await applyWorkspaceAnalyticsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: change.oldDoc
       ? getWorkspaceAnalyticsContributionsFromPlan(change.oldDoc)
       : [],
@@ -473,6 +501,7 @@ triggers.register("outreachTasks", async (ctx, change) => {
     : null;
 
   await applyWorkspaceAnalyticsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove:
       change.oldDoc && oldPlan
         ? getWorkspaceAnalyticsContributionsFromTask({
@@ -499,6 +528,7 @@ triggers.register("outreachTasks", async (ctx, change) => {
 
 triggers.register("outreachNotifications", async (ctx, change) => {
   await applyWorkspaceStatsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: change.oldDoc
       ? [
           {
@@ -526,6 +556,7 @@ triggers.register("outreachNotifications", async (ctx, change) => {
 
 triggers.register("keywords", async (ctx, change) => {
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: change.oldDoc
       ? getWorkspaceAgentOpsContributionsFromKeyword(change.oldDoc)
       : [],
@@ -537,6 +568,7 @@ triggers.register("keywords", async (ctx, change) => {
 
 triggers.register("queryCandidates", async (ctx, change) => {
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: change.oldDoc
       ? getWorkspaceAgentOpsContributionsFromQueryCandidate(change.oldDoc)
       : [],
@@ -548,6 +580,7 @@ triggers.register("queryCandidates", async (ctx, change) => {
 
 triggers.register("memorySuggestions", async (ctx, change) => {
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: change.oldDoc
       ? getWorkspaceAgentOpsContributionsFromMemorySuggestion(change.oldDoc)
       : [],
@@ -559,6 +592,7 @@ triggers.register("memorySuggestions", async (ctx, change) => {
 
 triggers.register("memoryWorkflowEvents", async (ctx, change) => {
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: change.oldDoc
       ? getWorkspaceAgentOpsContributionsFromWorkflowEvent(change.oldDoc)
       : [],
@@ -570,6 +604,7 @@ triggers.register("memoryWorkflowEvents", async (ctx, change) => {
 
 triggers.register("memoryEvaluatorRuns", async (ctx, change) => {
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    sourceKey: String(change.id),
     remove: change.oldDoc
       ? getWorkspaceAgentOpsContributionsFromEvaluatorRun(change.oldDoc)
       : [],

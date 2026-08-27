@@ -285,6 +285,15 @@ export async function deleteWorkspaceCascade(
   for (const s of stats) {
     await ctx.db.delete(s._id);
   }
+  const statsStripes = await ctx.db
+    .query("workspaceStatsStripes")
+    .withIndex("by_workspace_and_stripe", (q) =>
+      q.eq("workspaceId", workspaceId)
+    )
+    .collect();
+  for (const stripe of statsStripes) {
+    await ctx.db.delete(stripe._id);
+  }
 
   const analytics = await ctx.db
     .query("workspaceAnalyticsDaily")
@@ -293,6 +302,15 @@ export async function deleteWorkspaceCascade(
   for (const row of analytics) {
     await ctx.db.delete(row._id);
   }
+  const analyticsStripes = await ctx.db
+    .query("workspaceAnalyticsDailyStripes")
+    .withIndex("by_workspace_day_and_stripe", (q) =>
+      q.eq("workspaceId", workspaceId)
+    )
+    .collect();
+  for (const stripe of analyticsStripes) {
+    await ctx.db.delete(stripe._id);
+  }
 
   const agentOpsDaily = await ctx.db
     .query("workspaceAgentOpsDaily")
@@ -300,6 +318,15 @@ export async function deleteWorkspaceCascade(
     .collect();
   for (const row of agentOpsDaily) {
     await ctx.db.delete(row._id);
+  }
+  const agentOpsStripes = await ctx.db
+    .query("workspaceAgentOpsDailyStripes")
+    .withIndex("by_workspace_day_and_stripe", (q) =>
+      q.eq("workspaceId", workspaceId)
+    )
+    .collect();
+  for (const stripe of agentOpsStripes) {
+    await ctx.db.delete(stripe._id);
   }
 
   const memoryInventory = await ctx.db

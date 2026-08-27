@@ -136,6 +136,15 @@ export const rebuildWorkspaceReadModelsInternal = internalMutation({
     for (const stats of existingStats) {
       await ctx.db.delete(stats._id);
     }
+    const existingStatsStripes = await ctx.db
+      .query("workspaceStatsStripes")
+      .withIndex("by_workspace_and_stripe", (q) =>
+        q.eq("workspaceId", workspaceId)
+      )
+      .collect();
+    for (const stripe of existingStatsStripes) {
+      await ctx.db.delete(stripe._id);
+    }
 
     const existingAnalyticsRows = await ctx.db
       .query("workspaceAnalyticsDaily")
@@ -143,6 +152,15 @@ export const rebuildWorkspaceReadModelsInternal = internalMutation({
       .collect();
     for (const row of existingAnalyticsRows) {
       await ctx.db.delete(row._id);
+    }
+    const existingAnalyticsStripes = await ctx.db
+      .query("workspaceAnalyticsDailyStripes")
+      .withIndex("by_workspace_day_and_stripe", (q) =>
+        q.eq("workspaceId", workspaceId)
+      )
+      .collect();
+    for (const stripe of existingAnalyticsStripes) {
+      await ctx.db.delete(stripe._id);
     }
 
     const prospects = await ctx.db

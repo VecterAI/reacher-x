@@ -3,6 +3,7 @@
 
 import {
   ActionRetrier,
+  runIdValidator,
   type RunId,
   type RunOptions,
 } from "@convex-dev/action-retrier";
@@ -15,7 +16,9 @@ import type {
   GenericMutationCtx,
   GenericQueryCtx,
 } from "convex/server";
-import { components } from "../_generated/api";
+import { v } from "convex/values";
+import { components, internal } from "../_generated/api";
+import { internalMutation } from "./functionBuilders";
 
 /**
  * Shared ActionRetrier instance for all external API calls.
@@ -41,18 +44,22 @@ export const retrier = new ActionRetrier(components.actionRetrier, {
 
 type CompatibleRetrierMutationCtx = Pick<
   GenericActionCtx<GenericDataModel>,
-  "runMutation"
+  "runMutation" | "runQuery"
 >;
 type CompatibleRetrierQueryCtx = Pick<
   GenericActionCtx<GenericDataModel>,
   "runQuery"
 >;
+type CompatibleRetrierStatusCtx = CompatibleRetrierMutationCtx &
+  CompatibleRetrierQueryCtx &
+  Pick<GenericActionCtx<GenericDataModel>, "scheduler">;
 type RetrierMutationRunner =
   GenericMutationCtx<GenericDataModel>["runMutation"];
 type RetrierQueryRunner = GenericQueryCtx<GenericDataModel>["runQuery"];
 
 function createRetrierMutationCtx(ctx: CompatibleRetrierMutationCtx): {
   runMutation: RetrierMutationRunner;
+  runQuery: RetrierQueryRunner;
 } {
   const runMutation: RetrierMutationRunner = ((mutation, ...argsAndOptions) => {
     const [args] = argsAndOptions;
@@ -61,7 +68,10 @@ function createRetrierMutationCtx(ctx: CompatibleRetrierMutationCtx): {
       : ctx.runMutation(mutation as never, args as never);
   }) as RetrierMutationRunner;
 
-  return { runMutation };
+  return {
+    runMutation,
+    ...createRetrierQueryCtx(ctx),
+  };
 }
 
 function createRetrierQueryCtx(ctx: CompatibleRetrierQueryCtx): {
@@ -77,12 +87,6 @@ function createRetrierQueryCtx(ctx: CompatibleRetrierQueryCtx): {
   return { runQuery };
 }
 
-/**
- * Convex 1.41 widened mutation/query helper signatures to support options,
- * while action contexts still expose the narrower runQuery/runMutation shape.
- * This adapter keeps ActionRetrier call sites compatible without changing
- * runtime behavior.
- */
 export async function runRetriedAction<
   F extends FunctionReference<"action", FunctionVisibility>,
 >(
@@ -95,8 +99,37 @@ export async function runRetriedAction<
 }
 
 export async function getRetriedActionStatus(
-  ctx: CompatibleRetrierQueryCtx,
+  ctx: CompatibleRetrierStatusCtx,
   runId: RunId
 ) {
-  return retrier.status(createRetrierQueryCtx(ctx), runId);
+  const status = await retrier.status(createRetrierQueryCtx(ctx), runId);
+  if (status.type === "completed") {
+    await ctx.scheduler.runAfter(
+      60 * 60 * 1000,
+      internal.lib.retrier.cleanupTerminalRetriedActionInternal,
+      { runId }
+    );
+  }
+  return status;
 }
+
+export const cleanupTerminalRetriedActionInternal = internalMutation({
+  args: { runId: runIdValidator },
+  returns: v.object({ cleaned: v.boolean() }),
+  handler: async (ctx, { runId }) => {
+    try {
+      await retrier.cleanup(createRetrierMutationCtx(ctx), runId);
+      return { cleaned: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("not found")) {
+        return { cleaned: false };
+      }
+      console.warn("[ActionRetrier] Failed to clean up terminal run", {
+        runId,
+        error: message,
+      });
+      return { cleaned: false };
+    }
+  },
+});
