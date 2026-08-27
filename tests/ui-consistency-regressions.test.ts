@@ -171,6 +171,36 @@ test("LinkedIn unavailable states use shared actionable alerts", () => {
   assert.match(conversationSource, /messagingRecoveryAction\.label/);
 });
 
+test("LinkedIn comments use a structural initial loading state", () => {
+  const commentThreadSource = readSource(
+    "features/webapp/ui/components/linkedin/LinkedInCommentThread.tsx"
+  );
+  const skeletonSource = readSource(
+    "features/webapp/ui/components/linkedin/LinkedInCommentThreadSkeleton.tsx"
+  );
+
+  assert.match(
+    commentThreadSource,
+    /const isInitialLoading = loading && !thread/
+  );
+  assert.match(commentThreadSource, /disabled=\{loading\}/);
+  assert.match(commentThreadSource, /<LinkedInCommentThreadSkeleton/);
+  assert.match(
+    commentThreadSource,
+    /previewScenario\?\.loading \? null : \(previewScenario\?\.thread \?\? null\)/
+  );
+  assert.doesNotMatch(commentThreadSource, /h-16 w-full rounded-\[20px\]/);
+  assert.match(skeletonSource, /<LinkedInReplyComposer/);
+  assert.match(skeletonSource, /placeholder="Add a comment\.\.\."/);
+  assert.match(skeletonSource, /disabled/);
+  assert.equal(
+    (skeletonSource.match(/<LinkedInCommentItemSkeleton \/>/g) ?? []).length,
+    3
+  );
+  assert.match(skeletonSource, /role="status"/);
+  assert.match(skeletonSource, /aria-label="Loading comments"/);
+});
+
 test("DM panels use circular loading and X/Twitter product copy", () => {
   const xConversationSource = readSource(
     "features/prospects/ui/components/XConversationPanel.tsx"

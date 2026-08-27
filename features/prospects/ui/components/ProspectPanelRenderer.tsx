@@ -255,6 +255,14 @@ export function ProspectPanelRenderer({
                 | import("@/features/webapp/ui/components").LinkedInCommentThreadPreviewScenario
                 | undefined
             }
+            initialSort={
+              currentPanel.props.initialSort as
+                | import("@/shared/lib/linkedin/comments").LinkedInCommentSort
+                | undefined
+            }
+            autoExpandCommentIds={
+              currentPanel.props.autoExpandCommentIds as string[] | undefined
+            }
             onBack={closeCurrentSubPanel}
           />
         );
@@ -307,6 +315,9 @@ export function ProspectPanelRenderer({
                 | TwitterPostSummary
                 | null
                 | undefined
+            }
+            fallbackTweets={
+              currentPanel.props.fallbackTweets as Tweet[] | undefined
             }
             overlayCommented={
               currentPanel.props.overlayCommented as boolean | undefined

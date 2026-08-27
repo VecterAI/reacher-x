@@ -21,11 +21,17 @@ import { usePanelStack } from "../../contexts/PanelStackContext";
 import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { TwitterPostSummary } from "@/shared/lib/twitter/contracts";
-import { usePostEngagementMerge } from "@/shared/hooks/usePostEngagementMerge";
 import { useTwitterTimelineEngagementMerge } from "@/shared/hooks/useTwitterTimelineEngagementMerge";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 import { mergeLocalEngagementIntoTweet } from "@/shared/lib/twitter/mergeViewerState";
 import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
+import {
+  dedupeAndSortConversationTweets,
+  hasRenderableTweetContent,
+  mergeConversationTweetsPreservingOrder,
+} from "@/features/prospects/lib/twitterConversation";
+
+const EMPTY_FALLBACK_TWEETS: TweetType[] = [];
 
 export interface ConversationPanelProps {
   /** Original tweet ID to fetch conversation for */
@@ -42,59 +48,13 @@ export interface ConversationPanelProps {
   replyTweetId?: string;
   /** Reply tweet fallback summary when SocialAPI omits it */
   replyTweetSummary?: TwitterPostSummary | null;
+  /** Durable snapshots for every known post in this interaction thread */
+  fallbackTweets?: TweetType[];
   /** Whether the source tweet should display as commented/replied */
   overlayCommented?: boolean;
   /** Additional className */
   className?: string;
   onBack?: () => void;
-}
-
-function getTweetTimestamp(tweet: TweetType): number | null {
-  if (!tweet.tweet_created_at) {
-    return null;
-  }
-  const timestamp = Date.parse(tweet.tweet_created_at);
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-function dedupeAndSortConversationTweets(
-  tweets: Array<TweetType | null | undefined>
-): TweetType[] {
-  const byId = new Map<string, { tweet: TweetType; order: number }>();
-  let order = 0;
-
-  for (const tweet of tweets) {
-    const tweetId = tweet?.id_str;
-    if (!tweetId) {
-      continue;
-    }
-
-    const prior = byId.get(tweetId);
-    byId.set(tweetId, {
-      tweet,
-      order: prior?.order ?? order,
-    });
-    order += 1;
-  }
-
-  return Array.from(byId.values())
-    .sort((left, right) => {
-      const leftTimestamp = getTweetTimestamp(left.tweet);
-      const rightTimestamp = getTweetTimestamp(right.tweet);
-
-      if (leftTimestamp != null && rightTimestamp != null) {
-        if (leftTimestamp !== rightTimestamp) {
-          return leftTimestamp - rightTimestamp;
-        }
-      } else if (leftTimestamp != null) {
-        return -1;
-      } else if (rightTimestamp != null) {
-        return 1;
-      }
-
-      return left.order - right.order;
-    })
-    .map((entry) => entry.tweet);
 }
 
 export function ConversationPanel({
@@ -105,6 +65,7 @@ export function ConversationPanel({
   sourceTweetSummary,
   replyTweetId,
   replyTweetSummary,
+  fallbackTweets = EMPTY_FALLBACK_TWEETS,
   overlayCommented = false,
   className,
   onBack,
@@ -120,48 +81,55 @@ export function ConversationPanel({
     string | null
   >(null);
   const mergedTweets = useTwitterTimelineEngagementMerge(tweets);
-  const normalizedReplyTweetId = React.useMemo(
-    () => replyTweetId?.trim() || replyTweetSummary?.ref.postId || "",
-    [replyTweetId, replyTweetSummary]
+  const durableFallbackTweets = React.useMemo(
+    () =>
+      dedupeAndSortConversationTweets([
+        sourceTweet,
+        sourceTweetSummary
+          ? toFallbackTweetFromSummary(sourceTweetSummary)
+          : null,
+        ...fallbackTweets,
+        replyTweetSummary
+          ? toFallbackTweetFromSummary(replyTweetSummary)
+          : null,
+      ]),
+    [fallbackTweets, replyTweetSummary, sourceTweet, sourceTweetSummary]
   );
-  const { tweetsById: replyTweetsById } = useHydratedTwitterPosts(
-    normalizedReplyTweetId ? [normalizedReplyTweetId] : []
+  const fallbackTweetIds = React.useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...durableFallbackTweets.map((tweet) => tweet.id_str),
+          replyTweetId?.trim(),
+        ])
+      ).filter((tweetId): tweetId is string => Boolean(tweetId)),
+    [durableFallbackTweets, replyTweetId]
   );
-
-  const fallbackSourceTweet = React.useMemo(() => {
-    if (sourceTweet?.id_str) {
-      return sourceTweet;
-    }
-    return sourceTweetSummary
-      ? toFallbackTweetFromSummary(sourceTweetSummary)
-      : null;
-  }, [sourceTweet, sourceTweetSummary]);
-
-  const fallbackReplyTweet = React.useMemo(() => {
-    return replyTweetSummary
-      ? toFallbackTweetFromSummary(replyTweetSummary)
-      : null;
-  }, [replyTweetSummary]);
-  const mergedFallbackSourceTweet = usePostEngagementMerge(fallbackSourceTweet);
-  const mergedFallbackReplyTweet = usePostEngagementMerge(fallbackReplyTweet);
+  const { tweetsById: hydratedFallbackTweetsById } =
+    useHydratedTwitterPosts(fallbackTweetIds);
+  const hydratedFallbackTweets = React.useMemo(
+    () =>
+      mergeConversationTweetsPreservingOrder(
+        durableFallbackTweets,
+        fallbackTweetIds.map((tweetId) => hydratedFallbackTweetsById[tweetId])
+      ),
+    [durableFallbackTweets, fallbackTweetIds, hydratedFallbackTweetsById]
+  );
+  const mergedFallbackTweets = useTwitterTimelineEngagementMerge(
+    hydratedFallbackTweets
+  );
 
   const sourceTweetIdForDisplay =
-    sourceTweetId ?? mergedFallbackSourceTweet?.id_str ?? threadId;
+    sourceTweetId ?? mergedFallbackTweets[0]?.id_str ?? threadId;
   const shouldOverlayCommented =
     overlayCommented ||
-    mergedFallbackSourceTweet?.viewerState?.commented === true;
+    mergedFallbackTweets.some((tweet) => tweet.viewerState?.commented === true);
 
   const conversationTweets = React.useMemo(() => {
-    const supplementalReplyTweet =
-      (normalizedReplyTweetId
-        ? replyTweetsById[normalizedReplyTweetId]
-        : null) ?? mergedFallbackReplyTweet;
-
-    return dedupeAndSortConversationTweets([
-      mergedFallbackSourceTweet,
-      ...mergedTweets,
-      supplementalReplyTweet,
-    ]).map((tweet) => {
+    return mergeConversationTweetsPreservingOrder(
+      mergedFallbackTweets,
+      mergedTweets
+    ).map((tweet) => {
       if (
         !shouldOverlayCommented ||
         !sourceTweetIdForDisplay ||
@@ -175,11 +143,8 @@ export function ConversationPanel({
       });
     });
   }, [
-    mergedFallbackReplyTweet,
-    mergedFallbackSourceTweet,
+    mergedFallbackTweets,
     mergedTweets,
-    normalizedReplyTweetId,
-    replyTweetsById,
     shouldOverlayCommented,
     sourceTweetIdForDisplay,
   ]);
@@ -245,7 +210,7 @@ export function ConversationPanel({
           viewportClassName="pb-6"
         >
           <PageContent className="pt-4">
-            {isLoading ? (
+            {isLoading && conversationTweets.length === 0 ? (
               <ConversationSkeleton />
             ) : conversationTweets.length === 0 ? (
               <div className="text-muted-foreground py-8 text-center text-sm">
@@ -255,11 +220,17 @@ export function ConversationPanel({
               <section>
                 {conversationTweets.map((tweet, index) => (
                   <article key={tweet.id_str} className="px-4">
-                    <Tweet
-                      tweet={tweet}
-                      characterLimit={280}
-                      showThread={index === conversationTweets.length - 1}
-                    />
+                    {hasRenderableTweetContent(tweet) ? (
+                      <Tweet
+                        tweet={tweet}
+                        characterLimit={280}
+                        showThread={index === conversationTweets.length - 1}
+                      />
+                    ) : (
+                      <TweetSkeleton
+                        showThread={index === conversationTweets.length - 1}
+                      />
+                    )}
                   </article>
                 ))}
                 <InfiniteScrollTrigger

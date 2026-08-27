@@ -202,6 +202,12 @@ export function ReplyPanel({
                             mediaUrls,
                             mediaDescriptions,
                             parentAuthorId: tweet.user?.id_str,
+                            parentAuthorHandle: tweet.user?.screen_name,
+                            prospectId: prospectId
+                              ? (prospectId as import("@/convex/_generated/dataModel").Id<"prospects">)
+                              : undefined,
+                            conversationId:
+                              tweet.conversation_id_str || threadId,
                           });
                           cacheTwitterPostEngagement({
                             postId: tweetId,

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
+import type { LinkedInCommentSort } from "@/shared/lib/linkedin/comments";
 import {
   PageContent,
   PageHeader,
@@ -19,6 +20,8 @@ export interface LinkedInPostThreadPanelProps {
   prospectId?: string;
   onBack?: () => void;
   previewScenario?: LinkedInCommentThreadPreviewScenario;
+  initialSort?: LinkedInCommentSort;
+  autoExpandCommentIds?: string[];
 }
 
 export function LinkedInPostThreadPanel({
@@ -26,6 +29,8 @@ export function LinkedInPostThreadPanel({
   prospectId,
   onBack,
   previewScenario,
+  initialSort,
+  autoExpandCommentIds,
 }: LinkedInPostThreadPanelProps) {
   const [resolvedPostsById, setResolvedPostsById] = React.useState<
     Record<string, UnifiedPost>
@@ -65,6 +70,8 @@ export function LinkedInPostThreadPanel({
             post={post}
             prospectId={prospectId}
             previewScenario={previewScenario}
+            initialSort={initialSort}
+            autoExpandCommentIds={autoExpandCommentIds}
             onResolvedPost={handleResolvedPost}
           />
         </PageContent>

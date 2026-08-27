@@ -26,16 +26,17 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/shared/ui/components/Alert";
-import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { KeyboardArrowDownIcon } from "@/shared/ui/components/icons";
 import { LinkedInReplyComposer } from "./LinkedInReplyComposer";
 import { LinkedInCommentItem } from "./LinkedInCommentItem";
+import { LinkedInCommentThreadSkeleton } from "./LinkedInCommentThreadSkeleton";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
 import { toast } from "sonner";
 import { buildLinkedInPostMentionEntities } from "./linkedinComposerMentions";
 import { resolveLinkedInRecoveryAction } from "@/shared/lib/linkedin/recovery";
 
 const INITIAL_COMMENT_LIMIT = 10;
+const EMPTY_COMMENT_IDS: string[] = [];
 
 export interface LinkedInCommentThreadPreviewScenario {
   thread: LinkedInPostThreadContext;
@@ -48,6 +49,8 @@ export interface LinkedInCommentThreadProps {
   post: UnifiedPost;
   prospectId?: string;
   previewScenario?: LinkedInCommentThreadPreviewScenario;
+  initialSort?: LinkedInCommentSort;
+  autoExpandCommentIds?: string[];
   className?: string;
   onResolvedPost?: (post: UnifiedPost) => void;
 }
@@ -146,6 +149,8 @@ export function LinkedInCommentThread({
   post,
   prospectId,
   previewScenario,
+  initialSort = "MOST_RELEVANT",
+  autoExpandCommentIds = EMPTY_COMMENT_IDS,
   className,
   onResolvedPost,
 }: LinkedInCommentThreadProps) {
@@ -156,9 +161,9 @@ export function LinkedInCommentThread({
   const getReplies = useAction((api as any).linkedin.getLinkedInCommentReplies);
   const sendComment = useAction((api as any).linkedin.sendLinkedInPostComment);
   const likeComment = useAction((api as any).linkedin.likeLinkedInComment);
-  const [sort, setSort] = React.useState<LinkedInCommentSort>("MOST_RELEVANT");
+  const [sort, setSort] = React.useState<LinkedInCommentSort>(initialSort);
   const [thread, setThread] = React.useState<LinkedInPostThreadContext | null>(
-    previewScenario?.thread ?? null
+    previewScenario?.loading ? null : (previewScenario?.thread ?? null)
   );
   const [loading, setLoading] = React.useState(
     Boolean(previewScenario?.loading)
@@ -190,8 +195,9 @@ export function LinkedInCommentThread({
     );
   });
   const threadRef = React.useRef<LinkedInPostThreadContext | null>(
-    previewScenario?.thread ?? null
+    previewScenario?.loading ? null : (previewScenario?.thread ?? null)
   );
+  const autoExpandedCommentIdsRef = React.useRef(new Set<string>());
 
   const loadThread = React.useCallback(
     async (opts?: {
@@ -323,6 +329,25 @@ export function LinkedInCommentThread({
     },
     [getReplies, post, previewScenario, prospectId, sort]
   );
+
+  React.useEffect(() => {
+    if (!thread || autoExpandCommentIds.length === 0) {
+      return;
+    }
+
+    const visibleCommentIds = new Set(
+      thread.topLevelComments.items.map((comment) => comment.id)
+    );
+    for (const commentId of autoExpandCommentIds) {
+      if (
+        visibleCommentIds.has(commentId) &&
+        !autoExpandedCommentIdsRef.current.has(commentId)
+      ) {
+        autoExpandedCommentIdsRef.current.add(commentId);
+        void loadRepliesForComment(commentId);
+      }
+    }
+  }, [autoExpandCommentIds, loadRepliesForComment, thread]);
 
   const applyCommentUpdate = React.useCallback(
     (
@@ -755,6 +780,7 @@ export function LinkedInCommentThread({
     thread?.warning?.code === "read_only_fallback"
       ? "Comments are available read-only. Connect LinkedIn to comment or reply."
       : thread?.eligibility.reasonLabel;
+  const isInitialLoading = loading && !thread;
 
   return (
     <section className={className}>
@@ -764,7 +790,12 @@ export function LinkedInCommentThread({
             <div className="text-sm font-medium">Comments</div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="xs" className="gap-1">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="gap-1"
+                  disabled={loading}
+                >
                   {sort === "MOST_RELEVANT" ? "Most relevant" : "Most recent"}
                   <KeyboardArrowDownIcon className="fill-current" />
                 </Button>
@@ -793,7 +824,9 @@ export function LinkedInCommentThread({
             </DropdownMenu>
           </div>
 
-          {showComposer ? (
+          {isInitialLoading ? (
+            <LinkedInCommentThreadSkeleton prospectId={prospectId} />
+          ) : showComposer ? (
             <LinkedInReplyComposer
               key={`linkedin-top-level-${topLevelComposerVersion}`}
               prospectId={prospectId}
@@ -823,12 +856,7 @@ export function LinkedInCommentThread({
             </Alert>
           ) : null}
 
-          {loading && !thread ? (
-            <div className="space-y-3">
-              <Skeleton className="h-16 w-full rounded-[20px]" />
-              <Skeleton className="h-20 w-full rounded-[20px]" />
-            </div>
-          ) : error && !thread ? (
+          {!isInitialLoading && error && !thread ? (
             <Alert>
               <AlertTitle>Could not load comments</AlertTitle>
               <AlertDescription className="space-y-3">
@@ -848,7 +876,7 @@ export function LinkedInCommentThread({
                 </div>
               </AlertDescription>
             </Alert>
-          ) : (
+          ) : !isInitialLoading ? (
             <>
               {showComposer && thread?.warning ? (
                 <Alert>
@@ -963,7 +991,7 @@ export function LinkedInCommentThread({
                 />
               ) : null}
             </>
-          )}
+          ) : null}
         </div>
       </div>
     </section>

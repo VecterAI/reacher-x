@@ -66,7 +66,77 @@ test("explicit interaction conversations and reply composition remain separate",
   );
 
   assert.match(interactionsSource, /pushPanel\("conversation"/);
+  assert.match(interactionsSource, /groupProspectInteractionsByThread/);
+  assert.match(interactionsSource, /fallbackTweets/);
+  assert.match(interactionsSource, /AvatarStack/);
+  assert.match(interactionsSource, /Show conversation/);
+  assert.match(interactionsSource, /Open thread/);
+  assert.match(interactionsSource, /TweetSkeleton/);
+  assert.match(interactionsSource, /mergeConversationTweetWithFallback/);
+  assert.doesNotMatch(
+    interactionsSource,
+    /LoadingFirstPage"\s*\|\|\s*isSyncing/
+  );
+  assert.doesNotMatch(interactionsSource, /InteractionReplyPreview/);
   assert.match(replyProviderSource, /pushPanel\("post-compose"/);
+});
+
+test("conversation hydration enriches posts without reordering rendered items", () => {
+  const panelSource = readSource(
+    "features/prospects/ui/components/ConversationPanel.tsx"
+  );
+
+  assert.match(panelSource, /mergeConversationTweetsPreservingOrder/);
+  assert.match(panelSource, /hasRenderableTweetContent/);
+});
+
+test("public interactions sync only while the tab is open", () => {
+  const profileSource = readSource(
+    "features/prospects/ui/components/ProspectProfilePanel.tsx"
+  );
+  const interactionsSource = readSource(
+    "features/prospects/ui/components/tabs/YourInteractionsTab.tsx"
+  );
+
+  assert.match(profileSource, /syncEnabled=\{activeTab === "interactions"\}/);
+  assert.doesNotMatch(profileSource, /refreshProspectInteractions/);
+  assert.match(
+    interactionsSource,
+    /if \(!syncEnabled \|\| readOnly \|\| isPreview\)/
+  );
+  const disabledSyncBranch = interactionsSource.match(
+    /if \(!syncEnabled \|\| readOnly \|\| isPreview\) \{([\s\S]*?)return;\n    \}/
+  )?.[1];
+  assert.ok(disabledSyncBranch);
+  assert.doesNotMatch(disabledSyncBranch, /activeSyncRef\.current = null/);
+  assert.match(interactionsSource, /force: true/);
+  assert.match(
+    interactionsSource,
+    /isSyncing[\s\S]*?Syncing latest interactions…/
+  );
+});
+
+test("public interaction discovery enforces ownership and dispatches by platform", () => {
+  const actionSource = readSource("convex/interactionsActions.ts");
+
+  assert.match(actionSource, /prospect\.userId !== args\.userId/);
+  assert.match(
+    actionSource,
+    /prospect\.platform === "linkedin"[\s\S]*runLinkedInProspectInteractionDiscovery/
+  );
+  assert.match(actionSource, /runTwitterProspectInteractionDiscovery/);
+});
+
+test("direct X replies retain prospect context for immediate recording", () => {
+  const replySource = readSource(
+    "features/prospects/ui/components/ReplyPanel.tsx"
+  );
+  const actionSource = readSource("convex/x.ts");
+
+  assert.match(replySource, /prospectId:/);
+  assert.match(replySource, /conversationId:/);
+  assert.match(actionSource, /upsertTwitterInteraction/);
+  assert.match(actionSource, /origin: "manual_reacherx"/);
 });
 
 test("page-originated panels start a clean stack and nested panels push", () => {
