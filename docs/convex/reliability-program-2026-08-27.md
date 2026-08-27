@@ -3,8 +3,9 @@
 ## Scope and production-signal boundary
 
 This worktree starts at tenant-fair scheduler commit
-`41ff14a7b1fd5ad1ac2b613ce890218a785d0a37`. No deployment, production write,
-or destructive data operation is part of this change.
+`41ff14a7b1fd5ad1ac2b613ce890218a785d0a37`. No code deployment, migration,
+merge, or destructive data operation has been performed. The only production
+write was the explicitly approved scheduler control rollback recorded below.
 
 A fresh read-only `npx convex insights --prod --details` check was attempted
 before implementation. It stopped locally with `No CONVEX_DEPLOYMENT set`;
@@ -29,12 +30,43 @@ The source task supplied fresh production heartbeats captured at 2026-08-27
   failures near 16 MB read per transaction and a setup workflow that retained a
   workflow ID while making no progress.
 
-**Operational recommendation:** pause new tenant-scheduler admissions until the
-hot-lane fix is deployed and its immutable lane-binding backfill is complete.
-If admission cannot be paused cleanly, use the existing legacy route as the
-temporary rollback path. The 29x permanent-conflict increase plus four-minute
-tail latency is an active loss-of-work risk even though the persisted queue is
-drained. This worktree does not make that production change.
+The 29x permanent-conflict increase plus four-minute tail latency made continued
+enforced admission an active loss-of-work risk even though the persisted queue
+was drained. The existing legacy route was selected as the temporary rollback
+path until the hot-lane fix is deployed and its immutable lane-binding backfill
+is complete.
+
+### Production rollback checkpoint — 2026-08-27 17:30 UTC
+
+Immediately before rollback, a direct read-only check against production
+deployment `effervescent-viper-357` confirmed:
+
+- scheduler mode `enforced`;
+- 0 queued jobs, 0 running jobs, 0 ready lanes, and 0 paused lanes;
+- 0 claimed slots and 36/36 free tenant-execution slots; and
+- no workspace override forcing enforced admission.
+
+At 17:30:48 UTC, the explicitly approved control mutation changed only the
+global scheduler mode from `enforced` to `legacy`. A second direct check
+confirmed mode `legacy` with the same drained queue and 36/36 free slots. No
+code was deployed and no schema migration or backfill ran. This prevents new
+work from entering the contended tenant-lane admission path while preserving
+the legacy pools as rollback capacity.
+
+A fresh read-only production Insights check after the mode change also found:
+
+- `prospects:createProspectsBatch` bytes-read failures had increased from 66 to
+  70; the newest was at 16:25:38 UTC and again read roughly 16.2 MB from
+  `prospects` plus analytics, summaries, and related rows;
+- Action Retrier `cleanupExpiredRuns` had 3 bytes-read failures, each reading
+  16,864,513 bytes across 1,040 component `runs` documents; and
+- the historical incident window still contained the supplied 290 permanent
+  `enqueueTenantJobInternal` conflicts against the hot `tenantJobLanes` row.
+
+These are pre-fix observations, not evidence against the local changes: the
+reliability commits have not yet been deployed. Keep production in `legacy`
+through review, deployment, bounded lane-binding backfill, and acceptance
+verification.
 
 ## Changes and invariants
 
@@ -150,17 +182,18 @@ OCC failures or material retry latency to one of the three workspace rows.
 
 No full prospect scan or backup is required for this phase.
 
-1. Pause new tenant admissions (preferred after the 290-conflict spike), then
-   deploy the additive schema: optional setup recovery fields, the setup
-   status/time index, the tenant-job status/queue-time index, immutable lane
-   bindings, and the enqueue-failure ledger.
+1. Keep the scheduler in the already-established `legacy` rollback mode while
+   the reviewed additive schema, function, and UI code are deployed together.
+   This adds optional setup recovery fields, the setup status/time index, the
+   tenant-job status/queue-time index, immutable lane bindings, and the
+   enqueue-failure ledger without activating the repaired scheduler path.
 2. Run `tenantScheduler:backfillLaneBindingsInternal` in bounded cursor pages
    before peak traffic. This scans scheduler lanes only, not 60,000+ prospects;
    enqueue also has a lazy compatibility bridge for a missed lane.
-3. Deploy function and UI code, then resume admissions only after the binding
-   backfill and scheduler diagnostics are clean. Existing setup rows default to
-   recovery revision and attempts of zero; they are updated only when touched or
-   found stale.
+3. Resume tenant-scheduler admissions only after the binding backfill and
+   scheduler diagnostics are clean. Existing setup rows default to recovery
+   revision and attempts of zero; they are updated only when touched or found
+   stale.
 4. Verify `tenantScheduler:getControlStatusInternal` with an operator-supplied
    current UTC timestamp. Confirm zero expired leases and no slot mismatches.
 5. Monitor enqueue conflict count, `createProspectsBatch` bytes read, setup
@@ -205,9 +238,9 @@ them during rollback.
   issues in unrelated existing files, including bundled `.agents` scripts and
   pre-existing React compiler findings. This change does not modify them.
 
-Fresh post-change production Insights remain pending because this worktree has
-no production deployment selector or credentials. No production command was
-initialized as a workaround.
+Fresh production Insights were captured after the control rollback as recorded
+above. Post-fix production evidence remains pending because the reliability
+commits have not been deployed.
 
 ## Cleanup candidates — no deletion in this phase
 
