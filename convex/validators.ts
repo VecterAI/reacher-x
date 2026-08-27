@@ -1583,6 +1583,94 @@ export const agentThreadTargetSelectionTargetValidator = v.object({
   handle: v.optional(v.string()),
 });
 
+// ============================================================================
+// Tenant-fair background scheduler
+// ============================================================================
+
+export const tenantSchedulerModeValidator = v.union(
+  v.literal("legacy"),
+  v.literal("shadow"),
+  v.literal("enforced")
+);
+
+export const tenantJobClassValidator = v.union(
+  v.literal("interactive"),
+  v.literal("preview"),
+  v.literal("background")
+);
+
+export const tenantJobKindValidator = v.union(
+  v.literal("setup_generation"),
+  v.literal("qualification"),
+  v.literal("enrichment"),
+  v.literal("auto_plan"),
+  v.literal("plan_batch_item"),
+  v.literal("memory_evaluation")
+);
+
+export const tenantJobStatusValidator = v.union(
+  v.literal("shadow"),
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("succeeded"),
+  v.literal("failed"),
+  v.literal("cancelled")
+);
+
+export const tenantJobLaneStateValidator = v.union(
+  v.literal("idle"),
+  v.literal("ready"),
+  v.literal("paused")
+);
+
+export const tenantSchedulerSlotStatusValidator = v.union(
+  v.literal("free"),
+  v.literal("claimed")
+);
+
+export const tenantJobEnqueueFailureStatusValidator = v.union(
+  v.literal("unresolved"),
+  v.literal("resolved")
+);
+
+export const tenantJobPayloadValidator = v.union(
+  v.object({
+    kind: v.literal("setup_generation"),
+    sessionId: v.id("workspaceSetupSessions"),
+  }),
+  v.object({
+    kind: v.literal("qualification"),
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    preview: v.boolean(),
+  }),
+  v.object({
+    kind: v.literal("enrichment"),
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    claimToken: v.string(),
+    force: v.optional(v.boolean()),
+    preview: v.boolean(),
+  }),
+  v.object({
+    kind: v.literal("auto_plan"),
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    runId: v.id("autoPlanRuns"),
+  }),
+  v.object({
+    kind: v.literal("plan_batch_item"),
+    workspaceId: v.id("workspaces"),
+    runId: v.id("planBatchRuns"),
+    itemId: v.id("planBatchItems"),
+  }),
+  v.object({
+    kind: v.literal("memory_evaluation"),
+    workspaceId: v.id("workspaces"),
+  })
+);
+
 export const updateWorkspaceV4ArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
   name: v.optional(workspaceNameValidator),
@@ -2435,6 +2523,32 @@ export const planBatchRunStatusValidator = v.union(
   v.literal("cancelled")
 );
 
+export const planBatchDispatchResultValidator = v.union(
+  v.object({
+    done: v.boolean(),
+    status: planBatchRunStatusValidator,
+  }),
+  v.null()
+);
+
+export const planBatchDispatchSelectionValidator = v.union(
+  v.object({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    itemIds: v.array(v.id("planBatchItems")),
+    status: planBatchRunStatusValidator,
+  }),
+  v.null()
+);
+
+export const planBatchDispatchItemResultValidator = v.union(
+  v.object({
+    dispatched: v.boolean(),
+    status: planBatchRunStatusValidator,
+  }),
+  v.null()
+);
+
 export const planBatchItemStatusValidator = v.union(
   v.literal("pending"),
   v.literal("queued"),
@@ -2454,6 +2568,7 @@ export const planBatchAttachmentValidator = v.object({
 export const planBatchWorkCompletionContextValidator = v.object({
   runId: v.id("planBatchRuns"),
   itemId: v.id("planBatchItems"),
+  tenantJobId: v.optional(v.id("tenantJobs")),
 });
 
 export const autoPlanFailureCodeValidator = v.union(
@@ -2515,6 +2630,7 @@ export const autoPlanGenerationResultValidator = v.object({
 export const autoPlanWorkCompletionContextValidator = v.object({
   prospectId: v.id("prospects"),
   runId: v.id("autoPlanRuns"),
+  tenantJobId: v.optional(v.id("tenantJobs")),
 });
 
 // Read-model rollout scope (single workspace vs all owned workspaces)

@@ -1977,6 +1977,9 @@ export const startProspectingWorkflow = action({
 
     // Check if workflow is already running
     if (workspace.prospectingWorkflowStatus === "running") {
+      await ctx.runMutation(internal.tenantScheduler.resumeWorkspaceInternal, {
+        workspaceId: args.workspaceId,
+      });
       await ctx.runMutation(
         internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
         {
@@ -2024,6 +2027,9 @@ export const startProspectingWorkflow = action({
       status: "running",
       workflowId: workflowId.toString(),
       lastMeaningfulActivityAt: now,
+    });
+    await ctx.runMutation(internal.tenantScheduler.resumeWorkspaceInternal, {
+      workspaceId: args.workspaceId,
     });
     await ctx.runMutation(
       internal.workspaces.clearOnboardingIssueStateInternal,
@@ -2148,6 +2154,9 @@ export const startProspectingWorkflowInternal = internalAction({
 
     // Check if workflow is already running
     if (workspace.prospectingWorkflowStatus === "running") {
+      await ctx.runMutation(internal.tenantScheduler.resumeWorkspaceInternal, {
+        workspaceId: args.workspaceId,
+      });
       await ctx.runMutation(
         internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
         {
@@ -2195,6 +2204,9 @@ export const startProspectingWorkflowInternal = internalAction({
       status: "running",
       workflowId: workflowId.toString(),
       lastMeaningfulActivityAt: now,
+    });
+    await ctx.runMutation(internal.tenantScheduler.resumeWorkspaceInternal, {
+      workspaceId: args.workspaceId,
     });
     await ctx.runMutation(
       internal.workspaces.clearOnboardingIssueStateInternal,
@@ -2303,6 +2315,9 @@ export const restartProspectingWorkflowForSetupInternal = internalAction({
       status: "running",
       workflowId: workflowId.toString(),
       lastMeaningfulActivityAt: now,
+    });
+    await ctx.runMutation(internal.tenantScheduler.resumeWorkspaceInternal, {
+      workspaceId: args.workspaceId,
     });
     await ctx.runMutation(
       internal.workspaces.clearOnboardingIssueStateInternal,
@@ -2507,6 +2522,10 @@ export const stopProspectingWorkflow = action({
       throw new Error("Workspace not found");
     }
 
+    await ctx.runMutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+      workspaceId: args.workspaceId,
+    });
+
     const pausedMonitors = await ctx.runMutation(
       internal.socialapiMonitors.pauseWorkspaceMonitorsInternal,
       {
@@ -2544,6 +2563,11 @@ export const stopProspectingWorkflow = action({
       workspaceId: args.workspaceId,
       status: "paused",
       pauseReason: "manual",
+    });
+    // Close the narrow race where a job is enqueued between the first lane
+    // pause and the durable workspace status update above.
+    await ctx.runMutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+      workspaceId: args.workspaceId,
     });
     await ctx.runMutation(
       internal.workspaces.clearOnboardingIssueStateForSourceInternal,

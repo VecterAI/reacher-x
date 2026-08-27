@@ -5,10 +5,11 @@
 
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
-import type { WorkflowCtx } from "@convex-dev/workflow";
+import { vWorkflowId, type WorkflowCtx } from "@convex-dev/workflow";
+import { vResultValidator } from "@convex-dev/workpool";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { internalAction } from "../lib/functionBuilders";
+import { internalAction, internalMutation } from "../lib/functionBuilders";
 import { getEnrichmentPool } from "../lib/enrichmentPool";
 import {
   PREVIEW_BATCH_LIMITS,
@@ -48,6 +49,9 @@ import {
 } from "../integrations/linkedin/profileIdentity";
 import { AUTO_PLAN_GENERATION_THRESHOLD } from "../lib/outreachCore";
 import type { ModelRouting } from "../lib/ai";
+import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
+import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
+import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
 
 // ============================================================================
 // Constants
@@ -1026,6 +1030,7 @@ export const runEnrichmentWorkflow = internalAction({
     workspaceId: v.id("workspaces"),
     claimToken: v.optional(v.string()),
     force: v.optional(v.boolean()),
+    tenantJobId: v.optional(v.id("tenantJobs")),
   },
   handler: async (ctx, args): Promise<{ workflowId: string }> => {
     const releaseClaim = async () => {
@@ -1070,6 +1075,11 @@ export const runEnrichmentWorkflow = internalAction({
             prospectId: args.prospectId,
             workspaceId: args.workspaceId,
             force: args.force,
+          },
+          {
+            onComplete:
+              internal.workflows.enrichment.handleEnrichmentWorkflowComplete,
+            context: { tenantJobId: args.tenantJobId },
           }
         )
       );
@@ -1091,6 +1101,32 @@ export const runEnrichmentWorkflow = internalAction({
     }
 
     return { workflowId: wfId };
+  },
+});
+
+export const handleEnrichmentWorkflowComplete = internalMutation({
+  args: {
+    workflowId: vWorkflowId,
+    result: vResultValidator,
+    context: v.object({
+      tenantJobId: v.optional(v.id("tenantJobs")),
+    }),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (!args.context.tenantJobId) return null;
+    await completeTenantJob(ctx, {
+      jobId: args.context.tenantJobId,
+      status:
+        args.result.kind === "success"
+          ? "succeeded"
+          : args.result.kind === "canceled"
+            ? "cancelled"
+            : "failed",
+      errorMessage:
+        args.result.kind === "failed" ? args.result.error : undefined,
+    });
+    return null;
   },
 });
 
@@ -1141,6 +1177,25 @@ export const startEnrichment = internalAction({
     }
 
     try {
+      const tenantRoute = await enqueueTenantJobWithRetry(ctx, {
+        workspaceId: args.workspaceId,
+        userId: prospect.userId,
+        class: "background",
+        priority: TENANT_JOB_PRIORITY.background,
+        idempotencyKey: `enrichment:${String(args.prospectId)}:${claimToken}`,
+        payload: {
+          kind: "enrichment",
+          prospectId: args.prospectId,
+          workspaceId: args.workspaceId,
+          claimToken,
+          force: args.force,
+          preview: false,
+        },
+      });
+      if (tenantRoute.route === "enforced") {
+        return { workId: String(tenantRoute.jobId) };
+      }
+
       const workId = await getEnrichmentPool().enqueueAction(
         ctx,
         internal.workflows.enrichment.runEnrichmentWorkflow,
@@ -1287,6 +1342,13 @@ export const startPreviewEnrichment = internalAction({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
+    const prospect = await ctx.runQuery(
+      internal.prospects.getProspectInternal,
+      { prospectId: args.prospectId }
+    );
+    if (!prospect || prospect.workspaceId !== args.workspaceId) {
+      return { workId: "" };
+    }
     const claimToken = createEnrichmentClaimToken(String(args.prospectId));
     const claimResult = await ctx.runMutation(
       internal.prospects.claimEnrichmentWorkflowIdInternal,
@@ -1301,6 +1363,24 @@ export const startPreviewEnrichment = internalAction({
     }
 
     try {
+      const tenantRoute = await enqueueTenantJobWithRetry(ctx, {
+        workspaceId: args.workspaceId,
+        userId: prospect.userId,
+        class: "preview",
+        priority: TENANT_JOB_PRIORITY.preview,
+        idempotencyKey: `preview-enrichment:${String(args.prospectId)}:${claimToken}`,
+        payload: {
+          kind: "enrichment",
+          prospectId: args.prospectId,
+          workspaceId: args.workspaceId,
+          claimToken,
+          preview: true,
+        },
+      });
+      if (tenantRoute.route === "enforced") {
+        return { workId: String(tenantRoute.jobId) };
+      }
+
       const workId = await previewEnrichmentPool.enqueueAction(
         ctx,
         internal.workflows.enrichment.runEnrichmentWorkflow,

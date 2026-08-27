@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -186,6 +186,10 @@ export function WorkspaceSystemStatusDialog({
   const stopProspectingWorkflow = useAction(
     api.workspaces.stopProspectingWorkflow
   );
+  const schedulerStatus = useQuery(
+    api.tenantScheduler.getWorkspaceSchedulerStatus,
+    open ? { workspaceId: status.workspaceId as Id<"workspaces"> } : "skip"
+  );
   const statusCopy = useWorkspaceSystemStatusCopy(status);
   const [view, setView] = useState<WorkspaceStatusDialogView>("progress");
   const [pendingAction, setPendingAction] =
@@ -311,12 +315,13 @@ export function WorkspaceSystemStatusDialog({
 
           <div className="space-y-4 px-4 py-4">
             <p className="text-sm">
-              This pauses new discovery for this workspace and stops active
-              monitor activity.
+              This pauses new discovery, monitor activity, and queued background
+              work for this workspace.
             </p>
             <p className="text-muted-foreground text-sm">
-              Your saved prospects and progress stay intact, and you can resume
-              later from this same workspace status dialog.
+              A task already running may finish safely. Your saved prospects and
+              progress stay intact, and queued work resumes later from this same
+              dialog.
             </p>
             <div className="bg-muted/40 border-border rounded-lg border px-3 py-2.5">
               <p className="text-sm font-medium">
@@ -372,6 +377,25 @@ export function WorkspaceSystemStatusDialog({
                     : "hidden"
             }
           />
+
+          {schedulerStatus?.mode === "enforced" ? (
+            <section
+              aria-live="polite"
+              aria-atomic="true"
+              className="border-border bg-muted/20 border-t px-4 py-3"
+            >
+              <p className="text-sm font-medium">Agent activity</p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {schedulerStatus.state === "paused"
+                  ? `Agent paused · ${schedulerStatus.queuedCount} waiting`
+                  : schedulerStatus.runningCount > 0
+                    ? `Agent working · ${schedulerStatus.runningCount} active · ${schedulerStatus.queuedCount} waiting`
+                    : schedulerStatus.queuedCount > 0
+                      ? `Agent waiting · ${schedulerStatus.queuedCount} queued`
+                      : "Agent ready"}
+              </p>
+            </section>
+          ) : null}
 
           {footerHasActions ? (
             <div className="border-border grid gap-2 border-t px-4 py-3">

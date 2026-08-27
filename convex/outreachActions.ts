@@ -11,6 +11,8 @@ import type { ActionCtx } from "./_generated/server";
 import { action, internalAction } from "./lib/functionBuilders";
 import { internal, api } from "./_generated/api";
 import { getOutreachPlanPool } from "./lib/outreachPlanPool";
+import { TENANT_JOB_PRIORITY } from "./lib/tenantSchedulerCore";
+import { enqueueTenantJobWithRetry } from "./lib/tenantSchedulerEnqueue";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   getXConnectionStatusForUser,
@@ -1210,6 +1212,29 @@ async function enqueueAutoPlanGeneration(
   }
 
   try {
+    const tenantRoute = await enqueueTenantJobWithRetry(ctx, {
+      workspaceId: args.workspaceId,
+      userId: args.userId,
+      class: "background",
+      priority: TENANT_JOB_PRIORITY.background,
+      idempotencyKey: `auto-plan:${String(claim.runId)}`,
+      payload: {
+        kind: "auto_plan",
+        prospectId: args.prospectId,
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        runId: claim.runId,
+      },
+    });
+    if (tenantRoute.route === "enforced") {
+      const schedulerWorkId = String(tenantRoute.jobId);
+      await ctx.runMutation(internal.autoPlanRuns.attachAutoPlanWorkId, {
+        runId: claim.runId,
+        workId: schedulerWorkId,
+      });
+      return schedulerWorkId;
+    }
+
     const workId = await getOutreachPlanPool().enqueueAction(
       ctx,
       internal.autoPlanActions.generateGroundedAutoPlanDraft,

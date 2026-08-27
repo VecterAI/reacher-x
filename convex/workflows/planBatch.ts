@@ -67,9 +67,10 @@ export const planBatchWorkflow = workflow.define({
     }
 
     while (true) {
-      const dispatch = await step.runMutation(
-        internal.planBatches.dispatchPlanBatchPage,
-        { runId }
+      const dispatch = await step.runAction(
+        internal.planBatches.dispatchPlanBatchPageWithRetryInternal,
+        { runId },
+        { retry: true }
       );
       if (!dispatch || dispatch.done) {
         break;

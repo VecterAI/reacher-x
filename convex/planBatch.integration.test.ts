@@ -146,6 +146,83 @@ async function insertRunningBatchItem(
 }
 
 describe("plan batch durable state", () => {
+  test("dispatches one tenant item atomically and ignores an idempotent replay", async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await seedQualifiedProspect(t, "tenant-dispatch");
+    const { runId, itemId } = await t.run(async (ctx) => {
+      await ctx.db.insert("tenantSchedulerControls", {
+        key: "global",
+        mode: "enforced",
+        slotCount: 36,
+        baseSlotsPerTenant: 1,
+        burstSlotsPerTenant: 30,
+        leaseDurationMs: 2 * 60 * 60 * 1000,
+        updatedAt: 1,
+      });
+      const runId = await ctx.db.insert("planBatchRuns", {
+        workspaceId: seeded.workspaceId,
+        userId: seeded.userId,
+        sourceThreadId: "tenant-dispatch-thread",
+        operation: "create",
+        scopeKind: "tagged",
+        instruction: "Create the plan.",
+        attachments: [],
+        confirmationRequired: false,
+        status: "queued",
+        targetCount: 1,
+        eligibleCount: 1,
+        queuedCount: 0,
+        runningCount: 0,
+        succeededCount: 0,
+        createdCount: 0,
+        updatedCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
+        selectionSkippedCount: 0,
+        finishedCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const itemId = await ctx.db.insert("planBatchItems", {
+        runId,
+        prospectId: seeded.prospectId,
+        prospectName: "Prospect tenant-dispatch",
+        operation: "create",
+        status: "pending",
+        attemptCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { runId, itemId };
+    });
+
+    expect(
+      await t.mutation(internal.planBatches.dispatchPlanBatchItemInternal, {
+        runId,
+        itemId,
+      })
+    ).toEqual({ dispatched: true, status: "running" });
+    expect(
+      await t.mutation(internal.planBatches.dispatchPlanBatchItemInternal, {
+        runId,
+        itemId,
+      })
+    ).toEqual({ dispatched: false, status: "running" });
+
+    const state = await t.run(async (ctx) => ({
+      run: await ctx.db.get("planBatchRuns", runId),
+      item: await ctx.db.get("planBatchItems", itemId),
+      jobs: await ctx.db.query("tenantJobs").collect(),
+    }));
+    expect(state.run).toMatchObject({ status: "running", queuedCount: 1 });
+    expect(state.item).toMatchObject({ status: "queued" });
+    expect(state.jobs).toHaveLength(1);
+    expect(state.jobs[0]).toMatchObject({
+      idempotencyKey: `plan-batch-item:${String(itemId)}`,
+      status: "queued",
+    });
+  });
+
   test("exposes terminal results for Agent continuation without appending hard-coded copy", async () => {
     const t = convexTest(schema, modules);
     await registerAgentComponent(t);

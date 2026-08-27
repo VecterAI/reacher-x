@@ -164,6 +164,14 @@ import {
   agentMessagePromptTextSourceValidator,
   agentMessageTaggedEntityValidator,
   agentThreadTargetSelectionTargetValidator,
+  tenantJobClassValidator,
+  tenantJobEnqueueFailureStatusValidator,
+  tenantJobKindValidator,
+  tenantJobLaneStateValidator,
+  tenantJobPayloadValidator,
+  tenantJobStatusValidator,
+  tenantSchedulerModeValidator,
+  tenantSchedulerSlotStatusValidator,
 } from "./validators";
 
 // ============================================================================
@@ -513,6 +521,11 @@ export default defineSchema({
     status: setupSessionStatusValidator,
     setupThreadId: v.string(),
     workflowId: v.optional(v.string()),
+    /** Optional during the self-healing rollout; incremented per replacement. */
+    workflowRecoveryRevision: v.optional(v.number()),
+    workflowRecoveryAttempts: v.optional(v.number()),
+    workflowLastRecoveryAt: v.optional(v.number()),
+    workflowRecoveryReason: v.optional(v.string()),
     useCaseKey: workspaceUseCaseKeyValidator,
     draftOrdinal: v.number(),
     draftName: v.optional(v.string()),
@@ -557,6 +570,7 @@ export default defineSchema({
   })
     .index("by_user_status", ["userId", "status"])
     .index("by_user_last_active", ["userId", "lastActiveAt"])
+    .index("by_status_updated_at", ["status", "statusUpdatedAt"])
     .index("by_setup_thread", ["setupThreadId"])
     .index("by_target_workspace", ["targetWorkspaceId"])
     .index("by_existing_workspace", ["existingWorkspaceId"]),
@@ -978,6 +992,127 @@ export default defineSchema({
   })
     .index("by_user_cycle_start", ["userId", "cycleStart"])
     .index("by_user_is_current", ["userId", "isCurrent"]),
+
+  /**
+   * Global rollout and capacity controls for tenant-fair background work.
+   * The singleton starts absent, which intentionally means legacy behavior.
+   */
+  tenantSchedulerControls: defineTable({
+    key: v.literal("global"),
+    mode: tenantSchedulerModeValidator,
+    slotCount: v.number(),
+    baseSlotsPerTenant: v.number(),
+    burstSlotsPerTenant: v.number(),
+    leaseDurationMs: v.number(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
+  /** Temporary canary overrides. Global enforced mode remains the end state. */
+  tenantSchedulerWorkspaceOverrides: defineTable({
+    workspaceId: v.id("workspaces"),
+    mode: tenantSchedulerModeValidator,
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_mode", ["mode"]),
+
+  /** One independently fair lane per workspace, or per pre-workspace user. */
+  tenantJobLanes: defineTable({
+    tenantKey: v.string(),
+    workspaceId: v.optional(v.id("workspaces")),
+    userId: v.id("users"),
+    state: tenantJobLaneStateValidator,
+    pendingCount: v.number(),
+    runningCount: v.number(),
+    minPriority: v.number(),
+    lastDispatchedAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tenant_key", ["tenantKey"])
+    .index("by_workspace", ["workspaceId"])
+    .index("by_state_and_last_dispatched_at", ["state", "lastDispatchedAt"]),
+
+  /** Immutable enqueue lookup so producers never read mutable lane counters. */
+  tenantJobLaneBindings: defineTable({
+    tenantKey: v.string(),
+    laneId: v.id("tenantJobLanes"),
+    workspaceId: v.optional(v.id("workspaces")),
+    userId: v.id("users"),
+  })
+    .index("by_tenant_key", ["tenantKey"])
+    .index("by_lane", ["laneId"]),
+
+  /** Durable app-owned jobs. Existing prospect rows require no migration. */
+  tenantJobs: defineTable({
+    tenantKey: v.string(),
+    laneId: v.id("tenantJobLanes"),
+    workspaceId: v.optional(v.id("workspaces")),
+    userId: v.id("users"),
+    class: tenantJobClassValidator,
+    kind: tenantJobKindValidator,
+    status: tenantJobStatusValidator,
+    priority: v.number(),
+    idempotencyKey: v.string(),
+    payload: tenantJobPayloadValidator,
+    queuedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    leaseExpiresAt: v.optional(v.number()),
+    slotId: v.optional(v.id("tenantSchedulerSlots")),
+    workId: v.optional(v.string()),
+    nestedWorkflowId: v.optional(v.string()),
+    attemptCount: v.number(),
+    errorMessage: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_idempotency_key", ["idempotencyKey"])
+    .index("by_lane_and_status_and_priority_and_queued_at", [
+      "laneId",
+      "status",
+      "priority",
+      "queuedAt",
+    ])
+    .index("by_workspace_and_status", ["workspaceId", "status"])
+    .index("by_status_and_queued_at", ["status", "queuedAt"])
+    .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
+    .index("by_status_and_completed_at", ["status", "completedAt"]),
+
+  /**
+   * Failures caught outside the enqueue mutation. These remain observable even
+   * when the failed transaction never committed a tenantJobs document.
+   */
+  tenantJobEnqueueFailures: defineTable({
+    idempotencyKey: v.string(),
+    workspaceId: v.optional(v.id("workspaces")),
+    userId: v.id("users"),
+    class: tenantJobClassValidator,
+    kind: tenantJobKindValidator,
+    priority: v.number(),
+    status: tenantJobEnqueueFailureStatusValidator,
+    attemptCount: v.number(),
+    errorMessage: v.string(),
+    firstFailedAt: v.number(),
+    lastFailedAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+    resolvedJobId: v.optional(v.id("tenantJobs")),
+    resolvedRoute: v.optional(tenantSchedulerModeValidator),
+  })
+    .index("by_idempotency_key", ["idempotencyKey"])
+    .index("by_status_and_last_failed_at", ["status", "lastFailedAt"]),
+
+  /** Individual slot documents avoid a hot global active-count document. */
+  tenantSchedulerSlots: defineTable({
+    slotNumber: v.number(),
+    status: tenantSchedulerSlotStatusValidator,
+    jobId: v.optional(v.id("tenantJobs")),
+    tenantKey: v.optional(v.string()),
+    claimedAt: v.optional(v.number()),
+    leaseExpiresAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_slot_number", ["slotNumber"])
+    .index("by_status_and_slot_number", ["status", "slotNumber"])
+    .index("by_job", ["jobId"]),
 
   /**
    * Per-workspace queue state for throttled memory evaluation.

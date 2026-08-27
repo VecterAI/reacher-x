@@ -27,6 +27,9 @@ import { components } from "../_generated/api";
  */
 export const workflow = new WorkflowManager(components.workflow, {
   workpoolOptions: {
+    // In enforced mode the remaining 36 recommended Pro workpool slots belong
+    // to tenantExecutionPool, keeping the documented combined total at 100.
+    maxParallelism: 64,
     // Keep retries bounded and explicit. Individual steps opt-in with retry:true.
     defaultRetryBehavior: {
       maxAttempts: 3,

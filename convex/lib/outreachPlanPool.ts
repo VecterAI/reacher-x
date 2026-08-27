@@ -14,13 +14,13 @@ import { getSystemRuntimeConfig } from "./runtimeConfigHelpers";
  * 2. OCC errors from concurrent prospect mutations
  *
  * Configuration:
- * - maxParallelism: OUTREACH_PLAN_MAX_PARALLELISM (default 5)
+ * - maxParallelism: runtime scheduler control (legacy/shadow 5, enforced 0)
  * - retryActionsByDefault: true - Auto-retry failed generations
  */
 export function getOutreachPlanPool() {
   const config = getSystemRuntimeConfig().workpools.outreachPlan;
   return new Workpool(components.outreachPlanPool, {
-    maxParallelism: config.maxParallelism,
+    // Parallelism is controlled centrally by tenantScheduler.setControlInternal.
     retryActionsByDefault: true,
     defaultRetryBehavior: {
       maxAttempts: config.maxAttempts,

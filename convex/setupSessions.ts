@@ -9,6 +9,7 @@ import {
   query,
 } from "./lib/functionBuilders";
 import { workflow as workflowManager } from "./lib/workflow";
+import type { WorkflowId, WorkflowStatus } from "@convex-dev/workflow";
 import { createThread, saveMessage } from "@convex-dev/agent";
 import { v } from "convex/values";
 import { logger } from "../shared/lib/logger";
@@ -27,10 +28,13 @@ import {
   getSetupSessionByThreadId,
   getSetupSessionDisplayName,
   getNextSetupGenerationRevision,
+  getSetupWorkflowRecoveryDecision,
   hasSetupGenerationData,
   isSetupPreviewProspectWriteStatus,
   isTerminalSetupSessionStatus,
   resolveNextSetupDraftOrdinal,
+  SETUP_WORKFLOW_MACHINE_PROGRESS_STATUSES,
+  SETUP_WORKFLOW_STALE_AFTER_MS,
 } from "./lib/setupSessionCore";
 import {
   isSetupSessionAccessibleForUser,
@@ -97,6 +101,35 @@ import {
 type SetupSessionDoc = Doc<"workspaceSetupSessions">;
 const setupSessionsLogger = logger.withScope("SetupSessions");
 type ViewerCtx = QueryCtx | MutationCtx;
+
+async function startSetupWorkflow(
+  ctx: MutationCtx,
+  session: SetupSessionDoc,
+  recovery?: { reason: string; now: number }
+): Promise<string> {
+  const workflowId: Awaited<ReturnType<typeof workflowManager.start>> =
+    await workflowManager.start(
+      ctx,
+      internal.workflows.setup.setupSessionWorkflow,
+      { sessionId: session._id },
+      { startAsync: true }
+    );
+  const patch = recovery
+    ? {
+        workflowId: String(workflowId),
+        workflowRecoveryRevision: (session.workflowRecoveryRevision ?? 0) + 1,
+        workflowRecoveryAttempts: (session.workflowRecoveryAttempts ?? 0) + 1,
+        workflowLastRecoveryAt: recovery.now,
+        workflowRecoveryReason: recovery.reason,
+        lastActiveAt: recovery.now,
+      }
+    : {
+        workflowId: String(workflowId),
+        lastActiveAt: getCurrentUTCTimestamp(),
+      };
+  await ctx.db.patch("workspaceSetupSessions", session._id, patch);
+  return String(workflowId);
+}
 
 type SetupPreviewProgressState = {
   discoveredCount: number;
@@ -1028,10 +1061,122 @@ export const startSetupSession = mutation({
   },
 });
 
+type SetupWorkflowHealthResult = {
+  scheduled: boolean;
+  recovered: boolean;
+  state: "healthy" | "waiting_for_user" | "started" | "recovered" | "failed";
+};
+
+async function ensureSetupWorkflowHealth(
+  ctx: MutationCtx,
+  session: Doc<"workspaceSetupSessions">,
+  now = getCurrentUTCTimestamp()
+): Promise<SetupWorkflowHealthResult> {
+  let workflowStatus: WorkflowStatus | null = null;
+  if (session.workflowId) {
+    try {
+      workflowStatus = await workflowManager.status(
+        ctx,
+        session.workflowId as WorkflowId
+      );
+    } catch (error) {
+      setupSessionsLogger.warn("Setup workflow status lookup failed", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: String(session._id),
+        workflowId: session.workflowId,
+      });
+    }
+  }
+
+  const decision = getSetupWorkflowRecoveryDecision({
+    session,
+    workflowStatus,
+    now,
+  });
+  if (decision.kind === "none") {
+    return {
+      scheduled: false,
+      recovered: false,
+      state:
+        decision.reason === "waiting_for_user"
+          ? ("waiting_for_user" as const)
+          : ("healthy" as const),
+    };
+  }
+  if (decision.kind === "start") {
+    await startSetupWorkflow(ctx, session);
+    return { scheduled: true, recovered: false, state: "started" as const };
+  }
+  if (decision.kind === "fail") {
+    if (session.workflowId && workflowStatus?.type === "inProgress") {
+      try {
+        await workflowManager.cancel(ctx, session.workflowId as WorkflowId);
+      } catch (error) {
+        setupSessionsLogger.warn("Failed to cancel exhausted setup workflow", {
+          error: error instanceof Error ? error.message : String(error),
+          sessionId: String(session._id),
+          workflowId: session.workflowId,
+        });
+      }
+    }
+    await ctx.db.patch("workspaceSetupSessions", session._id, {
+      status: "failed",
+      workflowId: undefined,
+      generationErrorAt:
+        session.status === "generating_profiles"
+          ? now
+          : session.generationErrorAt,
+      errorCode: "setup_workflow_recovery_exhausted",
+      errorMessage:
+        "Agent setup paused after repeated recovery attempts. Please retry your last setup step.",
+      lastAgentActionAt: now,
+      lastActiveAt: now,
+      statusUpdatedAt: now,
+    });
+    setupSessionsLogger.error("Setup workflow recovery exhausted", {
+      sessionId: String(session._id),
+      workflowId: session.workflowId,
+      status: session.status,
+    });
+    return { scheduled: false, recovered: false, state: "failed" as const };
+  }
+
+  if (session.workflowId && workflowStatus?.type === "inProgress") {
+    try {
+      await workflowManager.cancel(ctx, session.workflowId as WorkflowId);
+    } catch (error) {
+      setupSessionsLogger.warn("Failed to cancel stale setup workflow", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: String(session._id),
+        workflowId: session.workflowId,
+      });
+    }
+  }
+  await startSetupWorkflow(ctx, session, { reason: decision.reason, now });
+  setupSessionsLogger.warn("Recovered setup workflow", {
+    sessionId: String(session._id),
+    previousWorkflowId: session.workflowId,
+    reason: decision.reason,
+    status: session.status,
+  });
+  return { scheduled: true, recovered: true, state: "recovered" as const };
+}
+
 export const ensureSetupSessionWorkflow = mutation({
   args: {
     threadId: v.string(),
   },
+  returns: v.object({
+    scheduled: v.boolean(),
+    recovered: v.boolean(),
+    state: v.union(
+      v.literal("healthy"),
+      v.literal("waiting_for_user"),
+      v.literal("started"),
+      v.literal("recovered"),
+      v.literal("failed")
+    ),
+  }),
   handler: async (ctx, { threadId }) => {
     const user = await requireViewerUser(ctx);
     const session = await getSetupSessionByThreadId(ctx.db, threadId);
@@ -1041,19 +1186,47 @@ export const ensureSetupSessionWorkflow = mutation({
     if (!(await isSetupSessionAccessibleForUser(ctx, session))) {
       throw new Error("Setup session not found");
     }
+    return await ensureSetupWorkflowHealth(ctx, session);
+  },
+});
 
-    if (!session.workflowId && !isTerminalSetupSessionStatus(session.status)) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.setupSessions.startSetupSessionWorkflowInternal,
-        {
-          sessionId: session._id,
-        }
-      );
-      return { scheduled: true };
+/**
+ * Small indexed safety net for setup sessions whose user is no longer online.
+ * The client-triggered ensure remains the fast path; this pass prevents an
+ * abandoned tab from leaving machine-owned setup work wedged indefinitely.
+ */
+export const recoverStaleSetupWorkflowsInternal = internalMutation({
+  args: {},
+  returns: v.object({
+    checked: v.number(),
+    recovered: v.number(),
+    failed: v.number(),
+  }),
+  handler: async (ctx) => {
+    const now = getCurrentUTCTimestamp();
+    const cutoff = now - SETUP_WORKFLOW_STALE_AFTER_MS;
+    const candidateGroups = await Promise.all(
+      SETUP_WORKFLOW_MACHINE_PROGRESS_STATUSES.map((status) =>
+        ctx.db
+          .query("workspaceSetupSessions")
+          .withIndex("by_status_updated_at", (q) =>
+            q.eq("status", status).lt("statusUpdatedAt", cutoff)
+          )
+          .take(1)
+      )
+    );
+    const candidates = candidateGroups
+      .flat()
+      .filter((session) => session.workflowId);
+
+    let recovered = 0;
+    let failed = 0;
+    for (const session of candidates) {
+      const result = await ensureSetupWorkflowHealth(ctx, session, now);
+      if (result.state === "recovered") recovered += 1;
+      if (result.state === "failed") failed += 1;
     }
-
-    return { scheduled: false };
+    return { checked: candidates.length, recovered, failed };
   },
 });
 
@@ -2237,24 +2410,20 @@ export const clearPreviewWorkflowIdIfMatchesInternal = internalMutation({
   },
 });
 
-export const startSetupSessionWorkflowInternal = internalAction({
+export const startSetupSessionWorkflowInternal = internalMutation({
   args: {
     sessionId: v.id("workspaceSetupSessions"),
   },
+  returns: v.object({ workflowId: v.string() }),
   handler: async (ctx, { sessionId }): Promise<{ workflowId: string }> => {
-    const workflowId: Awaited<ReturnType<typeof workflowManager.start>> =
-      await workflowManager.start(
-        ctx,
-        internal.workflows.setup.setupSessionWorkflow,
-        { sessionId }
-      );
-
-    await ctx.runMutation(internal.setupSessions.markWorkflowStartedInternal, {
-      sessionId,
-      workflowId: String(workflowId),
-    });
-
-    return { workflowId: String(workflowId) };
+    const session = await ctx.db.get("workspaceSetupSessions", sessionId);
+    if (!session || isTerminalSetupSessionStatus(session.status)) {
+      return { workflowId: "" };
+    }
+    if (session.workflowId) {
+      return { workflowId: session.workflowId };
+    }
+    return { workflowId: await startSetupWorkflow(ctx, session) };
   },
 });
 
@@ -2639,6 +2808,18 @@ export const recordGenerationResultInternal = internalMutation({
       statusUpdatedAt: now,
       errorCode: undefined,
       errorMessage: undefined,
+    });
+
+    await maybeSignalStateChanged(ctx, {
+      ...session,
+      status: "awaiting_icp_confirmation",
+      improvedDescription: args.improvedDescription,
+      generatedProfiles: args.generatedProfiles,
+      draftName: args.draftName,
+      generationCompletedAt: args.generationCompletedAt,
+      statusUpdatedAt: now,
+      lastAgentActionAt: now,
+      lastActiveAt: now,
     });
 
     return { updated: true as const };
@@ -3297,6 +3478,18 @@ export const markGenerationFailedInternal = internalMutation({
 
     const now = getCurrentUTCTimestamp();
     await ctx.db.patch(sessionId, {
+      status: "awaiting_input",
+      generationCompletedAt: undefined,
+      generationErrorAt: now,
+      lastAgentActionAt: now,
+      lastActiveAt: now,
+      statusUpdatedAt: now,
+      errorCode: "generation_failed",
+      errorMessage,
+    });
+
+    await maybeSignalStateChanged(ctx, {
+      ...session,
       status: "awaiting_input",
       generationCompletedAt: undefined,
       generationErrorAt: now,
