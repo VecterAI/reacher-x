@@ -171,6 +171,42 @@ describe("canonical workspace memory", () => {
     );
   });
 
+  test("resolves mixed canonical and legacy RAG memory IDs without duplication", async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await seedWorkspace(t);
+
+    const canonical = await t.run(async (ctx) =>
+      await upsertCanonicalWorkspaceMemory(ctx.db, {
+        ...seeded,
+        legacyMemoryId: "legacy-component-memory-id",
+        source: "qualification",
+        category: "qualification_win_pattern",
+        namespace: "wins",
+        kind: "qualification_pattern",
+        title: "Verified hiring signal",
+        summary: "Prioritize direct evidence of active hiring.",
+        canonicalContent: "Prioritize direct evidence of active hiring.",
+        confidence: 0.9,
+        impactScore: 0.8,
+      })
+    );
+    const resolved = await t.query(
+      internal.memory.getCanonicalWorkspaceMemoriesByIdsInternal,
+      {
+        ...seeded,
+        memoryIds: [
+          canonical.memory.memoryId,
+          "legacy-component-memory-id",
+          String(seeded.userId),
+          "unknown-memory-id",
+        ],
+      }
+    );
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]?.memoryId).toBe(canonical.memory.memoryId);
+  });
+
   test("shared context injects only the active correction", async () => {
     const t = convexTest(schema, modules);
     const seeded = await seedWorkspace(t);

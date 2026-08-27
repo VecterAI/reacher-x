@@ -1162,6 +1162,25 @@ export const resumeWorkspaceInternal = internalMutation({
   args: { workspaceId: v.id("workspaces") },
   returns: v.null(),
   handler: async (ctx, { workspaceId }) => {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.tenantScheduler.resumeWorkspaceLaneInternal,
+      { workspaceId }
+    );
+    return null;
+  },
+});
+
+/**
+ * Resume reconciliation is scheduled so burst enqueues cannot make the
+ * caller's recovery mutation permanently fail on the lane or queued-job range.
+ * Scheduled mutations durably retry Convex OCC errors and this reconciliation
+ * is idempotent across duplicate resume requests.
+ */
+export const resumeWorkspaceLaneInternal = internalMutation({
+  args: { workspaceId: v.id("workspaces") },
+  returns: v.null(),
+  handler: async (ctx, { workspaceId }) => {
     const lane = await ctx.db
       .query("tenantJobLanes")
       .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))

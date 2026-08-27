@@ -186,12 +186,47 @@ describe("tenant scheduler integration", () => {
     await t.mutation(internal.tenantScheduler.resumeWorkspaceInternal, {
       workspaceId: paused.workspaceId,
     });
+    const resumeRequested = await t.run(async (ctx) => ({
+      lane: await ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", paused.workspaceId)
+        )
+        .unique(),
+      scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+    expect(resumeRequested.lane?.state).toBe("paused");
+    expect(
+      resumeRequested.scheduled.some(
+        (job) =>
+          job.name.includes("resumeWorkspaceLaneInternal") &&
+          job.state.kind === "pending"
+      )
+    ).toBe(true);
+
+    await t.mutation(internal.tenantScheduler.enqueueTenantJobInternal, {
+      ...paused,
+      class: "background",
+      priority: 30,
+      idempotencyKey: `resume-race-${paused.workspaceId}`,
+      payload: {
+        kind: "memory_evaluation",
+        workspaceId: paused.workspaceId,
+      },
+    });
+    await t.mutation(internal.tenantScheduler.resumeWorkspaceLaneInternal, {
+      workspaceId: paused.workspaceId,
+    });
     const lanesAfter = await t.run(async (ctx) =>
       ctx.db.query("tenantJobLanes").collect()
     );
     expect(
       lanesAfter.find((lane) => lane.workspaceId === paused.workspaceId)?.state
     ).toBe("ready");
+    expect(
+      lanesAfter.find((lane) => lane.workspaceId === paused.workspaceId)
+        ?.pendingCount
+    ).toBe(2);
     expect(
       lanesAfter.find((lane) => lane.workspaceId === running.workspaceId)?.state
     ).toBe("ready");
@@ -1006,6 +1041,9 @@ describe("tenant scheduler integration", () => {
       )
     ).toMatchObject({ state: "paused", pendingCount: 5 });
     await t.mutation(internal.tenantScheduler.resumeWorkspaceInternal, {
+      workspaceId: owner.workspaceId,
+    });
+    await t.mutation(internal.tenantScheduler.resumeWorkspaceLaneInternal, {
       workspaceId: owner.workspaceId,
     });
     expect(

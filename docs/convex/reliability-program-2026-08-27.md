@@ -2,10 +2,13 @@
 
 ## Scope and production-signal boundary
 
-This worktree starts at tenant-fair scheduler commit
-`41ff14a7b1fd5ad1ac2b613ce890218a785d0a37`. No code deployment, migration,
-merge, or destructive data operation has been performed. The only production
-write was the explicitly approved scheduler control rollback recorded below.
+This worktree started at tenant-fair scheduler commit
+`41ff14a7b1fd5ad1ac2b613ce890218a785d0a37`. The initial implementation phase
+made no production change except the explicitly approved scheduler control
+rollback recorded below. PR #39 was later merged and automatically deployed
+only after explicit approval. All later production control changes and the
+bounded lane-binding backfill are recorded below; no destructive data operation
+or full prospect scan was performed.
 
 A fresh read-only `npx convex insights --prod --details` check was attempted
 before implementation. It stopped locally with `No CONVEX_DEPLOYMENT set`;
@@ -63,10 +66,52 @@ A fresh read-only production Insights check after the mode change also found:
 - the historical incident window still contained the supplied 290 permanent
   `enqueueTenantJobInternal` conflicts against the hot `tenantJobLanes` row.
 
-These are pre-fix observations, not evidence against the local changes: the
-reliability commits have not yet been deployed. Keep production in `legacy`
-through review, deployment, bounded lane-binding backfill, and acceptance
-verification.
+At this checkpoint these were pre-fix observations, not evidence against the
+local changes: the reliability commits had not yet been deployed. Production
+remained in `legacy` through review, deployment, bounded lane-binding backfill,
+and initial acceptance verification.
+
+### Deployment, canary failure, and full rollback — 2026-08-27 18:00–19:11 UTC
+
+PR #39 was merged as `d1785684ff94ad3eb8ff40cb12905368d2581471` after its
+frontend checks were green. The frontend and Convex backend deployed
+successfully. The bounded lane-binding backfill completed with one insert on
+its first page and zero inserts on its idempotent rerun; it did not scan
+prospects.
+
+The user-owned `ReacherX (Leads old)` workspace first passed a shadow canary
+with 139 admissions across qualification, enrichment, memory evaluation, and
+auto-plan. It produced no unresolved enqueue failure or new enqueue/lane OCC.
+Its enforced canary then exposed legacy Agent-component `memories` IDs in RAG
+metadata being passed to a validator that accepted only canonical
+`workspaceMemories` IDs.
+
+A second explicitly approved enforced canary on the paid Hobby workspace
+confirmed the same compatibility defect under broader traffic. Scheduler
+capacity remained healthy and there was no new historical enqueue OCC, but the
+domain gate failed with 30 jobs: 27 qualification and 3 auto-plan. The workspace
+was stopped, its lane was resumed only long enough to drain 830 already-durable
+jobs while prospecting and monitors remained paused, and the final memory jobs
+were cancelled through the scheduler's idempotent cancellation path. The lane
+was paused again before removing the override. The enforced override was then
+removed and the paid workspace was restarted through the legacy workflow.
+
+The 19:11 UTC post-cleanup heartbeat confirmed global `legacy`, zero overrides,
+zero queued/running/claimed jobs, 36/36 free tenant slots, no expired lease, and
+the paid workspace running. The last 1,000 scheduler rows were 996 succeeded, 3
+historical auto-plan failures, and 1 cancelled job. A fresh read-only control
+check on 2026-08-28 confirmed the same drained state, with one intentionally
+paused lane and no ready lane, drift, or unresolved enqueue failure.
+
+Convex Insights also reported two permanent conflicts in
+`tenantScheduler:resumeWorkspaceInternal`: one at 18:35:17 UTC on the workspace's
+`tenantJobLanes` row, and one at 18:35:28 UTC on the indexed `tenantJobs` range
+while an enqueue committed. A fresh read-only Insights check on 2026-08-28
+confirmed these exact events and no later permanent scheduler resume or enqueue
+failure. This made synchronous resume reconciliation a separate release blocker
+even though the queue later drained cleanly. Global enforcement remains blocked
+until both the mixed-memory-ID reader and resume/recovery contention fixes pass
+another enforced canary.
 
 ## Changes and invariants
 
@@ -95,6 +140,27 @@ uses the pending event ID rather than a timestamp for its key and treats a
 queued row without a work ID as a resumable intent instead of a completed
 enqueue. Resolved diagnostics are retained for seven days; unresolved records
 remain visible for operator action.
+
+### Resume/recovery contention after the first canary
+
+`resumeWorkspaceInternal` no longer reads or writes `tenantJobLanes` or scans
+the queued `tenantJobs` range in the caller's transaction. It atomically
+schedules an internal reconciliation mutation and returns. The scheduled
+mutation resolves the lane and rebuilds exact queue metadata with resume
+enabled; Convex durably retries internal OCC errors, and duplicate resume
+requests are idempotent. This removes both measured conflict surfaces from the
+recovery call while preserving jobs enqueued before or after the resume request.
+
+### Mixed legacy/canonical memory IDs
+
+Semantic RAG metadata is now widen-compatible. Canonical
+`workspaceMemories` IDs are normalized and read directly; legacy Agent
+`memories` IDs resolve through the existing workspace-scoped
+`by_workspace_and_legacy_memory_id` index. Unknown, cross-table, and
+cross-workspace IDs are ignored, and duplicate old/new references hydrate one
+canonical memory. The read is capped at 64 IDs. No schema change, full backfill,
+or Aggregate component is required before redeploying this compatibility fix;
+stale RAG entries can be reindexed later as a bounded cleanup.
 
 ### Prospect persistence read budget
 
@@ -155,6 +221,8 @@ reports the expected split and the repair pass bounds external drift.
 | Provider budget state     | One row per provider      | Deliberate serialization enforces exact request spacing                         | Keep; existing action-level bounded OCC retry is appropriate                                   |
 | Provider circuit state    | One row per provider      | Healthy calls caused unnecessary writes                                         | Fixed by writing only state transitions                                                        |
 | Action Retrier            | Component-owned run rows  | Component has indexed automatic cleanup after seven days                        | Keep; no duplicate app cleanup                                                                 |
+| Scheduler resume          | One lane + queued range   | Two permanent conflicts while enqueue traffic continued                         | Fixed by durable, idempotent reconciliation outside the caller transaction                     |
+| Memory RAG ID hydration   | Up to 64 indexed reads    | Stale component IDs failed strict canonical-ID argument validation               | Widen reader; resolve through the existing workspace-scoped legacy-ID index                     |
 
 Aggregate is a good fit for simple indexed counts, but these read models contain
 reversible multi-field contributions, sums, and averages. A sharded/striped
@@ -222,11 +290,13 @@ them during rollback.
 
 ## Verification
 
-- Full Convex suite: 105 files and 532 tests passed. New coverage proves three
+- Full Convex suite: 105 files and 533 tests passed. New coverage proves three
   failed pre-row attempts produce one unresolved diagnostic, a later enqueue on
   the same key creates exactly one job and resolves it, and a memory queue row
   without a work ID remains retryable with the same event-based key. Plan-batch
-  item replay also proves one atomic queued count and one tenant job.
+  item replay also proves one atomic queued count and one tenant job. Follow-up
+  coverage proves mixed old/new RAG IDs hydrate one canonical memory and that a
+  job enqueued between resume request and reconciliation is retained exactly.
 - TypeScript: `tsc --noEmit` passed.
 - Strict project lint: Oxlint passed with warnings denied.
 - ESLint on every changed TypeScript/TSX file passed.
@@ -239,8 +309,8 @@ them during rollback.
   pre-existing React compiler findings. This change does not modify them.
 
 Fresh production Insights were captured after the control rollback as recorded
-above. Post-fix production evidence remains pending because the reliability
-commits have not been deployed.
+above. Production evidence for the follow-up mixed-memory-ID and asynchronous
+resume fixes remains pending because those changes have not been deployed.
 
 ## Cleanup candidates — no deletion in this phase
 
