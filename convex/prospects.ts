@@ -81,6 +81,7 @@ import {
   getWorkflowEvidencePostId,
   sanitizeProspectDataForWorkflow,
   sanitizeProspectEvidencePostsForWorkflow,
+  sanitizeWorkflowValue,
 } from "./lib/workflowSafeProspect";
 import { PREVIEW_BATCH_LIMITS } from "./lib/previewBatchLimits";
 import {
@@ -757,7 +758,7 @@ export const getProspectWorkflowDataInternal = internalQuery({
       return null;
     }
 
-    return {
+    return sanitizeWorkflowValue({
       _id: prospect._id,
       _creationTime: prospect._creationTime,
       workspaceId: prospect.workspaceId,
@@ -785,7 +786,7 @@ export const getProspectWorkflowDataInternal = internalQuery({
         Array.isArray(prospect.evidencePosts) ? prospect.evidencePosts : [],
         prospect.platform
       ),
-    };
+    });
   },
 });
 

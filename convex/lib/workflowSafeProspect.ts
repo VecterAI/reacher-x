@@ -261,25 +261,27 @@ function sanitizeTwitterPostForWorkflow(
     return null;
   }
 
-  return compactObject({
-    platform: "twitter",
-    ref: summary.ref,
-    textPreview: summary.textPreview,
-    url: summary.url,
-    createdAt: summary.createdAt,
-    author: summary.author,
-    metrics: summary.metrics,
-    media: summary.media,
-    inReplyToPostId: summary.inReplyToPostId,
-    inReplyToHandle: summary.inReplyToHandle,
-    quotePostId: summary.quotePostId,
-    lang: summary.lang,
-    source: summary.source,
-    externalUrls: getExternalArticleUrls(
-      value as Record<string, unknown>,
-      "twitter"
-    ),
-  });
+  return sanitizeWorkflowValue(
+    compactObject({
+      platform: "twitter",
+      ref: summary.ref,
+      textPreview: summary.textPreview,
+      url: summary.url,
+      createdAt: summary.createdAt,
+      author: summary.author,
+      metrics: summary.metrics,
+      media: summary.media,
+      inReplyToPostId: summary.inReplyToPostId,
+      inReplyToHandle: summary.inReplyToHandle,
+      quotePostId: summary.quotePostId,
+      lang: summary.lang,
+      source: summary.source,
+      externalUrls: getExternalArticleUrls(
+        value as Record<string, unknown>,
+        "twitter"
+      ),
+    })
+  );
 }
 
 function sanitizeLinkedInPostForWorkflow(

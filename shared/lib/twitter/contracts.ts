@@ -1,3 +1,5 @@
+import { truncateText } from "../utils/text/truncateText";
+
 export type TwitterPostRef = {
   platform: "twitter";
   postId: string;
@@ -175,14 +177,6 @@ function asTimestampMs(value: unknown): number | undefined {
     return Number.isFinite(timestamp) ? timestamp : undefined;
   }
   return undefined;
-}
-
-function truncateText(value: string, maxLength = 280): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= maxLength) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 export function createEmptyTwitterViewerState(input: {

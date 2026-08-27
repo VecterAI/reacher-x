@@ -10,6 +10,7 @@ export { parseLinkedInText } from "./parseLinkedInText";
 export { parseTweetSource } from "./tweetSource";
 export type { ParsedTweetSource } from "./tweetSource";
 export { getVisibleTweetPlainText } from "./tweetText";
+export { truncateText } from "./truncateText";
 
 // Highlighting
 export {
