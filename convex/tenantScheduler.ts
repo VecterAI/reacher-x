@@ -5,7 +5,12 @@ import { v, type Infer } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery, query } from "./lib/functionBuilders";
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+  query,
+} from "./lib/functionBuilders";
 import { requireOwnedWorkspace } from "./lib/accessHelpers";
 import { tenantExecutionPool } from "./lib/tenantExecutionPool";
 import { workflow } from "./lib/workflow";
@@ -31,10 +36,12 @@ import {
 } from "./lib/tenantSchedulerHelpers";
 import {
   tenantJobClassValidator,
+  tenantJobKindValidator,
   tenantJobPayloadValidator,
   tenantSchedulerModeValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { enqueueTenantJobWithRetry } from "./lib/tenantSchedulerEnqueue";
 
 const WORKER_NAME = "tenant-fair-dispatcher-v1";
 const DISPATCH_BATCH_SIZE = 8;
@@ -54,6 +61,27 @@ const enqueueRouteValidator = v.union(
     jobId: v.id("tenantJobs"),
   })
 );
+type EnqueueRoute = Infer<typeof enqueueRouteValidator>;
+
+async function resolveEnqueueFailureForRoute(
+  ctx: Pick<MutationCtx, "db">,
+  idempotencyKey: string,
+  route: EnqueueRoute
+) {
+  const failure = await ctx.db
+    .query("tenantJobEnqueueFailures")
+    .withIndex("by_idempotency_key", (q) =>
+      q.eq("idempotencyKey", idempotencyKey)
+    )
+    .unique();
+  if (!failure || failure.status === "resolved") return;
+  await ctx.db.patch("tenantJobEnqueueFailures", failure._id, {
+    status: "resolved",
+    resolvedAt: getCurrentUTCTimestamp(),
+    resolvedJobId: route.jobId ?? undefined,
+    resolvedRoute: route.route,
+  });
+}
 
 const dispatchCandidateValidator = v.object({
   laneId: v.id("tenantJobLanes"),
@@ -311,7 +339,7 @@ export const enqueueTenantJobInternal = internalMutation({
     payload: tenantJobPayloadValidator,
   },
   returns: enqueueRouteValidator,
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<EnqueueRoute> => {
     // Project logging policy requires console.log for canonical success-path events.
     // eslint-disable-next-line no-console
     console.log("[TenantScheduler] Enqueue attempt", {
@@ -322,7 +350,9 @@ export const enqueueTenantJobInternal = internalMutation({
     const workspace = await validateTenantJobOwnership(ctx, args);
     const mode = await resolveSchedulerMode(ctx, args.workspaceId);
     if (mode === "legacy") {
-      return { route: "legacy" as const, jobId: null };
+      const route = { route: "legacy" as const, jobId: null };
+      await resolveEnqueueFailureForRoute(ctx, args.idempotencyKey, route);
+      return route;
     }
 
     const existing = await ctx.db
@@ -339,10 +369,12 @@ export const enqueueTenantJobInternal = internalMutation({
           { laneId: existing.laneId }
         );
       }
-      return {
+      const route = {
         route: mode === "shadow" ? ("shadow" as const) : ("enforced" as const),
         jobId: existing._id,
       };
+      await resolveEnqueueFailureForRoute(ctx, args.idempotencyKey, route);
+      return route;
     }
 
     const paused = workspace?.prospectingWorkflowStatus === "paused";
@@ -373,7 +405,9 @@ export const enqueueTenantJobInternal = internalMutation({
     });
 
     if (shadow) {
-      return { route: "shadow" as const, jobId };
+      const route = { route: "shadow" as const, jobId };
+      await resolveEnqueueFailureForRoute(ctx, args.idempotencyKey, route);
+      return route;
     }
 
     // Do not update the lane in the enqueue transaction. Concurrent producers
@@ -385,7 +419,82 @@ export const enqueueTenantJobInternal = internalMutation({
       internal.tenantScheduler.activateLaneInternal,
       { laneId }
     );
-    return { route: "enforced" as const, jobId };
+    const route = { route: "enforced" as const, jobId };
+    await resolveEnqueueFailureForRoute(ctx, args.idempotencyKey, route);
+    return route;
+  },
+});
+
+export const recordEnqueueFailureInternal = internalMutation({
+  args: {
+    workspaceId: v.optional(v.id("workspaces")),
+    userId: v.id("users"),
+    class: tenantJobClassValidator,
+    kind: tenantJobKindValidator,
+    priority: v.number(),
+    idempotencyKey: v.string(),
+    errorMessage: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const now = getCurrentUTCTimestamp();
+    const existing = await ctx.db
+      .query("tenantJobEnqueueFailures")
+      .withIndex("by_idempotency_key", (q) =>
+        q.eq("idempotencyKey", args.idempotencyKey)
+      )
+      .unique();
+    if (existing) {
+      await ctx.db.patch("tenantJobEnqueueFailures", existing._id, {
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        class: args.class,
+        kind: args.kind,
+        priority: args.priority,
+        status: "unresolved",
+        attemptCount: existing.attemptCount + 1,
+        errorMessage: args.errorMessage,
+        lastFailedAt: now,
+        resolvedAt: undefined,
+        resolvedJobId: undefined,
+        resolvedRoute: undefined,
+      });
+      return null;
+    }
+    await ctx.db.insert("tenantJobEnqueueFailures", {
+      idempotencyKey: args.idempotencyKey,
+      workspaceId: args.workspaceId,
+      userId: args.userId,
+      class: args.class,
+      kind: args.kind,
+      priority: args.priority,
+      status: "unresolved",
+      attemptCount: 1,
+      errorMessage: args.errorMessage,
+      firstFailedAt: now,
+      lastFailedAt: now,
+    });
+    return null;
+  },
+});
+
+/**
+ * Action boundary for callers that need recovery after Convex has exhausted
+ * the failed mutation's own optimistic-concurrency retries. The stable
+ * idempotency key makes every outer attempt converge on the same tenant job.
+ */
+export const enqueueTenantJobWithRetryInternal = internalAction({
+  args: {
+    workspaceId: v.optional(v.id("workspaces")),
+    userId: v.id("users"),
+    class: tenantJobClassValidator,
+    priority: v.number(),
+    idempotencyKey: v.string(),
+    payload: tenantJobPayloadValidator,
+  },
+  returns: enqueueRouteValidator,
+  handler: async (ctx, args): Promise<EnqueueRoute> => {
+    return await enqueueTenantJobWithRetry(ctx, args);
   },
 });
 
@@ -1113,6 +1222,7 @@ export const cleanupCompletedJobsInternal = internalMutation({
       "cancelled",
     ] as const;
     let deleted = 0;
+    let hasMore = false;
 
     for (const status of terminalStatuses) {
       const jobs = await ctx.db
@@ -1125,9 +1235,22 @@ export const cleanupCompletedJobsInternal = internalMutation({
         await ctx.db.delete(job._id);
       }
       deleted += jobs.length;
+      hasMore ||= jobs.length === 25;
     }
 
-    return { deleted, hasMore: deleted === terminalStatuses.length * 25 };
+    const resolvedEnqueueFailures = await ctx.db
+      .query("tenantJobEnqueueFailures")
+      .withIndex("by_status_and_last_failed_at", (q) =>
+        q.eq("status", "resolved").lt("lastFailedAt", cutoff)
+      )
+      .take(25);
+    for (const failure of resolvedEnqueueFailures) {
+      await ctx.db.delete(failure._id);
+    }
+    deleted += resolvedEnqueueFailures.length;
+    hasMore ||= resolvedEnqueueFailures.length === 25;
+
+    return { deleted, hasMore };
   },
 });
 
@@ -1166,6 +1289,11 @@ export const getControlStatusInternal = internalQuery({
       expiredLeaseCount: v.number(),
       expiredLeaseSampleTruncated: v.boolean(),
     }),
+    enqueueFailures: v.object({
+      unresolved: v.number(),
+      sampleTruncated: v.boolean(),
+      newestFailureAt: v.union(v.number(), v.null()),
+    }),
     drift: v.object({
       slotCountMismatch: v.boolean(),
       claimedSlotCountMismatch: v.boolean(),
@@ -1185,6 +1313,7 @@ export const getControlStatusInternal = internalQuery({
       oldestQueuedJob,
       earliestLeasedJob,
       expiredLeases,
+      unresolvedEnqueueFailures,
       enforcedOverrides,
     ] = await Promise.all([
       getGlobalControl(ctx),
@@ -1232,6 +1361,13 @@ export const getControlStatusInternal = internalQuery({
             )
             .take(101),
       ctx.db
+        .query("tenantJobEnqueueFailures")
+        .withIndex("by_status_and_last_failed_at", (q) =>
+          q.eq("status", "unresolved")
+        )
+        .order("desc")
+        .take(101),
+      ctx.db
         .query("tenantSchedulerWorkspaceOverrides")
         .withIndex("by_mode", (q) => q.eq("mode", "enforced"))
         .take(101),
@@ -1269,6 +1405,11 @@ export const getControlStatusInternal = internalQuery({
         earliestLeaseExpiresAt: earliestLeasedJob?.leaseExpiresAt ?? null,
         expiredLeaseCount: Math.min(expiredLeases.length, 100),
         expiredLeaseSampleTruncated: expiredLeases.length > 100,
+      },
+      enqueueFailures: {
+        unresolved: Math.min(unresolvedEnqueueFailures.length, 100),
+        sampleTruncated: unresolvedEnqueueFailures.length > 100,
+        newestFailureAt: unresolvedEnqueueFailures[0]?.lastFailedAt ?? null,
       },
       drift: {
         slotCountMismatch:

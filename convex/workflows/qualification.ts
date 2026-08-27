@@ -23,6 +23,7 @@ import type { ActionCtx } from "../_generated/server";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { parseQualificationModelFailure } from "../lib/qualificationFailureCore";
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
+import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
 const qualificationWorkflowLogger = logger.withScope("QualificationWorkflow");
 
@@ -753,22 +754,19 @@ export const startQualification = internalAction({
       return { workId: "" };
     }
 
-    const tenantRoute = await ctx.runMutation(
-      internal.tenantScheduler.enqueueTenantJobInternal,
-      {
+    const tenantRoute = await enqueueTenantJobWithRetry(ctx, {
+      workspaceId: args.workspaceId,
+      userId: prospect.userId,
+      class: "background",
+      priority: TENANT_JOB_PRIORITY.background,
+      idempotencyKey: `qualification:${String(args.prospectId)}:${prospect.updatedAt}`,
+      payload: {
+        kind: "qualification",
+        prospectId: args.prospectId,
         workspaceId: args.workspaceId,
-        userId: prospect.userId,
-        class: "background",
-        priority: TENANT_JOB_PRIORITY.background,
-        idempotencyKey: `qualification:${String(args.prospectId)}:${prospect.updatedAt}`,
-        payload: {
-          kind: "qualification",
-          prospectId: args.prospectId,
-          workspaceId: args.workspaceId,
-          preview: false,
-        },
-      }
-    );
+        preview: false,
+      },
+    });
     if (tenantRoute.route === "enforced") {
       return { workId: String(tenantRoute.jobId) };
     }
@@ -814,22 +812,19 @@ export const startPreviewQualification = internalAction({
       return { workId: "" };
     }
 
-    const tenantRoute = await ctx.runMutation(
-      internal.tenantScheduler.enqueueTenantJobInternal,
-      {
+    const tenantRoute = await enqueueTenantJobWithRetry(ctx, {
+      workspaceId: args.workspaceId,
+      userId: prospect.userId,
+      class: "preview",
+      priority: TENANT_JOB_PRIORITY.preview,
+      idempotencyKey: `preview-qualification:${String(args.prospectId)}:${prospect.setupRevision ?? prospect.updatedAt}`,
+      payload: {
+        kind: "qualification",
+        prospectId: args.prospectId,
         workspaceId: args.workspaceId,
-        userId: prospect.userId,
-        class: "preview",
-        priority: TENANT_JOB_PRIORITY.preview,
-        idempotencyKey: `preview-qualification:${String(args.prospectId)}:${prospect.setupRevision ?? prospect.updatedAt}`,
-        payload: {
-          kind: "qualification",
-          prospectId: args.prospectId,
-          workspaceId: args.workspaceId,
-          preview: true,
-        },
-      }
-    );
+        preview: true,
+      },
+    });
     if (tenantRoute.route === "enforced") {
       return { workId: String(tenantRoute.jobId) };
     }

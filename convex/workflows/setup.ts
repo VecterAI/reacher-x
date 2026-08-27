@@ -59,8 +59,8 @@ export const setupSessionWorkflow = workflowManager.define({
         }
 
         case "generating_profiles": {
-          const route = await step.runMutation(
-            internal.tenantScheduler.enqueueTenantJobInternal,
+          const route = await step.runAction(
+            internal.tenantScheduler.enqueueTenantJobWithRetryInternal,
             {
               userId: session.userId,
               class: "interactive",
@@ -70,7 +70,8 @@ export const setupSessionWorkflow = workflowManager.define({
                 kind: "setup_generation",
                 sessionId,
               },
-            }
+            },
+            { retry: true }
           );
           if (route.route === "enforced") {
             await step.awaitEvent({ name: stateChangedEventName });

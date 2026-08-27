@@ -1,13 +1,23 @@
 import { vOnCompleteArgs, type WorkId } from "@convex-dev/workpool";
 import { vResultValidator } from "@convex-dev/workpool";
 import { vWorkflowId } from "@convex-dev/workflow";
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery, query } from "./lib/functionBuilders";
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+  query,
+} from "./lib/functionBuilders";
 import { getOutreachPlanPool } from "./lib/outreachPlanPool";
-import { TENANT_JOB_PRIORITY } from "./lib/tenantSchedulerCore";
+import {
+  TENANT_ENQUEUE_RECOVERY_MAX_ATTEMPTS,
+  TENANT_JOB_PRIORITY,
+  getTenantEnqueueRetryDelayMs,
+} from "./lib/tenantSchedulerCore";
+import { recordTenantJobEnqueueFailure } from "./lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "./lib/tenantSchedulerHelpers";
 import {
   dismissNotificationsByKey,
@@ -33,6 +43,9 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { inferAttachmentMediaKind } from "../shared/lib/utils/media/inferAttachmentMediaKind";
 import {
   planBatchOperationValidator,
+  planBatchDispatchItemResultValidator,
+  planBatchDispatchResultValidator,
+  planBatchDispatchSelectionValidator,
   planBatchRunStatusValidator,
   planBatchScopeKindValidator,
   planBatchWorkCompletionContextValidator,
@@ -42,7 +55,10 @@ import {
   collectAgentThreadTargetCandidates,
   consumeAgentThreadTargetSelection,
 } from "./lib/agentThreadTargetSelectionHelpers";
-import { getUserSafeErrorMessage } from "./lib/errorHelpers";
+import {
+  getUserSafeErrorMessage,
+  stringifyUnknownError,
+} from "./lib/errorHelpers";
 import {
   getPlanBatchNotificationCopy,
   type PlanBatchCopyState,
@@ -51,6 +67,13 @@ import {
 const SELECTION_PAGE_SIZE = 50;
 const DISPATCH_PAGE_SIZE = 25;
 const PLAN_REFERENCE_CATALOG_LIMIT = 12;
+type PlanBatchDispatchResult = Infer<typeof planBatchDispatchResultValidator>;
+type PlanBatchDispatchSelection = Infer<
+  typeof planBatchDispatchSelectionValidator
+>;
+type PlanBatchDispatchItemResult = Infer<
+  typeof planBatchDispatchItemResultValidator
+>;
 
 function isExplicitPlanBatchScope(
   scopeKind: Doc<"planBatchRuns">["scopeKind"]
@@ -1200,13 +1223,7 @@ export const cancelQueuedPlanBatchItemsPage = internalMutation({
 
 export const dispatchPlanBatchPage = internalMutation({
   args: { runId: v.id("planBatchRuns") },
-  returns: v.union(
-    v.object({
-      done: v.boolean(),
-      status: planBatchRunStatusValidator,
-    }),
-    v.null()
-  ),
+  returns: planBatchDispatchResultValidator,
   handler: async (ctx, { runId }) => {
     const run = await ctx.db.get("planBatchRuns", runId);
     if (!run || (run.status !== "queued" && run.status !== "running")) {
@@ -1271,6 +1288,170 @@ export const dispatchPlanBatchPage = internalMutation({
     return {
       done: items.length < DISPATCH_PAGE_SIZE,
       status: "running" as const,
+    };
+  },
+});
+
+export const getPlanBatchDispatchSelectionInternal = internalQuery({
+  args: { runId: v.id("planBatchRuns") },
+  returns: planBatchDispatchSelectionValidator,
+  handler: async (ctx, { runId }) => {
+    const run = await ctx.db.get("planBatchRuns", runId);
+    if (!run || (run.status !== "queued" && run.status !== "running")) {
+      return null;
+    }
+    const items = await ctx.db
+      .query("planBatchItems")
+      .withIndex("by_run_and_status", (q) =>
+        q.eq("runId", runId).eq("status", "pending")
+      )
+      .take(DISPATCH_PAGE_SIZE);
+    return {
+      workspaceId: run.workspaceId,
+      userId: run.userId,
+      itemIds: items.map((item) => item._id),
+      status: run.status,
+    };
+  },
+});
+
+export const dispatchPlanBatchItemInternal = internalMutation({
+  args: {
+    runId: v.id("planBatchRuns"),
+    itemId: v.id("planBatchItems"),
+  },
+  returns: planBatchDispatchItemResultValidator,
+  handler: async (ctx, { runId, itemId }) => {
+    const [run, item] = await Promise.all([
+      ctx.db.get("planBatchRuns", runId),
+      ctx.db.get("planBatchItems", itemId),
+    ]);
+    if (!run || (run.status !== "queued" && run.status !== "running")) {
+      return null;
+    }
+    if (!item || item.runId !== runId || item.status !== "pending") {
+      return { dispatched: false, status: run.status };
+    }
+
+    const tenantRoute = await ctx.runMutation(
+      internal.tenantScheduler.enqueueTenantJobInternal,
+      {
+        workspaceId: run.workspaceId,
+        userId: run.userId,
+        class: "background",
+        priority: TENANT_JOB_PRIORITY.background,
+        idempotencyKey: `plan-batch-item:${String(item._id)}`,
+        payload: {
+          kind: "plan_batch_item",
+          workspaceId: run.workspaceId,
+          runId,
+          itemId: item._id,
+        },
+      }
+    );
+    const workId =
+      tenantRoute.route === "enforced"
+        ? String(tenantRoute.jobId)
+        : String(
+            await getOutreachPlanPool().enqueueAction(
+              ctx,
+              internal.planBatchActions.processPlanBatchItem,
+              { itemId: item._id },
+              {
+                onComplete: internal.planBatches.handlePlanBatchItemComplete,
+                context: { runId, itemId: item._id },
+                retry: true,
+              }
+            )
+          );
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch("planBatchItems", item._id, {
+      status: "queued",
+      workId,
+      updatedAt: now,
+    });
+    await ctx.db.patch("planBatchRuns", runId, {
+      status: "running",
+      queuedCount: run.queuedCount + 1,
+      startedAt: run.startedAt ?? now,
+      updatedAt: now,
+    });
+    return { dispatched: true, status: "running" as const };
+  },
+});
+
+/**
+ * Each item mutation atomically enqueues and attaches its work ID. Retrying the
+ * same item cannot duplicate a committed dispatch, including legacy/shadow
+ * Workpool work, and every failed item has an exact diagnostic key.
+ */
+export const dispatchPlanBatchPageWithRetryInternal = internalAction({
+  args: { runId: v.id("planBatchRuns") },
+  returns: planBatchDispatchResultValidator,
+  handler: async (ctx, args): Promise<PlanBatchDispatchResult> => {
+    const selection: PlanBatchDispatchSelection = await ctx.runQuery(
+      internal.planBatches.getPlanBatchDispatchSelectionInternal,
+      args
+    );
+    if (!selection) return null;
+    if (selection.itemIds.length === 0) {
+      return { done: true, status: selection.status };
+    }
+
+    let pageStatus = selection.status;
+    for (const itemId of selection.itemIds) {
+      let result: PlanBatchDispatchItemResult = null;
+      let lastError: unknown;
+      for (
+        let attempt = 1;
+        attempt <= TENANT_ENQUEUE_RECOVERY_MAX_ATTEMPTS;
+        attempt++
+      ) {
+        try {
+          result = await ctx.runMutation(
+            internal.planBatches.dispatchPlanBatchItemInternal,
+            { runId: args.runId, itemId }
+          );
+          lastError = undefined;
+          break;
+        } catch (error) {
+          lastError = error;
+          await recordTenantJobEnqueueFailure(
+            ctx,
+            {
+              workspaceId: selection.workspaceId,
+              userId: selection.userId,
+              class: "background",
+              kind: "plan_batch_item",
+              priority: TENANT_JOB_PRIORITY.background,
+              idempotencyKey: `plan-batch-item:${String(itemId)}`,
+            },
+            error,
+            attempt
+          );
+          if (attempt < TENANT_ENQUEUE_RECOVERY_MAX_ATTEMPTS) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, getTenantEnqueueRetryDelayMs(attempt))
+            );
+          }
+        }
+      }
+      if (!result) {
+        if (lastError) {
+          throw lastError instanceof Error
+            ? lastError
+            : new Error(stringifyUnknownError(lastError));
+        }
+        return null;
+      }
+      pageStatus = result.status;
+      if (!["queued", "running"].includes(result.status)) {
+        return { done: true, status: result.status };
+      }
+    }
+    return {
+      done: selection.itemIds.length < DISPATCH_PAGE_SIZE,
+      status: pageStatus,
     };
   },
 });

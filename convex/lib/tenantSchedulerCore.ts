@@ -7,6 +7,8 @@ export const DEFAULT_TENANT_BURST_SLOTS = 30;
 export const DEFAULT_TENANT_JOB_LEASE_MS = 2 * 60 * 60 * 1000;
 export const NESTED_WORKFLOW_LEASE_MS = 6 * 60 * 60 * 1000;
 export const TENANT_JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const TENANT_ENQUEUE_RECOVERY_MAX_ATTEMPTS = 3;
+const TENANT_ENQUEUE_RECOVERY_BASE_DELAY_MS = 250;
 
 export const TENANT_JOB_PRIORITY = {
   interactive: 0,
@@ -21,6 +23,18 @@ export function buildTenantKey(args: {
   return args.workspaceId
     ? `workspace:${String(args.workspaceId)}`
     : `user:${String(args.userId)}`;
+}
+
+export function getTenantEnqueueRetryDelayMs(
+  failedAttempt: number,
+  jitterFraction = Math.random()
+) {
+  const normalizedAttempt = Math.max(1, Math.floor(failedAttempt));
+  const normalizedJitter = Math.max(0, Math.min(1, jitterFraction));
+  return (
+    TENANT_ENQUEUE_RECOVERY_BASE_DELAY_MS * 2 ** (normalizedAttempt - 1) +
+    Math.floor(normalizedJitter * TENANT_ENQUEUE_RECOVERY_BASE_DELAY_MS)
+  );
 }
 
 export function clampTenantSchedulerSlotCount(slotCount: number) {

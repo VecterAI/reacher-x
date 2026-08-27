@@ -11,8 +11,8 @@ before implementation. It stopped locally with `No CONVEX_DEPLOYMENT set`;
 the isolated worktree has no `.env.local` or deployment selector. The check did
 not contact or modify production.
 
-The source task supplied a fresh production heartbeat captured at 2026-08-27
-16:39 UTC (21:39 Asia/Karachi):
+The source task supplied fresh production heartbeats captured at 2026-08-27
+16:39 and 16:57 UTC:
 
 - Scheduler mode remained globally enforced with Workflow 64 + tenant
   execution 36.
@@ -21,11 +21,20 @@ The source task supplied a fresh production heartbeat captured at 2026-08-27
 - Admission latency had degraded to p50 647 ms, p95 211,081 ms (about 3.5
   minutes), and max 239,581 ms (about 4 minutes).
 - Permanent OCC failures in `tenantScheduler:enqueueTenantJobInternal` against
-  `tenantJobLanes` increased from 9 to 10. The newest occurred at 2026-08-27
-  21:07:36 Asia/Karachi.
+  one `tenantJobLanes` document first increased from 9 to 10, then jumped to
+  290 by 21:27:44 Asia/Karachi. The persisted scheduler state was still drained
+  at 644/644 succeeded and 36/36 free, proving these failures happened before a
+  `tenantJobs` row and were absent from job telemetry.
 - The other incident baselines remain 66 `prospects:createProspectsBatch`
   failures near 16 MB read per transaction and a setup workflow that retained a
   workflow ID while making no progress.
+
+**Operational recommendation:** pause new tenant-scheduler admissions until the
+hot-lane fix is deployed and its immutable lane-binding backfill is complete.
+If admission cannot be paused cleanly, use the existing legacy route as the
+temporary rollback path. The 29x permanent-conflict increase plus four-minute
+tail latency is an active loss-of-work risk even though the persisted queue is
+drained. This worktree does not make that production change.
 
 ## Changes and invariants
 
@@ -44,6 +53,16 @@ replace the lane with a deployment-wide counter or another global write point.
 The 100-job same-workspace concurrency test asserts one immutable binding, 100
 durable jobs, and exact reconciled lane totals; activation can no longer make a
 steady-state producer read `tenantJobLanes`.
+
+Every action caller now uses a shared, bounded three-attempt recovery helper;
+setup and plan-batch workflows put the same idempotent operation behind durable
+retrying action steps. A separate `tenantJobEnqueueFailures` ledger is written
+outside the failed enqueue transaction, counts each outer attempt, and changes
+to `resolved` when the same idempotency key succeeds. Memory evaluation now
+uses the pending event ID rather than a timestamp for its key and treats a
+queued row without a work ID as a resumable intent instead of a completed
+enqueue. Resolved diagnostics are retained for seven days; unresolved records
+remain visible for operator action.
 
 ### Prospect persistence read budget
 
@@ -87,10 +106,11 @@ queue terminology. Its live region is atomic.
 Canonical enqueue-attempt and prospect-persistence-attempt logs include the
 job kind/idempotency key or batch size before risky reads and writes. Convex
 function failures can therefore be correlated even when no `tenantJobs` row
-commits. A five-minute internal reconciliation reasserts the pool split from
-the authoritative scheduler mode; the installed Workpool component exposes a
-config update but no config-read API, so status reports the expected split and
-the repair pass bounds external drift.
+commits, and the control-status query now reports bounded unresolved enqueue
+failures plus their newest timestamp. A five-minute internal reconciliation
+reasserts the pool split from the authoritative scheduler mode; the installed
+Workpool component exposes a config update but no config-read API, so status
+reports the expected split and the repair pass bounds external drift.
 
 ## Contention audit
 
@@ -130,14 +150,17 @@ OCC failures or material retry latency to one of the three workspace rows.
 
 No full prospect scan or backup is required for this phase.
 
-1. Deploy the additive schema first: optional setup recovery fields, the setup
-   status/time index, the tenant-job status/queue-time index, and immutable lane
-   bindings.
+1. Pause new tenant admissions (preferred after the 290-conflict spike), then
+   deploy the additive schema: optional setup recovery fields, the setup
+   status/time index, the tenant-job status/queue-time index, immutable lane
+   bindings, and the enqueue-failure ledger.
 2. Run `tenantScheduler:backfillLaneBindingsInternal` in bounded cursor pages
    before peak traffic. This scans scheduler lanes only, not 60,000+ prospects;
    enqueue also has a lazy compatibility bridge for a missed lane.
-3. Deploy function and UI code. Existing setup rows default to recovery revision
-   and attempts of zero; they are updated only when touched or found stale.
+3. Deploy function and UI code, then resume admissions only after the binding
+   backfill and scheduler diagnostics are clean. Existing setup rows default to
+   recovery revision and attempts of zero; they are updated only when touched or
+   found stale.
 4. Verify `tenantScheduler:getControlStatusInternal` with an operator-supplied
    current UTC timestamp. Confirm zero expired leases and no slot mismatches.
 5. Monitor enqueue conflict count, `createProspectsBatch` bytes read, setup
@@ -151,8 +174,8 @@ Use the 2026-08-27 heartbeat above as the before measurement. Under a
 representative same-workspace burst and the A=100, B/C=1 fairness shape:
 
 - no new permanent `enqueueTenantJobInternal` / `tenantJobLanes` OCC failure;
-- all accepted idempotency keys have a durable job or an explicit failed
-  function execution log;
+- all accepted idempotency keys have a durable job; all exhausted attempts have
+  an unresolved failure-ledger row even when no job transaction committed;
 - 0 expired leases and no claimed-slot/running-job mismatch after drain;
 - B and C begin while A remains backlogged, and 10/50/100 active-lane scans do
   not strand a lane;
@@ -166,7 +189,11 @@ them during rollback.
 
 ## Verification
 
-- Full Convex suite: 105 files and 528 tests passed.
+- Full Convex suite: 105 files and 532 tests passed. New coverage proves three
+  failed pre-row attempts produce one unresolved diagnostic, a later enqueue on
+  the same key creates exactly one job and resolves it, and a memory queue row
+  without a work ID remains retryable with the same event-based key. Plan-batch
+  item replay also proves one atomic queued count and one tenant job.
 - TypeScript: `tsc --noEmit` passed.
 - Strict project lint: Oxlint passed with warnings denied.
 - ESLint on every changed TypeScript/TSX file passed.
@@ -196,6 +223,10 @@ initialized as a workaround.
 - Scheduler `legacy`, `shadow`, and per-workspace override paths remain rollout
   safety mechanisms. Require an approved end-of-rollback-window decision before
   narrowing validators, tables, indexes, or documentation.
+- `planBatches:dispatchPlanBatchPage` remains for workflows already persisted
+  with the old mutation step. New workflows use per-item atomic retry. Prove no
+  old workflow history can replay that step before removing the compatibility
+  function in a later commit.
 - Workflow/component records need a separate retention audit. Action Retrier is
   already covered by its component cleanup; do not add a competing cleanup job.
 - Workspace deletion currently does not include scheduler lanes or their new

@@ -5,6 +5,7 @@ import {
   clampTenantBaseSlots,
   clampTenantBurstSlots,
   clampTenantSchedulerSlotCount,
+  getTenantEnqueueRetryDelayMs,
   getTenantDispatchCap,
 } from "./tenantSchedulerCore";
 
@@ -64,5 +65,11 @@ describe("tenant scheduler capacity policy", () => {
         slotCount: 12,
       })
     ).toBe(4);
+  });
+
+  it("backs off bounded enqueue retries with deterministic jitter", () => {
+    expect(getTenantEnqueueRetryDelayMs(1, 0)).toBe(250);
+    expect(getTenantEnqueueRetryDelayMs(2, 0.5)).toBe(625);
+    expect(getTenantEnqueueRetryDelayMs(3, 1)).toBe(1_250);
   });
 });

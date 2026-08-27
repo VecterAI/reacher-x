@@ -165,6 +165,7 @@ import {
   agentMessageTaggedEntityValidator,
   agentThreadTargetSelectionTargetValidator,
   tenantJobClassValidator,
+  tenantJobEnqueueFailureStatusValidator,
   tenantJobKindValidator,
   tenantJobLaneStateValidator,
   tenantJobPayloadValidator,
@@ -1075,6 +1076,29 @@ export default defineSchema({
     .index("by_status_and_queued_at", ["status", "queuedAt"])
     .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
     .index("by_status_and_completed_at", ["status", "completedAt"]),
+
+  /**
+   * Failures caught outside the enqueue mutation. These remain observable even
+   * when the failed transaction never committed a tenantJobs document.
+   */
+  tenantJobEnqueueFailures: defineTable({
+    idempotencyKey: v.string(),
+    workspaceId: v.optional(v.id("workspaces")),
+    userId: v.id("users"),
+    class: tenantJobClassValidator,
+    kind: tenantJobKindValidator,
+    priority: v.number(),
+    status: tenantJobEnqueueFailureStatusValidator,
+    attemptCount: v.number(),
+    errorMessage: v.string(),
+    firstFailedAt: v.number(),
+    lastFailedAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+    resolvedJobId: v.optional(v.id("tenantJobs")),
+    resolvedRoute: v.optional(tenantSchedulerModeValidator),
+  })
+    .index("by_idempotency_key", ["idempotencyKey"])
+    .index("by_status_and_last_failed_at", ["status", "lastFailedAt"]),
 
   /** Individual slot documents avoid a hot global active-count document. */
   tenantSchedulerSlots: defineTable({

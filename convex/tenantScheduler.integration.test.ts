@@ -217,6 +217,132 @@ describe("tenant scheduler integration", () => {
     ).rejects.toThrow("workspace scope mismatch");
   });
 
+  test("records pre-row enqueue failures and resolves them after an idempotent retry", async () => {
+    vi.useRealTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const owner = await seedWorkspace(t, "recovery-owner");
+    const other = await seedWorkspace(t, "recovery-other");
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+
+    const idempotencyKey = "enqueue-recovery-memory";
+    await expect(
+      t.action(internal.tenantScheduler.enqueueTenantJobWithRetryInternal, {
+        ...owner,
+        class: "background",
+        priority: 30,
+        idempotencyKey,
+        payload: {
+          kind: "memory_evaluation",
+          workspaceId: other.workspaceId,
+        },
+      })
+    ).rejects.toThrow("workspace scope mismatch");
+
+    const failedState = await t.run(async (ctx) => ({
+      jobs: await ctx.db.query("tenantJobs").collect(),
+      failures: await ctx.db.query("tenantJobEnqueueFailures").collect(),
+    }));
+    expect(failedState.jobs).toHaveLength(0);
+    expect(failedState.failures).toEqual([
+      expect.objectContaining({
+        idempotencyKey,
+        status: "unresolved",
+        attemptCount: 3,
+        kind: "memory_evaluation",
+      }),
+    ]);
+
+    const diagnosticStatus = await t.query(
+      internal.tenantScheduler.getControlStatusInternal,
+      {}
+    );
+    expect(diagnosticStatus.enqueueFailures).toMatchObject({
+      unresolved: 1,
+      sampleTruncated: false,
+    });
+    expect(diagnosticStatus.enqueueFailures.newestFailureAt).not.toBeNull();
+
+    const recovered = await t.action(
+      internal.tenantScheduler.enqueueTenantJobWithRetryInternal,
+      {
+        ...owner,
+        class: "background",
+        priority: 30,
+        idempotencyKey,
+        payload: {
+          kind: "memory_evaluation",
+          workspaceId: owner.workspaceId,
+        },
+      }
+    );
+    expect(recovered.route).toBe("enforced");
+
+    const recoveredState = await t.run(async (ctx) => ({
+      jobs: await ctx.db.query("tenantJobs").collect(),
+      failure: await ctx.db
+        .query("tenantJobEnqueueFailures")
+        .withIndex("by_idempotency_key", (q) =>
+          q.eq("idempotencyKey", idempotencyKey)
+        )
+        .unique(),
+    }));
+    expect(recoveredState.jobs).toHaveLength(1);
+    expect(recoveredState.failure).toMatchObject({
+      status: "resolved",
+      resolvedJobId: recovered.jobId,
+      resolvedRoute: "enforced",
+    });
+  });
+
+  test("reuses a queued memory intent when enqueue failed before work ID attachment", async () => {
+    const t = convexTest(schema, modules);
+    const workspace = await seedWorkspace(t, "memory-intent-recovery");
+    const eventId = await t.run(async (ctx) =>
+      ctx.db.insert("memoryWorkflowEvents", {
+        workspaceId: workspace.workspaceId,
+        eventType: "qualification_completed",
+        status: "pending",
+        sourceType: "workflow_event",
+        sourceId: "memory-intent-recovery",
+        eventKey: "memory-intent-recovery",
+        occurredAt: 1,
+      })
+    );
+
+    const first = await t.mutation(
+      internal.workflows.memory.prepareMemoryEvaluationQueueEnqueueInternal,
+      { workspaceId: workspace.workspaceId }
+    );
+    const retry = await t.mutation(
+      internal.workflows.memory.prepareMemoryEvaluationQueueEnqueueInternal,
+      { workspaceId: workspace.workspaceId }
+    );
+    expect(first).toEqual({
+      shouldEnqueue: true,
+      reason: "queued",
+      eventId,
+    });
+    expect(retry).toEqual(first);
+
+    await t.mutation(
+      internal.workflows.memory.setMemoryEvaluationQueueWorkIdInternal,
+      { workspaceId: workspace.workspaceId, workId: "attached-work" }
+    );
+    const attached = await t.mutation(
+      internal.workflows.memory.prepareMemoryEvaluationQueueEnqueueInternal,
+      { workspaceId: workspace.workspaceId }
+    );
+    expect(attached).toEqual({
+      shouldEnqueue: false,
+      reason: "queued",
+      eventId,
+    });
+  });
+
   test("reconciles a same-workspace burst without enqueue writes to the lane", async () => {
     vi.useFakeTimers();
     const t = convexTest(schema, modules);

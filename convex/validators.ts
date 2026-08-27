@@ -1628,6 +1628,11 @@ export const tenantSchedulerSlotStatusValidator = v.union(
   v.literal("claimed")
 );
 
+export const tenantJobEnqueueFailureStatusValidator = v.union(
+  v.literal("unresolved"),
+  v.literal("resolved")
+);
+
 export const tenantJobPayloadValidator = v.union(
   v.object({
     kind: v.literal("setup_generation"),
@@ -2516,6 +2521,32 @@ export const planBatchRunStatusValidator = v.union(
   v.literal("partial"),
   v.literal("failed"),
   v.literal("cancelled")
+);
+
+export const planBatchDispatchResultValidator = v.union(
+  v.object({
+    done: v.boolean(),
+    status: planBatchRunStatusValidator,
+  }),
+  v.null()
+);
+
+export const planBatchDispatchSelectionValidator = v.union(
+  v.object({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    itemIds: v.array(v.id("planBatchItems")),
+    status: planBatchRunStatusValidator,
+  }),
+  v.null()
+);
+
+export const planBatchDispatchItemResultValidator = v.union(
+  v.object({
+    dispatched: v.boolean(),
+    status: planBatchRunStatusValidator,
+  }),
+  v.null()
 );
 
 export const planBatchItemStatusValidator = v.union(

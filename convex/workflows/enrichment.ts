@@ -50,6 +50,7 @@ import {
 import { AUTO_PLAN_GENERATION_THRESHOLD } from "../lib/outreachCore";
 import type { ModelRouting } from "../lib/ai";
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
+import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
 
 // ============================================================================
@@ -1176,24 +1177,21 @@ export const startEnrichment = internalAction({
     }
 
     try {
-      const tenantRoute = await ctx.runMutation(
-        internal.tenantScheduler.enqueueTenantJobInternal,
-        {
+      const tenantRoute = await enqueueTenantJobWithRetry(ctx, {
+        workspaceId: args.workspaceId,
+        userId: prospect.userId,
+        class: "background",
+        priority: TENANT_JOB_PRIORITY.background,
+        idempotencyKey: `enrichment:${String(args.prospectId)}:${claimToken}`,
+        payload: {
+          kind: "enrichment",
+          prospectId: args.prospectId,
           workspaceId: args.workspaceId,
-          userId: prospect.userId,
-          class: "background",
-          priority: TENANT_JOB_PRIORITY.background,
-          idempotencyKey: `enrichment:${String(args.prospectId)}:${claimToken}`,
-          payload: {
-            kind: "enrichment",
-            prospectId: args.prospectId,
-            workspaceId: args.workspaceId,
-            claimToken,
-            force: args.force,
-            preview: false,
-          },
-        }
-      );
+          claimToken,
+          force: args.force,
+          preview: false,
+        },
+      });
       if (tenantRoute.route === "enforced") {
         return { workId: String(tenantRoute.jobId) };
       }
@@ -1365,23 +1363,20 @@ export const startPreviewEnrichment = internalAction({
     }
 
     try {
-      const tenantRoute = await ctx.runMutation(
-        internal.tenantScheduler.enqueueTenantJobInternal,
-        {
+      const tenantRoute = await enqueueTenantJobWithRetry(ctx, {
+        workspaceId: args.workspaceId,
+        userId: prospect.userId,
+        class: "preview",
+        priority: TENANT_JOB_PRIORITY.preview,
+        idempotencyKey: `preview-enrichment:${String(args.prospectId)}:${claimToken}`,
+        payload: {
+          kind: "enrichment",
+          prospectId: args.prospectId,
           workspaceId: args.workspaceId,
-          userId: prospect.userId,
-          class: "preview",
-          priority: TENANT_JOB_PRIORITY.preview,
-          idempotencyKey: `preview-enrichment:${String(args.prospectId)}:${claimToken}`,
-          payload: {
-            kind: "enrichment",
-            prospectId: args.prospectId,
-            workspaceId: args.workspaceId,
-            claimToken,
-            preview: true,
-          },
-        }
-      );
+          claimToken,
+          preview: true,
+        },
+      });
       if (tenantRoute.route === "enforced") {
         return { workId: String(tenantRoute.jobId) };
       }
