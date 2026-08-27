@@ -72,8 +72,11 @@ export const sweepWorkspaceRowsInternal = internalMutation({
       feedAnchors,
       prospectViews,
       workspaceStats,
+      workspaceStatsStripes,
       analytics,
+      analyticsStripes,
       agentOps,
+      agentOpsStripes,
       agentSettings,
       queryPerformance,
       queryCandidates,
@@ -186,12 +189,24 @@ export const sweepWorkspaceRowsInternal = internalMutation({
         .withIndex("by_workspace", (q) => q.eq("workspaceId", w))
         .take(n),
       ctx.db
+        .query("workspaceStatsStripes")
+        .withIndex("by_workspace_and_stripe", (q) => q.eq("workspaceId", w))
+        .take(n),
+      ctx.db
         .query("workspaceAnalyticsDaily")
         .withIndex("by_workspace_day", (q) => q.eq("workspaceId", w))
         .take(n),
       ctx.db
+        .query("workspaceAnalyticsDailyStripes")
+        .withIndex("by_workspace_day_and_stripe", (q) => q.eq("workspaceId", w))
+        .take(n),
+      ctx.db
         .query("workspaceAgentOpsDaily")
         .withIndex("by_workspace_day", (q) => q.eq("workspaceId", w))
+        .take(n),
+      ctx.db
+        .query("workspaceAgentOpsDailyStripes")
+        .withIndex("by_workspace_day_and_stripe", (q) => q.eq("workspaceId", w))
         .take(n),
       ctx.db
         .query("workspaceAgentSettings")
@@ -289,8 +304,11 @@ export const sweepWorkspaceRowsInternal = internalMutation({
     deleted += await deleteDocuments(ctx, feedAnchors);
     deleted += await deleteDocuments(ctx, prospectViews);
     deleted += await deleteDocuments(ctx, workspaceStats);
+    deleted += await deleteDocuments(ctx, workspaceStatsStripes);
     deleted += await deleteDocuments(ctx, analytics);
+    deleted += await deleteDocuments(ctx, analyticsStripes);
     deleted += await deleteDocuments(ctx, agentOps);
+    deleted += await deleteDocuments(ctx, agentOpsStripes);
     deleted += await deleteDocuments(ctx, agentSettings);
     deleted += await deleteDocuments(ctx, queryPerformance);
     deleted += await deleteDocuments(ctx, queryCandidates);

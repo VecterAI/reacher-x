@@ -342,6 +342,20 @@ function normalizeHourlyAnalyticsCounts(counts?: number[]): number[] {
   return normalized;
 }
 
+function normalizeSignedHourlyAnalyticsCounts(counts?: number[]): number[] {
+  const normalized = createEmptyHourlyAnalyticsCounts();
+  if (!Array.isArray(counts)) {
+    return normalized;
+  }
+
+  for (let index = 0; index < ANALYTICS_HOURS_PER_DAY; index += 1) {
+    const value = counts[index];
+    normalized[index] = Number.isFinite(value) ? (value ?? 0) : 0;
+  }
+
+  return normalized;
+}
+
 function addHourlyCount(
   counts: number[] | undefined,
   hour: number,
@@ -781,6 +795,81 @@ export function mergeWorkspaceStatsContributions(
   return next;
 }
 
+export function mergeWorkspaceStatsStripeContributions(
+  existing: WorkspaceStatsRecord | null,
+  args: {
+    workspaceId: Id<"workspaces">;
+    userId: Id<"users">;
+    remove?: WorkspaceStatsContribution[];
+    add?: WorkspaceStatsContribution[];
+  }
+): WorkspaceStatsRecord {
+  const next = existing
+    ? { ...existing }
+    : createEmptyWorkspaceStatsRecord({
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+      });
+
+  const apply = (
+    contribution: WorkspaceStatsContribution,
+    direction: 1 | -1
+  ) => {
+    for (const field of WORKSPACE_STATS_NUMERIC_FIELDS) {
+      next[field] = (next[field] ?? 0) + contribution[field] * direction;
+    }
+  };
+
+  for (const contribution of args.remove ?? []) apply(contribution, -1);
+  for (const contribution of args.add ?? []) apply(contribution, 1);
+
+  next.workspaceId = args.workspaceId;
+  next.userId = args.userId;
+  next.avgQualificationScore =
+    next.qualificationScoreCount !== 0
+      ? Math.round(next.qualificationScoreSum / next.qualificationScoreCount)
+      : 0;
+  next.updatedAt = getCurrentUTCTimestamp();
+  return next;
+}
+
+export function combineWorkspaceStatsRecords(args: {
+  workspaceId: Id<"workspaces">;
+  userId: Id<"users">;
+  baseline: WorkspaceStatsRecord | null;
+  stripes: WorkspaceStatsRecord[];
+}): WorkspaceStatsRecord {
+  const next = createEmptyWorkspaceStatsRecord({
+    workspaceId: args.workspaceId,
+    userId: args.userId,
+  });
+
+  for (const record of [args.baseline, ...args.stripes]) {
+    if (!record) continue;
+    for (const field of WORKSPACE_STATS_NUMERIC_FIELDS) {
+      next[field] += record[field] ?? 0;
+    }
+  }
+
+  for (const field of WORKSPACE_STATS_NUMERIC_FIELDS) {
+    next[field] = clampCount(next[field]);
+  }
+  next.avgQualificationScore =
+    next.qualificationScoreCount > 0
+      ? Math.round(next.qualificationScoreSum / next.qualificationScoreCount)
+      : 0;
+  next.updatedAt = Math.max(
+    0,
+    args.baseline?.updatedAt ?? 0,
+    ...args.stripes.map((stripe) => stripe.updatedAt)
+  );
+  return next;
+}
+
+export function isWorkspaceStatsStripeEmpty(row: WorkspaceStatsRecord) {
+  return WORKSPACE_STATS_NUMERIC_FIELDS.every((field) => row[field] === 0);
+}
+
 function createTargetedAnalyticsContribution(args: {
   workspaceId: Id<"workspaces">;
   timestamp: number;
@@ -1157,6 +1246,98 @@ export function mergeWorkspaceAnalyticsContributions(
   next.updatedAt = getCurrentUTCTimestamp();
 
   return next;
+}
+
+export function mergeWorkspaceAnalyticsStripeContributions(
+  existing: WorkspaceAnalyticsDailyRecord | null,
+  args: {
+    workspaceId: Id<"workspaces">;
+    dayStartUtcMs: number;
+    remove?: WorkspaceAnalyticsContribution[];
+    add?: WorkspaceAnalyticsContribution[];
+  }
+): WorkspaceAnalyticsDailyRecord {
+  const next = existing
+    ? { ...existing }
+    : createEmptyWorkspaceAnalyticsDailyRecord({
+        workspaceId: args.workspaceId,
+        dayStartUtcMs: args.dayStartUtcMs,
+      });
+
+  const apply = (
+    contribution: WorkspaceAnalyticsContribution,
+    direction: 1 | -1
+  ) => {
+    for (const field of WORKSPACE_ANALYTICS_NUMERIC_FIELDS) {
+      next[field] = (next[field] ?? 0) + contribution[field] * direction;
+    }
+    for (const field of WORKSPACE_ANALYTICS_HOURLY_FIELDS) {
+      const current = normalizeSignedHourlyAnalyticsCounts(next[field]);
+      const delta = normalizeSignedHourlyAnalyticsCounts(contribution[field]);
+      next[field] = current.map(
+        (value, index) => value + direction * delta[index]
+      );
+    }
+  };
+
+  for (const contribution of args.remove ?? []) apply(contribution, -1);
+  for (const contribution of args.add ?? []) apply(contribution, 1);
+
+  next.workspaceId = args.workspaceId;
+  next.dayStartUtcMs = args.dayStartUtcMs;
+  next.dayKey = getUtcDayKeyFromStart(args.dayStartUtcMs);
+  next.updatedAt = getCurrentUTCTimestamp();
+  return next;
+}
+
+export function combineWorkspaceAnalyticsRecords(args: {
+  workspaceId: Id<"workspaces">;
+  dayStartUtcMs: number;
+  baseline: WorkspaceAnalyticsDailyRecord | null;
+  stripes: WorkspaceAnalyticsDailyRecord[];
+}): WorkspaceAnalyticsDailyRecord {
+  const next = createEmptyWorkspaceAnalyticsDailyRecord({
+    workspaceId: args.workspaceId,
+    dayStartUtcMs: args.dayStartUtcMs,
+  });
+
+  for (const record of [args.baseline, ...args.stripes]) {
+    if (!record) continue;
+    for (const field of WORKSPACE_ANALYTICS_NUMERIC_FIELDS) {
+      next[field] += record[field] ?? 0;
+    }
+    for (const field of WORKSPACE_ANALYTICS_HOURLY_FIELDS) {
+      const current = normalizeSignedHourlyAnalyticsCounts(next[field]);
+      const value = normalizeSignedHourlyAnalyticsCounts(record[field]);
+      next[field] = current.map((count, index) => count + value[index]);
+    }
+  }
+
+  for (const field of WORKSPACE_ANALYTICS_NUMERIC_FIELDS) {
+    next[field] = clampCount(next[field]);
+  }
+  for (const field of WORKSPACE_ANALYTICS_HOURLY_FIELDS) {
+    next[field] = normalizeHourlyAnalyticsCounts(next[field]).map(clampCount);
+  }
+  next.updatedAt = Math.max(
+    0,
+    args.baseline?.updatedAt ?? 0,
+    ...args.stripes.map((stripe) => stripe.updatedAt)
+  );
+  return next;
+}
+
+export function isWorkspaceAnalyticsStripeEmpty(
+  record: WorkspaceAnalyticsDailyRecord
+): boolean {
+  return (
+    WORKSPACE_ANALYTICS_NUMERIC_FIELDS.every((field) => record[field] === 0) &&
+    WORKSPACE_ANALYTICS_HOURLY_FIELDS.every((field) =>
+      normalizeSignedHourlyAnalyticsCounts(record[field]).every(
+        (value) => value === 0
+      )
+    )
+  );
 }
 
 export function isWorkspaceAnalyticsRecordEmpty(

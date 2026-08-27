@@ -9,10 +9,11 @@ import {
 } from "./memoryHelpers";
 import {
   getWorkspaceAgentOpsContributionsFromBuiltInMemory,
-  isWorkspaceAgentOpsDailyRecordEmpty,
-  mergeWorkspaceAgentOpsContributions,
+  isWorkspaceAgentOpsStripeEmpty,
+  mergeWorkspaceAgentOpsStripeContributions,
 } from "./agentOpsReadModelHelpers";
 import { getUtcDayStartTimestamp } from "./readModelHelpers";
+import { getReadModelStripe } from "./readModelStripeHelpers";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import {
   buildCanonicalWorkspaceMemoryIdentity,
@@ -1211,29 +1212,34 @@ export async function promoteAgentMemory(
       parsed,
     },
   });
+  const stripe = getReadModelStripe(String(memoryId));
 
   for (const targeted of contributions) {
     const existingDaily = await db
-      .query("workspaceAgentOpsDaily")
-      .withIndex("by_workspace_day", (q: any) =>
+      .query("workspaceAgentOpsDailyStripes")
+      .withIndex("by_workspace_day_and_stripe", (q: any) =>
         q
           .eq("workspaceId", targeted.workspaceId)
           .eq("dayStartUtcMs", targeted.dayStartUtcMs)
+          .eq("stripe", stripe)
       )
-      .first();
-    const nextDaily = mergeWorkspaceAgentOpsContributions(existingDaily, {
+      .unique();
+    const nextDaily = mergeWorkspaceAgentOpsStripeContributions(existingDaily, {
       workspaceId: targeted.workspaceId,
       dayStartUtcMs: targeted.dayStartUtcMs,
       add: [targeted.contribution],
     });
-    if (isWorkspaceAgentOpsDailyRecordEmpty(nextDaily)) {
+    if (isWorkspaceAgentOpsStripeEmpty(nextDaily)) {
       if (existingDaily) {
         await db.delete(existingDaily._id);
       }
     } else if (existingDaily) {
       await db.patch(existingDaily._id, nextDaily);
     } else {
-      await db.insert("workspaceAgentOpsDaily", nextDaily);
+      await db.insert("workspaceAgentOpsDailyStripes", {
+        ...nextDaily,
+        stripe,
+      });
     }
   }
 

@@ -79,6 +79,7 @@ import {
   type ProspectingPlatform,
 } from "../lib/prospectingCycleCore";
 import { stringifyUnknownError } from "../lib/errorHelpers";
+import { getWorkspaceStatsSnapshot } from "../workspaceStats";
 
 type QueryMetadataRecord = {
   query: string;
@@ -2152,10 +2153,7 @@ export const getProspectingSchedulingStateInternal = internalQuery({
             .eq("enrichmentStatus", "pending")
         )
         .take(scanLimit),
-      ctx.db
-        .query("workspaceStats")
-        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-        .first(),
+      getWorkspaceStatsSnapshot({ db: ctx.db, workspace }),
       ctx.db
         .query("providerCircuitStates")
         .withIndex("by_provider", (q) => q.eq("provider", "socialapi"))

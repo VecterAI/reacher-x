@@ -1,6 +1,10 @@
 import type { Doc } from "../_generated/dataModel";
 import type { WorkspaceAgentMemoryInventoryRecord } from "./agentMemoryCore";
-import { normalizeWorkspaceAgentOpsDailyRecord } from "./agentOpsReadModelHelpers";
+import {
+  normalizeWorkspaceAgentOpsDailyRecord,
+  type WorkspaceAgentOpsDailyRecord,
+} from "./agentOpsReadModelHelpers";
+import type { WorkspaceAnalyticsDailyRecord } from "./readModelHelpers";
 import {
   buildMetric,
   calculateRate,
@@ -11,8 +15,8 @@ import {
 } from "./analyticsCore";
 import { isRecord } from "./typeGuards";
 
-type AnalyticsDailyRow = Doc<"workspaceAnalyticsDaily">;
-type AgentOpsDailyRow = Doc<"workspaceAgentOpsDaily">;
+type AnalyticsDailyRow = WorkspaceAnalyticsDailyRecord;
+type AgentOpsDailyRow = WorkspaceAgentOpsDailyRecord;
 type QueryCandidateRow = Doc<"queryCandidates">;
 type QueryPerformanceDailyRow = Doc<"workspaceQueryPerformanceDaily">;
 type WorkflowEventRow = Doc<"memoryWorkflowEvents">;

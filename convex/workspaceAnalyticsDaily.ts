@@ -12,6 +12,7 @@ import {
 import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import { classifyQualificationActivityTitle } from "./lib/prospectAnalyticsCore";
 import {
+  combineWorkspaceAnalyticsRecords,
   coerceWorkspaceAnalyticsDailyForMerge,
   getWorkspaceAnalyticsContributionFromActivityLog,
   getWorkspaceAnalyticsContributionsFromPlan,
@@ -32,15 +33,12 @@ export async function listWorkspaceAnalyticsDailyRows(args: {
   startDayStartUtcMs?: number;
   endDayStartUtcMs?: number;
 }) {
-  const normalizeRows = (rows: Array<Doc<"workspaceAnalyticsDaily">>) =>
-    rows.map((row) => coerceWorkspaceAnalyticsDailyForMerge(row));
-
-  if (
-    args.startDayStartUtcMs !== undefined &&
-    args.endDayStartUtcMs !== undefined
-  ) {
-    return normalizeRows(
-      await args.db
+  const listBaselineRows = async () => {
+    if (
+      args.startDayStartUtcMs !== undefined &&
+      args.endDayStartUtcMs !== undefined
+    ) {
+      return await args.db
         .query("workspaceAnalyticsDaily")
         .withIndex("by_workspace_day", (q) =>
           q
@@ -48,44 +46,107 @@ export async function listWorkspaceAnalyticsDailyRows(args: {
             .gte("dayStartUtcMs", args.startDayStartUtcMs!)
             .lte("dayStartUtcMs", args.endDayStartUtcMs!)
         )
-        .collect()
-    );
-  }
-
-  if (args.startDayStartUtcMs !== undefined) {
-    return normalizeRows(
-      await args.db
+        .collect();
+    }
+    if (args.startDayStartUtcMs !== undefined) {
+      return await args.db
         .query("workspaceAnalyticsDaily")
         .withIndex("by_workspace_day", (q) =>
           q
             .eq("workspaceId", args.workspaceId)
             .gte("dayStartUtcMs", args.startDayStartUtcMs!)
         )
-        .collect()
-    );
-  }
-
-  if (args.endDayStartUtcMs !== undefined) {
-    return normalizeRows(
-      await args.db
+        .collect();
+    }
+    if (args.endDayStartUtcMs !== undefined) {
+      return await args.db
         .query("workspaceAnalyticsDaily")
         .withIndex("by_workspace_day", (q) =>
           q
             .eq("workspaceId", args.workspaceId)
             .lte("dayStartUtcMs", args.endDayStartUtcMs!)
         )
-        .collect()
-    );
-  }
-
-  return normalizeRows(
-    await args.db
+        .collect();
+    }
+    return await args.db
       .query("workspaceAnalyticsDaily")
       .withIndex("by_workspace_day", (q) =>
         q.eq("workspaceId", args.workspaceId)
       )
-      .collect()
+      .collect();
+  };
+
+  const listStripeRows = async () => {
+    if (
+      args.startDayStartUtcMs !== undefined &&
+      args.endDayStartUtcMs !== undefined
+    ) {
+      return await args.db
+        .query("workspaceAnalyticsDailyStripes")
+        .withIndex("by_workspace_day_and_stripe", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .gte("dayStartUtcMs", args.startDayStartUtcMs!)
+            .lte("dayStartUtcMs", args.endDayStartUtcMs!)
+        )
+        .collect();
+    }
+    if (args.startDayStartUtcMs !== undefined) {
+      return await args.db
+        .query("workspaceAnalyticsDailyStripes")
+        .withIndex("by_workspace_day_and_stripe", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .gte("dayStartUtcMs", args.startDayStartUtcMs!)
+        )
+        .collect();
+    }
+    if (args.endDayStartUtcMs !== undefined) {
+      return await args.db
+        .query("workspaceAnalyticsDailyStripes")
+        .withIndex("by_workspace_day_and_stripe", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .lte("dayStartUtcMs", args.endDayStartUtcMs!)
+        )
+        .collect();
+    }
+    return await args.db
+      .query("workspaceAnalyticsDailyStripes")
+      .withIndex("by_workspace_day_and_stripe", (q) =>
+        q.eq("workspaceId", args.workspaceId)
+      )
+      .collect();
+  };
+
+  const [baselineRows, stripeRows] = await Promise.all([
+    listBaselineRows(),
+    listStripeRows(),
+  ]);
+  const baselines = new Map(
+    baselineRows.map((row) => [
+      row.dayStartUtcMs,
+      coerceWorkspaceAnalyticsDailyForMerge(row),
+    ])
   );
+  const stripesByDay = new Map<number, WorkspaceAnalyticsDailyRecord[]>();
+  for (const stripe of stripeRows) {
+    const rows = stripesByDay.get(stripe.dayStartUtcMs) ?? [];
+    rows.push(stripe);
+    stripesByDay.set(stripe.dayStartUtcMs, rows);
+  }
+  const days = new Set([...baselines.keys(), ...stripesByDay.keys()]);
+
+  return Array.from(days)
+    .sort((left, right) => left - right)
+    .map((dayStartUtcMs) =>
+      combineWorkspaceAnalyticsRecords({
+        workspaceId: args.workspaceId,
+        dayStartUtcMs,
+        baseline: baselines.get(dayStartUtcMs) ?? null,
+        stripes: stripesByDay.get(dayStartUtcMs) ?? [],
+      })
+    );
 }
 
 export const listWorkspaceAnalyticsDailyInternal = internalQuery({
@@ -239,18 +300,26 @@ export const clearWorkspaceAnalyticsDailyRowsInternal = internalMutation({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, { workspaceId }) => {
-    const existingRows = await ctx.db
-      .query("workspaceAnalyticsDaily")
-      .withIndex("by_workspace_day", (q) => q.eq("workspaceId", workspaceId))
-      .collect();
+    const [existingRows, existingStripes] = await Promise.all([
+      ctx.db
+        .query("workspaceAnalyticsDaily")
+        .withIndex("by_workspace_day", (q) => q.eq("workspaceId", workspaceId))
+        .collect(),
+      ctx.db
+        .query("workspaceAnalyticsDailyStripes")
+        .withIndex("by_workspace_day_and_stripe", (q) =>
+          q.eq("workspaceId", workspaceId)
+        )
+        .collect(),
+    ]);
 
-    for (const row of existingRows) {
+    for (const row of [...existingRows, ...existingStripes]) {
       await ctx.db.delete(row._id);
     }
 
     return {
       workspaceId,
-      deletedCount: existingRows.length,
+      deletedCount: existingRows.length + existingStripes.length,
     };
   },
 });

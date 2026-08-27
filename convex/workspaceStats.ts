@@ -3,6 +3,7 @@ import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalQuery, query } from "./lib/functionBuilders";
 import {
+  combineWorkspaceStatsRecords,
   coerceWorkspaceStatsRecord,
   createEmptyWorkspaceStatsRecord,
 } from "./lib/readModelHelpers";
@@ -17,13 +18,30 @@ export async function getWorkspaceStatsSnapshot(args: {
   db: WorkspaceStatsDb;
   workspace: Pick<Doc<"workspaces">, "_id" | "userId">;
 }): Promise<WorkspaceStatsSnapshot> {
-  const existing = await args.db
-    .query("workspaceStats")
-    .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspace._id))
-    .first();
+  const [existing, stripes] = await Promise.all([
+    args.db
+      .query("workspaceStats")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspace._id))
+      .first(),
+    args.db
+      .query("workspaceStatsStripes")
+      .withIndex("by_workspace_and_stripe", (q) =>
+        q.eq("workspaceId", args.workspace._id)
+      )
+      .collect(),
+  ]);
 
-  if (existing) {
+  if (existing && stripes.length === 0) {
     return coerceWorkspaceStatsRecord(existing);
+  }
+
+  if (existing || stripes.length > 0) {
+    return combineWorkspaceStatsRecords({
+      workspaceId: args.workspace._id,
+      userId: args.workspace.userId,
+      baseline: existing ? coerceWorkspaceStatsRecord(existing) : null,
+      stripes,
+    });
   }
 
   const emptyRecord = createEmptyWorkspaceStatsRecord({
