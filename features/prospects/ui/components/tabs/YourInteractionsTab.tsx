@@ -6,7 +6,7 @@
 "use client";
 
 import * as React from "react";
-import { useMutation, usePaginatedQuery } from "convex/react";
+import { useAction, useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/shared/ui/components/Button";
@@ -20,13 +20,23 @@ import {
 import { AvatarStack } from "@/shared/ui/components/AvatarStack";
 import { usePanelStack } from "../../../contexts/PanelStackContext";
 import type { ProspectInteraction } from "@/features/prospects/types";
-import { getTwitterPostId } from "@/shared/lib/twitter/contracts";
 import { mergeLocalEngagementIntoTweet } from "@/shared/lib/twitter/mergeViewerState";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { UnavailableInteractionCard } from "./UnavailableInteractionCard";
 import { UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS } from "@/features/prospects/lib/uiPreviewData";
 import { normalizeLinkedInPost } from "@/shared/lib/linkedin/post";
+import type { Tweet as TweetType } from "@/features/threads/types";
+import {
+  buildTwitterInteractionThreadFallbackTweets,
+  getLinkedInThreadCommentIds,
+  groupProspectInteractionsByThread,
+  type ProspectInteractionThread,
+} from "@/features/prospects/lib/prospectInteractionThreads";
+import {
+  hasRenderableTweetContent,
+  mergeConversationTweetWithFallback,
+} from "@/features/prospects/lib/twitterConversation";
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -34,6 +44,7 @@ export interface YourInteractionsTabProps {
   prospectId: string;
   platform: "twitter" | "linkedin";
   readOnly?: boolean;
+  syncEnabled?: boolean;
   previewInteractions?: ProspectInteraction[];
 }
 
@@ -41,11 +52,19 @@ export function YourInteractionsTab({
   prospectId,
   platform,
   readOnly = false,
+  syncEnabled = false,
   previewInteractions,
 }: YourInteractionsTabProps) {
   const { pushPanel } = usePanelStack();
   const markedUnavailableRef = React.useRef<Set<string>>(new Set());
+  const activeSyncRef = React.useRef<string | null>(null);
+  const syncRequestIdRef = React.useRef(0);
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  const [syncError, setSyncError] = React.useState<string>();
   const isPreview = Array.isArray(previewInteractions);
+  const refreshProspectInteractions = useAction(
+    api.interactionsActions.refreshProspectInteractions
+  );
 
   const interactionsQuery = usePaginatedQuery(
     api.interactions.getProspectInteractionsPage,
@@ -60,6 +79,63 @@ export function YourInteractionsTab({
     api.interactions.markInteractionUnavailable
   );
 
+  React.useEffect(() => {
+    if (!syncEnabled || readOnly || isPreview) {
+      syncRequestIdRef.current += 1;
+      setIsSyncing(false);
+      setSyncError(undefined);
+      return;
+    }
+    const syncKey = `${platform}:${prospectId}`;
+    if (activeSyncRef.current === syncKey) {
+      return;
+    }
+
+    const requestId = syncRequestIdRef.current + 1;
+    syncRequestIdRef.current = requestId;
+    activeSyncRef.current = syncKey;
+    setIsSyncing(true);
+    setSyncError(undefined);
+    void refreshProspectInteractions({
+      prospectId: prospectId as Id<"prospects">,
+      force: true,
+    })
+      .then((result) => {
+        if (result.skipped && activeSyncRef.current === syncKey) {
+          activeSyncRef.current = null;
+        }
+        if (syncRequestIdRef.current === requestId && result.skipped) {
+          setSyncError(
+            `Connect ${platform === "twitter" ? "X" : "LinkedIn"} to sync interactions.`
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        if (activeSyncRef.current === syncKey) {
+          activeSyncRef.current = null;
+        }
+        if (syncRequestIdRef.current === requestId) {
+          setSyncError(
+            error instanceof Error
+              ? error.message
+              : "Could not sync interactions right now."
+          );
+        }
+      })
+      .finally(() => {
+        if (syncRequestIdRef.current === requestId) {
+          setIsSyncing(false);
+        }
+      });
+  }, [
+    isPreview,
+    platform,
+    prospectId,
+    readOnly,
+    refreshProspectInteractions,
+    syncEnabled,
+  ]);
+
   const interactions = React.useMemo(
     () =>
       isPreview
@@ -68,14 +144,17 @@ export function YourInteractionsTab({
     [interactionsQuery.results, isPreview, previewInteractions]
   );
 
+  const interactionThreads = React.useMemo(
+    () => groupProspectInteractionsByThread(interactions, platform),
+    [interactions, platform]
+  );
+
   const visibleTwitterPostIds = React.useMemo(
     () =>
       platform === "twitter"
-        ? interactions
-            .map((interaction) => getTwitterPostId(interaction.originalPost))
-            .filter((postId): postId is string => Boolean(postId))
+        ? interactionThreads.map((thread) => thread.threadId)
         : [],
-    [interactions, platform]
+    [interactionThreads, platform]
   );
 
   const {
@@ -95,19 +174,17 @@ export function YourInteractionsTab({
       return;
     }
 
-    const missingInteractionIds = interactions
-      .filter((interaction) => interaction.status === "active")
-      .filter((interaction) => {
-        const postId = getTwitterPostId(interaction.originalPost);
-        if (!postId) {
-          return false;
-        }
-        return resultsById[postId]?.status === "not_found";
-      })
-      .map((interaction) => interaction.id)
-      .filter(
-        (interactionId) => !markedUnavailableRef.current.has(interactionId)
-      );
+    const missingInteractionIds: string[] = [];
+    for (const thread of interactionThreads) {
+      const interactionId = thread.representative.id;
+      if (
+        thread.representative.status === "active" &&
+        resultsById[thread.threadId]?.status === "not_found" &&
+        !markedUnavailableRef.current.has(interactionId)
+      ) {
+        missingInteractionIds.push(interactionId);
+      }
+    }
 
     if (missingInteractionIds.length === 0) {
       return;
@@ -125,7 +202,7 @@ export function YourInteractionsTab({
     }
   }, [
     hydrateError,
-    interactions,
+    interactionThreads,
     isHydratingTweets,
     markInteractionUnavailable,
     platform,
@@ -134,32 +211,30 @@ export function YourInteractionsTab({
   ]);
 
   const handleShowConversation = (
-    interaction: ProspectInteraction,
-    sourceTweet: import("@/features/threads/types").Tweet | null
+    thread: ProspectInteractionThread,
+    sourceTweet: TweetType | null
   ) => {
+    const fallbackTweets = buildTwitterInteractionThreadFallbackTweets(thread);
     pushPanel("conversation", {
-      threadId: interaction.threadId,
-      sourceTweetId:
-        interaction.sourcePostRef?.postId ??
-        getTwitterPostId(interaction.originalPost) ??
-        undefined,
+      threadId: thread.threadId,
+      sourceTweetId: thread.threadId,
       sourceTweet,
-      sourceTweetSummary: interaction.sourcePostSummary ?? undefined,
-      replyTweetId:
-        interaction.replyPostRef?.postId ??
-        interaction.replyPostSummary?.ref.postId ??
-        undefined,
-      replyTweetSummary: interaction.replyPostSummary ?? undefined,
+      fallbackTweets,
       overlayCommented: true,
     });
   };
 
   const handleOpenLinkedInThread = React.useCallback(
-    (interaction: ProspectInteraction, post: UnifiedPost) => {
+    (thread: ProspectInteractionThread, post: UnifiedPost) => {
       pushPanel("linkedin-post-thread", {
         post,
+        initialSort: "MOST_RECENT",
+        autoExpandCommentIds: getLinkedInThreadCommentIds(thread),
         previewScenario: isPreview
-          ? buildLinkedInInteractionPreviewScenario(post, interaction.replyText)
+          ? buildLinkedInInteractionPreviewScenario(
+              post,
+              thread.representative.replyText
+            )
           : undefined,
       });
     },
@@ -183,14 +258,17 @@ export function YourInteractionsTab({
 
   return (
     <section className="space-y-4 pb-4">
-      {interactions.length === 0 ? (
+      {interactionThreads.length === 0 ? (
         <div className="text-muted-foreground px-4 py-8 text-center text-sm">
-          We&apos;ll start tracking new interactions from now. Historical import
-          is off.
+          {syncError ??
+            (isSyncing
+              ? "Syncing latest interactions…"
+              : "No public interactions found with this prospect.")}
         </div>
       ) : (
         <div className="divide-y">
-          {interactions.map((interaction) => {
+          {interactionThreads.map((thread) => {
+            const interaction = thread.representative;
             if (platform === "linkedin") {
               const linkedinPost = normalizeLinkedInPost(
                 interaction.sourcePostData,
@@ -198,7 +276,7 @@ export function YourInteractionsTab({
               );
 
               return (
-                <article key={interaction.id} className="space-y-3 p-4">
+                <article key={thread.id} className="space-y-3 p-4">
                   {linkedinPost ? (
                     <LinkedInPostCard
                       post={linkedinPost}
@@ -208,7 +286,7 @@ export function YourInteractionsTab({
                       commentBehavior="none"
                       disableExternalNavigation
                       onClick={() =>
-                        handleOpenLinkedInThread(interaction, linkedinPost)
+                        handleOpenLinkedInThread(thread, linkedinPost)
                       }
                     />
                   ) : (
@@ -222,12 +300,10 @@ export function YourInteractionsTab({
 
                   <footer className="flex flex-wrap items-center gap-2 pl-1">
                     <AvatarStack
-                      participants={interaction.participants.map(
-                        (participant) => ({
-                          name: participant.name,
-                          avatarUrl: participant.avatarUrl,
-                        })
-                      )}
+                      participants={thread.participants.map((participant) => ({
+                        name: participant.name,
+                        avatarUrl: participant.avatarUrl,
+                      }))}
                       maxVisible={5}
                       size="sm"
                     />
@@ -237,7 +313,7 @@ export function YourInteractionsTab({
                         variant="outline"
                         size="xs"
                         onClick={() =>
-                          handleOpenLinkedInThread(interaction, linkedinPost)
+                          handleOpenLinkedInThread(thread, linkedinPost)
                         }
                       >
                         Open thread
@@ -248,22 +324,38 @@ export function YourInteractionsTab({
               );
             }
 
-            const postId = getTwitterPostId(interaction.originalPost);
+            const fallbackTweets =
+              buildTwitterInteractionThreadFallbackTweets(thread);
+            const fallbackRootTweet =
+              fallbackTweets.find(
+                (tweet) => tweet.id_str === thread.threadId
+              ) ??
+              fallbackTweets[0] ??
+              null;
+            const postId = thread.threadId;
             const hydratedTweet = postId ? tweetsById[postId] : undefined;
-            const displayTweet =
-              hydratedTweet &&
-              mergeLocalEngagementIntoTweet(hydratedTweet, {
-                overlayCommented: true,
-              });
-            const isUnavailable = interaction.status !== "active";
+            const isUnavailable = thread.interactions.every(
+              (item) => item.status !== "active"
+            );
             const hydrationResult = postId ? resultsById[postId] : undefined;
+            const hydrationSettled = Boolean(hydrationResult || hydrateError);
+            const resolvedTweet = mergeConversationTweetWithFallback(
+              fallbackRootTweet,
+              hydratedTweet
+            );
+            const displayTweet =
+              resolvedTweet && hasRenderableTweetContent(resolvedTweet)
+                ? mergeLocalEngagementIntoTweet(resolvedTweet, {
+                    overlayCommented: true,
+                  })
+                : null;
             const shouldShowSkeleton =
               !displayTweet &&
               !isUnavailable &&
-              (isHydratingTweets || !hydrationResult);
+              (isHydratingTweets || !hydrationSettled);
 
             return (
-              <article key={interaction.id} className="space-y-3 p-4">
+              <article key={thread.id} className="space-y-3 p-4">
                 {isUnavailable ? (
                   <UnavailableInteractionCard
                     message={
@@ -292,12 +384,10 @@ export function YourInteractionsTab({
 
                 <footer className="flex flex-wrap items-center gap-2 pl-1">
                   <AvatarStack
-                    participants={interaction.participants.map(
-                      (participant) => ({
-                        name: participant.name,
-                        avatarUrl: participant.avatarUrl,
-                      })
-                    )}
+                    participants={thread.participants.map((participant) => ({
+                      name: participant.name,
+                      avatarUrl: participant.avatarUrl,
+                    }))}
                     maxVisible={5}
                     size="sm"
                   />
@@ -308,8 +398,8 @@ export function YourInteractionsTab({
                     disabled={readOnly}
                     onClick={() =>
                       handleShowConversation(
-                        interaction,
-                        displayTweet ?? interaction.originalPost
+                        thread,
+                        displayTweet ?? fallbackRootTweet
                       )
                     }
                   >
@@ -324,12 +414,24 @@ export function YourInteractionsTab({
         </div>
       )}
 
+      {isSyncing && interactions.length > 0 ? (
+        <p className="text-muted-foreground px-4 text-xs" role="status">
+          Syncing latest interactions…
+        </p>
+      ) : null}
+
+      {syncError && interactions.length > 0 ? (
+        <p className="text-destructive px-4 text-xs" role="alert">
+          {syncError}
+        </p>
+      ) : null}
+
       {!isPreview ? (
         <InfiniteScrollTrigger
           hasMore={canLoadMore}
           isLoading={isLoadingMore}
           onLoadMore={() => interactionsQuery.loadMore(INITIAL_PAGE_SIZE)}
-          resultCount={interactions.length}
+          resultCount={interactionThreads.length}
           className="mx-4"
           loadingLabel="Loading more interactions"
           loadMoreLabel="Load more interactions"
@@ -385,14 +487,7 @@ export function YourInteractionsTabSkeleton() {
     <div className="divide-y">
       {[1, 2].map((i) => (
         <div key={i} className="space-y-3 px-4 py-3">
-          <div className="flex items-start gap-3">
-            <Skeleton className="size-10 shrink-0 rounded-full" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-3 w-24" />
-            </div>
-          </div>
-          <Skeleton className="h-16 w-full" />
+          <TweetSkeleton showThread={false} />
           <div className="flex items-center gap-3">
             <div className="flex -space-x-2">
               {[1, 2, 3].map((j) => (

@@ -41,6 +41,10 @@ export interface ProspectInteraction {
   participants: ProspectInteractionParticipant[];
   /** Thread ID for fetching full conversation */
   threadId: string;
+  /** Provider id of the source post containing the interaction */
+  sourcePostId?: string;
+  /** Provider id of the comment/reply represented by this row */
+  replyPostId?: string;
   /** When the user's reply was posted */
   repliedAt: number;
   /** Provenance when ReacherX can determine it */
