@@ -1,12 +1,18 @@
 // Centralized LinkdAPI search knobs so workflow allocation and transport
 // pagination stay aligned as we tune LinkedIn discovery volume.
 
+import {
+  chunkProspectsForPersistence,
+  PROSPECT_WRITE_TRANSACTION_BATCH_SIZE,
+} from "./prospectPersistenceHelpers";
+
 export const LINKEDIN_PEOPLE_DEFAULT_COUNT = 50;
 export const LINKEDIN_PEOPLE_MAX_PAGES_PER_QUERY = 3;
 
 export const LINKEDIN_POSTS_DEFAULT_PAGE_SIZE = 10;
 export const LINKEDIN_POSTS_MAX_PAGES_PER_QUERY = 3;
-export const LINKEDIN_PROSPECT_SAVE_BATCH_SIZE = 25;
+export const LINKEDIN_PROSPECT_SAVE_BATCH_SIZE =
+  PROSPECT_WRITE_TRANSACTION_BATCH_SIZE;
 
 function normalizePositiveInteger(value: number, fallback: number) {
   if (!Number.isFinite(value)) {
@@ -38,7 +44,7 @@ export function getNextLinkedInPostsSearchStart(
 }
 
 export function chunkLinkedInProspectsForSave<T>(prospects: T[]): T[][] {
-  return chunkLinkedInItems(prospects, LINKEDIN_PROSPECT_SAVE_BATCH_SIZE);
+  return chunkProspectsForPersistence(prospects);
 }
 
 export function chunkLinkedInItems<T>(items: T[], batchSize: number): T[][] {

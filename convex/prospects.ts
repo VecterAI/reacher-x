@@ -62,6 +62,7 @@ import {
 } from "./lib/outreachCore";
 import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import { getProspectingRecoveryDelayMs } from "./lib/prospectingHelpers";
+import { PROSPECT_WRITE_TRANSACTION_BATCH_SIZE } from "./lib/prospectPersistenceHelpers";
 import {
   buildProspectAnalyticsBackfillPatch,
   buildProspectAnalyticsTransitionPatch,
@@ -83,7 +84,6 @@ import {
   sanitizeProspectEvidencePostsForWorkflow,
   sanitizeWorkflowValue,
 } from "./lib/workflowSafeProspect";
-import { PREVIEW_BATCH_LIMITS } from "./lib/previewBatchLimits";
 import {
   buildSetupPreviewCapacityResetPatch,
   canWriteSetupPreviewProspectBatch,
@@ -1065,6 +1065,18 @@ export const createProspectsBatch = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    // Project logging policy requires console.log for canonical success-path events.
+    // eslint-disable-next-line no-console
+    console.log("[Prospects] Persist batch attempt", {
+      workspaceId: String(args.workspaceId),
+      processingMode: args.processingMode,
+      prospectCount: args.prospects.length,
+    });
+    if (args.prospects.length > PROSPECT_WRITE_TRANSACTION_BATCH_SIZE) {
+      throw new Error(
+        `Prospect persistence batches must contain at most ${PROSPECT_WRITE_TRANSACTION_BATCH_SIZE} rows`
+      );
+    }
     const processingMode = args.processingMode ?? "normal";
     const now = getCurrentUTCTimestamp();
     let created = 0;
@@ -1105,7 +1117,7 @@ export const createProspectsBatch = internalMutation({
         workspaceUserId: workspace.userId,
         previewRevision,
         batchSize: args.prospects.length,
-        maxBatchSize: PREVIEW_BATCH_LIMITS.previewProspectWriteBatch,
+        maxBatchSize: PROSPECT_WRITE_TRANSACTION_BATCH_SIZE,
       });
 
       if (!isValidatedSetupPreviewBatch) {

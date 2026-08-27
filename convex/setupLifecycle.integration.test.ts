@@ -11,6 +11,14 @@ import { X_CORE_SCOPES } from "./lib/xScopes";
 
 const modules = import.meta.glob("./**/*.ts");
 
+async function registerWorkflowComponent(t: ReturnType<typeof convexTest>) {
+  const workflowTestPath = ["@convex-dev/workflow", "test"].join("/");
+  const workflowTest = (await import(workflowTestPath)) as {
+    default: { register: (instance: typeof t) => void };
+  };
+  workflowTest.default.register(t);
+}
+
 const setupProfiles = [
   {
     title: "Senior product designers",
@@ -124,6 +132,119 @@ async function seedSetupSession(
 }
 
 describe("setup session and workspace lifecycle", () => {
+  test("recovers a stale setup workflow and exposes a bounded retry failure", async () => {
+    const t = convexTest(schema, modules);
+    await registerWorkflowComponent(t);
+    const { userId, workosUserId } = await seedUser(t, "workflow-recovery");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "workflow-recovery",
+    });
+    const authenticated = t.withIdentity({ subject: workosUserId });
+
+    const started = await authenticated.mutation(
+      api.setupSessions.ensureSetupSessionWorkflow,
+      { threadId: "setup-thread-workflow-recovery" }
+    );
+    expect(started).toMatchObject({
+      scheduled: true,
+      recovered: false,
+      state: "started",
+    });
+    const originalWorkflowId = await t.run(
+      async (ctx) =>
+        (await ctx.db.get("workspaceSetupSessions", sessionId))?.workflowId
+    );
+    expect(originalWorkflowId).toBeTruthy();
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch("workspaceSetupSessions", sessionId, {
+        status: "generating_profiles",
+        statusUpdatedAt: 1,
+        generationRequestedAt: 1,
+      });
+    });
+    const recovered = await authenticated.mutation(
+      api.setupSessions.ensureSetupSessionWorkflow,
+      { threadId: "setup-thread-workflow-recovery" }
+    );
+    expect(recovered).toMatchObject({
+      scheduled: true,
+      recovered: true,
+      state: "recovered",
+    });
+    const recoveredSession = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(recoveredSession?.workflowId).not.toBe(originalWorkflowId);
+    expect(recoveredSession?.workflowRecoveryAttempts).toBe(1);
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch("workspaceSetupSessions", sessionId, {
+        workflowRecoveryAttempts: 3,
+        statusUpdatedAt: 1,
+        generationRequestedAt: 1,
+      });
+    });
+    const exhausted = await authenticated.mutation(
+      api.setupSessions.ensureSetupSessionWorkflow,
+      { threadId: "setup-thread-workflow-recovery" }
+    );
+    expect(exhausted.state).toBe("failed");
+    expect(
+      await t.run((ctx) => ctx.db.get("workspaceSetupSessions", sessionId))
+    ).toMatchObject({
+      status: "failed",
+      errorCode: "setup_workflow_recovery_exhausted",
+    });
+  });
+
+  test("recovers stale setup work even when the setup UI is no longer open", async () => {
+    const t = convexTest(schema, modules);
+    await registerWorkflowComponent(t);
+    const { userId, workosUserId } = await seedUser(
+      t,
+      "background-workflow-recovery"
+    );
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "background-workflow-recovery",
+    });
+    const authenticated = t.withIdentity({ subject: workosUserId });
+    await authenticated.mutation(api.setupSessions.ensureSetupSessionWorkflow, {
+      threadId: "setup-thread-background-workflow-recovery",
+    });
+    const originalWorkflowId = await t.run(
+      async (ctx) =>
+        (await ctx.db.get("workspaceSetupSessions", sessionId))?.workflowId
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.patch("workspaceSetupSessions", sessionId, {
+        status: "generating_profiles",
+        statusUpdatedAt: 1,
+        generationRequestedAt: 1,
+      });
+    });
+
+    const result = await t.mutation(
+      internal.setupSessions.recoverStaleSetupWorkflowsInternal,
+      {}
+    );
+    expect(result).toEqual({ checked: 1, recovered: 1, failed: 0 });
+    expect(
+      await t.run((ctx) => ctx.db.get("workspaceSetupSessions", sessionId))
+    ).toMatchObject({
+      workflowRecoveryAttempts: 1,
+      status: "generating_profiles",
+    });
+    expect(
+      await t.run(
+        async (ctx) =>
+          (await ctx.db.get("workspaceSetupSessions", sessionId))?.workflowId
+      )
+    ).not.toBe(originalWorkflowId);
+  });
+
   test("excludes legacy refine sessions without hiding normal active setup", async () => {
     const t = convexTest(schema, modules);
     const { userId, workosUserId } = await seedUser(t, "legacy-refine");

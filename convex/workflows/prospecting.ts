@@ -38,6 +38,7 @@ import {
   normalizeLinkedInPostQueryStats,
 } from "../lib/linkedinSearchHelpers";
 import { PREVIEW_BATCH_LIMITS } from "../lib/previewBatchLimits";
+import { chunkProspectsForPersistence } from "../lib/prospectPersistenceHelpers";
 import { hasRequiredWorkspaceAgentData } from "../lib/workspaceSetup";
 import type {
   TwitterPost,
@@ -1108,26 +1109,21 @@ export const searchTwitterInternal = internalAction({
     }));
 
     let saved = 0;
-    const saveBatchSize = PREVIEW_BATCH_LIMITS.previewProspectWriteBatch;
-    for (
-      let index = 0;
-      index < prospectsToSave.length;
-      index += saveBatchSize
-    ) {
+    for (const batch of chunkProspectsForPersistence(prospectsToSave)) {
       const saveResult = await ctx.runMutation(
         internal.prospects.createProspectsBatch,
         {
           userId: workspace.userId,
           workspaceId: args.workspaceId,
           processingMode: args.processingMode,
-          prospects: prospectsToSave
-            .slice(index, index + saveBatchSize)
-            .map((prospect: (typeof prospectsToSave)[number]) => ({
+          prospects: batch.map(
+            (prospect: (typeof prospectsToSave)[number]) => ({
               ...prospect,
               origin: args.prospectOrigin,
               setupSessionId: args.setupSessionId,
               setupRevision: args.setupRevision,
-            })),
+            })
+          ),
         }
       );
       saved += saveResult.created + saveResult.updated;
@@ -1748,18 +1744,22 @@ async function expandPreviewSimilarProfiles(args: {
     };
   }
 
-  const saveResult = await args.ctx.runMutation(
-    internal.prospects.createProspectsBatch,
-    {
-      userId: args.workspace.userId,
-      workspaceId: args.workspace._id,
-      processingMode: "preview",
-      prospects: prospectsToSave,
-    }
-  );
+  let saved = 0;
+  for (const batch of chunkProspectsForPersistence(prospectsToSave)) {
+    const saveResult = await args.ctx.runMutation(
+      internal.prospects.createProspectsBatch,
+      {
+        userId: args.workspace.userId,
+        workspaceId: args.workspace._id,
+        processingMode: "preview",
+        prospects: batch,
+      }
+    );
+    saved += saveResult.created + saveResult.updated;
+  }
 
   return {
-    saved: saveResult.created + saveResult.updated,
+    saved,
     similarStats,
     evidenceStats,
   };

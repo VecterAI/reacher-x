@@ -2,6 +2,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { formatWorkspaceDraftName } from "../../shared/lib/workspaceDisplayNames";
 import { getSetupStatusStepId, type SetupVisibleStepId } from "./setupFlowCore";
+import type { WorkflowStatus } from "@convex-dev/workflow";
 
 type SetupSessionDoc = Doc<"workspaceSetupSessions">;
 type SetupSessionDb = QueryCtx["db"] | MutationCtx["db"];
@@ -34,6 +35,96 @@ export function isSetupPreviewProspectWriteStatus(
 export const TERMINAL_SETUP_SESSION_STATUSES = new Set<
   SetupSessionDoc["status"]
 >(["ready", "failed", "discarded"]);
+
+export const SETUP_WORKFLOW_STALE_AFTER_MS = 15 * 60 * 1000;
+export const SETUP_WORKFLOW_MAX_RECOVERY_ATTEMPTS = 3;
+
+export const SETUP_WORKFLOW_MACHINE_PROGRESS_STATUSES = [
+  "generating_profiles",
+  "provisioning_preview_workspace",
+  "discovering_preview_prospects",
+  "preview_search_in_progress",
+] as const satisfies readonly SetupSessionDoc["status"][];
+
+const MACHINE_PROGRESS_SETUP_STATUSES = new Set<SetupSessionDoc["status"]>(
+  SETUP_WORKFLOW_MACHINE_PROGRESS_STATUSES
+);
+
+export type SetupWorkflowRecoveryDecision =
+  | { kind: "none"; reason: "terminal" | "healthy" | "waiting_for_user" }
+  | { kind: "start"; reason: "missing_workflow" }
+  | {
+      kind: "replace";
+      reason:
+        | "missing_component_state"
+        | "component_canceled"
+        | "component_completed_early"
+        | "component_failed"
+        | "stale_machine_progress";
+    }
+  | { kind: "fail"; reason: "recovery_exhausted" };
+
+export function getSetupWorkflowRecoveryDecision(args: {
+  session: Pick<
+    SetupSessionDoc,
+    | "status"
+    | "workflowId"
+    | "workflowRecoveryAttempts"
+    | "statusUpdatedAt"
+    | "lastAgentActionAt"
+    | "generationRequestedAt"
+  >;
+  workflowStatus: WorkflowStatus | null;
+  now: number;
+}): SetupWorkflowRecoveryDecision {
+  if (isTerminalSetupSessionStatus(args.session.status)) {
+    return { kind: "none", reason: "terminal" };
+  }
+  if (!args.session.workflowId) {
+    return { kind: "start", reason: "missing_workflow" };
+  }
+
+  const attempts = args.session.workflowRecoveryAttempts ?? 0;
+  const exhausted = attempts >= SETUP_WORKFLOW_MAX_RECOVERY_ATTEMPTS;
+  if (!args.workflowStatus) {
+    return exhausted
+      ? { kind: "fail", reason: "recovery_exhausted" }
+      : { kind: "replace", reason: "missing_component_state" };
+  }
+  if (args.workflowStatus.type !== "inProgress") {
+    if (exhausted) {
+      return { kind: "fail", reason: "recovery_exhausted" };
+    }
+    const reason =
+      args.workflowStatus.type === "failed"
+        ? "component_failed"
+        : args.workflowStatus.type === "canceled"
+          ? "component_canceled"
+          : "component_completed_early";
+    return { kind: "replace", reason };
+  }
+  if (!MACHINE_PROGRESS_SETUP_STATUSES.has(args.session.status)) {
+    return { kind: "none", reason: "waiting_for_user" };
+  }
+
+  const runningStepActivity = args.workflowStatus.running.reduce(
+    (latest, step) =>
+      Math.max(latest, step.startedAt ?? 0, step.completedAt ?? 0),
+    0
+  );
+  const latestActivity = Math.max(
+    args.session.statusUpdatedAt,
+    args.session.lastAgentActionAt ?? 0,
+    args.session.generationRequestedAt ?? 0,
+    runningStepActivity
+  );
+  if (args.now - latestActivity < SETUP_WORKFLOW_STALE_AFTER_MS) {
+    return { kind: "none", reason: "healthy" };
+  }
+  return exhausted
+    ? { kind: "fail", reason: "recovery_exhausted" }
+    : { kind: "replace", reason: "stale_machine_progress" };
+}
 
 export function isTerminalSetupSessionStatus(
   status: SetupSessionDoc["status"]

@@ -128,6 +128,21 @@ export const recordProviderRequestResult = internalMutation({
       .first();
 
     if (hasProviderHealthEvidence(args.outcome, args.healthEvidence)) {
+      const alreadyHealthy =
+        !state ||
+        (state.status === "closed" &&
+          state.consecutiveFailures === 0 &&
+          state.reason === undefined &&
+          state.errorMessage === undefined &&
+          state.openedAt === undefined &&
+          state.retryAfterAt === undefined &&
+          state.probeLeaseUntil === undefined);
+      if (alreadyHealthy) {
+        // The append-only providerRequestEvents row above is the success audit
+        // trail. Avoid rewriting one provider-wide circuit row on every healthy
+        // request; only recovery transitions need to mutate shared state.
+        return null;
+      }
       const patch = {
         status: "closed" as const,
         reason: undefined,
@@ -139,14 +154,7 @@ export const recordProviderRequestResult = internalMutation({
         lastSuccessAt: now,
         updatedAt: now,
       };
-      if (state) {
-        await ctx.db.patch(state._id, patch);
-      } else {
-        await ctx.db.insert("providerCircuitStates", {
-          provider: args.provider,
-          ...patch,
-        });
-      }
+      await ctx.db.patch(state._id, patch);
       return null;
     }
 

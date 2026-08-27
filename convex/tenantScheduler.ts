@@ -1,14 +1,11 @@
 import { defineBatchWorkerValidators, ping } from "@convex-dev/batch-worker";
 import { vOnCompleteArgs, type WorkId } from "@convex-dev/workpool";
+import { paginationOptsValidator } from "convex/server";
 import { v, type Infer } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import {
-  internalMutation,
-  internalQuery,
-  query,
-} from "./lib/functionBuilders";
+import { internalMutation, internalQuery, query } from "./lib/functionBuilders";
 import { requireOwnedWorkspace } from "./lib/accessHelpers";
 import { tenantExecutionPool } from "./lib/tenantExecutionPool";
 import { workflow } from "./lib/workflow";
@@ -30,6 +27,7 @@ import {
 import {
   completeTenantJob,
   markTenantJobNestedWorkflow,
+  reconcileTenantLaneQueueState,
 } from "./lib/tenantSchedulerHelpers";
 import {
   tenantJobClassValidator,
@@ -104,7 +102,7 @@ async function resolveSchedulerMode(
   return control?.mode ?? "legacy";
 }
 
-async function getOrCreateLane(
+async function getOrCreateLaneId(
   ctx: Pick<MutationCtx, "db">,
   args: {
     tenantKey: string;
@@ -113,11 +111,27 @@ async function getOrCreateLane(
     paused: boolean;
   }
 ) {
+  const binding = await ctx.db
+    .query("tenantJobLaneBindings")
+    .withIndex("by_tenant_key", (q) => q.eq("tenantKey", args.tenantKey))
+    .unique();
+  if (binding) return binding.laneId;
+
+  // Lazy compatibility bridge for lanes created before immutable bindings.
+  // Rollout should backfill these in bounded pages before peak traffic.
   const existing = await ctx.db
     .query("tenantJobLanes")
     .withIndex("by_tenant_key", (q) => q.eq("tenantKey", args.tenantKey))
     .unique();
-  if (existing) return existing as Doc<"tenantJobLanes">;
+  if (existing) {
+    await ctx.db.insert("tenantJobLaneBindings", {
+      tenantKey: args.tenantKey,
+      laneId: existing._id,
+      workspaceId: existing.workspaceId,
+      userId: existing.userId,
+    });
+    return existing._id;
+  }
 
   const now = getCurrentUTCTimestamp();
   const laneId = await ctx.db.insert("tenantJobLanes", {
@@ -131,9 +145,13 @@ async function getOrCreateLane(
     lastDispatchedAt: 0,
     updatedAt: now,
   });
-  const lane = await ctx.db.get("tenantJobLanes", laneId);
-  if (!lane) throw new Error("Tenant scheduler lane was not created");
-  return lane as Doc<"tenantJobLanes">;
+  await ctx.db.insert("tenantJobLaneBindings", {
+    tenantKey: args.tenantKey,
+    laneId,
+    workspaceId: args.workspaceId,
+    userId: args.userId,
+  });
+  return laneId;
 }
 
 async function pingDispatcher(ctx: MutationCtx) {
@@ -211,7 +229,10 @@ async function validateTenantJobOwnership(
 ) {
   const payload = args.payload;
   if (payload.kind === "setup_generation") {
-    const session = await ctx.db.get("workspaceSetupSessions", payload.sessionId);
+    const session = await ctx.db.get(
+      "workspaceSetupSessions",
+      payload.sessionId
+    );
     if (!session || session.userId !== args.userId) {
       throw new Error("Tenant setup job ownership mismatch");
     }
@@ -291,6 +312,13 @@ export const enqueueTenantJobInternal = internalMutation({
   },
   returns: enqueueRouteValidator,
   handler: async (ctx, args) => {
+    // Project logging policy requires console.log for canonical success-path events.
+    // eslint-disable-next-line no-console
+    console.log("[TenantScheduler] Enqueue attempt", {
+      idempotencyKey: args.idempotencyKey,
+      kind: args.payload.kind,
+      workspaceId: args.workspaceId ? String(args.workspaceId) : null,
+    });
     const workspace = await validateTenantJobOwnership(ctx, args);
     const mode = await resolveSchedulerMode(ctx, args.workspaceId);
     if (mode === "legacy") {
@@ -304,6 +332,13 @@ export const enqueueTenantJobInternal = internalMutation({
       )
       .unique();
     if (existing) {
+      if (mode === "enforced" && existing.status === "queued") {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.tenantScheduler.activateLaneInternal,
+          { laneId: existing.laneId }
+        );
+      }
       return {
         route: mode === "shadow" ? ("shadow" as const) : ("enforced" as const),
         jobId: existing._id,
@@ -312,7 +347,7 @@ export const enqueueTenantJobInternal = internalMutation({
 
     const paused = workspace?.prospectingWorkflowStatus === "paused";
     const tenantKey = buildTenantKey(args);
-    const lane = await getOrCreateLane(ctx, {
+    const laneId = await getOrCreateLaneId(ctx, {
       tenantKey,
       workspaceId: args.workspaceId,
       userId: args.userId,
@@ -322,7 +357,7 @@ export const enqueueTenantJobInternal = internalMutation({
     const shadow = mode === "shadow";
     const jobId = await ctx.db.insert("tenantJobs", {
       tenantKey,
-      laneId: lane._id,
+      laneId,
       workspaceId: args.workspaceId,
       userId: args.userId,
       class: args.class,
@@ -341,16 +376,87 @@ export const enqueueTenantJobInternal = internalMutation({
       return { route: "shadow" as const, jobId };
     }
 
-    await ctx.db.patch("tenantJobLanes", lane._id, {
-      // An explicit scheduler pause wins even while the workspace status
-      // mutation is still propagating through the stop action.
-      state: paused || lane.state === "paused" ? "paused" : "ready",
-      pendingCount: lane.pendingCount + 1,
-      minPriority: Math.min(lane.minPriority, args.priority),
-      updatedAt: now,
-    });
-    await pingDispatcher(ctx);
+    // Do not update the lane in the enqueue transaction. Concurrent producers
+    // for one workspace used to conflict permanently on this shared row. The
+    // durable job is the source of truth; an idempotent activation reconciles
+    // exact queue metadata after commit.
+    await ctx.scheduler.runAfter(
+      0,
+      internal.tenantScheduler.activateLaneInternal,
+      { laneId }
+    );
     return { route: "enforced" as const, jobId };
+  },
+});
+
+export const backfillLaneBindingsInternal = internalMutation({
+  args: { paginationOpts: paginationOptsValidator },
+  returns: v.object({
+    inserted: v.number(),
+    continueCursor: v.string(),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("tenantJobLanes")
+      .paginate(args.paginationOpts);
+    let inserted = 0;
+    for (const lane of page.page) {
+      const binding = await ctx.db
+        .query("tenantJobLaneBindings")
+        .withIndex("by_tenant_key", (q) => q.eq("tenantKey", lane.tenantKey))
+        .unique();
+      if (!binding) {
+        await ctx.db.insert("tenantJobLaneBindings", {
+          tenantKey: lane.tenantKey,
+          laneId: lane._id,
+          workspaceId: lane.workspaceId,
+          userId: lane.userId,
+        });
+        inserted += 1;
+      }
+    }
+    return {
+      inserted,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const activateLaneInternal = internalMutation({
+  args: { laneId: v.id("tenantJobLanes") },
+  returns: v.object({ pendingCount: v.number() }),
+  handler: async (ctx, args) => {
+    const result = await reconcileTenantLaneQueueState(ctx, args);
+    if (result.pendingCount > 0 && result.lane?.state !== "paused") {
+      await pingDispatcher(ctx);
+    }
+    return { pendingCount: result.pendingCount };
+  },
+});
+
+export const reconcileQueuedLanesInternal = internalMutation({
+  args: {},
+  returns: v.object({ reconciled: v.number(), hasMore: v.boolean() }),
+  handler: async (ctx) => {
+    const queuedJobs = await ctx.db
+      .query("tenantJobs")
+      .withIndex("by_status_and_lease_expires_at", (q) =>
+        q.eq("status", "queued")
+      )
+      .take(100);
+    const laneIds = Array.from(new Set(queuedJobs.map((job) => job.laneId)));
+    for (const laneId of laneIds) {
+      await reconcileTenantLaneQueueState(ctx, { laneId });
+    }
+    if (laneIds.length > 0) {
+      await pingDispatcher(ctx);
+    }
+    return {
+      reconciled: laneIds.length,
+      hasMore: queuedJobs.length === 100,
+    };
   },
 });
 
@@ -358,14 +464,16 @@ export const getDispatchBatchInternal = internalQuery({
   args: dispatchQueryArgs,
   returns: dispatchQueryReturns,
   handler: async (ctx) => {
-    const control = await ctx.db
-      .query("tenantSchedulerControls")
-      .withIndex("by_key", (q) => q.eq("key", "global"))
-      .unique();
-    const enforcedOverride = await ctx.db
-      .query("tenantSchedulerWorkspaceOverrides")
-      .withIndex("by_mode", (q) => q.eq("mode", "enforced"))
-      .first();
+    const [control, enforcedOverride] = await Promise.all([
+      ctx.db
+        .query("tenantSchedulerControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique(),
+      ctx.db
+        .query("tenantSchedulerWorkspaceOverrides")
+        .withIndex("by_mode", (q) => q.eq("mode", "enforced"))
+        .first(),
+    ]);
     if (!control || (control.mode !== "enforced" && !enforcedOverride)) {
       return { kind: "idle" as const, timeoutMs: 30_000 };
     }
@@ -373,9 +481,7 @@ export const getDispatchBatchInternal = internalQuery({
     const slots = await ctx.db
       .query("tenantSchedulerSlots")
       .withIndex("by_status_and_slot_number", (q) =>
-        q
-          .eq("status", "free")
-          .lt("slotNumber", control.slotCount)
+        q.eq("status", "free").lt("slotNumber", control.slotCount)
       )
       .take(DISPATCH_BATCH_SIZE);
     if (slots.length === 0) {
@@ -389,27 +495,28 @@ export const getDispatchBatchInternal = internalQuery({
       )
       .take(LANE_SCAN_SIZE);
 
-    const candidates: Array<{
-      laneId: Id<"tenantJobLanes">;
-      jobId: Id<"tenantJobs">;
-      tenantKey: string;
-      nextPriority?: number;
-    }> = [];
-    for (const lane of lanes) {
-      const jobs = await ctx.db
-        .query("tenantJobs")
-        .withIndex("by_lane_and_status_and_priority_and_queued_at", (q) =>
-          q.eq("laneId", lane._id).eq("status", "queued")
-        )
-        .take(2);
-      if (!jobs[0]) continue;
-      candidates.push({
-        laneId: lane._id,
-        jobId: jobs[0]._id,
-        tenantKey: lane.tenantKey,
-        nextPriority: jobs[1]?.priority,
-      });
-    }
+    const candidateResults = await Promise.all(
+      lanes.map(async (lane) => {
+        const jobs = await ctx.db
+          .query("tenantJobs")
+          .withIndex("by_lane_and_status_and_priority_and_queued_at", (q) =>
+            q.eq("laneId", lane._id).eq("status", "queued")
+          )
+          .take(2);
+        return jobs[0]
+          ? {
+              laneId: lane._id,
+              jobId: jobs[0]._id,
+              tenantKey: lane.tenantKey,
+              nextPriority: jobs[1]?.priority,
+            }
+          : null;
+      })
+    );
+    const candidates = candidateResults.filter(
+      (candidate): candidate is NonNullable<typeof candidate> =>
+        candidate !== null
+    );
     if (candidates.length === 0) {
       return { kind: "idle" as const, timeoutMs: 10_000 };
     }
@@ -434,14 +541,16 @@ export const dispatchBatchInternal = internalMutation({
   args: dispatchMutationArgs,
   returns: dispatchMutationReturns,
   handler: async (ctx, args) => {
-    const control = await ctx.db
-      .query("tenantSchedulerControls")
-      .withIndex("by_key", (q) => q.eq("key", "global"))
-      .unique();
-    const enforcedOverride = await ctx.db
-      .query("tenantSchedulerWorkspaceOverrides")
-      .withIndex("by_mode", (q) => q.eq("mode", "enforced"))
-      .first();
+    const [control, enforcedOverride] = await Promise.all([
+      ctx.db
+        .query("tenantSchedulerControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique(),
+      ctx.db
+        .query("tenantSchedulerWorkspaceOverrides")
+        .withIndex("by_mode", (q) => q.eq("mode", "enforced"))
+        .first(),
+    ]);
     if (!control || (control.mode !== "enforced" && !enforcedOverride)) {
       return null;
     }
@@ -746,33 +855,13 @@ export const cancelJobByExternalIdInternal = internalMutation({
     const job = await ctx.db.get("tenantJobs", jobId);
     if (!job) return { handled: false };
     if (job.status === "queued") {
-      const lane = await ctx.db.get("tenantJobLanes", job.laneId);
       const now = getCurrentUTCTimestamp();
       await ctx.db.patch("tenantJobs", job._id, {
         status: "cancelled",
         completedAt: now,
         updatedAt: now,
       });
-      if (lane) {
-        const nextJob = await ctx.db
-          .query("tenantJobs")
-          .withIndex("by_lane_and_status_and_priority_and_queued_at", (q) =>
-            q.eq("laneId", lane._id).eq("status", "queued")
-          )
-          .first();
-        const pendingCount = Math.max(0, lane.pendingCount - 1);
-        await ctx.db.patch("tenantJobLanes", lane._id, {
-          pendingCount,
-          minPriority: nextJob?.priority ?? Number.MAX_SAFE_INTEGER,
-          state:
-            lane.state === "paused"
-              ? "paused"
-              : pendingCount > 0
-                ? "ready"
-                : "idle",
-          updatedAt: now,
-        });
-      }
+      await reconcileTenantLaneQueueState(ctx, { laneId: job.laneId });
       return { handled: true };
     }
     if (job.status === "running" && job.workId) {
@@ -805,7 +894,9 @@ export const setControlInternal = internalMutation({
       await assertSchedulerDrained(ctx);
     }
     const slotCount = clampTenantSchedulerSlotCount(
-      args.slotCount ?? existing?.slotCount ?? DEFAULT_TENANT_SCHEDULER_SLOT_COUNT
+      args.slotCount ??
+        existing?.slotCount ??
+        DEFAULT_TENANT_SCHEDULER_SLOT_COUNT
     );
     const baseSlotsPerTenant = clampTenantBaseSlots(
       args.baseSlotsPerTenant ??
@@ -869,6 +960,32 @@ export const setControlInternal = internalMutation({
   },
 });
 
+export const reconcilePoolConfigurationInternal = internalMutation({
+  args: {},
+  returns: v.object({ enforced: v.boolean() }),
+  handler: async (ctx) => {
+    const [control, enforcedOverride] = await Promise.all([
+      getGlobalControl(ctx),
+      ctx.db
+        .query("tenantSchedulerWorkspaceOverrides")
+        .withIndex("by_mode", (q) => q.eq("mode", "enforced"))
+        .first(),
+    ]);
+    const enforced = control?.mode === "enforced" || Boolean(enforcedOverride);
+    await configurePoolSplit(ctx, enforced);
+    // Project logging policy requires console.log for canonical success-path events.
+    // eslint-disable-next-line no-console
+    console.log("[TenantScheduler] Reconciled pool configuration", {
+      enforced,
+      tenantExecutionParallelism: enforced
+        ? TENANT_EXECUTION_POOL_MAX_PARALLELISM
+        : 0,
+      legacyPoolsPaused: enforced,
+    });
+    return { enforced };
+  },
+});
+
 export const setWorkspaceOverrideInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
@@ -878,14 +995,9 @@ export const setWorkspaceOverrideInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("tenantSchedulerWorkspaceOverrides")
-      .withIndex("by_workspace", (q) =>
-        q.eq("workspaceId", args.workspaceId)
-      )
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
       .unique();
-    if (
-      existing?.mode === "enforced" &&
-      args.mode !== "enforced"
-    ) {
+    if (existing?.mode === "enforced" && args.mode !== "enforced") {
       await assertSchedulerDrained(ctx, args.workspaceId);
     }
     if (!args.mode) {
@@ -946,11 +1058,11 @@ export const resumeWorkspaceInternal = internalMutation({
       .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
       .unique();
     if (lane) {
-      await ctx.db.patch(lane._id, {
-        state: lane.pendingCount > 0 ? "ready" : "idle",
-        updatedAt: getCurrentUTCTimestamp(),
+      const reconciled = await reconcileTenantLaneQueueState(ctx, {
+        laneId: lane._id,
+        resume: true,
       });
-      if (lane.pendingCount > 0) await pingDispatcher(ctx);
+      if (reconciled.pendingCount > 0) await pingDispatcher(ctx);
     }
     return null;
   },
@@ -1031,7 +1143,7 @@ const controlStatusValidator = v.union(
 );
 
 export const getControlStatusInternal = internalQuery({
-  args: {},
+  args: { now: v.optional(v.number()) },
   returns: v.object({
     control: controlStatusValidator,
     slots: v.object({
@@ -1048,43 +1160,82 @@ export const getControlStatusInternal = internalQuery({
       queued: v.number(),
       running: v.number(),
       sampleTruncated: v.boolean(),
+      oldestQueuedAt: v.union(v.number(), v.null()),
+      oldestQueueAgeMs: v.union(v.number(), v.null()),
+      earliestLeaseExpiresAt: v.union(v.number(), v.null()),
+      expiredLeaseCount: v.number(),
+      expiredLeaseSampleTruncated: v.boolean(),
+    }),
+    drift: v.object({
+      slotCountMismatch: v.boolean(),
+      claimedSlotCountMismatch: v.boolean(),
+      expectedTenantExecutionPoolParallelism: v.number(),
+      legacyPoolsExpectedPaused: v.boolean(),
     }),
     enforcedOverrides: v.number(),
   }),
-  handler: async (ctx) => {
-    const [control, slots, readyLanes, pausedLanes, queuedJobs, runningJobs] =
-      await Promise.all([
-        getGlobalControl(ctx),
-        ctx.db.query("tenantSchedulerSlots").take(100),
-        ctx.db
-          .query("tenantJobLanes")
-          .withIndex("by_state_and_last_dispatched_at", (q) =>
-            q.eq("state", "ready")
-          )
-          .take(1001),
-        ctx.db
-          .query("tenantJobLanes")
-          .withIndex("by_state_and_last_dispatched_at", (q) =>
-            q.eq("state", "paused")
-          )
-          .take(1001),
-        ctx.db
-          .query("tenantJobs")
-          .withIndex("by_status_and_lease_expires_at", (q) =>
-            q.eq("status", "queued")
-          )
-          .take(1001),
-        ctx.db
-          .query("tenantJobs")
-          .withIndex("by_status_and_lease_expires_at", (q) =>
-            q.eq("status", "running")
-          )
-          .take(1001),
-      ]);
-    const enforcedOverrides = await ctx.db
-      .query("tenantSchedulerWorkspaceOverrides")
-      .withIndex("by_mode", (q) => q.eq("mode", "enforced"))
-      .take(101);
+  handler: async (ctx, { now }) => {
+    const [
+      control,
+      slots,
+      readyLanes,
+      pausedLanes,
+      queuedJobs,
+      runningJobs,
+      oldestQueuedJob,
+      earliestLeasedJob,
+      expiredLeases,
+      enforcedOverrides,
+    ] = await Promise.all([
+      getGlobalControl(ctx),
+      ctx.db.query("tenantSchedulerSlots").take(100),
+      ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_state_and_last_dispatched_at", (q) =>
+          q.eq("state", "ready")
+        )
+        .take(1001),
+      ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_state_and_last_dispatched_at", (q) =>
+          q.eq("state", "paused")
+        )
+        .take(1001),
+      ctx.db
+        .query("tenantJobs")
+        .withIndex("by_status_and_lease_expires_at", (q) =>
+          q.eq("status", "queued")
+        )
+        .take(1001),
+      ctx.db
+        .query("tenantJobs")
+        .withIndex("by_status_and_lease_expires_at", (q) =>
+          q.eq("status", "running")
+        )
+        .take(1001),
+      ctx.db
+        .query("tenantJobs")
+        .withIndex("by_status_and_queued_at", (q) => q.eq("status", "queued"))
+        .first(),
+      ctx.db
+        .query("tenantJobs")
+        .withIndex("by_status_and_lease_expires_at", (q) =>
+          q.eq("status", "running")
+        )
+        .first(),
+      now === undefined
+        ? Promise.resolve([])
+        : ctx.db
+            .query("tenantJobs")
+            .withIndex("by_status_and_lease_expires_at", (q) =>
+              q.eq("status", "running").lt("leaseExpiresAt", now)
+            )
+            .take(101),
+      ctx.db
+        .query("tenantSchedulerWorkspaceOverrides")
+        .withIndex("by_mode", (q) => q.eq("mode", "enforced"))
+        .take(101),
+    ]);
 
     return {
       control: control
@@ -1104,14 +1255,32 @@ export const getControlStatusInternal = internalQuery({
       lanes: {
         ready: Math.min(readyLanes.length, 1000),
         paused: Math.min(pausedLanes.length, 1000),
-        sampleTruncated:
-          readyLanes.length > 1000 || pausedLanes.length > 1000,
+        sampleTruncated: readyLanes.length > 1000 || pausedLanes.length > 1000,
       },
       jobs: {
         queued: Math.min(queuedJobs.length, 1000),
         running: Math.min(runningJobs.length, 1000),
-        sampleTruncated:
-          queuedJobs.length > 1000 || runningJobs.length > 1000,
+        sampleTruncated: queuedJobs.length > 1000 || runningJobs.length > 1000,
+        oldestQueuedAt: oldestQueuedJob?.queuedAt ?? null,
+        oldestQueueAgeMs:
+          now === undefined || !oldestQueuedJob
+            ? null
+            : Math.max(0, now - oldestQueuedJob.queuedAt),
+        earliestLeaseExpiresAt: earliestLeasedJob?.leaseExpiresAt ?? null,
+        expiredLeaseCount: Math.min(expiredLeases.length, 100),
+        expiredLeaseSampleTruncated: expiredLeases.length > 100,
+      },
+      drift: {
+        slotCountMismatch:
+          control !== null && slots.length !== control.slotCount,
+        claimedSlotCountMismatch:
+          slots.filter((slot) => slot.status === "claimed").length !==
+          Math.min(runningJobs.length, 1000),
+        expectedTenantExecutionPoolParallelism:
+          control?.mode === "enforced"
+            ? TENANT_EXECUTION_POOL_MAX_PARALLELISM
+            : 0,
+        legacyPoolsExpectedPaused: control?.mode === "enforced",
       },
       enforcedOverrides: Math.min(enforcedOverrides.length, 100),
     };

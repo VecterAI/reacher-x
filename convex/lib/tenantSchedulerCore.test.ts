@@ -32,6 +32,7 @@ describe("tenant scheduler capacity policy", () => {
     expect(capFor(2)).toBe(18);
     expect(capFor(3)).toBe(12);
     expect(capFor(10)).toBe(3);
+    expect(capFor(50)).toBe(1);
     expect(capFor(36)).toBe(1);
     expect(capFor(100)).toBe(1);
   });

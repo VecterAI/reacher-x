@@ -188,9 +188,7 @@ export function WorkspaceSystemStatusDialog({
   );
   const schedulerStatus = useQuery(
     api.tenantScheduler.getWorkspaceSchedulerStatus,
-    open
-      ? { workspaceId: status.workspaceId as Id<"workspaces"> }
-      : "skip"
+    open ? { workspaceId: status.workspaceId as Id<"workspaces"> } : "skip"
   );
   const statusCopy = useWorkspaceSystemStatusCopy(status);
   const [view, setView] = useState<WorkspaceStatusDialogView>("progress");
@@ -317,13 +315,13 @@ export function WorkspaceSystemStatusDialog({
 
           <div className="space-y-4 px-4 py-4">
             <p className="text-sm">
-              This pauses new discovery, monitor activity, and queued
-              background work for this workspace.
+              This pauses new discovery, monitor activity, and queued background
+              work for this workspace.
             </p>
             <p className="text-muted-foreground text-sm">
-              A task already running may finish safely. Your saved prospects
-              and progress stay intact, and queued work resumes later from this
-              same dialog.
+              A task already running may finish safely. Your saved prospects and
+              progress stay intact, and queued work resumes later from this same
+              dialog.
             </p>
             <div className="bg-muted/40 border-border rounded-lg border px-3 py-2.5">
               <p className="text-sm font-medium">
@@ -383,13 +381,18 @@ export function WorkspaceSystemStatusDialog({
           {schedulerStatus?.mode === "enforced" ? (
             <section
               aria-live="polite"
+              aria-atomic="true"
               className="border-border bg-muted/20 border-t px-4 py-3"
             >
-              <p className="text-sm font-medium">Workspace work queue</p>
+              <p className="text-sm font-medium">Agent activity</p>
               <p className="text-muted-foreground mt-1 text-xs">
                 {schedulerStatus.state === "paused"
-                  ? `${schedulerStatus.queuedCount} waiting · paused`
-                  : `${schedulerStatus.runningCount} active · ${schedulerStatus.queuedCount} waiting`}
+                  ? `Agent paused · ${schedulerStatus.queuedCount} waiting`
+                  : schedulerStatus.runningCount > 0
+                    ? `Agent working · ${schedulerStatus.runningCount} active · ${schedulerStatus.queuedCount} waiting`
+                    : schedulerStatus.queuedCount > 0
+                      ? `Agent waiting · ${schedulerStatus.queuedCount} queued`
+                      : "Agent ready"}
               </p>
             </section>
           ) : null}

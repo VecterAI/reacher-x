@@ -53,6 +53,24 @@ crons.interval(
 );
 
 crons.interval(
+  "repair tenant scheduler lane indexes",
+  { minutes: 1 },
+  internal.tenantScheduler.reconcileQueuedLanesInternal
+);
+
+crons.interval(
+  "reconcile tenant scheduler pool mode",
+  { minutes: 5 },
+  internal.tenantScheduler.reconcilePoolConfigurationInternal
+);
+
+crons.interval(
+  "recover stale setup workflows",
+  { minutes: 5 },
+  internal.setupSessions.recoverStaleSetupWorkflowsInternal
+);
+
+crons.interval(
   "recover expired tenant scheduler leases",
   { minutes: 10 },
   internal.tenantScheduler.reapExpiredJobsInternal

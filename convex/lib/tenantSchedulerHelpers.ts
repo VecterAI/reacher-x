@@ -1,10 +1,76 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { isTenantJobTerminal } from "./tenantSchedulerCore";
 
 type TenantJobCompletionKind = "succeeded" | "failed" | "cancelled";
+
+/**
+ * Rebuild the lane's queue metadata from the durable queued jobs.
+ *
+ * Enqueue deliberately does not increment the lane document: same-workspace
+ * bursts otherwise make every producer contend on one row. The job rows are
+ * the source of truth and this small reconciliation mutation maintains the
+ * fair-dispatch index without losing increments when activations race.
+ */
+export async function reconcileTenantLaneQueueState(
+  ctx: MutationCtx,
+  args: {
+    laneId: Id<"tenantJobLanes">;
+    resume?: boolean;
+  }
+): Promise<{
+  lane: Doc<"tenantJobLanes"> | null;
+  pendingCount: number;
+}> {
+  const lane = await ctx.db.get("tenantJobLanes", args.laneId);
+  if (!lane) {
+    return { lane: null, pendingCount: 0 };
+  }
+
+  let pendingCount = 0;
+  let minPriority = Number.MAX_SAFE_INTEGER;
+  for await (const job of ctx.db
+    .query("tenantJobs")
+    .withIndex("by_lane_and_status_and_priority_and_queued_at", (q) =>
+      q.eq("laneId", lane._id).eq("status", "queued")
+    )) {
+    pendingCount += 1;
+    minPriority = Math.min(minPriority, job.priority);
+  }
+
+  const state =
+    lane.state === "paused" && !args.resume
+      ? ("paused" as const)
+      : pendingCount > 0
+        ? ("ready" as const)
+        : ("idle" as const);
+  const now = getCurrentUTCTimestamp();
+  if (
+    lane.pendingCount !== pendingCount ||
+    lane.minPriority !== minPriority ||
+    lane.state !== state
+  ) {
+    await ctx.db.patch("tenantJobLanes", lane._id, {
+      pendingCount,
+      minPriority,
+      state,
+      updatedAt: now,
+    });
+  }
+
+  return {
+    lane: {
+      ...lane,
+      pendingCount,
+      minPriority,
+      state,
+      updatedAt: now,
+    },
+    pendingCount,
+  };
+}
 
 export async function completeTenantJob(
   ctx: MutationCtx,

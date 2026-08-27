@@ -520,6 +520,11 @@ export default defineSchema({
     status: setupSessionStatusValidator,
     setupThreadId: v.string(),
     workflowId: v.optional(v.string()),
+    /** Optional during the self-healing rollout; incremented per replacement. */
+    workflowRecoveryRevision: v.optional(v.number()),
+    workflowRecoveryAttempts: v.optional(v.number()),
+    workflowLastRecoveryAt: v.optional(v.number()),
+    workflowRecoveryReason: v.optional(v.string()),
     useCaseKey: workspaceUseCaseKeyValidator,
     draftOrdinal: v.number(),
     draftName: v.optional(v.string()),
@@ -564,6 +569,7 @@ export default defineSchema({
   })
     .index("by_user_status", ["userId", "status"])
     .index("by_user_last_active", ["userId", "lastActiveAt"])
+    .index("by_status_updated_at", ["status", "statusUpdatedAt"])
     .index("by_setup_thread", ["setupThreadId"])
     .index("by_target_workspace", ["targetWorkspaceId"])
     .index("by_existing_workspace", ["existingWorkspaceId"]),
@@ -1023,10 +1029,17 @@ export default defineSchema({
   })
     .index("by_tenant_key", ["tenantKey"])
     .index("by_workspace", ["workspaceId"])
-    .index("by_state_and_last_dispatched_at", [
-      "state",
-      "lastDispatchedAt",
-    ]),
+    .index("by_state_and_last_dispatched_at", ["state", "lastDispatchedAt"]),
+
+  /** Immutable enqueue lookup so producers never read mutable lane counters. */
+  tenantJobLaneBindings: defineTable({
+    tenantKey: v.string(),
+    laneId: v.id("tenantJobLanes"),
+    workspaceId: v.optional(v.id("workspaces")),
+    userId: v.id("users"),
+  })
+    .index("by_tenant_key", ["tenantKey"])
+    .index("by_lane", ["laneId"]),
 
   /** Durable app-owned jobs. Existing prospect rows require no migration. */
   tenantJobs: defineTable({
@@ -1059,6 +1072,7 @@ export default defineSchema({
       "queuedAt",
     ])
     .index("by_workspace_and_status", ["workspaceId", "status"])
+    .index("by_status_and_queued_at", ["status", "queuedAt"])
     .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
     .index("by_status_and_completed_at", ["status", "completedAt"]),
 

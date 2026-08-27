@@ -65,7 +65,7 @@ export const setupSessionWorkflow = workflowManager.define({
               userId: session.userId,
               class: "interactive",
               priority: TENANT_JOB_PRIORITY.interactive,
-              idempotencyKey: `setup-generation:${String(sessionId)}:${session.generationRevision ?? 0}`,
+              idempotencyKey: `setup-generation:${String(sessionId)}:${session.generationRevision ?? 0}:${session.workflowRecoveryRevision ?? 0}`,
               payload: {
                 kind: "setup_generation",
                 sessionId,
