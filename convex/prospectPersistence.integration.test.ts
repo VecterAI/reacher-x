@@ -26,6 +26,76 @@ async function seedWorkspace(t: ReturnType<typeof convexTest>) {
 }
 
 describe("prospect persistence reliability", () => {
+  test("skips unchanged summary and rollup writes during provider refreshes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 7, 29, 8));
+    const t = convexTest(schema, modules);
+    const workspace = await seedWorkspace(t);
+    const baseProspect = {
+      platform: "twitter" as const,
+      externalId: "provider-refresh-1",
+      data: {
+        id_str: "provider-refresh-1",
+        providerRefreshNonce: 1,
+        user: {
+          id_str: "provider-refresh-user",
+          name: "Provider Refresh Prospect",
+          screen_name: "provider_refresh",
+        },
+      },
+      discoverySource: "search_post" as const,
+    };
+
+    const created = await t.mutation(internal.prospects.createProspectsBatch, {
+      ...workspace,
+      prospects: [baseProspect],
+    });
+    const before = await t.run(async (ctx) => ({
+      prospect: await ctx.db.get("prospects", created.prospectIds[0]),
+      summary: await ctx.db
+        .query("prospectSummaries")
+        .withIndex("by_prospect", (q) =>
+          q.eq("prospectId", created.prospectIds[0])
+        )
+        .unique(),
+      stats: await ctx.db.query("workspaceStatsStripes").unique(),
+      analytics: await ctx.db.query("workspaceAnalyticsDailyStripes").unique(),
+    }));
+
+    vi.setSystemTime(Date.UTC(2026, 7, 29, 9));
+    const refreshed = await t.mutation(
+      internal.prospects.createProspectsBatch,
+      {
+        ...workspace,
+        prospects: [
+          {
+            ...baseProspect,
+            data: { ...baseProspect.data, providerRefreshNonce: 2 },
+          },
+        ],
+      }
+    );
+    const after = await t.run(async (ctx) => ({
+      prospect: await ctx.db.get("prospects", created.prospectIds[0]),
+      summary: await ctx.db
+        .query("prospectSummaries")
+        .withIndex("by_prospect", (q) =>
+          q.eq("prospectId", created.prospectIds[0])
+        )
+        .unique(),
+      stats: await ctx.db.query("workspaceStatsStripes").unique(),
+      analytics: await ctx.db.query("workspaceAnalyticsDailyStripes").unique(),
+    }));
+
+    expect(refreshed).toMatchObject({ created: 0, updated: 1 });
+    expect(after.prospect?.updatedAt).toBeGreaterThan(
+      before.prospect?.updatedAt ?? 0
+    );
+    expect(after.summary).toEqual(before.summary);
+    expect(after.stats).toEqual(before.stats);
+    expect(after.analytics).toEqual(before.analytics);
+  });
+
   test("persists one heavyweight prospect idempotently without a plan scan", async () => {
     vi.useFakeTimers();
     const t = convexTest(schema, modules);

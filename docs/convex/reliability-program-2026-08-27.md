@@ -760,3 +760,37 @@ replaced by a different queued/running job, then require one evaluator run for
 the selected event and no duplicate run, scheduler failure, or new Insights
 regression. Do not start the `prospectSummaries` contention change until this
 gate passes, because combining the two fixes would make rollback ambiguous.
+
+### Bounded queue recovery gate — 2026-08-29
+
+After the generation fix deployed, the approved production operation invoked
+only `prepareMemoryEvaluationQueueEnqueueInternal` for the diagnosed workspace.
+It reclaimed the historical cancelled pointer, selected pending event
+`n575xs9f8qsx0hnrdpt9zrxrsn8d9ese`, and advanced the queue generation to
+`1787949197202`. Verification found the queue in `queued` state with no `workId`,
+no replacement tenant job, no running evaluator, and the ordinary backlog still
+intact. This closed the stale-pointer recovery gate without bulk-draining or
+otherwise processing preserved learning events. Exact-once execution remains a
+production observation gate for the next natural enqueue, not a prerequisite
+for the independent summary-contention fix.
+
+## Prospect summary contention follow-up — 2026-08-29
+
+Production Insights recorded eight permanent `createProspectsBatch` conflicts
+on `prospectSummaries`; the latest was 2026-08-28 14:40:15 UTC. Repeated failures
+targeted the same per-prospect summary IDs, and each exhausted Convex's four OCC
+retries. The source mutation was already limited to one prospect per transaction
+and its action caller already retried idempotently, so another global queue,
+Aggregate, or sharded counter would not address this per-prospect dependency.
+
+The focused fix suppresses read-model work before opening the conflicting read
+set. A provider refresh whose derived summary is unchanged now returns before
+reading or patching `prospectSummaries`. The prospect trigger also compares the
+old and new stats and daily-analytics contributions before reading or writing
+their 32-way stripes. Genuine summary, stats, and analytics transitions still
+write through the existing trigger, while raw provider payload refreshes update
+only their source prospect. There is no schema change, backfill, or rollout
+migration. Integration coverage proves an irrelevant provider refresh advances
+the source prospect while leaving the summary and both rollup stripes byte-for-
+byte unchanged; existing transition coverage proves real status changes still
+update the striped read models.

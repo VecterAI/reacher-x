@@ -27,6 +27,7 @@ import {
   type TargetedWorkspaceAgentOpsContribution,
 } from "./agentOpsReadModelHelpers";
 import { buildOutreachProgressSummary } from "./outreachProgressHelpers";
+import { buildChangedPatchWithUpdatedAt } from "./patchHelpers";
 import { getReadModelStripe } from "./readModelStripeHelpers";
 import { syncProspectFitScoreAggregate } from "./prospectFitScoreAggregate";
 
@@ -148,21 +149,42 @@ async function syncProspectSummary(
     return;
   }
 
+  const nextSummary = args.newDoc
+    ? buildProspectSummaryRecord(args.newDoc)
+    : null;
+  if (args.oldDoc && nextSummary) {
+    const previousSummary = buildProspectSummaryRecord(args.oldDoc);
+    const sourcePatch = buildChangedPatchWithUpdatedAt(
+      previousSummary as unknown as Record<string, unknown>,
+      nextSummary as unknown as Record<string, unknown>,
+      nextSummary.updatedAt
+    );
+    if (!sourcePatch) {
+      return;
+    }
+  }
+
   const existing = await db
     .query("prospectSummaries")
     .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
     .first();
 
-  if (!args.newDoc) {
+  if (!nextSummary) {
     if (existing) {
       await db.delete(existing._id);
     }
     return;
   }
 
-  const nextSummary = buildProspectSummaryRecord(args.newDoc);
   if (existing) {
-    await db.patch(existing._id, nextSummary);
+    const patch = buildChangedPatchWithUpdatedAt(
+      existing as unknown as Record<string, unknown>,
+      nextSummary as unknown as Record<string, unknown>,
+      nextSummary.updatedAt
+    );
+    if (patch) {
+      await db.patch(existing._id, patch);
+    }
   } else {
     await db.insert("prospectSummaries", nextSummary);
   }
@@ -412,6 +434,19 @@ triggers.register("prospects", async (ctx, change) => {
     return;
   }
 
+  const oldStatsContribution = change.oldDoc
+    ? getWorkspaceStatsContributionFromProspect(change.oldDoc)
+    : null;
+  const newStatsContribution = change.newDoc
+    ? getWorkspaceStatsContributionFromProspect(change.newDoc)
+    : null;
+  const oldAnalyticsContributions = change.oldDoc
+    ? getWorkspaceAnalyticsContributionsFromProspect(change.oldDoc)
+    : [];
+  const newAnalyticsContributions = change.newDoc
+    ? getWorkspaceAnalyticsContributionsFromProspect(change.newDoc)
+    : [];
+
   await syncProspectSummary(ctx.innerDb, {
     oldDoc: change.oldDoc,
     newDoc: change.newDoc,
@@ -422,41 +457,41 @@ triggers.register("prospects", async (ctx, change) => {
     newDoc: change.newDoc,
   });
 
-  await applyWorkspaceStatsChanges(ctx.innerDb, {
-    sourceKey: String(change.id),
-    remove: change.oldDoc
-      ? [
-          {
-            workspaceId: change.oldDoc.workspaceId,
-            userId: change.oldDoc.userId,
-            contribution: getWorkspaceStatsContributionFromProspect(
-              change.oldDoc
-            ),
-          },
-        ]
-      : [],
-    add: change.newDoc
-      ? [
-          {
-            workspaceId: change.newDoc.workspaceId,
-            userId: change.newDoc.userId,
-            contribution: getWorkspaceStatsContributionFromProspect(
-              change.newDoc
-            ),
-          },
-        ]
-      : [],
-  });
+  if (!areJsonValuesEqual(oldStatsContribution, newStatsContribution)) {
+    await applyWorkspaceStatsChanges(ctx.innerDb, {
+      sourceKey: String(change.id),
+      remove:
+        change.oldDoc && oldStatsContribution
+          ? [
+              {
+                workspaceId: change.oldDoc.workspaceId,
+                userId: change.oldDoc.userId,
+                contribution: oldStatsContribution,
+              },
+            ]
+          : [],
+      add:
+        change.newDoc && newStatsContribution
+          ? [
+              {
+                workspaceId: change.newDoc.workspaceId,
+                userId: change.newDoc.userId,
+                contribution: newStatsContribution,
+              },
+            ]
+          : [],
+    });
+  }
 
-  await applyWorkspaceAnalyticsChanges(ctx.innerDb, {
-    sourceKey: String(change.id),
-    remove: change.oldDoc
-      ? getWorkspaceAnalyticsContributionsFromProspect(change.oldDoc)
-      : [],
-    add: change.newDoc
-      ? getWorkspaceAnalyticsContributionsFromProspect(change.newDoc)
-      : [],
-  });
+  if (
+    !areJsonValuesEqual(oldAnalyticsContributions, newAnalyticsContributions)
+  ) {
+    await applyWorkspaceAnalyticsChanges(ctx.innerDb, {
+      sourceKey: String(change.id),
+      remove: oldAnalyticsContributions,
+      add: newAnalyticsContributions,
+    });
+  }
 });
 
 triggers.register("prospectActivityLog", async (ctx, change) => {
