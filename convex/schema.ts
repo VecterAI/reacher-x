@@ -1017,7 +1017,11 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_mode", ["mode"]),
 
-  /** One independently fair lane per workspace, or per pre-workspace user. */
+  /**
+   * One independently fair lane per workspace, or per pre-workspace user.
+   * `runningCount` is retained for rollout compatibility; claimed scheduler
+   * slots are the authoritative bounded source for live concurrency.
+   */
   tenantJobLanes: defineTable({
     tenantKey: v.string(),
     workspaceId: v.optional(v.id("workspaces")),

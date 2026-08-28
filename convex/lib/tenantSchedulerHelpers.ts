@@ -98,7 +98,6 @@ export async function completeTenantJob(
   }
 
   const now = getCurrentUTCTimestamp();
-  const lane = await ctx.db.get("tenantJobLanes", job.laneId);
   const slot = job.slotId
     ? await ctx.db.get("tenantSchedulerSlots", job.slotId)
     : null;
@@ -123,20 +122,9 @@ export async function completeTenantJob(
     });
   }
 
-  if (lane) {
-    const runningCount = Math.max(0, lane.runningCount - 1);
-    await ctx.db.patch("tenantJobLanes", lane._id, {
-      runningCount,
-      state:
-        lane.state === "paused"
-          ? "paused"
-          : lane.pendingCount > 0
-            ? "ready"
-            : "idle",
-      updatedAt: now,
-    });
-  }
-
+  // Claimed slots are the live concurrency source. Completion deliberately
+  // avoids the lane document so same-tenant jobs can finish concurrently
+  // without turning that marker back into a hot write.
   await ctx.scheduler.runAfter(
     0,
     internal.tenantScheduler.wakeDispatcherInternal,
