@@ -21,11 +21,13 @@ import {
 } from "./lib/styleSourceCore";
 import {
   BATCH_ANALYSIS_THRESHOLD,
+  bootstrapWorkspaceStyleProfileForPlatformOnDb,
   bootstrapWorkspaceStyleProfilesForWorkspaceOnDb,
   getWorkspaceStyleProfileRow,
   upsertWorkspaceStyleProfileOnDb,
 } from "./lib/workspaceStyleProfileCore";
 import { disableCanonicalWorkspaceMemoriesBySourceCategory } from "./lib/workspaceMemoryCore";
+import { workspaceStyleBootstrapResultValidator } from "./validators";
 
 // ============================================================================
 // Constants
@@ -553,6 +555,26 @@ export const bootstrapWorkspaceStyleProfilesForWorkspace = internalMutation({
   },
   handler: async (ctx, args) => {
     return await bootstrapWorkspaceStyleProfilesForWorkspaceOnDb(ctx, args);
+  },
+});
+
+export const bootstrapWorkspaceStyleProfileForPlatform = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+  },
+  returns: workspaceStyleBootstrapResultValidator,
+  handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace || workspace.userId !== args.userId) {
+      return {
+        platform: args.platform,
+        status: "skipped" as const,
+        reason: "no_workspace" as const,
+      };
+    }
+    return await bootstrapWorkspaceStyleProfileForPlatformOnDb(ctx, args);
   },
 });
 

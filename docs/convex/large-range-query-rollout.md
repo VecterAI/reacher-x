@@ -142,3 +142,13 @@ a workflow ID may run the same bounded migration, while running workspaces and
 inconsistent workflow-ID-without-status rows remain rejected. Production
 rollout of those 22 workspaces remains pending deployment of that reviewed
 follow-up.
+
+### Aggregate rollout completion — 2026-08-28
+
+The eligibility follow-up deployed successfully and the remaining workspaces
+were migrated sequentially. The final production result is 34/34 workspaces
+verified, with all 83,516 scored prospect summaries matching their Aggregate
+histogram bins exactly. Backfill mutations remained capped at 25 records and
+verification queries at 100 records. There were no mismatches, failed
+migrations, migration-time Insight errors, or global prospect scan. No further
+fit-score Aggregate backfill is required.

@@ -95,6 +95,7 @@ export type AutoPlanFailure = {
 };
 
 export const AUTO_PLAN_RECOVERY_FAILURE_CODES = [
+  "writing_style_unavailable",
   "grounding_unavailable",
   "provider_balance_unavailable",
   "provider_transient",
@@ -182,10 +183,9 @@ export function classifyAutoPlanFailure(error: unknown): AutoPlanFailure {
     return {
       code: "writing_style_unavailable",
       retryable: false,
-      userMessage:
-        "Writing style is unavailable. Refresh it from Connected accounts.",
-      actionLabel: "Reconnect",
-      targetHref: "/settings/connected-accounts",
+      userMessage: message.includes("repair needs support")
+        ? "We couldn’t refresh the writing style automatically. Please contact support."
+        : "Agent is refreshing the writing style and will retry automatically.",
     };
   }
 

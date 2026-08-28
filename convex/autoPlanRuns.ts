@@ -17,6 +17,7 @@ import {
   upsertNotificationByKey,
 } from "./lib/notificationHelpers";
 import { getProspectDisplayLabel } from "./lib/prospectIdentityCore";
+import { getWorkspaceWritingStyleContext } from "./lib/workspaceStyleProfileCore";
 
 type AutoPlanRecoveryCandidate = {
   sourceRunId: Id<"autoPlanRuns">;
@@ -58,6 +59,16 @@ async function claimAutoPlanRecoveryRun(
     prospect.planGenerationStatus !== "failed"
   ) {
     return null;
+  }
+
+  if (run.errorCode === "writing_style_unavailable") {
+    const styleContext = await getWorkspaceWritingStyleContext(ctx.db, {
+      workspaceId: prospect.workspaceId,
+      platform: prospect.platform === "linkedin" ? "linkedin" : "twitter",
+    });
+    if (styleContext.status !== "ready") {
+      return null;
+    }
   }
 
   const hasCapacity = await hasRecoveryCapacityForProspect(
@@ -303,6 +314,15 @@ export const getAutoPlanRecoveryProbeTarget = internalQuery({
         ))
       ) {
         continue;
+      }
+      if (run.errorCode === "writing_style_unavailable") {
+        const styleContext = await getWorkspaceWritingStyleContext(ctx.db, {
+          workspaceId: prospect.workspaceId,
+          platform: prospect.platform === "linkedin" ? "linkedin" : "twitter",
+        });
+        if (styleContext.status !== "ready") {
+          continue;
+        }
       }
       if (prospect.platform !== "twitter") {
         continue;
