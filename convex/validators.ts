@@ -2287,6 +2287,37 @@ export const styleProfileStatusValidator = v.union(
   v.literal("failed")
 );
 
+export const workspaceWritingStyleContextValidator = v.union(
+  v.object({
+    status: v.literal("ready"),
+    writingStyle: v.string(),
+    profileVersion: v.number(),
+    source: v.union(v.literal("canonical"), v.literal("legacy")),
+  }),
+  v.object({
+    status: v.literal("not_ready"),
+    reason: v.union(
+      v.literal("profile_not_ready"),
+      v.literal("memory_missing")
+    ),
+    profileVersion: v.optional(v.number()),
+  })
+);
+
+export const workspaceStyleBootstrapResultValidator = v.object({
+  platform: prospectPlatformValidator,
+  status: v.union(v.literal("scheduled"), v.literal("skipped")),
+  reason: v.union(
+    v.literal("scheduled"),
+    v.literal("already_initialized"),
+    v.literal("already_queued"),
+    v.literal("recovery_exhausted"),
+    v.literal("insufficient_samples"),
+    v.literal("no_active_source"),
+    v.literal("no_workspace")
+  ),
+});
+
 export const monitorHealthStatusValidator = v.union(
   v.literal("healthy"),
   v.literal("degraded"),

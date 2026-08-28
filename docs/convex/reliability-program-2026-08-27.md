@@ -662,3 +662,33 @@ with scope-bound opaque cursors and a fixed snapshot watermark; buffered rows
 are carried by IDs, each internal transaction is capped at 300 rows / 2 MB, and
 CSV export advances once through the snapshot. Production canary and Aggregate
 migration remain blocked until that focused follow-up is merged and deployed.
+
+## Writing-style memory orphan follow-up — 2026-08-28
+
+A post-rollout `auto_plan` job failed after admission with `Auto plan grounding
+incomplete: workspace writing style context is missing`. Read-only inspection
+showed that the active paid Hobby workspace had a ready Twitter style profile
+at version 1 and 22 retained, processed source samples, but its referenced
+Agent-component memory, inventory row, and canonical `workspaceMemories` row
+were all absent. The connected X source was current and the LinkedIn style was
+healthy. This was a style-memory data-compatibility failure, not scheduler
+capacity: the scheduler was enforced and drained with 36/36 slots free, no
+expired lease, enqueue failure, or pool drift.
+
+The local hotfix makes the canonical platform-specific style memory the first
+read, retains the legacy Agent memory as a compatibility fallback, and checks
+the exact prospect platform before any expensive grounding provider calls. A
+ready profile with no usable memory schedules one deterministic rebuild from
+the existing samples. Repeated calls converge on that event; no workspace or
+prospect scan is used. Repair attempts are capped at three per workspace,
+platform, and six-hour window, after which the profile becomes visibly failed
+and the user receives a support-oriented recovery message.
+
+Failed `writing_style_unavailable` auto-plans are recovery candidates, but the
+recovery claim is gated until the exact platform context is genuinely ready.
+This prevents retry storms while allowing the existing recovery worker to
+resume affected prospects after promotion succeeds. Rollout must remain
+bounded: deploy with no data mutation, invoke the platform-specific bootstrap
+only for the diagnosed workspace, verify a canonical Twitter style memory and
+ready profile, then observe the automatic plan retry and Convex Insights before
+considering any broader repair audit.

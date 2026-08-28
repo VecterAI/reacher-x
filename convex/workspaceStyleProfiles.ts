@@ -2,13 +2,26 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
 import { buildChangedPatch } from "./lib/patchHelpers";
 import {
+  getWorkspaceWritingStyleContext,
   getWorkspaceStyleProfileRow,
   upsertWorkspaceStyleProfileOnDb,
 } from "./lib/workspaceStyleProfileCore";
 import {
   prospectPlatformValidator,
   styleProfileStatusValidator,
+  workspaceWritingStyleContextValidator,
 } from "./validators";
+
+export const getWorkspaceWritingStyleContextInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    platform: prospectPlatformValidator,
+  },
+  returns: workspaceWritingStyleContextValidator,
+  handler: async (ctx, args) => {
+    return await getWorkspaceWritingStyleContext(ctx.db, args);
+  },
+});
 
 export const getWorkspaceStyleProfile = internalQuery({
   args: {

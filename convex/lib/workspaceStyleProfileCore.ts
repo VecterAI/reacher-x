@@ -5,11 +5,18 @@ import type {
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { listWorkspaceAgentMemoriesByCategory } from "./agentMemoryCore";
 import { recordMemoryWorkflowEvent } from "./memoryCore";
 import { buildChangedPatch } from "./patchHelpers";
-import type { StyleSourcePlatform } from "./styleSourceCore";
+import {
+  getStyleMemoryCategory,
+  type StyleSourcePlatform,
+} from "./styleSourceCore";
 
 export const BATCH_ANALYSIS_THRESHOLD = 5;
+export const STYLE_MEMORY_RECOVERY_MAX_ATTEMPTS = 3;
+export const STYLE_MEMORY_RECOVERY_WINDOW_MS = 6 * 60 * 60 * 1_000;
+const STYLE_MEMORY_RECOVERY_EVENT_SCAN_LIMIT = 100;
 
 type WorkspaceStyleProfileDoc = Doc<"workspaceStyleProfiles">;
 type ActiveStyleBootstrapSource = {
@@ -26,10 +33,24 @@ export type WorkspaceStyleBootstrapResult = {
     | "scheduled"
     | "already_initialized"
     | "already_queued"
+    | "recovery_exhausted"
     | "insufficient_samples"
     | "no_active_source"
     | "no_workspace";
 };
+
+export type WorkspaceWritingStyleContext =
+  | {
+      status: "ready";
+      writingStyle: string;
+      profileVersion: number;
+      source: "canonical" | "legacy";
+    }
+  | {
+      status: "not_ready";
+      reason: "profile_not_ready" | "memory_missing";
+      profileVersion?: number;
+    };
 
 export async function getWorkspaceStyleProfileRow(
   db: GenericDatabaseReader<DataModel> | GenericDatabaseWriter<DataModel>,
@@ -44,6 +65,73 @@ export async function getWorkspaceStyleProfileRow(
       q.eq("workspaceId", args.workspaceId).eq("platform", args.platform)
     )
     .first();
+}
+
+/**
+ * Resolve one platform's exact writing-style context from the canonical store,
+ * with the Agent component retained as a compatibility fallback during rollout.
+ */
+export async function getWorkspaceWritingStyleContext(
+  db: GenericDatabaseReader<DataModel> | GenericDatabaseWriter<DataModel>,
+  args: {
+    workspaceId: Id<"workspaces">;
+    platform: StyleSourcePlatform;
+  }
+): Promise<WorkspaceWritingStyleContext> {
+  const profile = await getWorkspaceStyleProfileRow(db, args);
+  if (!profile || profile.status !== "ready" || profile.version <= 0) {
+    return {
+      status: "not_ready",
+      reason: "profile_not_ready",
+      profileVersion: profile?.version,
+    };
+  }
+
+  const category = getStyleMemoryCategory(args.platform);
+  const canonical = await db
+    .query("workspaceMemories")
+    .withIndex("by_workspace_source_category_status", (query) =>
+      query
+        .eq("workspaceId", args.workspaceId)
+        .eq("source", "style_analysis")
+        .eq("category", category)
+        .eq("status", "active")
+    )
+    .order("desc")
+    .first();
+  const canonicalContent = canonical?.canonicalContent.trim();
+  if (canonicalContent) {
+    return {
+      status: "ready",
+      writingStyle: canonicalContent,
+      profileVersion: profile.version,
+      source: "canonical",
+    };
+  }
+
+  const [legacy] = await listWorkspaceAgentMemoriesByCategory(db, {
+    workspaceId: args.workspaceId,
+    category,
+    limit: 1,
+  });
+  const legacyContent =
+    legacy?.parsed.source === "style_analysis"
+      ? legacy.parsed.narrative.trim()
+      : "";
+  if (legacyContent) {
+    return {
+      status: "ready",
+      writingStyle: legacyContent,
+      profileVersion: profile.version,
+      source: "legacy",
+    };
+  }
+
+  return {
+    status: "not_ready",
+    reason: "memory_missing",
+    profileVersion: profile.version,
+  };
 }
 
 export async function upsertWorkspaceStyleProfileOnDb(
@@ -192,7 +280,7 @@ async function getMostRecentReadyStyleProfileForSource(
   );
 }
 
-async function bootstrapWorkspaceStyleProfileForPlatformOnDb(
+export async function bootstrapWorkspaceStyleProfileForPlatformOnDb(
   ctx: Pick<MutationCtx, "db" | "scheduler">,
   args: {
     workspaceId: Id<"workspaces">;
@@ -217,11 +305,25 @@ async function bootstrapWorkspaceStyleProfileForPlatformOnDb(
     existingProfile?.sourceVersion === activeSource.sourceVersion &&
     existingProfile?.sourceExternalUserId === activeSource.sourceExternalUserId;
 
-  if (
-    matchesCurrentSource &&
-    (existingProfile?.status === "ready" ||
-      existingProfile?.status === "analyzing")
-  ) {
+  let requiresMemoryRepair = false;
+  if (matchesCurrentSource && existingProfile?.status === "ready") {
+    const styleContext = await getWorkspaceWritingStyleContext(ctx.db, {
+      workspaceId: args.workspaceId,
+      platform: args.platform,
+    });
+    requiresMemoryRepair =
+      styleContext.status === "not_ready" &&
+      styleContext.reason === "memory_missing";
+    if (!requiresMemoryRepair) {
+      return {
+        platform: args.platform,
+        status: "skipped",
+        reason: "already_initialized",
+      };
+    }
+  }
+
+  if (matchesCurrentSource && existingProfile?.status === "analyzing") {
     return {
       platform: args.platform,
       status: "skipped",
@@ -282,6 +384,77 @@ async function bootstrapWorkspaceStyleProfileForPlatformOnDb(
     };
   }
 
+  const isRepairAttempt =
+    requiresMemoryRepair ||
+    (matchesCurrentSource &&
+      (existingProfile?.version ?? 0) > 0 &&
+      Boolean(existingProfile?.promotedMemoryId));
+  const recoveryState = existingProfile?.lastErrorAt ?? 0;
+  const eventKey = isRepairAttempt
+    ? `style-repair:${String(args.workspaceId)}:${args.platform}:${activeSource.sourceVersion}:v${existingProfile?.version ?? 0}:${recoveryState}`
+    : `style-bootstrap:${String(args.workspaceId)}:${args.platform}:${activeSource.sourceVersion}`;
+  const existingEvent = await ctx.db
+    .query("memoryWorkflowEvents")
+    .withIndex("by_event_key", (q) => q.eq("eventKey", eventKey))
+    .first();
+
+  if (existingEvent) {
+    return {
+      platform: args.platform,
+      status: "skipped",
+      reason: "already_queued",
+    };
+  }
+
+  if (isRepairAttempt) {
+    const recoveryWindowStartedAt =
+      getCurrentUTCTimestamp() - STYLE_MEMORY_RECOVERY_WINDOW_MS;
+    const recentStyleEvents = await ctx.db
+      .query("memoryWorkflowEvents")
+      .withIndex("by_workspace_event_type_occurred_at", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("eventType", "style_content_backfill_completed")
+      )
+      .order("desc")
+      .take(STYLE_MEMORY_RECOVERY_EVENT_SCAN_LIMIT);
+    const recentRepairCount = recentStyleEvents.filter(
+      (event) =>
+        event.occurredAt >= recoveryWindowStartedAt &&
+        event.sourceId.startsWith(
+          `style-repair:${String(args.userId)}:${args.platform}:`
+        )
+    ).length;
+    if (recentRepairCount >= STYLE_MEMORY_RECOVERY_MAX_ATTEMPTS) {
+      console.error("[WorkspaceStyleProfile] Memory recovery exhausted", {
+        workspaceId: String(args.workspaceId),
+        platform: args.platform,
+        recentRepairCount,
+      });
+      await upsertWorkspaceStyleProfileOnDb(ctx.db, {
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        platform: args.platform,
+        status: "failed",
+        version: existingProfile?.version ?? 0,
+        sourceKey: activeSource.sourceKey,
+        sourceVersion: activeSource.sourceVersion,
+        sourceExternalUserId: activeSource.sourceExternalUserId,
+        lastAnalyzedAt: existingProfile?.lastAnalyzedAt,
+        sampleCount: sampleCountHint,
+        editDiffCount: existingProfile?.editDiffCount ?? 0,
+        promotedMemoryId: existingProfile?.promotedMemoryId,
+        lastError: "Writing style memory recovery attempts were exhausted",
+        lastErrorAt: getCurrentUTCTimestamp(),
+      });
+      return {
+        platform: args.platform,
+        status: "skipped",
+        reason: "recovery_exhausted",
+      };
+    }
+  }
+
   await upsertWorkspaceStyleProfileOnDb(ctx.db, {
     workspaceId: args.workspaceId,
     userId: args.userId,
@@ -296,28 +469,16 @@ async function bootstrapWorkspaceStyleProfileForPlatformOnDb(
     editDiffCount: existingProfile?.editDiffCount ?? 0,
     promotedMemoryId: existingProfile?.promotedMemoryId,
     lastError: undefined,
-    lastErrorAt: undefined,
+    lastErrorAt: isRepairAttempt ? existingProfile?.lastErrorAt : undefined,
   });
-
-  const eventKey = `style-bootstrap:${String(args.workspaceId)}:${args.platform}:${activeSource.sourceVersion}`;
-  const existingEvent = await ctx.db
-    .query("memoryWorkflowEvents")
-    .withIndex("by_event_key", (q) => q.eq("eventKey", eventKey))
-    .first();
-
-  if (existingEvent) {
-    return {
-      platform: args.platform,
-      status: "skipped",
-      reason: "already_queued",
-    };
-  }
 
   await recordMemoryWorkflowEvent(ctx, {
     workspaceId: args.workspaceId,
     eventType: "style_content_backfill_completed",
     sourceType: "style_content",
-    sourceId: `bootstrap:${String(args.userId)}:${args.platform}:${activeSource.sourceVersion}`,
+    sourceId: isRepairAttempt
+      ? `style-repair:${String(args.userId)}:${args.platform}:${activeSource.sourceVersion}`
+      : `bootstrap:${String(args.userId)}:${args.platform}:${activeSource.sourceVersion}`,
     payload: {
       sampleCount: sampleCountHint,
       platform: args.platform,
@@ -327,6 +488,15 @@ async function bootstrapWorkspaceStyleProfileForPlatformOnDb(
     eventKey,
     occurredAt: getCurrentUTCTimestamp(),
   });
+
+  if (isRepairAttempt) {
+    console.warn("[WorkspaceStyleProfile] Queued memory recovery", {
+      workspaceId: String(args.workspaceId),
+      platform: args.platform,
+      sourceVersion: activeSource.sourceVersion,
+      eventKey,
+    });
+  }
 
   return {
     platform: args.platform,

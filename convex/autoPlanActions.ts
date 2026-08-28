@@ -32,7 +32,6 @@ import {
   isLinkedInDmPlanAllowed,
   type LinkedInRelationshipStatus,
 } from "./lib/linkedinOutreachPlanCore";
-import { getStyleMemoryCategory } from "./lib/styleSourceCore";
 import { isAutoPlanGroundingStageFresh } from "./lib/autoPlanGroundingCacheCore";
 import { loadAgentProspectProfileContext } from "./lib/prospectProfileContextHelpers";
 import { getProspectDisplayLabel } from "./lib/prospectIdentityCore";
@@ -43,7 +42,6 @@ import {
   type ResearchQueryOutcome,
   type WebPageReadOutcome,
 } from "./lib/researchCore";
-import { getStringProperty, isRecord } from "./lib/typeGuards";
 import {
   autoPlanGenerationResultValidator,
   providerNameValidator,
@@ -288,14 +286,6 @@ export const generateGroundedAutoPlanDraft = internalAction({
       );
     }
     const qualificationScore = prospect.qualificationScore;
-    if (
-      workspace.styleProfileStatus !== "ready" ||
-      typeof workspace.styleProfileVersion !== "number" ||
-      workspace.styleProfileVersion <= 0
-    ) {
-      throw new NonRetryableError("Workspace writing style is not ready");
-    }
-
     const paidEligibility = await ctx.runQuery(
       internal.plans.getPaidFeatureEligibilityByUserId,
       { userId: args.userId }
@@ -307,21 +297,54 @@ export const generateGroundedAutoPlanDraft = internalAction({
       );
     }
 
-    const [prospectProfileContext, styleMemories] = await Promise.all([
-      loadAgentProspectProfileContext(ctx, prospect),
-      ctx.runQuery(internal.memory.listPinnedWorkspaceMemoriesInternal, {
-        workspaceId: String(args.workspaceId),
-        category: getStyleMemoryCategory(
-          prospect.platform === "linkedin" ? "linkedin" : "twitter"
-        ),
-        limit: 1,
-      }),
-    ]);
-    const styleMemory = styleMemories[0];
-    const parsedStyle = isRecord(styleMemory?.parsed)
-      ? getStringProperty(styleMemory.parsed, "narrative")
-      : undefined;
-    const writingStyle = parsedStyle || styleMemory?.promptLine || "";
+    const stylePlatform =
+      prospect.platform === "linkedin" ? "linkedin" : "twitter";
+    let styleContext = await ctx.runQuery(
+      internal.workspaceStyleProfiles.getWorkspaceWritingStyleContextInternal,
+      {
+        workspaceId: args.workspaceId,
+        platform: stylePlatform,
+      }
+    );
+    if (styleContext.status !== "ready") {
+      const platformRepair = await ctx.runMutation(
+        internal.styleAnalysis.bootstrapWorkspaceStyleProfileForPlatform,
+        {
+          workspaceId: args.workspaceId,
+          userId: args.userId,
+          platform: stylePlatform,
+        }
+      );
+      if (platformRepair?.reason === "already_initialized") {
+        styleContext = await ctx.runQuery(
+          internal.workspaceStyleProfiles
+            .getWorkspaceWritingStyleContextInternal,
+          {
+            workspaceId: args.workspaceId,
+            platform: stylePlatform,
+          }
+        );
+      }
+      if (styleContext.status !== "ready") {
+        if (
+          platformRepair?.reason === "scheduled" ||
+          platformRepair?.reason === "already_queued" ||
+          platformRepair?.reason === "already_initialized"
+        ) {
+          throw new NonRetryableError(
+            "Workspace writing style repair is in progress"
+          );
+        }
+        throw new NonRetryableError(
+          "Workspace writing style repair needs support"
+        );
+      }
+    }
+    const writingStyle = styleContext.writingStyle;
+    const prospectProfileContext = await loadAgentProspectProfileContext(
+      ctx,
+      prospect
+    );
 
     const socialContextCtx = createAutoPlanSocialContext(ctx, args.userId);
     const websiteUrl = selectProfileWebsiteHref(
