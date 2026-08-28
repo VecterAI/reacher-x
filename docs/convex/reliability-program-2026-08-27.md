@@ -692,3 +692,42 @@ bounded: deploy with no data mutation, invoke the platform-specific bootstrap
 only for the diagnosed workspace, verify a canonical Twitter style memory and
 ready profile, then observe the automatic plan retry and Convex Insights before
 considering any broader repair audit.
+
+## Memory-evaluation queue follow-up — 2026-08-29
+
+The bounded Twitter repair succeeded, produced the canonical style memory, and
+allowed the failed auto-plan to recover. During that repair, a second problem
+was proven: the workspace queue still referenced old memory-evaluation work even
+though no live tenant job could make progress. The workspace also had a large
+ordinary learning-event backlog. The queue treated the stale `workId` as active,
+and FIFO selection placed the urgent style-repair event behind that backlog.
+The unrelated bulk drain was stopped; remaining learning events were preserved.
+
+The local follow-up changes queue preparation in three bounded ways:
+
+- A queue backed by a queued or running `tenantJobs` row remains active. A
+  terminal or missing tenant-job pointer is reclaimed immediately. A legacy
+  Workpool pointer is reclaimed only after the existing two-hour tenant lease
+  window, and its pending component work is cancelled before replacement when
+  possible.
+- If stale work owned a `processing` event, that event is returned to `pending`
+  only when its `evaluatorWorkflowId` exactly matches the stale queue pointer.
+  The matching running evaluator audit row is marked failed, so a new worker can
+  reuse it idempotently and the recovery remains observable.
+- Explicit `style-repair:` events are selected from a bounded 25-row indexed
+  window before the normal pending queue. All ordinary events retain oldest-first
+  order, and every lookup remains workspace-scoped.
+
+No schema field, table, index, data backfill, Aggregate migration, or global
+event scan is required. Rollout is code-only. After deployment, verify with
+read-only checks that the repaired workspace has no stale queue pointer, that a
+new bounded repair is admitted ahead of old learning history, and that no
+duplicate evaluator run or new scheduler/bytes-read Insight appears. Roll back
+the code if active work is ever reclaimed or ordinary FIFO/cross-workspace
+isolation changes; do not bulk-drain historical learning events as a rollback
+mechanism.
+
+This hotfix does not close the remaining reliability program. The next focused
+phases remain: eliminate measured `prospectSummaries` batch contention, finish
+bounded Action Retrier historical cleanup, observe scheduler admission latency,
+and only then prepare a separate evidence-backed legacy cleanup PR.

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { vOnCompleteArgs } from "@convex-dev/workpool";
+import { vOnCompleteArgs, type WorkId } from "@convex-dev/workpool";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "../_generated/server";
@@ -9,6 +9,11 @@ import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
 import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
+import {
+  isMemoryEvaluationLegacyWorkStale,
+  isPriorityMemoryEvaluationEvent,
+  MEMORY_EVALUATION_PRIORITY_SCAN_LIMIT,
+} from "../lib/memoryEvaluationQueueCore";
 
 type MemoryEvaluationEnqueueReason =
   | "missing_event"
@@ -48,6 +53,129 @@ async function getWorkspaceQueueRow(
     .query("memoryEvaluationWorkspaceQueues")
     .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
     .first();
+}
+
+async function getNextPendingMemoryWorkflowEvent(
+  ctx: Pick<MutationCtx, "db">,
+  workspaceId: Id<"workspaces">
+) {
+  const recentStyleEvents = await ctx.db
+    .query("memoryWorkflowEvents")
+    .withIndex("by_workspace_event_type_occurred_at", (q) =>
+      q
+        .eq("workspaceId", workspaceId)
+        .eq("eventType", "style_content_backfill_completed")
+    )
+    .order("desc")
+    .take(MEMORY_EVALUATION_PRIORITY_SCAN_LIMIT);
+  const priorityEvent = recentStyleEvents.find(isPriorityMemoryEvaluationEvent);
+  if (priorityEvent) return priorityEvent;
+
+  return await ctx.db
+    .query("memoryWorkflowEvents")
+    .withIndex("by_workspace_status_occurred_at", (q) =>
+      q.eq("workspaceId", workspaceId).eq("status", "pending")
+    )
+    .first();
+}
+
+async function getMemoryEvaluationQueueWorkState(
+  ctx: Pick<MutationCtx, "db">,
+  queue: Doc<"memoryEvaluationWorkspaceQueues">,
+  now: number
+): Promise<"active" | "stale" | "unattached"> {
+  if (!queue.workId) {
+    return queue.status === "running" ? "stale" : "unattached";
+  }
+
+  if (queue.status === "idle") {
+    return "stale";
+  }
+
+  const tenantJobId = ctx.db.normalizeId("tenantJobs", queue.workId);
+  if (tenantJobId) {
+    const tenantJob = await ctx.db.get("tenantJobs", tenantJobId);
+    return tenantJob?.status === "queued" || tenantJob?.status === "running"
+      ? "active"
+      : "stale";
+  }
+
+  return isMemoryEvaluationLegacyWorkStale({
+    queueUpdatedAt: queue.updatedAt,
+    now,
+  })
+    ? "stale"
+    : "active";
+}
+
+async function recoverStaleMemoryEvaluationQueue(
+  ctx: MutationCtx,
+  queue: Doc<"memoryEvaluationWorkspaceQueues">,
+  now: number
+) {
+  if (queue.workId && !ctx.db.normalizeId("tenantJobs", queue.workId)) {
+    try {
+      await memoryEvaluationPool.cancel(ctx, queue.workId as WorkId);
+    } catch (error) {
+      console.warn(
+        "[MemoryEvaluationQueue] Stale pool work cancellation failed",
+        {
+          workspaceId: String(queue.workspaceId),
+          workId: queue.workId,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+  }
+
+  if (queue.activeEventId) {
+    const event = await ctx.db.get("memoryWorkflowEvents", queue.activeEventId);
+    if (
+      event?.status === "processing" &&
+      event.evaluatorWorkflowId === queue.workId
+    ) {
+      await ctx.db.patch("memoryWorkflowEvents", event._id, {
+        status: "pending",
+        evaluatorWorkflowId: undefined,
+        processedAt: undefined,
+        error: "Recovered after stale memory evaluation queue work",
+      });
+
+      const evaluatorRun = await ctx.db
+        .query("memoryEvaluatorRuns")
+        .withIndex("by_event", (q) => q.eq("eventId", event._id))
+        .first();
+      if (
+        evaluatorRun?.status === "running" &&
+        evaluatorRun.workflowId === queue.workId
+      ) {
+        await ctx.db.patch("memoryEvaluatorRuns", evaluatorRun._id, {
+          status: "failed",
+          error: "Recovered after stale memory evaluation queue work",
+          updatedAt: now,
+        });
+      }
+    }
+  }
+
+  console.warn("[MemoryEvaluationQueue] Recovered stale queue work", {
+    workspaceId: String(queue.workspaceId),
+    queueStatus: queue.status,
+    workId: queue.workId,
+    activeEventId: queue.activeEventId
+      ? String(queue.activeEventId)
+      : undefined,
+    queueUpdatedAt: queue.updatedAt,
+  });
+
+  await ctx.db.patch("memoryEvaluationWorkspaceQueues", queue._id, {
+    status: "queued",
+    workId: undefined,
+    activeEventId: undefined,
+    lastError: "Recovered stale memory evaluation queue work",
+    lastEnqueuedAt: now,
+    updatedAt: now,
+  });
 }
 
 async function enqueueWorkspaceMemoryEvaluation(
@@ -272,14 +400,31 @@ export const prepareMemoryEvaluationQueueEnqueueInternal = internalMutation({
   }),
   handler: async (ctx, { workspaceId }) => {
     const queue = await getWorkspaceQueueRow(ctx, workspaceId);
-    const nextPending = await ctx.db
-      .query("memoryWorkflowEvents")
-      .withIndex("by_workspace_status_occurred_at", (q) =>
-        q.eq("workspaceId", workspaceId).eq("status", "pending")
-      )
-      .first();
-
     const now = getCurrentUTCTimestamp();
+    const queueWorkState = queue
+      ? await getMemoryEvaluationQueueWorkState(ctx, queue, now)
+      : "unattached";
+
+    if (queue && queueWorkState === "stale") {
+      await recoverStaleMemoryEvaluationQueue(ctx, queue, now);
+    }
+
+    const nextPending = await getNextPendingMemoryWorkflowEvent(
+      ctx,
+      workspaceId
+    );
+
+    if (
+      queue &&
+      queueWorkState === "active" &&
+      (queue.status === "queued" || queue.status === "running")
+    ) {
+      return {
+        shouldEnqueue: false as const,
+        reason: queue.status,
+        eventId: queue.activeEventId ?? nextPending?._id ?? null,
+      };
+    }
 
     if (!nextPending) {
       if (queue && queue.status !== "idle") {
@@ -299,18 +444,7 @@ export const prepareMemoryEvaluationQueueEnqueueInternal = internalMutation({
       };
     }
 
-    if (
-      queue?.status === "running" ||
-      (queue?.status === "queued" && queue.workId)
-    ) {
-      return {
-        shouldEnqueue: false as const,
-        reason: queue.status,
-        eventId: nextPending._id,
-      };
-    }
-
-    if (queue?.status === "queued") {
+    if (queue && (queue.status === "queued" || queueWorkState === "stale")) {
       return {
         shouldEnqueue: true as const,
         reason: "queued" as const,
@@ -353,6 +487,7 @@ export const setMemoryEvaluationQueueWorkIdInternal = internalMutation({
     workspaceId: v.id("workspaces"),
     workId: v.string(),
   },
+  returns: v.null(),
   handler: async (ctx, { workspaceId, workId }) => {
     const queue = await getWorkspaceQueueRow(ctx, workspaceId);
     const now = getCurrentUTCTimestamp();
@@ -369,7 +504,7 @@ export const setMemoryEvaluationQueueWorkIdInternal = internalMutation({
         lastFinishedAt: undefined,
         updatedAt: now,
       });
-      return;
+      return null;
     }
 
     await ctx.db.patch(queue._id, {
@@ -377,6 +512,7 @@ export const setMemoryEvaluationQueueWorkIdInternal = internalMutation({
       workId,
       updatedAt: now,
     });
+    return null;
   },
 });
 
@@ -384,6 +520,10 @@ export const beginMemoryEvaluationQueueWorkInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
   },
+  returns: v.object({
+    eventId: v.union(v.id("memoryWorkflowEvents"), v.null()),
+    workId: v.union(v.string(), v.null()),
+  }),
   handler: async (ctx, { workspaceId }) => {
     const queue = await getWorkspaceQueueRow(ctx, workspaceId);
     if (!queue) {
@@ -402,12 +542,10 @@ export const beginMemoryEvaluationQueueWorkInternal = internalMutation({
       };
     }
 
-    const nextPending = await ctx.db
-      .query("memoryWorkflowEvents")
-      .withIndex("by_workspace_status_occurred_at", (q) =>
-        q.eq("workspaceId", workspaceId).eq("status", "pending")
-      )
-      .first();
+    const nextPending = await getNextPendingMemoryWorkflowEvent(
+      ctx,
+      workspaceId
+    );
 
     if (!nextPending) {
       await ctx.db.patch(queue._id, {
@@ -426,6 +564,14 @@ export const beginMemoryEvaluationQueueWorkInternal = internalMutation({
 
     const workId =
       queue.workId ?? `memory-eval:${workspaceId}:${nextPending._id}`;
+
+    if (isPriorityMemoryEvaluationEvent(nextPending)) {
+      console.warn("[MemoryEvaluationQueue] Prioritizing repair event", {
+        workspaceId: String(workspaceId),
+        eventId: String(nextPending._id),
+        eventType: nextPending.eventType,
+      });
+    }
 
     await ctx.db.patch(queue._id, {
       status: "running",
