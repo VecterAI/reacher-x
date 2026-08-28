@@ -2722,6 +2722,10 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_workspace_query_id", ["workspaceId", "queryId"])
+    .index("by_workspace_activated_candidate", [
+      "workspaceId",
+      "activatedQueryCandidateId",
+    ])
     .index("by_workspace_canonical_hash", ["workspaceId", "canonicalHash"])
     .index("by_workspace_updated_at", ["workspaceId", "updatedAt"]),
 
@@ -2787,6 +2791,16 @@ export default defineSchema({
       "eventType",
       "occurredAt",
     ])
+    .index("by_workspace_query_candidate_occurred_at", [
+      "workspaceId",
+      "queryCandidateId",
+      "occurredAt",
+    ])
+    .index("by_workspace_query_occurred_at", [
+      "workspaceId",
+      "queryId",
+      "occurredAt",
+    ])
     .index("by_prospect_occurred_at", ["prospectId", "occurredAt"])
     .index("by_plan_occurred_at", ["planId", "occurredAt"]),
 
@@ -2824,6 +2838,12 @@ export default defineSchema({
       "updatedAt",
     ])
     .index("by_event", ["eventId"])
+    .index("by_workspace_promoted_memory_updated_at", [
+      "workspaceId",
+      "promotedMemoryId",
+      "updatedAt",
+    ])
+    .index("by_workspace_run_updated_at", ["workspaceId", "runId", "updatedAt"])
     .index("by_workspace_identity_hash", ["workspaceId", "identityHash"]),
 
   /**

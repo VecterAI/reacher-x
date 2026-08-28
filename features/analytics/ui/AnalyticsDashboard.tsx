@@ -4,7 +4,9 @@
 import * as React from "react";
 import { parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
 import { useRouter } from "next/navigation";
+import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { AnalyticsQueryResult } from "@/convex/lib/analyticsCore";
 import {
   useActiveUseCaseLabels,
   usePreferredShellQueryArgs,
@@ -85,21 +87,52 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
       ? workspaceStatus.workspace.reportingTimeZone
       : null
   );
+  const loadAnalytics = useAction(api.analytics.getDashboardAnalyticsSnapshot);
+  const [analyticsResult, setAnalyticsResult] =
+    React.useState<AnalyticsQueryResult>();
+  const [analyticsError, setAnalyticsError] = React.useState<Error>();
 
-  const analyticsQuery = useQueryWithStatus(
-    api.analytics.getDashboardAnalytics,
-    workspaceId
-      ? {
-          workspaceId,
-          range,
-          timeZone: reportingTimeZone,
-          ...(from ? { fromDate: from } : {}),
-          ...(to ? { toDate: to } : {}),
-          refreshKey,
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!workspaceId) {
+      setAnalyticsResult(undefined);
+      return;
+    }
+
+    setAnalyticsResult(undefined);
+    setAnalyticsError(undefined);
+    void loadAnalytics({
+      workspaceId,
+      range,
+      timeZone: reportingTimeZone,
+      ...(from ? { fromDate: from } : {}),
+      ...(to ? { toDate: to } : {}),
+    })
+      .then((result) => {
+        if (!cancelled) {
+          setAnalyticsResult(result);
         }
-      : "skip"
-  );
-  const analyticsResult = analyticsQuery.data;
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setAnalyticsError(
+            error instanceof Error ? error : new Error("Please try again.")
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    from,
+    loadAnalytics,
+    range,
+    refreshKey,
+    reportingTimeZone,
+    to,
+    workspaceId,
+  ]);
 
   const defaultData = React.useMemo(
     () => getDefaultAnalyticsData(range),
@@ -230,13 +263,13 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
     <div className={className}>
       <DateRangeSelector className="mb-4" />
 
-      {(analyticsQuery.isError || analyticsResult?.status === "error") && (
+      {(analyticsError || analyticsResult?.status === "error") && (
         <div className="border-destructive bg-destructive/10 mb-4 rounded-lg border p-4">
           <p className="text-destructive text-sm font-medium">
             Could not load analytics
           </p>
           <p className="text-destructive/80 mt-1 text-sm">
-            {analyticsQuery.error?.message ||
+            {analyticsError?.message ||
               analyticsResult?.error ||
               "Please try again."}
           </p>

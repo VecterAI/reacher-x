@@ -2,7 +2,7 @@
 
 import { convexTest } from "convex-test";
 import { describe, expect, test, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import {
   getWorkspaceAnalyticsContributionsFromProspect,
   getWorkspaceStatsContributionFromProspect,
@@ -120,5 +120,33 @@ describe("striped read-model cutover", () => {
       contactedProspectsCount: 1,
     });
     expect(stripeState.analytics).toHaveLength(1);
+
+    const analyticsSnapshot = await t
+      .withIdentity({ subject: "read-model-stripe-owner" })
+      .action(api.analytics.getDashboardAnalyticsSnapshot, {
+        workspaceId: seeded.workspaceId,
+        range: "custom",
+        timeZone: "UTC",
+        fromDate: "2026-08-28",
+        toDate: "2026-08-28",
+      });
+    expect(analyticsSnapshot).toMatchObject({
+      status: "success",
+      data: {
+        newProspects: { value: 1 },
+      },
+    });
+    expect(analyticsSnapshot.data.pipelineFunnel.slice(0, 2)).toMatchObject([
+      { stage: "new", count: 1 },
+      { stage: "contacted", count: 1 },
+    ]);
+
+    const stageCounts = await t
+      .withIdentity({ subject: "read-model-stripe-owner" })
+      .action(api.prospectSummaries.getWorkspaceProspectStageCountsSnapshot, {
+        workspaceId: seeded.workspaceId,
+        visibilityMode: "all",
+      });
+    expect(stageCounts).toEqual({ new: 0, contacted: 1, in_progress: 0 });
   });
 });

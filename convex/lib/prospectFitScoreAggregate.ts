@@ -130,6 +130,8 @@ function areAggregateItemsEqual(
 ) {
   return (
     left.id === right.id &&
+    left.namespace.length === right.namespace.length &&
+    left.key.length === right.key.length &&
     left.namespace.every((value, index) => value === right.namespace[index]) &&
     left.key.every((value, index) => value === right.key[index])
   );

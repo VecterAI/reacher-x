@@ -98,7 +98,7 @@ export interface TimeWindow {
 
 export interface NormalizedAnalyticsWindow {
   range: AnalyticsDateRange;
-  granularity: "hourly" | "daily";
+  granularity: "hourly" | "daily" | "weekly" | "monthly";
   timeZone: string;
   current: TimeWindow;
   previous: TimeWindow;
@@ -142,6 +142,8 @@ interface BuildMetricInput {
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const MIN_WINDOW_MS = 1;
+const DAILY_TREND_MAX_DAYS = 31;
+const WEEKLY_TREND_MAX_DAYS = 180;
 
 const FIT_DISTRIBUTION_BUCKETS = ["0-49", "50-69", "70-79", "80-100"] as const;
 
@@ -389,8 +391,20 @@ export function normalizeAnalyticsWindow(
 
   return {
     range: args.range,
-    granularity:
-      args.range === "today" || args.range === "1d" ? "hourly" : "daily",
+    granularity: (() => {
+      if (args.range === "today" || args.range === "1d") {
+        return "hourly";
+      }
+      const inclusiveDays = getTimeZoneInclusiveDayCount(
+        startMs,
+        endMs,
+        timeZone
+      );
+      if (inclusiveDays <= DAILY_TREND_MAX_DAYS) {
+        return "daily";
+      }
+      return inclusiveDays <= WEEKLY_TREND_MAX_DAYS ? "weekly" : "monthly";
+    })(),
     timeZone,
     current: { startMs, endMs },
     previous,
@@ -417,12 +431,15 @@ export function createTrendBucketSet(
       });
     }
   } else {
+    const bucketDays =
+      granularity === "monthly" ? 30 : granularity === "weekly" ? 7 : 1;
     let bucketStart = current.startMs;
 
     while (bucketStart < current.endMs) {
-      const nextDayStart = getNextTimeZoneDayStartTimestamp(
+      const nextDayStart = shiftTimestampByTimeZoneDays(
         bucketStart,
-        timeZone
+        timeZone,
+        bucketDays
       );
       const bucketEnd = Math.min(current.endMs, nextDayStart);
       buckets.push({

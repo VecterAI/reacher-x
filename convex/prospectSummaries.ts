@@ -3,7 +3,12 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery, query } from "./lib/functionBuilders";
+import {
+  action,
+  internalMutation,
+  internalQuery,
+  query,
+} from "./lib/functionBuilders";
 import {
   buildProspectSummaryRecord,
   isProspectActionableReady,
@@ -35,6 +40,8 @@ export type SummaryDb = QueryCtx["db"] | MutationCtx["db"];
 export type PaginationOpts = {
   cursor: string | null;
   numItems: number;
+  maximumRowsRead?: number;
+  maximumBytesRead?: number;
 };
 
 export type ListWorkspaceProspectSummariesArgs = {
@@ -1287,6 +1294,91 @@ export const getWorkspaceProspectStageCounts = query({
         });
       })
     );
+
+    return counts;
+  },
+});
+
+export const validateProspectStageCountAccessInternal = internalQuery({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to view this workspace",
+    });
+    return true;
+  },
+});
+
+export const listProspectStageCountPageInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    status: prospectStatusValidator,
+    platform: v.optional(prospectPlatformValidator),
+    prospectType: v.optional(prospectTypeValidator),
+    qualifiedOnly: v.optional(v.boolean()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
+    fitScoreMin: v.optional(v.number()),
+    fitScoreMax: v.optional(v.number()),
+    createdAfterMs: v.optional(v.number()),
+    createdBeforeMs: v.optional(v.number()),
+    searchQuery: v.optional(v.string()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    return await listWorkspaceProspectSummariesPage(ctx.db, {
+      ...args,
+      paginationOpts: {
+        ...args.paginationOpts,
+        maximumRowsRead: 300,
+        maximumBytesRead: 2_000_000,
+      },
+    });
+  },
+});
+
+export const getWorkspaceProspectStageCountsSnapshot = action({
+  args: {
+    workspaceId: v.id("workspaces"),
+    platform: v.optional(prospectPlatformValidator),
+    prospectType: v.optional(prospectTypeValidator),
+    qualifiedOnly: v.optional(v.boolean()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
+    fitScoreMin: v.optional(v.number()),
+    fitScoreMax: v.optional(v.number()),
+    createdAfterMs: v.optional(v.number()),
+    createdBeforeMs: v.optional(v.number()),
+    searchQuery: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.runQuery(
+      internal.prospectSummaries.validateProspectStageCountAccessInternal,
+      { workspaceId: args.workspaceId }
+    );
+    const counts = { new: 0, contacted: 0, in_progress: 0 };
+
+    for (const status of PROSPECT_STAGE_COUNT_STATUSES) {
+      let cursor: string | null = null;
+      while (true) {
+        const result: {
+          page: Doc<"prospectSummaries">[];
+          continueCursor: string;
+          isDone: boolean;
+        } = await ctx.runQuery(
+          internal.prospectSummaries.listProspectStageCountPageInternal,
+          {
+            ...args,
+            status,
+            paginationOpts: { cursor, numItems: 250 },
+          }
+        );
+        counts[status] += result.page.length;
+        if (result.isDone) break;
+        cursor = result.continueCursor;
+      }
+    }
 
     return counts;
   },

@@ -141,6 +141,28 @@ The same Insights window provided the evidence for the next migration:
   1,040 component rows. Version 0.3.1 retains the same 1,024-row cleanup shape,
   so upgrading alone does not clear this backlog.
 
+### Transient admission under-utilization — 2026-08-28
+
+A later enforced-mode burst produced a persistent single-workspace backlog
+despite spare tenant-execution capacity. The incident peaked at 219 queued and
+15 running with 21/36 slots free; a confirmation snapshot showed 198 queued,
+20 running, 16/36 slots free, and an oldest queue age of about 386 seconds.
+There were no failed jobs, expired leases, unresolved enqueue failures, or
+pool/slot drift. The queue subsequently drained without any production
+mutation, leaving 0 queued, 0 running, and 36/36 slots free while global
+enforcement and the Workflow 64 + tenant execution 36 split remained correct.
+
+Recovery does not make this window acceptable. Across the latest 800 completed
+admissions, latency remained p50 about 122 seconds, p95 about 439 seconds, and
+max about 474 seconds, well above the documented p95-under-30-seconds and
+max-under-60-seconds rollout gates. Read-only code and Insights inspection
+identified the fixed per-tenant 60-starts-per-minute token bucket as the
+primary cause when one lane has short jobs; repeated whole-lane activation
+reconciliation and `tenantJobLanes` OCC retries add secondary amplification.
+Treat this as a recovered availability incident but an open scheduler SLO and
+contention defect. Do not use the final drained snapshot alone as evidence that
+admission performance passed.
+
 These rollup numbers cross the previously documented migration threshold. The
 local follow-up therefore widens the schema with 32 deterministic stripes for
 the three multi-field rollups. Existing rows remain immutable baselines; new
@@ -569,3 +591,33 @@ only then delete the binding and idle lane.
 - No table or index should be removed based on static search alone. Pair code
   search with production function/table usage, stop writes, migrate if needed,
   observe, then use a separate destructive commit.
+- The React app now calls the bounded snapshot actions instead of
+  `analytics:getDashboardAnalytics`, `agentOps:getAgentOpsDashboard`,
+  `agentOps:getAgentOpsMemoryInventoryPage`, `usage:getUsageDashboard`, and
+  `prospectSummaries:getWorkspaceProspectStageCounts`. Keep these public query
+  endpoints as compatibility paths until production function logs prove there
+  are no older clients or external callers; remove them and any indexes made
+  redundant by that proof only in the cleanup phase.
+
+## Large-range read follow-up — 2026-08-28
+
+The audit expanded beyond the measured fit-score failure. Analytics, Agent
+observability, Usage, prospect stage counts, discovery inventory, memory
+inventory, and Agent Ops detail panels all had at least one path whose work grew
+with the full selected range or workspace size.
+
+The implementation now uses point-in-time action snapshots and 31-day internal
+query transactions for wide reports. Daily source rows remain exact; chart
+output compacts to daily, weekly, or monthly buckets based on range length.
+Discovery and memory inventories return one server page, Usage reads compact
+prospect summaries in bounded pages, and prospect stage counts accumulate exact
+counts across bounded pages. Hidden full scans in Agent Ops detail panels were
+replaced with additive indexes and bounded reads.
+
+Production evidence and the rollout contract are in
+`docs/convex/large-range-query-rollout.md`. The fit-score Aggregate remains the
+only component migration in this phase because it is the only user-facing
+count/histogram with a measured 18.6 MB failure. Persisted weekly/monthly tables
+remain gated on post-deployment evidence: current production history is too
+short to justify their dual-write and backfill risk before the bounded snapshot
+canary is measured.

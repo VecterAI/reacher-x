@@ -41,6 +41,14 @@ export type DiscoveryInventoryRow = {
   updatedAt: number;
 };
 
+export type DiscoveryInventoryPageData = {
+  rows: DiscoveryInventoryRow[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+};
+
 export type MemoryInventoryRow = {
   memoryId: string;
   title: string;

@@ -315,9 +315,11 @@ export const verifyWorkspacePageInternal = internalMutation({
     const aggregateBinCounts = await getFitScoreHistogramFromAggregate(ctx, {
       workspaceId: rollout.workspaceId,
     });
-    const verified = expectedBinCounts.every(
-      (count, index) => count === aggregateBinCounts[index]
-    );
+    const verified =
+      expectedBinCounts.length === aggregateBinCounts.length &&
+      expectedBinCounts.every(
+        (count, index) => count === aggregateBinCounts[index]
+      );
     await ctx.db.patch(args.rolloutId, {
       status: verified ? "verified" : "failed",
       verifyCursor: page.continueCursor,
