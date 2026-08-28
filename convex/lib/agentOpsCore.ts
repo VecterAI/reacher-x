@@ -132,6 +132,57 @@ function buildQueryPerformanceScore(row: {
   );
 }
 
+export function buildAgentOpsQueryInventory(args: {
+  queryCandidates: QueryCandidateRow[];
+  queryPerformanceDailyRows: QueryPerformanceDailyRow[];
+  window: TimeWindow;
+}) {
+  const queryPerformance = buildWindowQueryPerformanceRows(
+    args.queryPerformanceDailyRows,
+    args.window
+  );
+  const performanceByCandidateId = new Map<
+    string,
+    (typeof queryPerformance)[number]
+  >();
+  for (const performance of queryPerformance) {
+    if (performance.queryCandidateId) {
+      performanceByCandidateId.set(performance.queryCandidateId, performance);
+    }
+  }
+
+  const inventory = [];
+  for (const candidate of args.queryCandidates) {
+    if (
+      !isWithinWindow(candidate._creationTime, args.window) &&
+      !isWithinWindow(getQueryReviewTimestamp(candidate), args.window) &&
+      !isWithinWindow(candidate.retiredAt, args.window)
+    ) {
+      continue;
+    }
+    const performance = performanceByCandidateId.get(String(candidate._id));
+    inventory.push({
+      queryCandidateId: String(candidate._id),
+      rawValue: candidate.rawValue,
+      canonicalValue: candidate.canonicalValue,
+      type: candidate.type,
+      status: candidate.status,
+      statusLabel: buildInventoryStatusLabel(candidate.status),
+      sourceTheme: candidate.sourceTheme ?? null,
+      noveltyScore: candidate.noveltyScore ?? null,
+      performanceScore: performance?.performanceScore ?? null,
+      createdAt: candidate._creationTime,
+      reviewedAt: getQueryReviewTimestamp(candidate) ?? null,
+      prospectsFound: performance?.prospectsFound ?? 0,
+      qualifiedCount: performance?.qualifiedCount ?? 0,
+      convertedCount: performance?.convertedCount ?? 0,
+      replyRate: performance?.replyRate ?? 0,
+      updatedAt: getQueryActivityTimestamp(candidate),
+    });
+  }
+  return inventory.sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
 function buildAverageScore(args: { total: number; count: number }) {
   if (args.count <= 0) {
     return 0;
@@ -1050,51 +1101,11 @@ export function buildAgentOpsDashboardData(args: {
     qualifiedProspects: qualifiedCounts[index] ?? 0,
   }));
 
-  const queryPerformance = buildWindowQueryPerformanceRows(
+  const queryInventory = buildAgentOpsQueryInventory({
+    queryCandidates,
     queryPerformanceDailyRows,
-    currentWindow
-  );
-  const performanceByCandidateId = new Map<
-    string,
-    (typeof queryPerformance)[number]
-  >();
-  for (const performance of queryPerformance) {
-    if (!performance.queryCandidateId) {
-      continue;
-    }
-    performanceByCandidateId.set(performance.queryCandidateId, performance);
-  }
-
-  const queryInventory = queryCandidates
-    .filter(
-      (candidate) =>
-        isWithinWindow(candidate._creationTime, currentWindow) ||
-        isWithinWindow(getQueryReviewTimestamp(candidate), currentWindow) ||
-        isWithinWindow(candidate.retiredAt, currentWindow)
-    )
-    .map((candidate) => {
-      const performance = performanceByCandidateId.get(String(candidate._id));
-
-      return {
-        queryCandidateId: String(candidate._id),
-        rawValue: candidate.rawValue,
-        canonicalValue: candidate.canonicalValue,
-        type: candidate.type,
-        status: candidate.status,
-        statusLabel: buildInventoryStatusLabel(candidate.status),
-        sourceTheme: candidate.sourceTheme ?? null,
-        noveltyScore: candidate.noveltyScore ?? null,
-        performanceScore: performance?.performanceScore ?? null,
-        createdAt: candidate._creationTime,
-        reviewedAt: getQueryReviewTimestamp(candidate) ?? null,
-        prospectsFound: performance?.prospectsFound ?? 0,
-        qualifiedCount: performance?.qualifiedCount ?? 0,
-        convertedCount: performance?.convertedCount ?? 0,
-        replyRate: performance?.replyRate ?? 0,
-        updatedAt: getQueryActivityTimestamp(candidate),
-      };
-    })
-    .sort((left, right) => right.updatedAt - left.updatedAt);
+    window: currentWindow,
+  });
 
   const rankedQueries = queryInventory
     .filter(

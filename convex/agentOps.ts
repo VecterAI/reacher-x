@@ -1,8 +1,9 @@
 import { v } from "convex/values";
-import { query } from "./lib/functionBuilders";
+import { paginationOptsValidator } from "convex/server";
+import { action, internalQuery, query } from "./lib/functionBuilders";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { ActionCtx, QueryCtx } from "./_generated/server";
 import {
   requireOwnedWorkspace,
   requireUser,
@@ -13,6 +14,7 @@ import {
   agentOpsMemorySortValidator,
   agentOpsTabValidator,
   analyticsDateRangeValidator,
+  queryCandidateStatusValidator,
 } from "./validators";
 import {
   createTrendBucketSet,
@@ -23,6 +25,7 @@ import {
 import { listWorkspaceAnalyticsDailyRows } from "./workspaceAnalyticsDaily";
 import { listWorkspaceAgentOpsDailyRows } from "./workspaceAgentOpsDaily";
 import {
+  buildAgentOpsQueryInventory,
   buildAgentOpsDashboardData,
   buildAgentOpsMemoryInventoryPage,
   matchesAgentOpsMemoryInventoryFilters,
@@ -35,6 +38,12 @@ import {
 } from "./lib/agentMemoryCore";
 import { getUtcDayStartTimestamp } from "./lib/readModelHelpers";
 import { listWorkspaceQueryPerformanceDailyRows } from "./workspaceQueryPerformanceDaily";
+import {
+  mapDashboardChunksSequentially,
+  splitDashboardDayRange,
+} from "./lib/dashboardReadCore";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { buildQueryCandidateCanonicalRecord } from "./lib/memoryHelpers";
 
 const AGENT_OPS_ACTIVITY_MEMORY_LIMIT = 80;
 const AGENT_OPS_MEMORY_PAGE_SIZE_MAX = 100;
@@ -105,8 +114,32 @@ function compareMemoryInventoryRows(
   return right.createdAt - left.createdAt;
 }
 
+type DiscoveryInventoryRow = ReturnType<
+  typeof buildAgentOpsQueryInventory
+>[number];
+
+function compareDiscoveryInventoryRows(
+  left: DiscoveryInventoryRow,
+  right: DiscoveryInventoryRow,
+  sort: "updated_desc" | "novelty_desc" | "performance_desc"
+) {
+  if (sort === "novelty_desc") {
+    return (
+      (right.noveltyScore ?? -1) - (left.noveltyScore ?? -1) ||
+      right.updatedAt - left.updatedAt
+    );
+  }
+  if (sort === "performance_desc") {
+    return (
+      (right.performanceScore ?? -1) - (left.performanceScore ?? -1) ||
+      right.updatedAt - left.updatedAt
+    );
+  }
+  return right.updatedAt - left.updatedAt;
+}
+
 async function loadMemoryInventoryChunk(
-  ctx: QueryCtx,
+  ctx: Pick<ActionCtx, "runQuery">,
   args: {
     workspaceId: Id<"workspaces">;
     window: TimeWindow;
@@ -132,7 +165,7 @@ async function loadMemoryInventoryChunk(
 }
 
 async function scanWindowMemoryInventoryMatches(
-  ctx: QueryCtx,
+  ctx: Pick<ActionCtx, "runQuery">,
   args: {
     workspaceId: Id<"workspaces">;
     window: TimeWindow;
@@ -143,6 +176,7 @@ async function scanWindowMemoryInventoryMatches(
   }
 ) {
   const rows: WorkspaceAgentMemoryInventoryRecord[] = [];
+  let totalMatchedCount = 0;
   let cursor: string | null = null;
 
   while (true) {
@@ -164,7 +198,17 @@ async function scanWindowMemoryInventoryMatches(
         continue;
       }
 
+      totalMatchedCount += 1;
       rows.push(row);
+      if (
+        args.matchLimit !== null &&
+        rows.length >= Math.max(args.matchLimit * 2, args.matchLimit + 100)
+      ) {
+        rows.sort((left, right) =>
+          compareMemoryInventoryRows(left, right, args.sort)
+        );
+        rows.length = args.matchLimit;
+      }
     }
 
     if (chunk.isDone) {
@@ -183,13 +227,13 @@ async function scanWindowMemoryInventoryMatches(
 
   return {
     matches,
-    totalMatchedCount: rows.length,
+    totalMatchedCount,
     reachedEnd: true,
   };
 }
 
 async function loadTopWindowMemoryInventoryMatches(
-  ctx: QueryCtx,
+  ctx: Pick<ActionCtx, "runQuery">,
   args: {
     workspaceId: Id<"workspaces">;
     window: TimeWindow;
@@ -259,7 +303,7 @@ async function loadTopWindowMemoryInventoryMatches(
 }
 
 async function scanMemoryInventoryMatches(
-  ctx: QueryCtx,
+  ctx: Pick<ActionCtx, "runQuery">,
   args: {
     workspaceId: Id<"workspaces">;
     window: TimeWindow;
@@ -348,6 +392,389 @@ async function getUnfilteredMemoryInventoryCount(
     args.window
   );
 }
+
+export const getAgentOpsSnapshotContextInternal = internalQuery({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    const { workspace } = await requireOwnedWorkspaceContext(
+      ctx,
+      args.workspaceId
+    );
+    return { reportingTimeZone: workspace.reportingTimeZone ?? null };
+  },
+});
+
+export const getAgentOpsActivitySnapshotInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    startMs: v.number(),
+    endMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const workflowEventsPromise = ctx.db
+      .query("memoryWorkflowEvents")
+      .withIndex("by_workspace_occurred_at", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .gte("occurredAt", args.startMs)
+          .lt("occurredAt", args.endMs)
+      )
+      .order("desc")
+      .take(80);
+    const evaluatorRunsPromise = ctx.db
+      .query("memoryEvaluatorRuns")
+      .withIndex("by_workspace_updated_at", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .gte("updatedAt", args.startMs)
+          .lt("updatedAt", args.endMs)
+      )
+      .order("desc")
+      .take(80);
+    const suggestionPromises = (
+      ["pending_review", "promoted", "rejected"] as const
+    ).map((status) =>
+      ctx.db
+        .query("memorySuggestions")
+        .withIndex("by_workspace_status_updated_at", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("status", status)
+            .gte("updatedAt", args.startMs)
+            .lt("updatedAt", args.endMs)
+        )
+        .order("desc")
+        .take(20)
+    );
+    const memoryInventoryRowsPromise =
+      listWorkspaceAgentMemoryInventoryInWindow(ctx.db, {
+        workspaceId: args.workspaceId,
+        startMs: args.startMs,
+        endMs: args.endMs,
+        limit: AGENT_OPS_ACTIVITY_MEMORY_LIMIT,
+      });
+    const [
+      workflowEvents,
+      evaluatorRuns,
+      suggestionResults,
+      memoryInventoryRows,
+    ] = await Promise.all([
+      workflowEventsPromise,
+      evaluatorRunsPromise,
+      Promise.all(suggestionPromises),
+      memoryInventoryRowsPromise,
+    ]);
+    const [suggestionPending, suggestionPromoted, suggestionRejected] =
+      suggestionResults;
+
+    return {
+      workflowEvents,
+      evaluatorRuns,
+      memorySuggestions: [
+        ...suggestionPending,
+        ...suggestionPromoted,
+        ...suggestionRejected,
+      ].sort((left, right) => right.updatedAt - left.updatedAt),
+      memoryInventoryRows,
+    };
+  },
+});
+
+export const getAgentOpsDashboardSnapshot = action({
+  args: {
+    workspaceId: v.id("workspaces"),
+    range: analyticsDateRangeValidator,
+    tab: v.optional(agentOpsTabValidator),
+    timeZone: v.optional(v.string()),
+    from: v.optional(v.number()),
+    to: v.optional(v.number()),
+    fromDate: v.optional(v.string()),
+    toDate: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<ReturnType<typeof buildAgentOpsDashboardData>> => {
+    const context = await ctx.runQuery(
+      internal.agentOps.getAgentOpsSnapshotContextInternal,
+      { workspaceId: args.workspaceId }
+    );
+    const normalizedWindow = normalizeAnalyticsWindow({
+      ...args,
+      timeZone: context.reportingTimeZone ?? args.timeZone,
+      nowMs: getCurrentUTCTimestamp(),
+    });
+    const currentDayRange = getWindowDayRange(normalizedWindow.current);
+    const previousDayRange = getWindowDayRange(normalizedWindow.previous);
+    const chunks = splitDashboardDayRange({
+      startDayStartUtcMs: Math.min(
+        currentDayRange.startDayStartUtcMs,
+        previousDayRange.startDayStartUtcMs
+      ),
+      endDayStartUtcMs: Math.max(
+        currentDayRange.endDayStartUtcMs,
+        previousDayRange.endDayStartUtcMs
+      ),
+    });
+    const analyticsRows: Awaited<
+      ReturnType<typeof listWorkspaceAnalyticsDailyRows>
+    > = [];
+    const agentOpsRows: Awaited<
+      ReturnType<typeof listWorkspaceAgentOpsDailyRows>
+    > = [];
+
+    const rowChunks = await mapDashboardChunksSequentially({
+      chunks,
+      load: async (chunk) =>
+        await Promise.all([
+          ctx.runQuery(
+            internal.workspaceAnalyticsDaily
+              .listWorkspaceAnalyticsDailyInternal,
+            { workspaceId: args.workspaceId, ...chunk }
+          ),
+          ctx.runQuery(
+            internal.workspaceAgentOpsDaily.listWorkspaceAgentOpsDailyInternal,
+            { workspaceId: args.workspaceId, ...chunk }
+          ),
+        ]),
+    });
+    for (const [analyticsChunk, agentOpsChunk] of rowChunks) {
+      analyticsRows.push(...analyticsChunk);
+      agentOpsRows.push(...agentOpsChunk);
+    }
+
+    const activity: {
+      workflowEvents: Doc<"memoryWorkflowEvents">[];
+      evaluatorRuns: Doc<"memoryEvaluatorRuns">[];
+      memorySuggestions: Doc<"memorySuggestions">[];
+      memoryInventoryRows: WorkspaceAgentMemoryInventoryRecord[];
+    } | null =
+      (args.tab ?? "overview") === "activity"
+        ? await ctx.runQuery(
+            internal.agentOps.getAgentOpsActivitySnapshotInternal,
+            {
+              workspaceId: args.workspaceId,
+              startMs: normalizedWindow.current.startMs,
+              endMs: normalizedWindow.current.endMs,
+            }
+          )
+        : null;
+
+    return buildAgentOpsDashboardData({
+      bucketSet: createTrendBucketSet(normalizedWindow),
+      currentWindow: normalizedWindow.current,
+      previousWindow: normalizedWindow.previous,
+      analyticsRows,
+      agentOpsRows,
+      workflowEvents: activity?.workflowEvents,
+      evaluatorRuns: activity?.evaluatorRuns,
+      memorySuggestions: activity?.memorySuggestions,
+      memoryInventoryRows: activity?.memoryInventoryRows,
+    });
+  },
+});
+
+export const listWorkspaceQueryCandidatesWindowPageInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    startMs: v.number(),
+    endMs: v.number(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("queryCandidates")
+      .withIndex("by_workspace_updated_at", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .gte("updatedAt", args.startMs)
+          .lt("updatedAt", args.endMs)
+      )
+      .order("desc")
+      .paginate({
+        ...args.paginationOpts,
+        maximumRowsRead: 300,
+        maximumBytesRead: 2_000_000,
+      });
+  },
+});
+
+export const getAgentOpsDiscoveryInventoryPageSnapshot = action({
+  args: {
+    workspaceId: v.id("workspaces"),
+    range: analyticsDateRangeValidator,
+    timeZone: v.optional(v.string()),
+    fromDate: v.optional(v.string()),
+    toDate: v.optional(v.string()),
+    search: v.optional(v.string()),
+    status: v.optional(queryCandidateStatusValidator),
+    sort: v.optional(
+      v.union(
+        v.literal("updated_desc"),
+        v.literal("novelty_desc"),
+        v.literal("performance_desc")
+      )
+    ),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    rows: ReturnType<typeof buildAgentOpsQueryInventory>;
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+  }> => {
+    const context = await ctx.runQuery(
+      internal.agentOps.getAgentOpsSnapshotContextInternal,
+      { workspaceId: args.workspaceId }
+    );
+    const window = normalizeAnalyticsWindow({
+      ...args,
+      timeZone: context.reportingTimeZone ?? args.timeZone,
+      nowMs: getCurrentUTCTimestamp(),
+    }).current;
+    const dayRange = getWindowDayRange(window);
+    const performanceRows: Doc<"workspaceQueryPerformanceDaily">[] = [];
+    performanceRows.push(
+      ...(
+        await mapDashboardChunksSequentially({
+          chunks: splitDashboardDayRange(dayRange),
+          load: async (chunk) =>
+            await ctx.runQuery(
+              internal.workspaceQueryPerformanceDaily
+                .listWorkspaceQueryPerformanceDailyInternal,
+              { workspaceId: args.workspaceId, ...chunk }
+            ),
+        })
+      ).flat()
+    );
+    const needle = args.search?.trim().toLowerCase() ?? "";
+    const status = args.status ?? null;
+    const sort = args.sort ?? "updated_desc";
+    const pageSize = Math.min(
+      500,
+      Math.max(1, Math.floor(args.pageSize ?? 10))
+    );
+    const requestedPage = Math.min(
+      10_000,
+      Math.max(0, Math.floor(args.page ?? 0))
+    );
+    const matchLimit = (requestedPage + 1) * pageSize;
+    const rows: DiscoveryInventoryRow[] = [];
+    let totalCount = 0;
+    let cursor: string | null = null;
+    while (true) {
+      const result: {
+        page: Doc<"queryCandidates">[];
+        continueCursor: string;
+        isDone: boolean;
+      } = await ctx.runQuery(
+        internal.agentOps.listWorkspaceQueryCandidatesWindowPageInternal,
+        {
+          workspaceId: args.workspaceId,
+          startMs: window.startMs,
+          endMs: window.endMs,
+          paginationOpts: { cursor, numItems: 250 },
+        }
+      );
+      const pageMatches = buildAgentOpsQueryInventory({
+        queryCandidates: result.page,
+        queryPerformanceDailyRows: performanceRows,
+        window,
+      }).filter(
+        (row) =>
+          (!status || row.status === status) &&
+          (!needle ||
+            row.rawValue.toLowerCase().includes(needle) ||
+            row.canonicalValue.toLowerCase().includes(needle) ||
+            (row.sourceTheme ?? "").toLowerCase().includes(needle))
+      );
+      totalCount += pageMatches.length;
+      rows.push(...pageMatches);
+      if (rows.length >= Math.max(matchLimit * 2, matchLimit + 250)) {
+        rows.sort((left, right) =>
+          compareDiscoveryInventoryRows(left, right, sort)
+        );
+        rows.length = matchLimit;
+      }
+      if (result.isDone) break;
+      cursor = result.continueCursor;
+    }
+    rows.sort((left, right) =>
+      compareDiscoveryInventoryRows(left, right, sort)
+    );
+    rows.length = Math.min(rows.length, matchLimit);
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const page = Math.min(totalPages - 1, requestedPage);
+    return {
+      rows: rows.slice(page * pageSize, (page + 1) * pageSize),
+      page,
+      pageSize,
+      totalCount,
+      totalPages,
+    };
+  },
+});
+
+export const getAgentOpsMemoryInventoryPageSnapshot = action({
+  args: {
+    workspaceId: v.id("workspaces"),
+    range: analyticsDateRangeValidator,
+    timeZone: v.optional(v.string()),
+    from: v.optional(v.number()),
+    to: v.optional(v.number()),
+    fromDate: v.optional(v.string()),
+    toDate: v.optional(v.string()),
+    search: v.optional(v.string()),
+    category: v.optional(v.string()),
+    sort: v.optional(agentOpsMemorySortValidator),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const context = await ctx.runQuery(
+      internal.agentOps.getAgentOpsSnapshotContextInternal,
+      { workspaceId: args.workspaceId }
+    );
+    const window = normalizeAnalyticsWindow({
+      ...args,
+      timeZone: context.reportingTimeZone ?? args.timeZone,
+      nowMs: getCurrentUTCTimestamp(),
+    }).current;
+    const requestedPage = Math.max(0, Math.floor(args.page ?? 0));
+    const pageSize = Math.min(
+      AGENT_OPS_MEMORY_PAGE_SIZE_MAX,
+      Math.max(1, Math.floor(args.pageSize ?? 10))
+    );
+    const scanResult = await scanWindowMemoryInventoryMatches(ctx, {
+      workspaceId: args.workspaceId,
+      window,
+      sort: args.sort ?? "impact_desc",
+      search: args.search,
+      category: args.category,
+      matchLimit: (requestedPage + 1) * pageSize,
+    });
+    const totalPages = Math.max(
+      1,
+      Math.ceil(scanResult.totalMatchedCount / pageSize)
+    );
+    const page = Math.min(totalPages - 1, requestedPage);
+    const startIndex = page * pageSize;
+    return buildAgentOpsMemoryInventoryPage({
+      rows: scanResult.matches.slice(startIndex, startIndex + pageSize),
+      page,
+      totalCount: scanResult.totalMatchedCount,
+      totalPages,
+      availableCategories: [...WORKSPACE_MEMORY_CATEGORIES].sort(
+        (left, right) => left.localeCompare(right)
+      ),
+    });
+  },
+});
 
 export const getAgentOpsDashboard = query({
   args: {
@@ -687,11 +1114,10 @@ export const getAgentOpsQueryDetail = query({
     const [performance, keyword, monitor, relatedEvents] = await Promise.all([
       ctx.db
         .query("queryPerformance")
-        .withIndex("by_workspace_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId)
-        )
-        .filter((q) =>
-          q.eq(q.field("activatedQueryCandidateId"), args.queryCandidateId)
+        .withIndex("by_workspace_activated_candidate", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("activatedQueryCandidateId", args.queryCandidateId)
         )
         .first(),
       candidate.activatedKeywordId
@@ -705,22 +1131,36 @@ export const getAgentOpsQueryDetail = query({
             )
             .first()
         : Promise.resolve(null),
-      ctx.db
-        .query("memoryWorkflowEvents")
-        .withIndex("by_workspace_occurred_at", (q) =>
-          q.eq("workspaceId", args.workspaceId)
+      Promise.all([
+        ctx.db
+          .query("memoryWorkflowEvents")
+          .withIndex("by_workspace_query_candidate_occurred_at", (q) =>
+            q
+              .eq("workspaceId", args.workspaceId)
+              .eq("queryCandidateId", args.queryCandidateId)
+          )
+          .order("desc")
+          .take(10),
+        candidate.activatedKeywordId
+          ? ctx.db
+              .query("memoryWorkflowEvents")
+              .withIndex("by_workspace_query_occurred_at", (q) =>
+                q
+                  .eq("workspaceId", args.workspaceId)
+                  .eq("queryId", candidate.activatedKeywordId)
+              )
+              .order("desc")
+              .take(10)
+          : Promise.resolve([]),
+      ]).then((groups) =>
+        Array.from(
+          new Map(
+            groups.flat().map((event) => [String(event._id), event])
+          ).values()
         )
-        .order("desc")
-        .collect()
-        .then((rows) =>
-          rows
-            .filter(
-              (row) =>
-                row.queryCandidateId === args.queryCandidateId ||
-                row.queryId === candidate.activatedKeywordId
-            )
-            .slice(0, 10)
-        ),
+          .sort((left, right) => right.occurredAt - left.occurredAt)
+          .slice(0, 10)
+      ),
     ]);
 
     return {
@@ -859,38 +1299,41 @@ export const getAgentOpsMemoryDetail = query({
           : Promise.resolve(null),
         ctx.db
           .query("memorySuggestions")
-          .withIndex("by_workspace_status_updated_at", (q) =>
-            q.eq("workspaceId", args.workspaceId).eq("status", "promoted")
+          .withIndex("by_workspace_promoted_memory_updated_at", (q) =>
+            q
+              .eq("workspaceId", args.workspaceId)
+              .eq("promotedMemoryId", memory.memoryId)
           )
           .order("desc")
-          .collect()
-          .then((rows) =>
-            rows
-              .filter((row) => row.promotedMemoryId === memory.memoryId)
-              .slice(0, 5)
-          ),
-        ctx.db
-          .query("queryCandidates")
-          .withIndex("by_workspace_updated_at", (q) =>
-            q.eq("workspaceId", args.workspaceId)
+          .take(5),
+        Promise.all(
+          memory.parsed.relatedQueries.flatMap((related) =>
+            (["seed_keyword", "social_query"] as const).map((type) => {
+              const canonical = buildQueryCandidateCanonicalRecord({
+                type,
+                value: related,
+              });
+              return ctx.db
+                .query("queryCandidates")
+                .withIndex("by_workspace_canonical_key", (q) =>
+                  q
+                    .eq("workspaceId", args.workspaceId)
+                    .eq("canonicalKey", canonical.canonicalKey)
+                )
+                .first();
+            })
           )
-          .order("desc")
-          .collect()
-          .then((rows) =>
-            rows.filter((row) =>
-              memory.parsed.relatedQueries.some(
-                (related) =>
-                  related.toLowerCase() === row.rawValue.toLowerCase() ||
-                  related.toLowerCase() === row.canonicalValue.toLowerCase()
-              )
-            )
-          ),
+        ).then((rows) =>
+          rows.filter((row): row is NonNullable<typeof row> => row !== null)
+        ),
         ctx.db
           .query("workspaceMemories")
-          .withIndex("by_legacy_memory_id", (q) =>
-            q.eq("legacyMemoryId", memory.memoryId)
+          .withIndex("by_workspace_and_legacy_memory_id", (q) =>
+            q
+              .eq("workspaceId", args.workspaceId)
+              .eq("legacyMemoryId", memory.memoryId)
           )
-          .collect()
+          .take(10)
           .then(
             (rows) =>
               rows
@@ -1009,14 +1452,11 @@ export const getAgentOpsRunDetail = query({
       ctx.db.get(run.eventId),
       ctx.db
         .query("memorySuggestions")
-        .withIndex("by_workspace_status_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("status", "promoted")
+        .withIndex("by_workspace_run_updated_at", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("runId", String(run._id))
         )
         .order("desc")
-        .collect()
-        .then((rows) =>
-          rows.filter((row) => row.runId === String(run._id)).slice(0, 10)
-        ),
+        .take(10),
     ]);
 
     return {

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { query } from "./lib/functionBuilders";
+import { internal } from "./_generated/api";
+import { action, internalQuery, query } from "./lib/functionBuilders";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { analyticsDateRangeValidator } from "./validators";
 import { getOwnedWorkspace, getUserByIdentity } from "./lib/accessHelpers";
@@ -13,10 +14,15 @@ import {
   normalizeAnalyticsWindow,
   sumHourlyFieldInWindow,
   type AnalyticsQueryResult,
+  type NormalizedAnalyticsWindow,
   type TimeWindow,
 } from "./lib/analyticsCore";
 import { getUtcDayStartTimestamp } from "./lib/readModelHelpers";
 import { listWorkspaceAnalyticsDailyRows } from "./workspaceAnalyticsDaily";
+import {
+  mapDashboardChunksSequentially,
+  splitDashboardDayRange,
+} from "./lib/dashboardReadCore";
 
 type AnalyticsDailyRow = Awaited<
   ReturnType<typeof listWorkspaceAnalyticsDailyRows>
@@ -143,6 +149,328 @@ function buildPlatformDistribution(
   ];
 }
 
+function buildDashboardAnalyticsResult(args: {
+  analyticsRows: AnalyticsDailyRow[];
+  normalizedWindow: NormalizedAnalyticsWindow;
+  bucketSet: ReturnType<typeof createTrendBucketSet>;
+}): AnalyticsQueryResult {
+  const { analyticsRows, normalizedWindow, bucketSet } = args;
+  const currentProspectsCount = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyNewProspectsCounts",
+    normalizedWindow.current
+  );
+  const previousProspectsCount = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyNewProspectsCounts",
+    normalizedWindow.previous
+  );
+  const newProspects = buildMetric({
+    currentValue: currentProspectsCount,
+    previousValue: previousProspectsCount,
+  });
+
+  const contactedCurrent = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyContactedEventsCounts",
+    normalizedWindow.current
+  );
+  const contactedPrevious = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyContactedEventsCounts",
+    normalizedWindow.previous
+  );
+  const respondedCurrent = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyRespondedEventsCounts",
+    normalizedWindow.current
+  );
+  const respondedPrevious = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyRespondedEventsCounts",
+    normalizedWindow.previous
+  );
+  const responseRate = {
+    ...buildMetric({
+      currentValue: calculateRate(respondedCurrent, contactedCurrent),
+      previousValue: calculateRate(respondedPrevious, contactedPrevious),
+      valueDecimals: 1,
+      changeDecimals: 2,
+      changePercentDecimals: 2,
+    }),
+    contacted: contactedCurrent,
+  };
+
+  const pendingPlansCurrent = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyDraftPlansCounts",
+    normalizedWindow.current
+  );
+  const pendingPlansPrevious = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyDraftPlansCounts",
+    normalizedWindow.previous
+  );
+  const pendingTasksCurrent = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyPendingApprovalTasksCounts",
+    normalizedWindow.current
+  );
+  const pendingTasksPrevious = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyPendingApprovalTasksCounts",
+    normalizedWindow.previous
+  );
+  const pendingApprovals = {
+    ...buildMetric({
+      currentValue: pendingPlansCurrent + pendingTasksCurrent,
+      previousValue: pendingPlansPrevious + pendingTasksPrevious,
+    }),
+    plans: pendingPlansCurrent,
+    tasks: pendingTasksCurrent,
+  };
+
+  const pausedPlansCurrent =
+    sumHourlyFieldInWindow(
+      analyticsRows,
+      "hourlyPausedPlansCounts",
+      normalizedWindow.current
+    ) +
+    sumHourlyFieldInWindow(
+      analyticsRows,
+      "hourlyBlockedAuthPlansCounts",
+      normalizedWindow.current
+    );
+  const pausedPlansPrevious =
+    sumHourlyFieldInWindow(
+      analyticsRows,
+      "hourlyPausedPlansCounts",
+      normalizedWindow.previous
+    ) +
+    sumHourlyFieldInWindow(
+      analyticsRows,
+      "hourlyBlockedAuthPlansCounts",
+      normalizedWindow.previous
+    );
+  const failedTasksCurrent = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyFailedTasksCounts",
+    normalizedWindow.current
+  );
+  const failedTasksPrevious = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyFailedTasksCounts",
+    normalizedWindow.previous
+  );
+  const issuesMetricBase = buildMetric({
+    currentValue: pausedPlansCurrent + failedTasksCurrent,
+    previousValue: pausedPlansPrevious + failedTasksPrevious,
+    trendWhenEqual: "down",
+  });
+  const issues = {
+    ...issuesMetricBase,
+    trend: (issuesMetricBase.change <= 0 ? "down" : "up") as "up" | "down",
+    paused: pausedPlansCurrent,
+    failed: failedTasksCurrent,
+  };
+
+  const currentQualifiedCount = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyQualificationQualifiedCounts",
+    normalizedWindow.current
+  );
+  const previousQualifiedCount = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyQualificationQualifiedCounts",
+    normalizedWindow.previous
+  );
+  const currentDisqualifiedCount = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyQualificationDisqualifiedCounts",
+    normalizedWindow.current
+  );
+  const previousDisqualifiedCount = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyQualificationDisqualifiedCounts",
+    normalizedWindow.previous
+  );
+  const currentReadyCount = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyActionableReadyCounts",
+    normalizedWindow.current
+  );
+  const previousReadyCount = sumHourlyFieldInWindow(
+    analyticsRows,
+    "hourlyActionableReadyCounts",
+    normalizedWindow.previous
+  );
+  const currentPendingCount = Math.max(
+    0,
+    currentProspectsCount - currentQualifiedCount - currentDisqualifiedCount
+  );
+  const previousPendingCount = Math.max(
+    0,
+    previousProspectsCount - previousQualifiedCount - previousDisqualifiedCount
+  );
+  const processingSummary = {
+    pending: buildMetric({
+      currentValue: currentPendingCount,
+      previousValue: previousPendingCount,
+    }),
+    qualified: buildMetric({
+      currentValue: currentQualifiedCount,
+      previousValue: previousQualifiedCount,
+    }),
+    ready: buildMetric({
+      currentValue: currentReadyCount,
+      previousValue: previousReadyCount,
+    }),
+    disqualified: buildMetric({
+      currentValue: currentDisqualifiedCount,
+      previousValue: previousDisqualifiedCount,
+      trendWhenEqual: "down",
+    }),
+  };
+
+  const prospectCounts = countHourlyFieldByBucket(
+    analyticsRows,
+    "hourlyNewProspectsCounts",
+    bucketSet
+  );
+  const contactedCounts = countHourlyFieldByBucket(
+    analyticsRows,
+    "hourlyContactedEventsCounts",
+    bucketSet
+  );
+
+  return {
+    status: "success",
+    data: {
+      newProspects,
+      responseRate,
+      pendingApprovals,
+      issues,
+      processingSummary,
+      pipelineFunnel: buildPipelineSnapshot(
+        analyticsRows,
+        normalizedWindow.current
+      ),
+      trendsOverTime: bucketSet.buckets.map((bucket, index) => ({
+        date: bucket.label,
+        prospects: prospectCounts[index] ?? 0,
+        contacted: contactedCounts[index] ?? 0,
+      })),
+      qualificationDistribution: buildQualificationDistribution(
+        analyticsRows,
+        normalizedWindow.current
+      ),
+      fitDistribution: buildFitDistribution(
+        analyticsRows,
+        normalizedWindow.current
+      ),
+      platformDistribution: buildPlatformDistribution(
+        analyticsRows,
+        normalizedWindow.current
+      ),
+    },
+    generatedAt: getCurrentUTCTimestamp(),
+  };
+}
+
+export const getAnalyticsSnapshotContextInternal = internalQuery({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return null;
+    }
+    const user = await getUserByIdentity(ctx, identity);
+    if (!user) {
+      return null;
+    }
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    return workspace
+      ? { reportingTimeZone: workspace.reportingTimeZone ?? null }
+      : null;
+  },
+});
+
+export const getDashboardAnalyticsSnapshot = action({
+  args: {
+    workspaceId: v.id("workspaces"),
+    range: analyticsDateRangeValidator,
+    timeZone: v.optional(v.string()),
+    from: v.optional(v.number()),
+    to: v.optional(v.number()),
+    fromDate: v.optional(v.string()),
+    toDate: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<AnalyticsQueryResult> => {
+    const nowMs = getCurrentUTCTimestamp();
+    let normalizedWindow = normalizeAnalyticsWindow({
+      ...args,
+      nowMs,
+    });
+    let bucketSet = createTrendBucketSet(normalizedWindow);
+
+    try {
+      const context = await ctx.runQuery(
+        internal.analytics.getAnalyticsSnapshotContextInternal,
+        { workspaceId: args.workspaceId }
+      );
+      if (!context) {
+        return createErrorResult(
+          "Workspace not found or access denied",
+          bucketSet
+        );
+      }
+
+      normalizedWindow = normalizeAnalyticsWindow({
+        ...args,
+        timeZone: context.reportingTimeZone ?? args.timeZone,
+        nowMs,
+      });
+      bucketSet = createTrendBucketSet(normalizedWindow);
+      const currentDayRange = getWindowDayRange(normalizedWindow.current);
+      const previousDayRange = getWindowDayRange(normalizedWindow.previous);
+      const chunks = splitDashboardDayRange({
+        startDayStartUtcMs: Math.min(
+          currentDayRange.startDayStartUtcMs,
+          previousDayRange.startDayStartUtcMs
+        ),
+        endDayStartUtcMs: Math.max(
+          currentDayRange.endDayStartUtcMs,
+          previousDayRange.endDayStartUtcMs
+        ),
+      });
+      const analyticsRows = (
+        await mapDashboardChunksSequentially({
+          chunks,
+          load: async (chunk) =>
+            await ctx.runQuery(
+              internal.workspaceAnalyticsDaily
+                .listWorkspaceAnalyticsDailyInternal,
+              { workspaceId: args.workspaceId, ...chunk }
+            ),
+        })
+      ).flat();
+
+      return buildDashboardAnalyticsResult({
+        analyticsRows,
+        normalizedWindow,
+        bucketSet,
+      });
+    } catch (error) {
+      return createErrorResult(
+        error instanceof Error
+          ? error.message
+          : "Failed to load analytics data",
+        bucketSet
+      );
+    }
+  },
+});
+
 export const getDashboardAnalytics = query({
   args: {
     workspaceId: v.id("workspaces"),
@@ -219,247 +547,11 @@ export const getDashboardAnalytics = query({
         endDayStartUtcMs,
       });
 
-      const currentProspectsCount = sumHourlyFieldInWindow(
+      return buildDashboardAnalyticsResult({
         analyticsRows,
-        "hourlyNewProspectsCounts",
-        normalizedWindow.current
-      );
-      const previousProspectsCount = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyNewProspectsCounts",
-        normalizedWindow.previous
-      );
-      const newProspects = buildMetric({
-        currentValue: currentProspectsCount,
-        previousValue: previousProspectsCount,
+        normalizedWindow,
+        bucketSet,
       });
-
-      const contactedCurrent = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyContactedEventsCounts",
-        normalizedWindow.current
-      );
-      const contactedPrevious = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyContactedEventsCounts",
-        normalizedWindow.previous
-      );
-      const respondedCurrent = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyRespondedEventsCounts",
-        normalizedWindow.current
-      );
-      const respondedPrevious = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyRespondedEventsCounts",
-        normalizedWindow.previous
-      );
-
-      const responseRateCurrent = calculateRate(
-        respondedCurrent,
-        contactedCurrent
-      );
-      const responseRatePrevious = calculateRate(
-        respondedPrevious,
-        contactedPrevious
-      );
-      const responseRate = {
-        ...buildMetric({
-          currentValue: responseRateCurrent,
-          previousValue: responseRatePrevious,
-          valueDecimals: 1,
-          changeDecimals: 2,
-          changePercentDecimals: 2,
-        }),
-        contacted: contactedCurrent,
-      };
-
-      const pendingPlansCurrent = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyDraftPlansCounts",
-        normalizedWindow.current
-      );
-      const pendingPlansPrevious = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyDraftPlansCounts",
-        normalizedWindow.previous
-      );
-      const pendingTasksCurrent = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyPendingApprovalTasksCounts",
-        normalizedWindow.current
-      );
-      const pendingTasksPrevious = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyPendingApprovalTasksCounts",
-        normalizedWindow.previous
-      );
-      const pendingApprovals = {
-        ...buildMetric({
-          currentValue: pendingPlansCurrent + pendingTasksCurrent,
-          previousValue: pendingPlansPrevious + pendingTasksPrevious,
-        }),
-        plans: pendingPlansCurrent,
-        tasks: pendingTasksCurrent,
-      };
-
-      const pausedPlansCurrent =
-        sumHourlyFieldInWindow(
-          analyticsRows,
-          "hourlyPausedPlansCounts",
-          normalizedWindow.current
-        ) +
-        sumHourlyFieldInWindow(
-          analyticsRows,
-          "hourlyBlockedAuthPlansCounts",
-          normalizedWindow.current
-        );
-      const pausedPlansPrevious =
-        sumHourlyFieldInWindow(
-          analyticsRows,
-          "hourlyPausedPlansCounts",
-          normalizedWindow.previous
-        ) +
-        sumHourlyFieldInWindow(
-          analyticsRows,
-          "hourlyBlockedAuthPlansCounts",
-          normalizedWindow.previous
-        );
-      const failedTasksCurrent = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyFailedTasksCounts",
-        normalizedWindow.current
-      );
-      const failedTasksPrevious = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyFailedTasksCounts",
-        normalizedWindow.previous
-      );
-
-      const issuesMetricBase = buildMetric({
-        currentValue: pausedPlansCurrent + failedTasksCurrent,
-        previousValue: pausedPlansPrevious + failedTasksPrevious,
-        trendWhenEqual: "down",
-      });
-      const issuesTrend: "up" | "down" =
-        issuesMetricBase.change <= 0 ? "down" : "up";
-      const issues = {
-        ...issuesMetricBase,
-        trend: issuesTrend,
-        paused: pausedPlansCurrent,
-        failed: failedTasksCurrent,
-      };
-
-      const currentQualifiedCount = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyQualificationQualifiedCounts",
-        normalizedWindow.current
-      );
-      const previousQualifiedCount = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyQualificationQualifiedCounts",
-        normalizedWindow.previous
-      );
-      const currentDisqualifiedCount = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyQualificationDisqualifiedCounts",
-        normalizedWindow.current
-      );
-      const previousDisqualifiedCount = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyQualificationDisqualifiedCounts",
-        normalizedWindow.previous
-      );
-      const currentReadyCount = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyActionableReadyCounts",
-        normalizedWindow.current
-      );
-      const previousReadyCount = sumHourlyFieldInWindow(
-        analyticsRows,
-        "hourlyActionableReadyCounts",
-        normalizedWindow.previous
-      );
-      const currentPendingCount = Math.max(
-        0,
-        currentProspectsCount - currentQualifiedCount - currentDisqualifiedCount
-      );
-      const previousPendingCount = Math.max(
-        0,
-        previousProspectsCount -
-          previousQualifiedCount -
-          previousDisqualifiedCount
-      );
-
-      const processingSummary = {
-        pending: buildMetric({
-          currentValue: currentPendingCount,
-          previousValue: previousPendingCount,
-        }),
-        qualified: buildMetric({
-          currentValue: currentQualifiedCount,
-          previousValue: previousQualifiedCount,
-        }),
-        ready: buildMetric({
-          currentValue: currentReadyCount,
-          previousValue: previousReadyCount,
-        }),
-        disqualified: buildMetric({
-          currentValue: currentDisqualifiedCount,
-          previousValue: previousDisqualifiedCount,
-          trendWhenEqual: "down",
-        }),
-      };
-
-      const prospectCounts = countHourlyFieldByBucket(
-        analyticsRows,
-        "hourlyNewProspectsCounts",
-        bucketSet
-      );
-      const contactedCounts = countHourlyFieldByBucket(
-        analyticsRows,
-        "hourlyContactedEventsCounts",
-        bucketSet
-      );
-      const trendsOverTime = bucketSet.buckets.map((bucket, index) => ({
-        date: bucket.label,
-        prospects: prospectCounts[index] ?? 0,
-        contacted: contactedCounts[index] ?? 0,
-      }));
-
-      const pipelineFunnel = buildPipelineSnapshot(
-        analyticsRows,
-        normalizedWindow.current
-      );
-      const qualificationDistribution = buildQualificationDistribution(
-        analyticsRows,
-        normalizedWindow.current
-      );
-      const fitDistribution = buildFitDistribution(
-        analyticsRows,
-        normalizedWindow.current
-      );
-      const platformDistribution = buildPlatformDistribution(
-        analyticsRows,
-        normalizedWindow.current
-      );
-
-      return {
-        status: "success",
-        data: {
-          newProspects,
-          responseRate,
-          pendingApprovals,
-          issues,
-          processingSummary,
-          pipelineFunnel,
-          trendsOverTime,
-          qualificationDistribution,
-          fitDistribution,
-          platformDistribution,
-        },
-        generatedAt: getCurrentUTCTimestamp(),
-      };
     } catch (error) {
       const errorMessage =
         error instanceof Error

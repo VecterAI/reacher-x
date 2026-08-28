@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useConvex } from "convex/react";
+import { useAction, useConvex } from "convex/react";
 import { parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { useRouter } from "next/navigation";
@@ -19,6 +19,7 @@ import {
   useWorkspaceReportingTimeZone,
 } from "@/shared/hooks";
 import { cn } from "@/shared/lib/utils";
+import { useDebouncedValue } from "@/shared/lib/utils/useDebouncedValue";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Drawer,
@@ -51,6 +52,7 @@ import type {
   AgentOpsDashboardData,
   AgentOpsMemoryInventoryPageData,
   AgentOpsMemorySort,
+  DiscoveryInventoryPageData,
   DiscoveryInventoryRow,
   MemoryInventoryRow,
 } from "./types";
@@ -65,6 +67,20 @@ import {
 
 const AGENT_OPS_PRIMARY_CHART_COLOR = "hsl(var(--chart-1))";
 
+async function loadRemainingExportPages<T>(args: {
+  nextPage: number;
+  totalPages: number;
+  loadPage: (page: number) => Promise<T[]>;
+}): Promise<T[]> {
+  if (args.nextPage >= args.totalPages) return [];
+  const current = await args.loadPage(args.nextPage);
+  const remaining = await loadRemainingExportPages({
+    ...args,
+    nextPage: args.nextPage + 1,
+  });
+  return [...current, ...remaining];
+}
+
 // ============================================================================
 // Main Dashboard
 // ============================================================================
@@ -74,7 +90,15 @@ export function AgentOpsDashboard() {
   const convex = useConvex();
   const isMobile = useIsMobile();
   const [querySearch, setQuerySearch] = React.useState("");
-  const [queryStatus, setQueryStatus] = React.useState("all");
+  const [queryStatus, setQueryStatus] = React.useState<
+    | "all"
+    | "generated"
+    | "activated"
+    | "rejected_exact_duplicate"
+    | "rejected_semantic_duplicate"
+    | "rejected_low_novelty"
+    | "retired"
+  >("all");
   const [memorySearch, setMemorySearch] = React.useState("");
   const [memoryCategory, setMemoryCategory] = React.useState("all");
   const [activitySearch, setActivitySearch] = React.useState("");
@@ -85,10 +109,13 @@ export function AgentOpsDashboard() {
   const [memorySort, setMemorySort] =
     React.useState<AgentOpsMemorySort>("impact_desc");
   const [memoryPage, setMemoryPage] = React.useState(0);
+  const [isExportingQueries, setIsExportingQueries] = React.useState(false);
   const [isExportingMemories, setIsExportingMemories] = React.useState(false);
   const [queryPageSize, setQueryPageSize] = React.useState(10);
+  const [queryPage, setQueryPage] = React.useState(0);
   const [memoryPageSize, setMemoryPageSize] = React.useState(10);
   const [activityPageSize, setActivityPageSize] = React.useState(10);
+  const [dashboardRefreshKey, setDashboardRefreshKey] = React.useState(0);
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
 
   const [params, setParams] = useQueryStates({
@@ -134,51 +161,187 @@ export function AgentOpsDashboard() {
       : null
   );
 
-  const dashboardQuery = useQueryWithStatus(
-    api.agentOps.getAgentOpsDashboard,
-    workspaceId
-      ? {
-          workspaceId,
-          range: params.range,
-          tab: params.tab,
-          timeZone: reportingTimeZone,
-          ...(params.from ? { fromDate: params.from } : {}),
-          ...(params.to ? { toDate: params.to } : {}),
-        }
-      : "skip"
+  const loadDashboard = useAction(api.agentOps.getAgentOpsDashboardSnapshot);
+  const loadDiscoveryPage = useAction(
+    api.agentOps.getAgentOpsDiscoveryInventoryPageSnapshot
   );
+  const loadMemoryPage = useAction(
+    api.agentOps.getAgentOpsMemoryInventoryPageSnapshot
+  );
+  const [dashboardData, setDashboardData] =
+    React.useState<AgentOpsDashboardData>();
+  const [dashboardError, setDashboardError] = React.useState<Error>();
+  const [isDashboardSnapshotLoading, setIsDashboardSnapshotLoading] =
+    React.useState(false);
+  const [discoveryPageData, setDiscoveryPageData] =
+    React.useState<DiscoveryInventoryPageData>();
+  const [isDiscoveryPageLoading, setIsDiscoveryPageLoading] =
+    React.useState(false);
+  const debouncedQuerySearch = useDebouncedValue(querySearch, 300);
 
-  const memoryInventoryQuery = useQueryWithStatus(
-    api.agentOps.getAgentOpsMemoryInventoryPage,
-    workspaceId && params.tab === "memory"
-      ? {
-          workspaceId,
-          range: params.range,
-          timeZone: reportingTimeZone,
-          ...(params.from ? { fromDate: params.from } : {}),
-          ...(params.to ? { toDate: params.to } : {}),
-          ...(memorySearch.trim().length > 0 ? { search: memorySearch } : {}),
-          ...(memoryCategory !== "all" ? { category: memoryCategory } : {}),
-          sort: memorySort,
-          page: memoryPage,
-          pageSize: memoryPageSize,
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!workspaceId) return;
+    setIsDashboardSnapshotLoading(true);
+    setDashboardData(undefined);
+    setDashboardError(undefined);
+    void loadDashboard({
+      workspaceId,
+      range: params.range,
+      tab: params.tab,
+      timeZone: reportingTimeZone,
+      ...(params.from ? { fromDate: params.from } : {}),
+      ...(params.to ? { toDate: params.to } : {}),
+    })
+      .then((result) => {
+        if (!cancelled) setDashboardData(result as AgentOpsDashboardData);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setDashboardError(
+            error instanceof Error ? error : new Error("Please try again.")
+          );
         }
-      : "skip"
-  );
+      })
+      .finally(() => {
+        if (!cancelled) setIsDashboardSnapshotLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    loadDashboard,
+    dashboardRefreshKey,
+    params.from,
+    params.range,
+    params.tab,
+    params.to,
+    reportingTimeZone,
+    workspaceId,
+  ]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!workspaceId || params.tab !== "discovery") return;
+    setIsDiscoveryPageLoading(true);
+    setDiscoveryPageData(undefined);
+    void loadDiscoveryPage({
+      workspaceId,
+      range: params.range,
+      timeZone: reportingTimeZone,
+      ...(params.from ? { fromDate: params.from } : {}),
+      ...(params.to ? { toDate: params.to } : {}),
+      ...(debouncedQuerySearch.trim()
+        ? { search: debouncedQuerySearch.trim() }
+        : {}),
+      ...(queryStatus !== "all" ? { status: queryStatus } : {}),
+      sort: querySort,
+      page: queryPage,
+      pageSize: queryPageSize,
+    })
+      .then((result) => {
+        if (!cancelled)
+          setDiscoveryPageData(result as DiscoveryInventoryPageData);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setDashboardError(
+            error instanceof Error ? error : new Error("Please try again.")
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsDiscoveryPageLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    debouncedQuerySearch,
+    loadDiscoveryPage,
+    params.from,
+    params.range,
+    params.tab,
+    params.to,
+    queryPage,
+    queryPageSize,
+    querySort,
+    queryStatus,
+    reportingTimeZone,
+    workspaceId,
+  ]);
+
+  const [memoryInventoryData, setMemoryInventoryData] =
+    React.useState<AgentOpsMemoryInventoryPageData>();
+  const [memoryInventoryError, setMemoryInventoryError] =
+    React.useState<Error>();
+  const [isMemorySnapshotLoading, setIsMemorySnapshotLoading] =
+    React.useState(false);
+  const debouncedMemorySearch = useDebouncedValue(memorySearch, 300);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!workspaceId || params.tab !== "memory") return;
+    setIsMemorySnapshotLoading(true);
+    setMemoryInventoryData(undefined);
+    setMemoryInventoryError(undefined);
+    void loadMemoryPage({
+      workspaceId,
+      range: params.range,
+      timeZone: reportingTimeZone,
+      ...(params.from ? { fromDate: params.from } : {}),
+      ...(params.to ? { toDate: params.to } : {}),
+      ...(debouncedMemorySearch.trim()
+        ? { search: debouncedMemorySearch.trim() }
+        : {}),
+      ...(memoryCategory !== "all" ? { category: memoryCategory } : {}),
+      sort: memorySort,
+      page: memoryPage,
+      pageSize: memoryPageSize,
+    })
+      .then((result) => {
+        if (!cancelled) {
+          setMemoryInventoryData(result as AgentOpsMemoryInventoryPageData);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setMemoryInventoryError(
+            error instanceof Error ? error : new Error("Please try again.")
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsMemorySnapshotLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    debouncedMemorySearch,
+    loadMemoryPage,
+    memoryCategory,
+    memoryPage,
+    memoryPageSize,
+    memorySort,
+    params.from,
+    params.range,
+    params.tab,
+    params.to,
+    reportingTimeZone,
+    workspaceId,
+  ]);
 
   // Always have data — zero defaults until real data loads (mirrors Analytics)
   const defaultData = React.useMemo(
     () => getDefaultAgentOpsData(params.range),
     [params.range]
   );
-  const data =
-    (dashboardQuery.data as AgentOpsDashboardData | undefined) ?? defaultData;
+  const data = dashboardData ?? defaultData;
   const isDashboardLoading =
-    workspaceStatusQuery.isPending || dashboardQuery.isPending;
-  const isMemoryLoading = isDashboardLoading || memoryInventoryQuery.isPending;
-  const memoryInventoryData = (memoryInventoryQuery.data as
-    | AgentOpsMemoryInventoryPageData
-    | undefined) ?? {
+    workspaceStatusQuery.isPending || isDashboardSnapshotLoading;
+  const isMemoryLoading = isDashboardLoading || isMemorySnapshotLoading;
+  const resolvedMemoryInventoryData = memoryInventoryData ?? {
     rows: [],
     page: 0,
     totalCount: 0,
@@ -303,40 +466,11 @@ export function AgentOpsDashboard() {
 
   // ── Filtered / sorted lists ──────────────────────────────────────────
 
-  const filteredQueries = React.useMemo(() => {
-    const rows = data.discovery.inventory.filter((row) => {
-      const matchesStatus = queryStatus === "all" || row.status === queryStatus;
-      const needle = querySearch.trim().toLowerCase();
-      const matchesSearch =
-        needle.length === 0 ||
-        row.rawValue.toLowerCase().includes(needle) ||
-        row.canonicalValue.toLowerCase().includes(needle) ||
-        (row.sourceTheme ?? "").toLowerCase().includes(needle);
-      return matchesStatus && matchesSearch;
-    });
-
-    rows.sort((left, right) => {
-      if (querySort === "novelty_desc") {
-        const leftScore = left.noveltyScore ?? Number.NEGATIVE_INFINITY;
-        const rightScore = right.noveltyScore ?? Number.NEGATIVE_INFINITY;
-        if (rightScore !== leftScore) return rightScore - leftScore;
-        return right.updatedAt - left.updatedAt;
-      }
-      if (querySort === "performance_desc") {
-        const leftScore = left.performanceScore ?? Number.NEGATIVE_INFINITY;
-        const rightScore = right.performanceScore ?? Number.NEGATIVE_INFINITY;
-        if (rightScore !== leftScore) return rightScore - leftScore;
-        return right.updatedAt - left.updatedAt;
-      }
-      return right.updatedAt - left.updatedAt;
-    });
-
-    return rows;
-  }, [data, querySearch, queryStatus, querySort]);
+  const filteredQueries = discoveryPageData?.rows ?? [];
 
   const filteredMemories = React.useMemo(() => {
-    return memoryInventoryData.rows;
-  }, [memoryInventoryData.rows]);
+    return resolvedMemoryInventoryData.rows;
+  }, [resolvedMemoryInventoryData.rows]);
 
   const filteredActivity = React.useMemo(() => {
     return data.activity.feed.filter((row) => {
@@ -350,8 +484,92 @@ export function AgentOpsDashboard() {
     });
   }, [data, activityKind, activitySearch]);
 
-  const queryPages = usePagedRows(filteredQueries, queryPageSize);
   const activityPages = usePagedRows(filteredActivity, activityPageSize);
+
+  const handleQueryExport = React.useCallback(async () => {
+    if (!workspaceId || isExportingQueries) return;
+    setIsExportingQueries(true);
+    try {
+      const exportPageSize = 500;
+      const requestPage = async (page: number) =>
+        (await convex.action(
+          api.agentOps.getAgentOpsDiscoveryInventoryPageSnapshot,
+          {
+            workspaceId,
+            range: params.range,
+            timeZone: reportingTimeZone,
+            ...(params.from ? { fromDate: params.from } : {}),
+            ...(params.to ? { toDate: params.to } : {}),
+            ...(debouncedQuerySearch.trim()
+              ? { search: debouncedQuerySearch.trim() }
+              : {}),
+            ...(queryStatus !== "all" ? { status: queryStatus } : {}),
+            sort: querySort,
+            page,
+            pageSize: exportPageSize,
+          }
+        )) as DiscoveryInventoryPageData;
+      const firstPage = await requestPage(0);
+      const rows = [
+        ...firstPage.rows,
+        ...(await loadRemainingExportPages({
+          nextPage: 1,
+          totalPages: firstPage.totalPages,
+          loadPage: async (page) => (await requestPage(page)).rows,
+        })),
+      ];
+      downloadCsv(
+        "agent-ops-discovery.csv",
+        [
+          "Query",
+          "Canonical value",
+          "Status",
+          "Type",
+          "Source theme",
+          "Novelty score",
+          "Performance score",
+          "Prospects found",
+          "Qualified",
+          "Converted",
+          "Reply rate",
+          "Created at",
+          "Reviewed at",
+          "Updated at",
+        ],
+        rows.map((row) => [
+          row.rawValue,
+          row.canonicalValue,
+          row.statusLabel,
+          row.type,
+          row.sourceTheme ?? "",
+          row.noveltyScore ?? "",
+          row.performanceScore ?? "",
+          row.prospectsFound,
+          row.qualifiedCount,
+          row.convertedCount,
+          row.replyRate,
+          new Date(row.createdAt).toISOString(),
+          row.reviewedAt ? new Date(row.reviewedAt).toISOString() : "",
+          new Date(row.updatedAt).toISOString(),
+        ])
+      );
+    } catch (error) {
+      console.error("[AgentOpsDashboard] Failed to export queries", error);
+    } finally {
+      setIsExportingQueries(false);
+    }
+  }, [
+    convex,
+    debouncedQuerySearch,
+    isExportingQueries,
+    params.from,
+    params.range,
+    params.to,
+    querySort,
+    queryStatus,
+    reportingTimeZone,
+    workspaceId,
+  ]);
 
   const handleMemoryExport = React.useCallback(async () => {
     if (!workspaceId || isExportingMemories) {
@@ -361,8 +579,8 @@ export function AgentOpsDashboard() {
     setIsExportingMemories(true);
     try {
       const exportPageSize = 100;
-      const firstPage = (await convex.query(
-        api.agentOps.getAgentOpsMemoryInventoryPage,
+      const firstPage = (await convex.action(
+        api.agentOps.getAgentOpsMemoryInventoryPageSnapshot,
         {
           workspaceId,
           range: params.range,
@@ -377,29 +595,35 @@ export function AgentOpsDashboard() {
         }
       )) as AgentOpsMemoryInventoryPageData;
 
-      const rows = [...firstPage.rows];
-      for (
-        let pageIndex = 1;
-        pageIndex < firstPage.totalPages;
-        pageIndex += 1
-      ) {
-        const nextPage = (await convex.query(
-          api.agentOps.getAgentOpsMemoryInventoryPage,
-          {
-            workspaceId,
-            range: params.range,
-            timeZone: reportingTimeZone,
-            ...(params.from ? { fromDate: params.from } : {}),
-            ...(params.to ? { toDate: params.to } : {}),
-            ...(memorySearch.trim().length > 0 ? { search: memorySearch } : {}),
-            ...(memoryCategory !== "all" ? { category: memoryCategory } : {}),
-            sort: memorySort,
-            page: pageIndex,
-            pageSize: exportPageSize,
-          }
-        )) as AgentOpsMemoryInventoryPageData;
-        rows.push(...nextPage.rows);
-      }
+      const rows = [
+        ...firstPage.rows,
+        ...(await loadRemainingExportPages({
+          nextPage: 1,
+          totalPages: firstPage.totalPages,
+          loadPage: async (page) =>
+            (
+              (await convex.action(
+                api.agentOps.getAgentOpsMemoryInventoryPageSnapshot,
+                {
+                  workspaceId,
+                  range: params.range,
+                  timeZone: reportingTimeZone,
+                  ...(params.from ? { fromDate: params.from } : {}),
+                  ...(params.to ? { toDate: params.to } : {}),
+                  ...(memorySearch.trim().length > 0
+                    ? { search: memorySearch }
+                    : {}),
+                  ...(memoryCategory !== "all"
+                    ? { category: memoryCategory }
+                    : {}),
+                  sort: memorySort,
+                  page,
+                  pageSize: exportPageSize,
+                }
+              )) as AgentOpsMemoryInventoryPageData
+            ).rows,
+        })),
+      ];
 
       downloadCsv(
         "agent-ops-memories.csv",
@@ -584,24 +808,27 @@ export function AgentOpsDashboard() {
 
   const content = (
     <div className="space-y-4">
-      {dashboardQuery.isError ||
+      {dashboardError ||
       workspaceStatusQuery.isError ||
-      memoryInventoryQuery.isError ? (
+      memoryInventoryError ? (
         <div className="border-destructive bg-destructive/10 rounded-lg border p-4">
           <p className="text-destructive text-sm font-medium">
             Could not load Agent observability
           </p>
           <p className="text-destructive/80 mt-1 text-sm">
-            {dashboardQuery.error?.message ||
+            {dashboardError?.message ||
               workspaceStatusQuery.error?.message ||
-              memoryInventoryQuery.error?.message ||
+              memoryInventoryError?.message ||
               "Please try again."}
           </p>
           <Button
             variant="outline"
             size="sm"
             className="mt-3"
-            onClick={() => router.refresh()}
+            onClick={() => {
+              setDashboardRefreshKey((value) => value + 1);
+              router.refresh();
+            }}
           >
             Retry
           </Button>
@@ -642,9 +869,15 @@ export function AgentOpsDashboard() {
           <InventoryCard
             heading="Query activity"
             searchValue={querySearch}
-            onSearchChange={setQuerySearch}
+            onSearchChange={(value) => {
+              setQueryPage(0);
+              setQuerySearch(value);
+            }}
             filterValue={queryStatus}
-            onFilterChange={setQueryStatus}
+            onFilterChange={(value) => {
+              setQueryPage(0);
+              setQueryStatus(value as typeof queryStatus);
+            }}
             filterOptions={[
               ["all", "All statuses"],
               ["activated", "Activated"],
@@ -655,55 +888,21 @@ export function AgentOpsDashboard() {
               ["retired", "Retired"],
             ]}
             sortValue={querySort}
-            onSortChange={(value) =>
+            onSortChange={(value) => {
+              setQueryPage(0);
               setQuerySort(
                 value as "updated_desc" | "novelty_desc" | "performance_desc"
-              )
-            }
+              );
+            }}
             sortOptions={[
               ["updated_desc", "Most recent"],
               ["novelty_desc", "Highest novelty"],
               ["performance_desc", "Best performance"],
             ]}
-            onExport={() =>
-              downloadCsv(
-                "agent-ops-discovery.csv",
-                [
-                  "Query",
-                  "Canonical value",
-                  "Status",
-                  "Type",
-                  "Source theme",
-                  "Novelty score",
-                  "Performance score",
-                  "Prospects found",
-                  "Qualified",
-                  "Converted",
-                  "Reply rate",
-                  "Created at",
-                  "Reviewed at",
-                  "Updated at",
-                ],
-                filteredQueries.map((row) => [
-                  row.rawValue,
-                  row.canonicalValue,
-                  row.statusLabel,
-                  row.type,
-                  row.sourceTheme ?? "",
-                  row.noveltyScore ?? "",
-                  row.performanceScore ?? "",
-                  row.prospectsFound,
-                  row.qualifiedCount,
-                  row.convertedCount,
-                  row.replyRate,
-                  new Date(row.createdAt).toISOString(),
-                  row.reviewedAt ? new Date(row.reviewedAt).toISOString() : "",
-                  new Date(row.updatedAt).toISOString(),
-                ])
-              )
-            }
+            onExport={() => void handleQueryExport()}
+            exportDisabled={isExportingQueries}
           >
-            {isDashboardLoading ? (
+            {isDashboardLoading || isDiscoveryPageLoading ? (
               <>
                 <DiscoveryTableSkeleton rowCount={queryPageSize} />
                 <TablePagination
@@ -711,8 +910,11 @@ export function AgentOpsDashboard() {
                   totalPages={1}
                   pageSize={queryPageSize}
                   pageSizeOptions={[5, 10, 20]}
-                  onPageChange={queryPages.setPage}
-                  onPageSizeChange={setQueryPageSize}
+                  onPageChange={setQueryPage}
+                  onPageSizeChange={(nextPageSize) => {
+                    setQueryPage(0);
+                    setQueryPageSize(nextPageSize);
+                  }}
                   size="xs"
                   disabled
                 />
@@ -725,16 +927,19 @@ export function AgentOpsDashboard() {
             ) : (
               <>
                 <DiscoveryTable
-                  rows={queryPages.items}
+                  rows={filteredQueries}
                   onOpenQuery={(queryId) => openPanel("query", { queryId })}
                 />
                 <TablePagination
-                  page={queryPages.page}
-                  totalPages={queryPages.totalPages}
+                  page={discoveryPageData?.page ?? 0}
+                  totalPages={discoveryPageData?.totalPages ?? 1}
                   pageSize={queryPageSize}
                   pageSizeOptions={[5, 10, 20]}
-                  onPageChange={(nextPage) => queryPages.setPage(nextPage)}
-                  onPageSizeChange={setQueryPageSize}
+                  onPageChange={setQueryPage}
+                  onPageSizeChange={(nextPageSize) => {
+                    setQueryPage(0);
+                    setQueryPageSize(nextPageSize);
+                  }}
                   size="xs"
                 />
               </>
@@ -858,7 +1063,7 @@ export function AgentOpsDashboard() {
             onFilterChange={updateMemoryCategory}
             filterOptions={[
               ["all", "All categories"],
-              ...memoryInventoryData.availableCategories.map(
+              ...resolvedMemoryInventoryData.availableCategories.map(
                 (value) => [value, value] as const
               ),
             ]}
@@ -901,8 +1106,8 @@ export function AgentOpsDashboard() {
                   onOpen={(memoryId) => openPanel("memory", { memoryId })}
                 />
                 <TablePagination
-                  page={memoryInventoryData.page}
-                  totalPages={memoryInventoryData.totalPages}
+                  page={resolvedMemoryInventoryData.page}
+                  totalPages={resolvedMemoryInventoryData.totalPages}
                   pageSize={memoryPageSize}
                   pageSizeOptions={[5, 10, 20]}
                   onPageChange={setMemoryPage}

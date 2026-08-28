@@ -768,6 +768,13 @@ export const finalizeWorkspaceDeletionInternal = internalMutation({
     if (!workspace.deletionWorkflowId) {
       throw new Error("Workspace deletion was not requested");
     }
+    const fitScoreAggregateRollout = await ctx.db
+      .query("fitScoreAggregateRollouts")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .unique();
+    if (fitScoreAggregateRollout) {
+      await ctx.db.delete(fitScoreAggregateRollout._id);
+    }
     await ctx.db.delete(workspace._id);
 
     const subscription = await polar.getCurrentSubscription(ctx, {

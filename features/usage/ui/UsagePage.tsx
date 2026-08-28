@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
   PageContent,
@@ -50,52 +51,75 @@ export function UsagePage() {
   const [selectedCycleKey, setSelectedCycleKey] = React.useState<
     string | undefined
   >(undefined);
+  const [usageRefreshKey, setUsageRefreshKey] = React.useState(0);
   const layoutCache = React.useSyncExternalStore(
     subscribeUsageLayoutCache,
     getUsageLayoutCacheSnapshot,
     getUsageLayoutCacheServerSnapshot
   );
-  const lastResolvedUsageRef = React.useRef<UsageDashboardData | null>(null);
+  const [lastResolvedUsage, setLastResolvedUsage] =
+    React.useState<UsageDashboardData | null>(null);
 
-  const usageQuery = useQueryWithStatus(api.usage.getUsageDashboard, {
-    selectedCycleKey,
-  });
+  const loadUsage = useAction(api.usage.getUsageDashboardSnapshot);
+  const [usage, setUsage] = React.useState<UsageDashboardData | null>();
+  const [usageError, setUsageError] = React.useState<Error>();
+  const [isUsagePending, setIsUsagePending] = React.useState(true);
+  React.useEffect(() => {
+    let cancelled = false;
+    setIsUsagePending(true);
+    setUsageError(undefined);
+    void loadUsage({ selectedCycleKey })
+      .then((result) => {
+        if (!cancelled) setUsage(result as UsageDashboardData | null);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setUsageError(
+            error instanceof Error ? error : new Error("Please try again.")
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsUsagePending(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadUsage, selectedCycleKey, usageRefreshKey]);
   const shellStateQuery = useQueryWithStatus(
     api.shell.getAppShellState,
     preferredShellQueryArgs
   );
   const planQuery = useQueryWithStatus(api.plans.getCurrentPlan);
 
-  if (usageQuery.data) {
-    lastResolvedUsageRef.current = usageQuery.data;
-  }
-
-  const lastResolvedUsage = lastResolvedUsageRef.current;
+  React.useEffect(() => {
+    if (usage) {
+      setLastResolvedUsage(usage);
+    }
+  }, [usage]);
 
   React.useEffect(() => {
-    if (usageQuery.data) {
+    if (usage) {
       const nextCache: UsageLayoutCache = {
-        cycleOptions: usageQuery.data.cycleOptions,
-        perWorkspaceLimit: usageQuery.data.summary.perWorkspaceLimit,
-        planLabel: usageQuery.data.summary.plan.label,
-        planTier: usageQuery.data.summary.plan.tier,
-        resetDaysLeft: usageQuery.data.summary.resetDaysLeft,
-        resetLabel: usageQuery.data.summary.resetLabel,
-        selectedCycleKey: usageQuery.data.selectedCycleKey,
-        workspaceTemplates: usageQuery.data.workspaces.map((workspace) => ({
+        cycleOptions: usage.cycleOptions,
+        perWorkspaceLimit: usage.summary.perWorkspaceLimit,
+        planLabel: usage.summary.plan.label,
+        planTier: usage.summary.plan.tier,
+        resetDaysLeft: usage.summary.resetDaysLeft,
+        resetLabel: usage.summary.resetLabel,
+        selectedCycleKey: usage.selectedCycleKey,
+        workspaceTemplates: usage.workspaces.map((workspace) => ({
           name: workspace.name,
           workspaceId: workspace.workspaceId,
           trendLabels: workspace.trend.map((point) => point.date),
         })),
-        workspacesLimit: usageQuery.data.summary.workspacesLimit,
-        workspacesUsed: usageQuery.data.summary.workspacesUsed,
+        workspacesLimit: usage.summary.workspacesLimit,
+        workspacesUsed: usage.summary.workspacesUsed,
       };
 
       writeUsageLayoutCache(nextCache);
     }
-  }, [usageQuery.data]);
-
-  const usage = usageQuery.data;
+  }, [usage]);
   const shellWorkspaceTemplates = React.useMemo<
     UsageWorkspaceTemplate[]
   >(() => {
@@ -214,11 +238,11 @@ export function UsagePage() {
           <Select
             value={selectedValue}
             onValueChange={(value) => setSelectedCycleKey(value)}
-            disabled={usageQuery.isPending || !hasCycleOptions}
+            disabled={isUsagePending || !hasCycleOptions}
           >
             <SelectTrigger size="xs">
               <SelectValue
-                placeholder={usageQuery.isPending ? "Loading cycle" : "Cycle"}
+                placeholder={isUsagePending ? "Loading cycle" : "Cycle"}
               />
             </SelectTrigger>
             <SelectContent>
@@ -240,29 +264,29 @@ export function UsagePage() {
         }
       />
       <PageContent className="scroll-fade min-h-0 flex-1 overflow-y-auto p-4">
-        {usageQuery.isError ? (
+        {usageError ? (
           <div className="border-destructive bg-destructive/10 mb-4 rounded-lg border p-4">
             <p className="text-destructive text-sm font-medium">
               Could not load usage
             </p>
             <p className="text-destructive/80 mt-1 text-sm">
-              {usageQuery.error.message || "Please try again."}
+              {usageError.message || "Please try again."}
             </p>
             <Button
               variant="outline"
               size="sm"
               className="mt-3"
-              onClick={() => router.refresh()}
+              onClick={() => {
+                setUsageRefreshKey((value) => value + 1);
+                router.refresh();
+              }}
             >
               Retry
             </Button>
           </div>
         ) : null}
 
-        <UsageDashboard
-          data={data}
-          isLoading={usageQuery.isPending && !usageQuery.isError}
-        />
+        <UsageDashboard data={data} isLoading={isUsagePending && !usageError} />
       </PageContent>
     </PageLayout>
   );

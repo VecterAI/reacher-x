@@ -141,6 +141,28 @@ The same Insights window provided the evidence for the next migration:
   1,040 component rows. Version 0.3.1 retains the same 1,024-row cleanup shape,
   so upgrading alone does not clear this backlog.
 
+### Transient admission under-utilization — 2026-08-28
+
+A later enforced-mode burst produced a persistent single-workspace backlog
+despite spare tenant-execution capacity. The incident peaked at 219 queued and
+15 running with 21/36 slots free; a confirmation snapshot showed 198 queued,
+20 running, 16/36 slots free, and an oldest queue age of about 386 seconds.
+There were no failed jobs, expired leases, unresolved enqueue failures, or
+pool/slot drift. The queue subsequently drained without any production
+mutation, leaving 0 queued, 0 running, and 36/36 slots free while global
+enforcement and the Workflow 64 + tenant execution 36 split remained correct.
+
+Recovery does not make this window acceptable. Across the latest 800 completed
+admissions, latency remained p50 about 122 seconds, p95 about 439 seconds, and
+max about 474 seconds, well above the documented p95-under-30-seconds and
+max-under-60-seconds rollout gates. Read-only code and Insights inspection
+identified the fixed per-tenant 60-starts-per-minute token bucket as the
+primary cause when one lane has short jobs; repeated whole-lane activation
+reconciliation and `tenantJobLanes` OCC retries add secondary amplification.
+Treat this as a recovered availability incident but an open scheduler SLO and
+contention defect. Do not use the final drained snapshot alone as evidence that
+admission performance passed.
+
 These rollup numbers cross the previously documented migration threshold. The
 local follow-up therefore widens the schema with 32 deterministic stripes for
 the three multi-field rollups. Existing rows remain immutable baselines; new
@@ -368,6 +390,49 @@ then stop the raw scan. It is intentionally not bundled into the rollup cutover
 because its multi-filter namespace design and 60,000-row historical population
 need their own load and migration gates.
 
+### Fit-score Aggregate implementation (2026-08-28)
+
+The separate `codex/fit-score-aggregate` phase implements the additive and
+migration-safe portion without touching production data:
+
+- mounts `@convex-dev/aggregate` as `fitScoreHistogramAggregate`;
+- stores one item per non-preview prospect with a numeric score, namespaced by
+  Aggregate version, workspace, platform, normalized prospect type, and status;
+- keeps live write amplification to one idempotent Aggregate operation and
+  skips all workspaces until an explicit rollout row exists;
+- backfills only one paused/stopped workspace at a time in pages of at most 25;
+- runs a separate source verification pass in pages of at most 100 and compares
+  all ten bins with Aggregate before marking the workspace verified;
+- uses revision plus cursor tokens so duplicate or superseded scheduled pages
+  stop without starting duplicate chains;
+- falls back to the existing raw histogram reader for absent, failed,
+  backfilling, old-version, or unverified rollouts;
+- cuts the existing authenticated query to Aggregate only when that exact
+  workspace and Aggregate version are verified; and
+- retains the rollout row until workspace prospect deletion has removed the
+  corresponding component items, then removes the checkpoint during final
+  workspace deletion.
+
+The namespace deliberately stores exact filter dimensions instead of eight
+wildcard copies per prospect. The worst unfiltered request is 300 bounded count
+operations in one component query (2 platforms × 3 normalized prospect types ×
+5 statuses × 10 score bins), while a normal filtered list is smaller. This is a
+fixed read bound and avoids multiplying every qualification write.
+
+Rollout remains a separate approval step:
+
+1. Deploy the additive component, table, dual-write gate, and fallback reader.
+2. Confirm there are no new prospect-write OCC regressions while no workspaces
+   are opted in.
+3. Pause one low-traffic workspace and start its internal migration.
+4. Wait for `verified`; require exact expected/Aggregate bin parity and no new
+   permanent component or prospect mutation failures.
+5. Exercise unfiltered, platform, type, status, and creation-time histogram
+   filters, then resume the workspace.
+6. Repeat per workspace. Do not run a global 60,000-row scan.
+7. Keep `prospectSummaries` and the raw fallback through the observation window;
+   any narrowing or component-state cleanup is a separate destructive phase.
+
 ## Additive rollout
 
 No full prospect scan or backup is required for this phase.
@@ -478,6 +543,22 @@ event is newer than the pre-fix incident window.
   build is the proportionate React verification; no migration or backfill is
   required for deployment.
 
+### Focused stabilization production checkpoint — 2026-08-28
+
+PR #42 deployed successfully before the read-only checkpoint at 11:33 UTC. The
+deployment inherited a qualification backlog, but the queue drained from 459
+jobs to zero by 11:39 UTC without a control mutation. All 546 jobs queued in the
+rollout window succeeded; none failed or were cancelled. The final snapshot had
+zero queued/running jobs, 36/36 free tenant slots, zero expired leases, zero
+unresolved enqueue failures, no pool/mode drift, and no ready lane left behind.
+
+Convex Insights contained no scheduler OCC or `createProspectsBatch` bytes-read
+event newer than the deployment. The historical admission sample still includes
+the pre-deploy/backlog delay and therefore is not evidence that the long-term
+latency gate has passed. The next natural post-deploy burst must still meet the
+documented p95 below 30 seconds, max below 60 seconds, and zero-permanent-error
+gate before the scheduler stabilization work is considered fully observed.
+
 ## Cleanup candidates — no deletion in this phase
 
 The 2026-08-28 static call-site audit produced three different outcomes; they
@@ -526,3 +607,40 @@ only then delete the binding and idle lane.
 - No table or index should be removed based on static search alone. Pair code
   search with production function/table usage, stop writes, migrate if needed,
   observe, then use a separate destructive commit.
+- The React app now calls the bounded snapshot actions instead of
+  `analytics:getDashboardAnalytics`, `agentOps:getAgentOpsDashboard`,
+  `agentOps:getAgentOpsMemoryInventoryPage`, `usage:getUsageDashboard`, and
+  `prospectSummaries:getWorkspaceProspectStageCounts`. Keep these public query
+  endpoints as compatibility paths until production function logs prove there
+  are no older clients or external callers; remove them and any indexes made
+  redundant by that proof only in the cleanup phase.
+
+## Large-range read follow-up — 2026-08-28
+
+The audit expanded beyond the measured fit-score failure. Analytics, Agent
+observability, Usage, prospect stage counts, discovery inventory, memory
+inventory, and Agent Ops detail panels all had at least one path whose work grew
+with the full selected range or workspace size.
+
+The implementation now uses point-in-time action snapshots and 31-day internal
+query transactions for wide reports. Daily source rows remain exact; chart
+output compacts to daily, weekly, or monthly buckets based on range length.
+Discovery and memory inventories return one server page, Usage reads compact
+prospect summaries in bounded pages, and prospect stage counts accumulate exact
+counts across bounded pages. Hidden full scans in Agent Ops detail panels were
+replaced with additive indexes and bounded reads.
+
+Production evidence and the rollout contract are in
+`docs/convex/large-range-query-rollout.md`. The fit-score Aggregate remains the
+only component migration in this phase because it is the only user-facing
+count/histogram with a measured 18.6 MB failure. Persisted weekly/monthly tables
+remain gated on post-deployment evidence: current production history is too
+short to justify their dual-write and backfill risk before the bounded snapshot
+canary is measured.
+
+Local verification after rebasing this work on deployed PR #42 passed 109
+Convex test files / 549 tests, TypeScript, strict Oxlint, changed-file ESLint,
+`git diff --check`, and the 74-route production build. React Doctor reported no
+blocking changed-dashboard issue; the flagged sequential waits are the bounded
+transaction/export sequencing that prevents a wide report from recreating a
+read burst.

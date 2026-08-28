@@ -6,7 +6,14 @@ import {
   buildProspectAnalyticsTransitionPatch,
   type ProspectQualificationActivitySnapshot,
 } from "../convex/lib/prospectAnalyticsCore";
-import { normalizeAnalyticsWindow } from "../convex/lib/analyticsCore";
+import {
+  createTrendBucketSet,
+  normalizeAnalyticsWindow,
+} from "../convex/lib/analyticsCore";
+import {
+  getDashboardChunkWorstCaseRows,
+  splitDashboardDayRange,
+} from "../convex/lib/dashboardReadCore";
 import {
   getWorkspaceAnalyticsContributionsFromProspect,
   type TargetedWorkspaceAnalyticsContribution,
@@ -331,6 +338,63 @@ test("custom analytics date ranges expand to full local days", () => {
     startMs: utc("2026-06-09T19:00:00.000Z"),
     endMs: utc("2026-06-12T19:00:00.000Z"),
   });
+});
+
+test("large analytics ranges compact chart points without changing the exact window", () => {
+  const nowMs = utc("2027-01-15T00:00:00.000Z");
+  const cases = [
+    { fromDate: "2026-01-01", toDate: "2026-01-31", expected: "daily" },
+    { fromDate: "2026-01-01", toDate: "2026-02-01", expected: "weekly" },
+    { fromDate: "2026-01-01", toDate: "2026-06-29", expected: "weekly" },
+    { fromDate: "2026-01-01", toDate: "2026-06-30", expected: "monthly" },
+  ] as const;
+
+  for (const item of cases) {
+    const normalized = normalizeAnalyticsWindow({
+      range: "custom",
+      timeZone: "UTC",
+      fromDate: item.fromDate,
+      toDate: item.toDate,
+      nowMs,
+    });
+    assert.equal(normalized.granularity, item.expected);
+  }
+
+  const oneYear = normalizeAnalyticsWindow({
+    range: "custom",
+    timeZone: "UTC",
+    fromDate: "2026-01-01",
+    toDate: "2026-12-31",
+    nowMs,
+  });
+  const buckets = createTrendBucketSet(oneYear);
+  assert.equal(oneYear.granularity, "monthly");
+  assert.equal(buckets.buckets.length, 13);
+  assert.equal(buckets.buckets[0]?.startMs, oneYear.current.startMs);
+  assert.equal(
+    buckets.buckets.at(-1)?.endMs,
+    oneYear.current.endMs,
+    "compaction must preserve the complete selected window"
+  );
+});
+
+test("dashboard reads stay below the measured 32-stripe transaction bound", () => {
+  const startDayStartUtcMs = utc("2025-01-01T00:00:00.000Z");
+  const endDayStartUtcMs = utc("2026-12-31T00:00:00.000Z");
+  const chunks = splitDashboardDayRange({
+    startDayStartUtcMs,
+    endDayStartUtcMs,
+  });
+
+  assert.equal(chunks.length, 24);
+  assert.equal(getDashboardChunkWorstCaseRows({ stripesPerDay: 32 }), 1_023);
+  for (const chunk of chunks) {
+    const inclusiveDays =
+      (chunk.endDayStartUtcMs - chunk.startDayStartUtcMs) /
+        (24 * 60 * 60 * 1000) +
+      1;
+    assert.ok(inclusiveDays <= 31);
+  }
 });
 
 test("resume under limit counts only current-cycle qualified prospects", () => {

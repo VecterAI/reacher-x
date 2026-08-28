@@ -187,7 +187,11 @@ export const listWorkspaceAgentMemoryInventoryRecentPageInternal =
             .lte("createdAt", clampedEndMs)
         )
         .order("desc")
-        .paginate(paginationOpts);
+        .paginate({
+          ...paginationOpts,
+          maximumRowsRead: 300,
+          maximumBytesRead: 2_000_000,
+        });
 
       return {
         ...result,

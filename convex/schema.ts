@@ -75,6 +75,7 @@ import {
   hourlyAnalyticsCountsValidator,
   readModelRolloutScopeValidator,
   readModelRolloutStatusValidator,
+  fitScoreAggregateRolloutStatusValidator,
   memorySourceTypeValidator,
   memoryEvaluatorRunStatusValidator,
   memorySuggestionStatusValidator,
@@ -2635,6 +2636,32 @@ export default defineSchema({
     .index("by_workflow", ["workflowId"]),
 
   /**
+   * Per-workspace checkpoint for the bounded fit-score Aggregate migration.
+   * Histogram reads cut over only after an independent verification pass.
+   */
+  fitScoreAggregateRollouts: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    status: fitScoreAggregateRolloutStatusValidator,
+    aggregateVersion: v.number(),
+    revision: v.number(),
+    backfillCursor: v.optional(v.string()),
+    verifyCursor: v.optional(v.string()),
+    backfillBatchSize: v.number(),
+    verifyBatchSize: v.number(),
+    backfilledCount: v.number(),
+    verifiedSourceCount: v.number(),
+    expectedBinCounts: v.array(v.number()),
+    aggregateBinCounts: v.optional(v.array(v.number())),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    verifiedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_status_updated", ["status", "updatedAt"]),
+
+  /**
    * Candidate discovery terms before or after activation, with deterministic
    * canonical identity for novelty gates and future evaluator loops.
    */
@@ -2695,6 +2722,10 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_workspace_query_id", ["workspaceId", "queryId"])
+    .index("by_workspace_activated_candidate", [
+      "workspaceId",
+      "activatedQueryCandidateId",
+    ])
     .index("by_workspace_canonical_hash", ["workspaceId", "canonicalHash"])
     .index("by_workspace_updated_at", ["workspaceId", "updatedAt"]),
 
@@ -2760,6 +2791,16 @@ export default defineSchema({
       "eventType",
       "occurredAt",
     ])
+    .index("by_workspace_query_candidate_occurred_at", [
+      "workspaceId",
+      "queryCandidateId",
+      "occurredAt",
+    ])
+    .index("by_workspace_query_occurred_at", [
+      "workspaceId",
+      "queryId",
+      "occurredAt",
+    ])
     .index("by_prospect_occurred_at", ["prospectId", "occurredAt"])
     .index("by_plan_occurred_at", ["planId", "occurredAt"]),
 
@@ -2797,6 +2838,12 @@ export default defineSchema({
       "updatedAt",
     ])
     .index("by_event", ["eventId"])
+    .index("by_workspace_promoted_memory_updated_at", [
+      "workspaceId",
+      "promotedMemoryId",
+      "updatedAt",
+    ])
+    .index("by_workspace_run_updated_at", ["workspaceId", "runId", "updatedAt"])
     .index("by_workspace_identity_hash", ["workspaceId", "identityHash"]),
 
   /**

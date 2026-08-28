@@ -373,7 +373,7 @@ export default function ProspectsPage() {
     }
 
     void convex
-      .query(api.prospectSummaries.getWorkspaceProspectStageCounts, {
+      .action(api.prospectSummaries.getWorkspaceProspectStageCountsSnapshot, {
         workspaceId,
         fitScoreMin: appliedFilterArgs.fitScoreMin,
         fitScoreMax: appliedFilterArgs.fitScoreMax,
