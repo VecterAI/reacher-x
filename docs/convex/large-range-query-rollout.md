@@ -5,15 +5,15 @@
 The fit-score histogram was the first measured failure, but it was not the only
 unsafe read. A production audit on 2026-08-28 found these user-facing paths:
 
-| Surface                 | Previous read shape                                     | Largest observed / projected risk                                                     | New read shape                                                                                       |
-| ----------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Analytics               | selected + comparison ranges in one query               | 32 stripes/day makes a one-year comparison about 24,000 source rows and roughly 58 MB | point-in-time action snapshot; 31-day transactions; exact totals; daily/weekly/monthly chart buckets |
-| Agent observability     | Analytics + Agent Ops stripes in one query              | one-year comparison about 48,000 source rows and well above 16 MiB                    | two bounded 31-day reads per chunk; compact chart payload                                            |
-| Discovery inventory     | every matching `queryCandidates` row returned to React  | 5,068 rows / about 3.6 MB in the largest workspace observed                           | bounded backend scan when exact filters require it; one server page returned                         |
-| Memory inventory        | apparent UI pages backed by a full-window scan          | potentially hundreds of daily reads and an unbounded result in one query              | bounded 250-row internal pages; one server page returned                                             |
-| Usage                   | every qualified full `prospects` document per workspace | grows with all qualified prospects and reads large source documents                   | 250-row `prospectSummaries` pages with a legacy fallback only when `qualifiedAt` is absent           |
-| Prospect stage counts   | full summary iterator for each visible stage            | 61,257 prospects in `ReacherX (Leads)`                                                | bounded 250-row transactions with exact accumulated counts                                           |
-| Agent Ops detail panels | full workspace event/suggestion scans                   | hidden failure path after opening a dashboard row                                     | additive exact indexes plus bounded `take(...)` reads                                                |
+| Surface                 | Previous read shape                                     | Largest observed / projected risk                                                          | New read shape                                                                                           |
+| ----------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Analytics               | selected + comparison ranges in one query               | 32 stripes/day makes a one-year comparison about 24,000 source rows and roughly 58 MB      | point-in-time action snapshot; 31-day transactions; exact totals; daily/weekly/monthly chart buckets     |
+| Agent observability     | Analytics + Agent Ops stripes in one query              | one-year comparison about 48,000 source rows and well above 16 MiB                         | two bounded 31-day reads per chunk; compact chart payload                                                |
+| Discovery inventory     | every matching `queryCandidates` row returned to React  | 5,068 rows / about 3.6 MB in the largest workspace observed                                | bounded backend scan when exact filters require it; one server page returned                             |
+| Memory inventory        | apparent UI pages backed by a full-window scan          | 82,400 rows; 18 seconds for a 10-row page; the old export would repeat that scan 824 times | opaque snapshot cursor; at most 250 rows per transaction; export advances once through the same snapshot |
+| Usage                   | every qualified full `prospects` document per workspace | grows with all qualified prospects and reads large source documents                        | 250-row `prospectSummaries` pages with a legacy fallback only when `qualifiedAt` is absent               |
+| Prospect stage counts   | full summary iterator for each visible stage            | 61,257 prospects in `ReacherX (Leads)`                                                     | bounded 250-row transactions with exact accumulated counts                                               |
+| Agent Ops detail panels | full workspace event/suggestion scans                   | hidden failure path after opening a dashboard row                                          | additive exact indexes plus bounded `take(...)` reads                                                    |
 
 Convex production still records one historical
 `getWorkspaceFitScoreHistogram` failure at 18,573,630 bytes / 18,163 rows.
@@ -31,8 +31,12 @@ count/histogram hotspot. It is gated per workspace and does not require a
 - Detailed record reads use 250 requested items with explicit 300-row and 2 MB
   scan limits. Actions continue from the returned cursor if Convex returns a
   partial page.
-- Exact totals are preserved. The browser receives only the requested detail
-  page, never the full inventory.
+- Exact dashboard and stage totals are preserved. Inventory pages receive only
+  the requested detail slice. Memory pagination carries a scope-bound opaque
+  cursor and fixed time-window watermark so page changes neither restart the
+  scan nor mix snapshots. An explicit CSV export advances that cursor once
+  through the matching data instead of restarting from row zero for every
+  output page.
 - Time-series presentation is daily through 31 days, weekly through 180 days,
   and monthly above 180 days. A one-year selection returns 13 chart buckets;
   the selected and comparison totals still cover every hour exactly.
@@ -66,8 +70,21 @@ against the daily source, and gated before read cutover.
 - Existing analytics and usage exactness tests still pass.
 - The full Convex suite passes with 549 tests after rebasing on deployed PR #42.
 
-Production largest-workspace verification cannot run until this code is merged
-and deployed. No production control or data was changed while preparing it.
+### Zero-opt-in production gate — 2026-08-28
+
+PR #43 deployed with zero `fitScoreAggregateRollouts` rows. Read-only checks on
+`ReacherX (Leads)` confirmed that 30-day, one-year, and all-time Analytics and
+Agent Ops dashboard snapshots succeeded; Usage, exact prospect stage counts,
+discovery inventory, query detail, and memory detail also succeeded. None of
+those checks created a new bytes-read or permanent-OCC Insight.
+
+The gate did expose a remaining implementation defect before any Aggregate
+migration: the all-time memory inventory contains 82,400 rows, and the page
+action took about 18 seconds to return 10 rows because every page restarted a
+full scan. The CSV path would have repeated that scan for 8,240 UI pages (824
+export pages at the former size of 100). Aggregate rollout therefore remains at
+zero. The cursor pagination/export fix must deploy and pass the same production
+gate before step 5 is authorized.
 
 ## Controlled rollout
 
@@ -80,7 +97,8 @@ and deployed. No production control or data was changed while preparing it.
    `fitScoreAggregateRollouts` row still absent or non-verified. The bounded
    dashboard actions and detail pagination are safe immediately and require no
    data migration.
-4. Exercise 30-day, one-year, and all-time Analytics, Agent observability,
+4. Deploy the focused cursor pagination/export fix, then exercise 30-day,
+   one-year, and all-time Analytics, Agent observability,
    Usage, Prospects counts, discovery, memory inventory, and detail panels on
    `ReacherX (Leads)` read-only. Record action duration, subquery count, bytes,
    rows, and any resource-limit event.

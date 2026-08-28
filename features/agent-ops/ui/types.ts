@@ -70,9 +70,12 @@ export type AgentOpsMemorySort =
 export type AgentOpsMemoryInventoryPageData = {
   rows: MemoryInventoryRow[];
   page: number;
-  totalCount: number;
+  totalCount: number | null;
   totalPages: number;
   availableCategories: string[];
+  continueCursor: string | null;
+  isDone: boolean;
+  scanned: number;
 };
 
 export type AgentOpsActivityItem = {

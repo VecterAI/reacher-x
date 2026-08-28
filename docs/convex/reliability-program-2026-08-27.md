@@ -644,3 +644,21 @@ Convex test files / 549 tests, TypeScript, strict Oxlint, changed-file ESLint,
 blocking changed-dashboard issue; the flagged sequential waits are the bounded
 transaction/export sequencing that prevents a wide report from recreating a
 read burst.
+
+### Large-range zero-opt-in production gate — 2026-08-28
+
+PR #43 deployed successfully with zero fit-score Aggregate rollout rows, so all
+checks exercised the compatibility read path without changing production data.
+On `ReacherX (Leads)`, 30-day, one-year, and all-time Analytics and Agent Ops
+snapshots succeeded. Usage, exact prospect stage counts, discovery inventory,
+query detail, and memory detail also succeeded, and the checks produced no new
+bytes-read or permanent-OCC Insight.
+
+The memory inventory gate failed on latency and read amplification: its 82,400
+rows took about 18 seconds to produce a 10-row page, while the former CSV flow
+would restart the same scan for every one of 824 export pages. No Aggregate
+backfill was started. The follow-up replaces page numbers backed by full scans
+with scope-bound opaque cursors and a fixed snapshot watermark; buffered rows
+are carried by IDs, each internal transaction is capped at 300 rows / 2 MB, and
+CSV export advances once through the snapshot. Production canary and Aggregate
+migration remain blocked until that focused follow-up is merged and deployed.

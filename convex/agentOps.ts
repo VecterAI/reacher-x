@@ -31,6 +31,10 @@ import {
   matchesAgentOpsMemoryInventoryFilters,
 } from "./lib/agentOpsCore";
 import {
+  decodeAgentOpsMemoryInventoryCursor,
+  encodeAgentOpsMemoryInventoryCursor,
+} from "./lib/agentOpsInventoryCursor";
+import {
   type WorkspaceAgentMemoryInventoryRecord,
   WORKSPACE_MEMORY_CATEGORIES,
   getWorkspaceAgentMemoryById,
@@ -48,6 +52,8 @@ import { buildQueryCandidateCanonicalRecord } from "./lib/memoryHelpers";
 const AGENT_OPS_ACTIVITY_MEMORY_LIMIT = 80;
 const AGENT_OPS_MEMORY_PAGE_SIZE_MAX = 100;
 const AGENT_OPS_MEMORY_SCAN_BATCH_SIZE = 250;
+const AGENT_OPS_MEMORY_CURSOR_SCAN_LIMIT = 5_000;
+const AGENT_OPS_MEMORY_EXPORT_PAGE_SIZE_MAX = 500;
 const UTC_DAY_MS = 24 * 60 * 60 * 1000;
 
 async function requireOwnedWorkspaceContext(
@@ -148,20 +154,153 @@ async function loadMemoryInventoryChunk(
     limit: number;
   }
 ): Promise<MemoryInventoryChunkResult> {
-  const result: MemoryInventoryChunkResult = await ctx.runQuery(
-    internal.agentOpsReadModels
-      .listWorkspaceAgentMemoryInventoryRecentPageInternal,
-    {
-      workspaceId: args.workspaceId,
-      startMs: args.window.startMs,
-      endMs: args.window.endMs,
-      paginationOpts: {
-        cursor: args.cursor,
-        numItems: args.limit,
-      },
-    }
-  );
+  const paginationOpts = {
+    cursor: args.cursor,
+    numItems: args.limit,
+  };
+  const result: MemoryInventoryChunkResult =
+    args.sort === "impact_desc"
+      ? await ctx.runQuery(
+          internal.agentOpsReadModels
+            .listWorkspaceAgentMemoryInventoryImpactPageInternal,
+          { workspaceId: args.workspaceId, paginationOpts }
+        )
+      : args.sort === "confidence_desc"
+        ? await ctx.runQuery(
+            internal.agentOpsReadModels
+              .listWorkspaceAgentMemoryInventoryConfidencePageInternal,
+            { workspaceId: args.workspaceId, paginationOpts }
+          )
+        : await ctx.runQuery(
+            internal.agentOpsReadModels
+              .listWorkspaceAgentMemoryInventoryRecentPageInternal,
+            {
+              workspaceId: args.workspaceId,
+              startMs: args.window.startMs,
+              endMs: args.window.endMs,
+              paginationOpts,
+            }
+          );
   return result;
+}
+
+function buildMemoryInventoryCursorScopeKey(args: {
+  workspaceId: Id<"workspaces">;
+  range: string;
+  from?: number;
+  to?: number;
+  fromDate?: string;
+  toDate?: string;
+  sort: "impact_desc" | "confidence_desc" | "recent_desc";
+  search?: string;
+  category?: string;
+}) {
+  return JSON.stringify([
+    String(args.workspaceId),
+    args.range,
+    args.from ?? null,
+    args.to ?? null,
+    args.fromDate ?? null,
+    args.toDate ?? null,
+    args.sort,
+    args.search?.trim().toLowerCase() ?? "",
+    args.category ?? "all",
+  ]);
+}
+
+async function loadCursorMemoryInventoryPage(
+  ctx: Pick<ActionCtx, "runQuery">,
+  args: {
+    workspaceId: Id<"workspaces">;
+    window: TimeWindow;
+    sort: "impact_desc" | "confidence_desc" | "recent_desc";
+    search?: string;
+    category?: string;
+    cursor?: string;
+    pageSize: number;
+    scopeKey: string;
+  }
+) {
+  const state = decodeAgentOpsMemoryInventoryCursor(
+    args.cursor,
+    args.scopeKey,
+    args.window
+  );
+  const snapshotWindow = {
+    startMs: state.windowStartMs,
+    endMs: state.windowEndMs,
+  };
+  const matches: WorkspaceAgentMemoryInventoryRecord[] = [];
+  let scanned = 0;
+
+  if (state.bufferedMemoryIds.length > 0) {
+    const bufferedRows: WorkspaceAgentMemoryInventoryRecord[] =
+      await ctx.runQuery(
+        internal.agentOpsReadModels
+          .getWorkspaceAgentMemoryInventoryRowsInternal,
+        {
+          workspaceId: args.workspaceId,
+          memoryIds: state.bufferedMemoryIds,
+        }
+      );
+    matches.push(
+      ...bufferedRows.filter(
+        (row) =>
+          row.createdAt >= snapshotWindow.startMs &&
+          row.createdAt < snapshotWindow.endMs &&
+          matchesAgentOpsMemoryInventoryFilters(row, {
+            search: args.search,
+            category: args.category,
+          })
+      )
+    );
+    state.bufferedMemoryIds = [];
+  }
+
+  while (
+    matches.length < args.pageSize &&
+    !state.sourceDone &&
+    scanned < AGENT_OPS_MEMORY_CURSOR_SCAN_LIMIT
+  ) {
+    const chunk = await loadMemoryInventoryChunk(ctx, {
+      workspaceId: args.workspaceId,
+      window: snapshotWindow,
+      sort: args.sort,
+      cursor: state.sourceCursor,
+      limit: Math.min(
+        AGENT_OPS_MEMORY_SCAN_BATCH_SIZE,
+        Math.max(50, args.pageSize - matches.length)
+      ),
+    });
+    state.sourceCursor = chunk.continueCursor;
+    state.sourceDone = chunk.isDone;
+    scanned += chunk.page.length;
+    matches.push(
+      ...chunk.page.filter(
+        (row) =>
+          row.createdAt >= snapshotWindow.startMs &&
+          row.createdAt < snapshotWindow.endMs &&
+          matchesAgentOpsMemoryInventoryFilters(row, {
+            search: args.search,
+            category: args.category,
+          })
+      )
+    );
+  }
+
+  const pageRows = matches.slice(0, args.pageSize);
+  state.bufferedMemoryIds = matches
+    .slice(args.pageSize)
+    .map((row) => row.memoryId);
+  const continueCursor = encodeAgentOpsMemoryInventoryCursor(state);
+
+  return {
+    rows: pageRows,
+    continueCursor,
+    isDone: continueCursor === null,
+    scanned,
+    window: snapshotWindow,
+  };
 }
 
 async function scanWindowMemoryInventoryMatches(
@@ -734,46 +873,106 @@ export const getAgentOpsMemoryInventoryPageSnapshot = action({
     sort: v.optional(agentOpsMemorySortValidator),
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+    exportMode: v.optional(v.boolean()),
   },
-  handler: async (ctx, args) => {
-    const context = await ctx.runQuery(
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    rows: ReturnType<typeof buildAgentOpsMemoryInventoryPage>["rows"];
+    page: number;
+    totalCount: number | null;
+    totalPages: number;
+    availableCategories: string[];
+    continueCursor: string | null;
+    isDone: boolean;
+    scanned: number;
+  }> => {
+    const context: { reportingTimeZone: string | null } = await ctx.runQuery(
       internal.agentOps.getAgentOpsSnapshotContextInternal,
       { workspaceId: args.workspaceId }
     );
-    const window = normalizeAnalyticsWindow({
+    const window: TimeWindow = normalizeAnalyticsWindow({
       ...args,
       timeZone: context.reportingTimeZone ?? args.timeZone,
       nowMs: getCurrentUTCTimestamp(),
     }).current;
     const requestedPage = Math.max(0, Math.floor(args.page ?? 0));
+    const pageSizeMax = args.exportMode
+      ? AGENT_OPS_MEMORY_EXPORT_PAGE_SIZE_MAX
+      : AGENT_OPS_MEMORY_PAGE_SIZE_MAX;
     const pageSize = Math.min(
-      AGENT_OPS_MEMORY_PAGE_SIZE_MAX,
+      pageSizeMax,
       Math.max(1, Math.floor(args.pageSize ?? 10))
     );
-    const scanResult = await scanWindowMemoryInventoryMatches(ctx, {
+    const pageResult = await loadCursorMemoryInventoryPage(ctx, {
       workspaceId: args.workspaceId,
       window,
       sort: args.sort ?? "impact_desc",
       search: args.search,
       category: args.category,
-      matchLimit: (requestedPage + 1) * pageSize,
+      cursor: args.cursor,
+      pageSize,
+      scopeKey: buildMemoryInventoryCursorScopeKey({
+        workspaceId: args.workspaceId,
+        range: args.range,
+        from: args.from,
+        to: args.to,
+        fromDate: args.fromDate,
+        toDate: args.toDate,
+        sort: args.sort ?? "impact_desc",
+        search: args.search,
+        category: args.category,
+      }),
     });
-    const totalPages = Math.max(
-      1,
-      Math.ceil(scanResult.totalMatchedCount / pageSize)
-    );
-    const page = Math.min(totalPages - 1, requestedPage);
-    const startIndex = page * pageSize;
-    return buildAgentOpsMemoryInventoryPage({
-      rows: scanResult.matches.slice(startIndex, startIndex + pageSize),
-      page,
-      totalCount: scanResult.totalMatchedCount,
-      totalPages,
+    const hasDynamicFilters =
+      (args.search?.trim().length ?? 0) > 0 ||
+      (args.category !== undefined && args.category !== "all");
+    const totalCount: number | null =
+      args.exportMode || hasDynamicFilters
+        ? null
+        : await ctx.runQuery(
+            internal.agentOps.getAgentOpsMemoryInventoryCountInternal,
+            {
+              workspaceId: args.workspaceId,
+              startMs: pageResult.window.startMs,
+              endMs: pageResult.window.endMs,
+            }
+          );
+    const pageData = buildAgentOpsMemoryInventoryPage({
+      rows: pageResult.rows,
+      page: requestedPage,
+      totalCount: totalCount ?? 0,
+      totalPages:
+        totalCount === null
+          ? requestedPage + (pageResult.isDone ? 1 : 2)
+          : Math.max(1, Math.ceil(totalCount / pageSize)),
       availableCategories: [...WORKSPACE_MEMORY_CATEGORIES].sort(
         (left, right) => left.localeCompare(right)
       ),
     });
+    return {
+      ...pageData,
+      totalCount,
+      continueCursor: pageResult.continueCursor,
+      isDone: pageResult.isDone,
+      scanned: pageResult.scanned,
+    };
   },
+});
+
+export const getAgentOpsMemoryInventoryCountInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    startMs: v.number(),
+    endMs: v.number(),
+  },
+  handler: async (ctx, args) =>
+    await getUnfilteredMemoryInventoryCount(ctx.db, {
+      workspaceId: args.workspaceId,
+      window: { startMs: args.startMs, endMs: args.endMs },
+    }),
 });
 
 export const getAgentOpsDashboard = query({

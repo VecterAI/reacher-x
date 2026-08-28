@@ -109,6 +109,9 @@ export function AgentOpsDashboard() {
   const [memorySort, setMemorySort] =
     React.useState<AgentOpsMemorySort>("impact_desc");
   const [memoryPage, setMemoryPage] = React.useState(0);
+  const [memoryPageCursors, setMemoryPageCursors] = React.useState<
+    Record<number, string | null>
+  >({ 0: null });
   const [isExportingQueries, setIsExportingQueries] = React.useState(false);
   const [isExportingMemories, setIsExportingMemories] = React.useState(false);
   const [queryPageSize, setQueryPageSize] = React.useState(10);
@@ -278,6 +281,19 @@ export function AgentOpsDashboard() {
   const [isMemorySnapshotLoading, setIsMemorySnapshotLoading] =
     React.useState(false);
   const debouncedMemorySearch = useDebouncedValue(memorySearch, 300);
+  const memoryCursor = memoryPageCursors[memoryPage] ?? null;
+  const memoryRangeScopeKey = [
+    workspaceId ?? "",
+    params.range,
+    params.from ?? "",
+    params.to ?? "",
+    reportingTimeZone ?? "",
+  ].join(":");
+
+  React.useEffect(() => {
+    setMemoryPage(0);
+    setMemoryPageCursors({ 0: null });
+  }, [memoryRangeScopeKey]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -298,10 +314,18 @@ export function AgentOpsDashboard() {
       sort: memorySort,
       page: memoryPage,
       pageSize: memoryPageSize,
+      ...(memoryCursor ? { cursor: memoryCursor } : {}),
     })
       .then((result) => {
         if (!cancelled) {
-          setMemoryInventoryData(result as AgentOpsMemoryInventoryPageData);
+          const pageData = result as AgentOpsMemoryInventoryPageData;
+          setMemoryInventoryData(pageData);
+          setMemoryPageCursors((current) => ({
+            ...current,
+            ...(pageData.continueCursor
+              ? { [memoryPage + 1]: pageData.continueCursor }
+              : {}),
+          }));
         }
       })
       .catch((error: unknown) => {
@@ -321,6 +345,7 @@ export function AgentOpsDashboard() {
     debouncedMemorySearch,
     loadMemoryPage,
     memoryCategory,
+    memoryCursor,
     memoryPage,
     memoryPageSize,
     memorySort,
@@ -347,22 +372,34 @@ export function AgentOpsDashboard() {
     totalCount: 0,
     totalPages: 1,
     availableCategories: [],
+    continueCursor: null,
+    isDone: true,
+    scanned: 0,
+  };
+  const resetMemoryPagination = () => {
+    setMemoryPage(0);
+    setMemoryPageCursors({ 0: null });
   };
   const updateMemorySearch = (value: string) => {
-    setMemoryPage(0);
+    resetMemoryPagination();
     setMemorySearch(value);
   };
   const updateMemoryCategory = (value: string) => {
-    setMemoryPage(0);
+    resetMemoryPagination();
     setMemoryCategory(value);
   };
   const updateMemorySort = (value: AgentOpsMemorySort) => {
-    setMemoryPage(0);
+    resetMemoryPagination();
     setMemorySort(value);
   };
   const updateMemoryPageSize = (value: number) => {
-    setMemoryPage(0);
+    resetMemoryPagination();
     setMemoryPageSize(value);
+  };
+  const updateMemoryPage = (page: number) => {
+    if (page === 0 || memoryPageCursors[page] !== undefined) {
+      setMemoryPage(page);
+    }
   };
 
   const hasPanel = Boolean(params.panel);
@@ -578,52 +615,37 @@ export function AgentOpsDashboard() {
 
     setIsExportingMemories(true);
     try {
-      const exportPageSize = 100;
-      const firstPage = (await convex.action(
-        api.agentOps.getAgentOpsMemoryInventoryPageSnapshot,
-        {
-          workspaceId,
-          range: params.range,
-          timeZone: reportingTimeZone,
-          ...(params.from ? { fromDate: params.from } : {}),
-          ...(params.to ? { toDate: params.to } : {}),
-          ...(memorySearch.trim().length > 0 ? { search: memorySearch } : {}),
-          ...(memoryCategory !== "all" ? { category: memoryCategory } : {}),
-          sort: memorySort,
-          page: 0,
-          pageSize: exportPageSize,
-        }
-      )) as AgentOpsMemoryInventoryPageData;
+      const exportPageSize = 500;
+      const rows: MemoryInventoryRow[] = [];
+      let cursor: string | undefined;
+      let page = 0;
 
-      const rows = [
-        ...firstPage.rows,
-        ...(await loadRemainingExportPages({
-          nextPage: 1,
-          totalPages: firstPage.totalPages,
-          loadPage: async (page) =>
-            (
-              (await convex.action(
-                api.agentOps.getAgentOpsMemoryInventoryPageSnapshot,
-                {
-                  workspaceId,
-                  range: params.range,
-                  timeZone: reportingTimeZone,
-                  ...(params.from ? { fromDate: params.from } : {}),
-                  ...(params.to ? { toDate: params.to } : {}),
-                  ...(memorySearch.trim().length > 0
-                    ? { search: memorySearch }
-                    : {}),
-                  ...(memoryCategory !== "all"
-                    ? { category: memoryCategory }
-                    : {}),
-                  sort: memorySort,
-                  page,
-                  pageSize: exportPageSize,
-                }
-              )) as AgentOpsMemoryInventoryPageData
-            ).rows,
-        })),
-      ];
+      while (true) {
+        const pageData = (await convex.action(
+          api.agentOps.getAgentOpsMemoryInventoryPageSnapshot,
+          {
+            workspaceId,
+            range: params.range,
+            timeZone: reportingTimeZone,
+            ...(params.from ? { fromDate: params.from } : {}),
+            ...(params.to ? { toDate: params.to } : {}),
+            ...(memorySearch.trim().length > 0 ? { search: memorySearch } : {}),
+            ...(memoryCategory !== "all" ? { category: memoryCategory } : {}),
+            sort: memorySort,
+            page,
+            pageSize: exportPageSize,
+            exportMode: true,
+            ...(cursor ? { cursor } : {}),
+          }
+        )) as AgentOpsMemoryInventoryPageData;
+        rows.push(...pageData.rows);
+        if (pageData.isDone) break;
+        if (!pageData.continueCursor) {
+          throw new Error("Memory export stopped before reaching the end.");
+        }
+        cursor = pageData.continueCursor;
+        page += 1;
+      }
 
       downloadCsv(
         "agent-ops-memories.csv",
@@ -1088,17 +1110,40 @@ export function AgentOpsDashboard() {
                   totalPages={1}
                   pageSize={memoryPageSize}
                   pageSizeOptions={[5, 10, 20]}
-                  onPageChange={setMemoryPage}
+                  onPageChange={updateMemoryPage}
                   onPageSizeChange={updateMemoryPageSize}
                   size="xs"
                   disabled
                 />
               </>
             ) : filteredMemories.length === 0 ? (
-              <EmptyState
-                title="No memories yet"
-                description="Once the system captures reusable lessons in memory, they will show up here."
-              />
+              <>
+                <EmptyState
+                  title={
+                    resolvedMemoryInventoryData.isDone
+                      ? "No memories yet"
+                      : "No matching memories on this page"
+                  }
+                  description={
+                    resolvedMemoryInventoryData.isDone
+                      ? "Once the system captures reusable lessons in memory, they will show up here."
+                      : "Continue to the next page to search the remaining memories."
+                  }
+                />
+                {!resolvedMemoryInventoryData.isDone || memoryPage > 0 ? (
+                  <TablePagination
+                    page={memoryPage}
+                    totalPages={
+                      memoryPage + (resolvedMemoryInventoryData.isDone ? 1 : 2)
+                    }
+                    pageSize={memoryPageSize}
+                    pageSizeOptions={[5, 10, 20]}
+                    onPageChange={updateMemoryPage}
+                    onPageSizeChange={updateMemoryPageSize}
+                    size="xs"
+                  />
+                ) : null}
+              </>
             ) : (
               <>
                 <MemoryTable
@@ -1107,10 +1152,13 @@ export function AgentOpsDashboard() {
                 />
                 <TablePagination
                   page={resolvedMemoryInventoryData.page}
-                  totalPages={resolvedMemoryInventoryData.totalPages}
+                  totalPages={
+                    resolvedMemoryInventoryData.page +
+                    (resolvedMemoryInventoryData.isDone ? 1 : 2)
+                  }
                   pageSize={memoryPageSize}
                   pageSizeOptions={[5, 10, 20]}
-                  onPageChange={setMemoryPage}
+                  onPageChange={updateMemoryPage}
                   onPageSizeChange={updateMemoryPageSize}
                   size="xs"
                 />
