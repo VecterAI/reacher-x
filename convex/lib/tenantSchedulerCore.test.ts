@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TENANT_BURST_SLOTS,
   TENANT_EXECUTION_POOL_MAX_PARALLELISM,
+  allocateTenantDispatchSlots,
   clampTenantBaseSlots,
   clampTenantBurstSlots,
   clampTenantSchedulerSlotCount,
@@ -76,5 +77,88 @@ describe("tenant scheduler capacity policy", () => {
 
   it("does not rate-limit the observed 219-job single-tenant burst past one minute", () => {
     expect(getTenantStartRateDrainTimeMs(219)).toBeLessThan(60_000);
+  });
+
+  it("fills one dispatcher batch for a single busy tenant", () => {
+    expect(
+      allocateTenantDispatchSlots({
+        demands: [
+          { tenantKey: "workspace:a", runningCount: 0, queuedCount: 100 },
+        ],
+        availableSlotCount: 8,
+        maxAssignments: 8,
+        totalSlotCount: 36,
+        baseSlotsPerTenant: 1,
+        burstSlotsPerTenant: 30,
+      }).allocations
+    ).toEqual([{ tenantKey: "workspace:a", dispatchCount: 8 }]);
+  });
+
+  it("fills the single-tenant burst cap in four eight-slot batches", () => {
+    let runningCount = 0;
+    let batches = 0;
+    while (runningCount < 30) {
+      const result = allocateTenantDispatchSlots({
+        demands: [
+          {
+            tenantKey: "workspace:a",
+            runningCount,
+            queuedCount: 100 - runningCount,
+          },
+        ],
+        availableSlotCount: 36 - runningCount,
+        maxAssignments: 8,
+        totalSlotCount: 36,
+        baseSlotsPerTenant: 1,
+        burstSlotsPerTenant: 30,
+      });
+      runningCount += result.allocations[0]?.dispatchCount ?? 0;
+      batches += 1;
+    }
+
+    expect(runningCount).toBe(30);
+    expect(batches).toBe(4);
+  });
+
+  it("serves newcomers before lending the rest of a batch to a busy tenant", () => {
+    expect(
+      allocateTenantDispatchSlots({
+        demands: [
+          { tenantKey: "workspace:a", runningCount: 0, queuedCount: 100 },
+          { tenantKey: "workspace:b", runningCount: 0, queuedCount: 1 },
+          { tenantKey: "workspace:c", runningCount: 0, queuedCount: 1 },
+        ],
+        availableSlotCount: 8,
+        maxAssignments: 8,
+        totalSlotCount: 36,
+        baseSlotsPerTenant: 1,
+        burstSlotsPerTenant: 30,
+      }).allocations
+    ).toEqual([
+      { tenantKey: "workspace:a", dispatchCount: 6 },
+      { tenantKey: "workspace:b", dispatchCount: 1 },
+      { tenantKey: "workspace:c", dispatchCount: 1 },
+    ]);
+  });
+
+  it("does not give a capped tenant more work after newcomers arrive", () => {
+    expect(
+      allocateTenantDispatchSlots({
+        demands: [
+          { tenantKey: "workspace:a", runningCount: 30, queuedCount: 100 },
+          { tenantKey: "workspace:b", runningCount: 0, queuedCount: 1 },
+          { tenantKey: "workspace:c", runningCount: 0, queuedCount: 1 },
+        ],
+        availableSlotCount: 8,
+        maxAssignments: 8,
+        totalSlotCount: 36,
+        baseSlotsPerTenant: 1,
+        burstSlotsPerTenant: 30,
+      }).allocations
+    ).toEqual([
+      { tenantKey: "workspace:a", dispatchCount: 0 },
+      { tenantKey: "workspace:b", dispatchCount: 1 },
+      { tenantKey: "workspace:c", dispatchCount: 1 },
+    ]);
   });
 });

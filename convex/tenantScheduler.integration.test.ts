@@ -600,6 +600,22 @@ describe("tenant scheduler integration", () => {
       return jobIds;
     });
 
+    await t.run(async (ctx) => {
+      const slots = await ctx.db
+        .query("tenantSchedulerSlots")
+        .withIndex("by_status_and_slot_number", (q) => q.eq("status", "free"))
+        .take(30);
+      for (const slot of slots) {
+        await ctx.db.patch("tenantSchedulerSlots", slot._id, {
+          status: "claimed",
+          tenantKey: `workspace:${tenants[0].workspaceId}`,
+          claimedAt: 1,
+          leaseExpiresAt: 20_000,
+          updatedAt: 1,
+        });
+      }
+    });
+
     const queryResult = await t.query(
       internal.tenantScheduler.getDispatchBatchInternal,
       { name: WORKER_NAME }
@@ -704,10 +720,88 @@ describe("tenant scheduler integration", () => {
       return Object.fromEntries(entries);
     });
     expect(runningByWorkspace).toEqual({
-      [String(noisy.workspaceId)]: 1,
+      [String(noisy.workspaceId)]: 6,
       [String(newcomerB.workspaceId)]: 1,
       [String(newcomerC.workspaceId)]: 1,
     });
+  });
+
+  test("fills an eight-slot dispatcher batch from one busy tenant", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const tenant = await seedWorkspace(t, "single-lane-burst");
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+
+    const jobIds = await t.run(async (ctx) => {
+      const tenantKey = `workspace:${tenant.workspaceId}`;
+      const laneId = await ctx.db.insert("tenantJobLanes", {
+        tenantKey,
+        workspaceId: tenant.workspaceId,
+        userId: tenant.userId,
+        state: "ready",
+        pendingCount: 1,
+        // Compatibility counters may be stale; claimed slots are authoritative.
+        runningCount: 30,
+        minPriority: 30,
+        lastDispatchedAt: 0,
+        updatedAt: 1,
+      });
+      const ids: Id<"tenantJobs">[] = [];
+      for (let index = 0; index < 100; index += 1) {
+        ids.push(
+          await ctx.db.insert("tenantJobs", {
+            tenantKey,
+            laneId,
+            workspaceId: tenant.workspaceId,
+            userId: tenant.userId,
+            class: "background",
+            kind: "memory_evaluation",
+            status: "queued",
+            priority: 30,
+            idempotencyKey: `single-lane-burst-${index}`,
+            payload: {
+              kind: "memory_evaluation",
+              workspaceId: tenant.workspaceId,
+            },
+            queuedAt: index + 1,
+            attemptCount: 0,
+            updatedAt: 1,
+          })
+        );
+      }
+      return ids;
+    });
+
+    const queryResult = await t.query(
+      internal.tenantScheduler.getDispatchBatchInternal,
+      { name: WORKER_NAME }
+    );
+    expect(queryResult.kind).toBe("work");
+    if (queryResult.kind !== "work") throw new Error("Expected dispatch work");
+    expect(queryResult.batch.candidates).toHaveLength(8);
+    expect(
+      queryResult.batch.candidates.map((candidate) => candidate.jobId)
+    ).toEqual(jobIds.slice(0, 8));
+    expect(
+      new Set(
+        queryResult.batch.candidates.map((candidate) => candidate.tenantKey)
+      )
+    ).toEqual(new Set([`workspace:${tenant.workspaceId}`]));
+
+    await t.mutation(
+      internal.tenantScheduler.dispatchBatchInternal,
+      queryResult.batch
+    );
+    expect(
+      (
+        await t.run(async (ctx) =>
+          Promise.all(jobIds.map((jobId) => ctx.db.get("tenantJobs", jobId)))
+        )
+      ).filter((job) => job?.status === "running")
+    ).toHaveLength(8);
   });
 
   test.each([10, 50, 100])(

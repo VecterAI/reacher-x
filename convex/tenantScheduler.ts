@@ -23,6 +23,7 @@ import {
   NESTED_WORKFLOW_LEASE_MS,
   TENANT_JOB_RETENTION_MS,
   TENANT_EXECUTION_POOL_MAX_PARALLELISM,
+  allocateTenantDispatchSlots,
   buildTenantKey,
   clampTenantBaseSlots,
   clampTenantBurstSlots,
@@ -87,6 +88,7 @@ const dispatchCandidateValidator = v.object({
   laneId: v.id("tenantJobLanes"),
   jobId: v.id("tenantJobs"),
   tenantKey: v.string(),
+  runningCount: v.number(),
   nextPriority: v.optional(v.number()),
 });
 
@@ -614,35 +616,84 @@ export const getDispatchBatchInternal = internalQuery({
       return { kind: "idle" as const, timeoutMs: 5_000 };
     }
 
-    const lanes = await ctx.db
-      .query("tenantJobLanes")
-      .withIndex("by_state_and_last_dispatched_at", (q) =>
-        q.eq("state", "ready")
-      )
-      .take(LANE_SCAN_SIZE);
+    const [lanes, claimedSlots] = await Promise.all([
+      ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_state_and_last_dispatched_at", (q) =>
+          q.eq("state", "ready")
+        )
+        .take(LANE_SCAN_SIZE),
+      ctx.db
+        .query("tenantSchedulerSlots")
+        .withIndex("by_status_and_slot_number", (q) =>
+          q.eq("status", "claimed").lt("slotNumber", control.slotCount)
+        )
+        .take(control.slotCount),
+    ]);
+    // The bounded slot set is authoritative. Reading it here avoids making
+    // every dispatch and completion contend on a mutable per-lane counter.
+    const runningCountByTenant = new Map<string, number>();
+    for (const slot of claimedSlots) {
+      if (!slot.tenantKey) continue;
+      runningCountByTenant.set(
+        slot.tenantKey,
+        (runningCountByTenant.get(slot.tenantKey) ?? 0) + 1
+      );
+    }
 
-    const candidateResults = await Promise.all(
-      lanes.map(async (lane) => {
-        const jobs = await ctx.db
-          .query("tenantJobs")
-          .withIndex("by_lane_and_status_and_priority_and_queued_at", (q) =>
-            q.eq("laneId", lane._id).eq("status", "queued")
-          )
-          .take(2);
-        return jobs[0]
-          ? {
-              laneId: lane._id,
-              jobId: jobs[0]._id,
-              tenantKey: lane.tenantKey,
-              nextPriority: jobs[1]?.priority,
-            }
-          : null;
-      })
+    const laneDemands = (
+      await Promise.all(
+        lanes.map(async (lane) => ({
+          lane,
+          runningCount: runningCountByTenant.get(lane.tenantKey) ?? 0,
+          jobs: await ctx.db
+            .query("tenantJobs")
+            .withIndex("by_lane_and_status_and_priority_and_queued_at", (q) =>
+              q.eq("laneId", lane._id).eq("status", "queued")
+            )
+            .take(DISPATCH_BATCH_SIZE + 1),
+        }))
+      )
+    ).filter((demand) => demand.jobs.length > 0);
+    const allocation = allocateTenantDispatchSlots({
+      demands: laneDemands.map((demand) => ({
+        tenantKey: demand.lane.tenantKey,
+        runningCount: demand.runningCount,
+        queuedCount: demand.jobs.length,
+      })),
+      availableSlotCount: slots.length,
+      maxAssignments: DISPATCH_BATCH_SIZE,
+      totalSlotCount: control.slotCount,
+      baseSlotsPerTenant: control.baseSlotsPerTenant,
+      burstSlotsPerTenant: control.burstSlotsPerTenant,
+    });
+    const dispatchCountByTenant = new Map(
+      allocation.allocations.map((entry) => [
+        entry.tenantKey,
+        entry.dispatchCount,
+      ])
     );
-    const candidates = candidateResults.filter(
-      (candidate): candidate is NonNullable<typeof candidate> =>
-        candidate !== null
-    );
+    const candidates: Array<Infer<typeof dispatchCandidateValidator>> = [];
+    for (let round = 0; candidates.length < slots.length; round += 1) {
+      let addedThisRound = false;
+      for (const demand of laneDemands) {
+        const dispatchCount =
+          dispatchCountByTenant.get(demand.lane.tenantKey) ?? 0;
+        if (round >= dispatchCount) continue;
+        const job = demand.jobs[round];
+        if (!job) continue;
+        candidates.push({
+          laneId: demand.lane._id,
+          jobId: job._id,
+          tenantKey: demand.lane.tenantKey,
+          runningCount: demand.runningCount,
+          nextPriority: demand.jobs[round + 1]?.priority,
+        });
+        addedThisRound = true;
+        if (candidates.length >= slots.length) break;
+      }
+      if (!addedThisRound) break;
+    }
     if (candidates.length === 0) {
       return { kind: "idle" as const, timeoutMs: 10_000 };
     }
@@ -655,9 +706,7 @@ export const getDispatchBatchInternal = internalQuery({
           slotId: slot._id,
           slotNumber: slot.slotNumber,
         })),
-        activeTenantCount: new Set(
-          candidates.map((candidate) => candidate.tenantKey)
-        ).size,
+        activeTenantCount: allocation.activeTenantCount,
       },
     };
   },
@@ -689,6 +738,14 @@ export const dispatchBatchInternal = internalMutation({
     });
     let dispatched = 0;
     let retryAfterMs = 0;
+    const runningCountByTenant = new Map<string, number>();
+    const laneUpdates = new Map<
+      string,
+      {
+        laneId: Id<"tenantJobLanes">;
+        nextPriority?: number;
+      }
+    >();
 
     for (let index = 0; index < args.slots.length; index += 1) {
       const candidate = args.candidates[index];
@@ -703,7 +760,6 @@ export const dispatchBatchInternal = internalMutation({
       if (
         !lane ||
         lane.state !== "ready" ||
-        lane.runningCount >= tenantCap ||
         !job ||
         job.status !== "queued" ||
         !slot ||
@@ -712,6 +768,9 @@ export const dispatchBatchInternal = internalMutation({
       ) {
         continue;
       }
+      const tenantRunningCount =
+        runningCountByTenant.get(candidate.tenantKey) ?? candidate.runningCount;
+      if (tenantRunningCount >= tenantCap) continue;
 
       const globalRate = await tenantSchedulerRateLimiter.limit(
         ctx,
@@ -860,7 +919,6 @@ export const dispatchBatchInternal = internalMutation({
 
       const now = getCurrentUTCTimestamp();
       const leaseExpiresAt = now + control.leaseDurationMs;
-      const hasNextQueuedJob = candidate.nextPriority !== undefined;
       await Promise.all([
         ctx.db.patch("tenantJobs", job._id, {
           status: "running",
@@ -879,16 +937,32 @@ export const dispatchBatchInternal = internalMutation({
           leaseExpiresAt,
           updatedAt: now,
         }),
-        ctx.db.patch("tenantJobLanes", lane._id, {
-          pendingCount: hasNextQueuedJob ? 1 : 0,
-          runningCount: lane.runningCount + 1,
-          minPriority: candidate.nextPriority ?? Number.MAX_SAFE_INTEGER,
-          state: hasNextQueuedJob ? "ready" : "idle",
-          lastDispatchedAt: now,
-          updatedAt: now,
-        }),
       ]);
+      runningCountByTenant.set(candidate.tenantKey, tenantRunningCount + 1);
+      laneUpdates.set(String(lane._id), {
+        laneId: lane._id,
+        nextPriority: candidate.nextPriority,
+      });
       dispatched += 1;
+    }
+
+    const now = getCurrentUTCTimestamp();
+    for (const update of laneUpdates.values()) {
+      const hasNextQueuedJob = update.nextPriority !== undefined;
+      await ctx.db.patch("tenantJobLanes", update.laneId, {
+        pendingCount: hasNextQueuedJob ? 1 : 0,
+        minPriority: update.nextPriority ?? Number.MAX_SAFE_INTEGER,
+        state: hasNextQueuedJob ? "ready" : "idle",
+        lastDispatchedAt: now,
+        updatedAt: now,
+      });
+      if (!hasNextQueuedJob) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.tenantScheduler.activateLaneInternal,
+          { laneId: update.laneId }
+        );
+      }
     }
 
     if (dispatched === 0) {

@@ -79,6 +79,72 @@ export function getTenantDispatchCap(args: {
   return Math.min(args.burstSlotsPerTenant, fairShare);
 }
 
+export type TenantDispatchDemand = {
+  tenantKey: string;
+  runningCount: number;
+  queuedCount: number;
+};
+
+/**
+ * Fill one dispatcher batch without letting a busy tenant skip a newcomer.
+ * Each active tenant receives one assignment per round until the batch, its
+ * queued demand, or its current fair-share cap is exhausted.
+ */
+export function allocateTenantDispatchSlots(args: {
+  demands: readonly TenantDispatchDemand[];
+  availableSlotCount: number;
+  maxAssignments: number;
+  totalSlotCount: number;
+  baseSlotsPerTenant: number;
+  burstSlotsPerTenant: number;
+}) {
+  const activeDemands = args.demands.filter((demand) => demand.queuedCount > 0);
+  const activeTenantCount = activeDemands.length;
+  if (activeTenantCount === 0) {
+    return { activeTenantCount, tenantCap: 0, allocations: [] };
+  }
+
+  const tenantCap = getTenantDispatchCap({
+    slotCount: args.totalSlotCount,
+    activeTenantCount,
+    baseSlotsPerTenant: args.baseSlotsPerTenant,
+    burstSlotsPerTenant: args.burstSlotsPerTenant,
+  });
+  const assignmentLimit = Math.max(
+    0,
+    Math.min(
+      Math.floor(args.availableSlotCount),
+      Math.floor(args.maxAssignments)
+    )
+  );
+  const allocations = activeDemands.map((demand) => ({
+    tenantKey: demand.tenantKey,
+    dispatchCount: 0,
+  }));
+
+  let assigned = 0;
+  while (assigned < assignmentLimit) {
+    let assignedThisRound = false;
+    for (let index = 0; index < activeDemands.length; index += 1) {
+      if (assigned >= assignmentLimit) break;
+      const demand = activeDemands[index];
+      const allocation = allocations[index];
+      if (
+        allocation.dispatchCount >= demand.queuedCount ||
+        demand.runningCount + allocation.dispatchCount >= tenantCap
+      ) {
+        continue;
+      }
+      allocation.dispatchCount += 1;
+      assigned += 1;
+      assignedThisRound = true;
+    }
+    if (!assignedThisRound) break;
+  }
+
+  return { activeTenantCount, tenantCap, allocations };
+}
+
 export function getTenantStartRateDrainTimeMs(jobCount: number) {
   const normalizedJobCount = Math.max(0, Math.floor(jobCount));
   const jobsAfterInitialCapacity = Math.max(

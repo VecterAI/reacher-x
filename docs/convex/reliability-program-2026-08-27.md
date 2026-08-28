@@ -837,3 +837,72 @@ limit. Rollout is code-first: deploy the pinned patch, invoke or await one
 bounded component cleanup chain, verify the expired sample is empty, and require
 no new `cleanupExpiredRuns` bytes-read Insight. Do not use a direct component
 table export/import or full backup as the cleanup mechanism.
+
+### Action Retrier deployment and drain gate
+
+PR #50 deployed as merge commit `89ad875f620f26ec21653b67b26cb07336e5d2f8`.
+The read-only pre-cleanup gate found an eligible four-row sample and no
+`cleanupExpiredRuns` bytes-read event newer than the historical 2026-08-28
+13:13:24 UTC baseline. The approved production invocation deleted exactly four
+expired terminal runs and started the component's existing continuation chain.
+Subsequent bounded samples showed the oldest eligible completion timestamp
+advancing while the failure baseline remained unchanged. Only one cleanup
+chain was started; no overlapping sweep, component export/import, app-table
+mutation, or production control change was used. The final empty-sample gate
+remains pending while that conservative four-row chain drains the multi-week
+history.
+
+## Scheduler burst throughput follow-up — 2026-08-29
+
+The latest production sample before this local change contained 1,000 started
+memory-evaluation jobs from one tenant. Typical admission was healthy (p50 434
+ms, p95 617 ms, max 5,702 ms, and zero admissions over 30 seconds), with no
+failed job, expired lease, unresolved enqueue failure, or pool drift. This is a
+healthy current checkpoint, but it does not explain away the two earlier burst
+windows that queued hundreds of jobs for several minutes while tenant slots
+remained free.
+
+A subsequent natural burst reproduced the regression before this fix could be
+deployed. Of the newest 1,000 jobs, 999 had started across 741 memory-evaluation
+and 258 qualification admissions for one tenant; 150 waited at least 30 seconds.
+The distribution moved to p50 482 ms, p95 67,632 ms, and max 85,652 ms. The
+live queue was already moving into running work, global mode and the 64 + 36
+pool split were correct, and there was no failed job, expired lease, unresolved
+enqueue failure, drift, or new permanent scheduler error. This third transient
+window fails both rollout gates and confirms that a drained snapshot or healthy
+median cannot close the burst-throughput defect.
+
+The remaining under-utilization mechanism is now reproduced in code. The
+dispatcher reads up to eight free slots but previously returned only one queued
+job per ready lane. A one-workspace burst therefore admitted one job per Batch
+Worker transaction even when seven more slots were available. Every one-job
+dispatch and every completion also wrote the same `tenantJobLanes` row. The
+72-hour Insights snapshot still showed thousands of retried conflicts on that
+lane across activation, dispatch, Workpool completion, and tenant-execution
+completion paths. They were not permanent failures, but they amplify the
+serialized dispatcher exactly when a same-tenant burst arrives.
+
+The local fix keeps the existing eight-slot batch and exact per-workspace queue
+order, but allocates those slots round-robin across active lanes. A single busy
+lane can fill all eight assignments; with A=100 and B/C=1, B and C receive one
+slot before A borrows the remaining six. Claimed `tenantSchedulerSlots` are the
+authoritative bounded source for live tenant concurrency, so completions no
+longer read or write the lane marker. Dispatch patches each participating lane
+once per batch and schedules an idempotent post-drain activation to close the
+concurrent-enqueue race. Reads remain bounded to 64 ready lanes, 36 claimed
+slots, and nine small tenant-job rows per lane; a dispatch writes at most eight
+jobs and slots.
+
+No Aggregate or sharded-counter component is introduced here. The 36
+independent slot documents already provide exact, bounded, naturally sharded
+concurrency state; another counter would duplicate that authority and create a
+new consistency problem. There is no schema or data migration. The legacy lane
+`runningCount` field remains widen-compatible but is no longer consulted for
+admission; its eventual removal belongs to the separate cleanup phase.
+
+Local verification passed 114 test files and 576 tests, including one-lane
+eight-slot dispatch, stale compatibility counters, A=100/B=C=1 fairness, and
+10/50/100 active-lane visibility. TypeScript, strict Oxlint, and the 74-route
+production build also passed. Rollout is code-only: deploy after review, then
+require the next natural burst to keep admission p95 below 30 seconds and max
+below 60 seconds with no permanent scheduler OCC, expired lease, or slot drift.
