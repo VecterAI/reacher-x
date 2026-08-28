@@ -794,3 +794,46 @@ migration. Integration coverage proves an irrelevant provider refresh advances
 the source prospect while leaving the summary and both rollup stripes byte-for-
 byte unchanged; existing transition coverage proves real status changes still
 update the striped read models.
+
+### Prospect-summary deployment gate
+
+PR #49 deployed as merge commit `2ab3aa28d34e5d455bfc3ef8ccc915b08ea64295`.
+The immediate read-only gate found no permanent `prospectSummaries` OCC or
+`createProspectsBatch` bytes-read event newer than the pre-deploy baselines
+(2026-08-28 14:40:15 UTC and 11:29:40 UTC respectively). The scheduler remained
+globally enforced with the correct 36-slot tenant pool, no override, expired
+lease, unresolved enqueue failure, or drift while new qualification traffic was
+running.
+
+The previously repaired memory queue also advanced naturally to a new
+generation. Its selected event reached the terminal `ignored` state, the
+cancelled historical pointer was not reused, and a later queue generation held
+a different work ID. No duplicate active processing was observed, and no
+production control or repair mutation was used for this gate.
+
+## Action Retrier historical cleanup follow-up — 2026-08-29
+
+The post-deploy Insights snapshot confirmed the remaining component failure was
+unchanged: `actionRetrier:cleanupExpiredRuns` had three daily failures, newest
+2026-08-28 13:13:24 UTC, each reading 16,864,513 bytes across 1,040 component
+run documents. Version 0.3.1 is still the latest published package, and its
+current upstream source still takes 1,024 expired rows in one mutation. New
+terminal runs already receive delayed per-run cleanup in app code, so this is a
+bounded historical component-state problem rather than an app-table migration.
+
+The local package patch reduces the component cleanup page to four runs and
+uses that constant for both the indexed read and continuation condition. The
+existing immediate continuation therefore drains every eligible historical row
+without a global transaction. Four is intentionally conservative because a
+delete can add transaction reads after the initial query; it remains below the
+Convex read budget even when stored action arguments or results approach the
+document-size ceiling. No app schema, component schema, public function, or
+prospect/workspace scan changes.
+
+The regression test creates ten approximately 700 KB completed component runs
+under a synthetic 6 MB transaction limit. One invocation deletes exactly four,
+and scheduled continuations delete the remaining six without exceeding the
+limit. Rollout is code-first: deploy the pinned patch, invoke or await one
+bounded component cleanup chain, verify the expired sample is empty, and require
+no new `cleanupExpiredRuns` bytes-read Insight. Do not use a direct component
+table export/import or full backup as the cleanup mechanism.

@@ -1,0 +1,48 @@
+diff --git a/dist/component/run.js b/dist/component/run.js
+index 72c48564abd0e8b521f0ae9808b43f4e92403f3b..6ed78daf215df97f48d3650cff2e1538c204d6a9 100644
+--- a/dist/component/run.js
++++ b/dist/component/run.js
+@@ -238,7 +238,9 @@ function withJitter(delay) {
+     return delay * (0.5 + Math.random());
+ }
+ const CLEANUP_MIN_AGE_MS = 1000 * 60 * 60 * 24 * 7; // 1 week
+-const MAX_CLEANUP_BATCH = 1024;
++// Keep the query safely below Convex's bytes-read limit even when completed
++// actions stored unusually large return values.
++const MAX_CLEANUP_BATCH = 4;
+ export const cleanupExpiredRuns = internalMutation({
+     args: {},
+     handler: async (ctx) => {
+@@ -246,7 +248,7 @@ export const cleanupExpiredRuns = internalMutation({
+         const expired = await ctx.db
+             .query("runs")
+             .withIndex("by_state", (q) => q.eq("state.type", "completed").lt("state.completedAt", cutoff))
+-            .take(1024);
++            .take(MAX_CLEANUP_BATCH);
+         for (const doc of expired) {
+             await ctx.db.delete("runs", doc._id);
+         }
+diff --git a/src/component/run.ts b/src/component/run.ts
+index fbb562dec3b1e4dc14e98b825efbb1ce8b91f0ef..ce003ee6b3d2ba75fd2df5f447f1bb1f93c250b2 100644
+--- a/src/component/run.ts
++++ b/src/component/run.ts
+@@ -317,7 +317,9 @@ function withJitter(delay: number) {
+ }
+ 
+ const CLEANUP_MIN_AGE_MS = 1000 * 60 * 60 * 24 * 7; // 1 week
+-const MAX_CLEANUP_BATCH = 1024;
++// Keep the query safely below Convex's bytes-read limit even when completed
++// actions stored unusually large return values.
++const MAX_CLEANUP_BATCH = 4;
+ 
+ export const cleanupExpiredRuns = internalMutation({
+   args: {},
+@@ -328,7 +330,7 @@ export const cleanupExpiredRuns = internalMutation({
+       .withIndex("by_state", (q) =>
+         q.eq("state.type", "completed").lt("state.completedAt", cutoff),
+       )
+-      .take(1024);
++      .take(MAX_CLEANUP_BATCH);
+     for (const doc of expired) {
+       await ctx.db.delete("runs", doc._id);
+     }
