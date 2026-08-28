@@ -7,12 +7,13 @@ import { isTenantJobTerminal } from "./tenantSchedulerCore";
 type TenantJobCompletionKind = "succeeded" | "failed" | "cancelled";
 
 /**
- * Rebuild the lane's queue metadata from the durable queued jobs.
+ * Refresh the lane's dispatch marker from the first durable queued job.
  *
  * Enqueue deliberately does not increment the lane document: same-workspace
- * bursts otherwise make every producer contend on one row. The job rows are
- * the source of truth and this small reconciliation mutation maintains the
- * fair-dispatch index without losing increments when activations race.
+ * bursts otherwise make every producer contend on one row. `tenantJobs` is
+ * the source of truth; lane counts are only a 0/1 dispatch marker. Reading one
+ * indexed job keeps activation O(1), and once a lane is ready the remaining
+ * burst activations become read-only instead of rewriting the hot lane.
  */
 export async function reconcileTenantLaneQueueState(
   ctx: MutationCtx,
@@ -23,30 +24,40 @@ export async function reconcileTenantLaneQueueState(
 ): Promise<{
   lane: Doc<"tenantJobLanes"> | null;
   pendingCount: number;
+  activated: boolean;
 }> {
   const lane = await ctx.db.get("tenantJobLanes", args.laneId);
   if (!lane) {
-    return { lane: null, pendingCount: 0 };
+    return { lane: null, pendingCount: 0, activated: false };
   }
 
-  let pendingCount = 0;
-  let minPriority = Number.MAX_SAFE_INTEGER;
-  for await (const job of ctx.db
+  if (!args.resume && (lane.state === "ready" || lane.state === "paused")) {
+    return {
+      lane,
+      pendingCount: lane.state === "ready" ? 1 : lane.pendingCount,
+      activated: false,
+    };
+  }
+
+  const firstQueuedJob = await ctx.db
     .query("tenantJobs")
     .withIndex("by_lane_and_status_and_priority_and_queued_at", (q) =>
       q.eq("laneId", lane._id).eq("status", "queued")
-    )) {
-    pendingCount += 1;
-    minPriority = Math.min(minPriority, job.priority);
-  }
+    )
+    .first();
+  const pendingCount = firstQueuedJob ? 1 : 0;
+  const minPriority = firstQueuedJob?.priority ?? Number.MAX_SAFE_INTEGER;
 
   const state =
     lane.state === "paused" && !args.resume
       ? ("paused" as const)
-      : pendingCount > 0
+      : firstQueuedJob
         ? ("ready" as const)
         : ("idle" as const);
   const now = getCurrentUTCTimestamp();
+  const activated =
+    state === "ready" &&
+    (lane.state !== "ready" || lane.pendingCount !== pendingCount);
   if (
     lane.pendingCount !== pendingCount ||
     lane.minPriority !== minPriority ||
@@ -69,6 +80,7 @@ export async function reconcileTenantLaneQueueState(
       updatedAt: now,
     },
     pendingCount,
+    activated,
   };
 }
 

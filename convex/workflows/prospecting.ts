@@ -38,7 +38,10 @@ import {
   normalizeLinkedInPostQueryStats,
 } from "../lib/linkedinSearchHelpers";
 import { PREVIEW_BATCH_LIMITS } from "../lib/previewBatchLimits";
-import { chunkProspectsForPersistence } from "../lib/prospectPersistenceHelpers";
+import {
+  chunkProspectsForPersistence,
+  persistProspectWithRetry,
+} from "../lib/prospectPersistenceHelpers";
 import { hasRequiredWorkspaceAgentData } from "../lib/workspaceSetup";
 import type {
   TwitterPost,
@@ -1111,9 +1114,8 @@ export const searchTwitterInternal = internalAction({
 
     let saved = 0;
     for (const batch of chunkProspectsForPersistence(prospectsToSave)) {
-      const saveResult = await ctx.runMutation(
-        internal.prospects.createProspectsBatch,
-        {
+      const saveResult = await persistProspectWithRetry(() =>
+        ctx.runMutation(internal.prospects.createProspectsBatch, {
           userId: workspace.userId,
           workspaceId: args.workspaceId,
           processingMode: args.processingMode,
@@ -1125,7 +1127,7 @@ export const searchTwitterInternal = internalAction({
               setupRevision: args.setupRevision,
             })
           ),
-        }
+        })
       );
       saved += saveResult.created + saveResult.updated;
     }
@@ -1349,9 +1351,8 @@ export const searchLinkedInInternal = internalAction({
     ) => {
       for (const batch of chunkLinkedInProspectsForSave(prospects)) {
         try {
-          const saveResult = await ctx.runMutation(
-            internal.prospects.createProspectsBatch,
-            {
+          const saveResult = await persistProspectWithRetry(() =>
+            ctx.runMutation(internal.prospects.createProspectsBatch, {
               userId: workspace.userId,
               workspaceId: args.workspaceId,
               processingMode: args.processingMode,
@@ -1363,7 +1364,7 @@ export const searchLinkedInInternal = internalAction({
                   setupRevision: args.setupRevision,
                 })
               ),
-            }
+            })
           );
           totalSaved += saveResult.created + saveResult.updated;
           if (surface === "people") {
@@ -1747,14 +1748,13 @@ async function expandPreviewSimilarProfiles(args: {
 
   let saved = 0;
   for (const batch of chunkProspectsForPersistence(prospectsToSave)) {
-    const saveResult = await args.ctx.runMutation(
-      internal.prospects.createProspectsBatch,
-      {
+    const saveResult = await persistProspectWithRetry(() =>
+      args.ctx.runMutation(internal.prospects.createProspectsBatch, {
         userId: args.workspace.userId,
         workspaceId: args.workspace._id,
         processingMode: "preview",
         prospects: batch,
-      }
+      })
     );
     saved += saveResult.created + saveResult.updated;
   }

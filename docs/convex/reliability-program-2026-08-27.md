@@ -148,6 +148,31 @@ source-document changes write signed deltas, and readers combine baseline plus
 stripes before clamping user-visible totals. This makes the cutover correct for
 updates and deletes of pre-cutover rows without scanning 60,000+ prospects.
 
+### Post-rollup stabilization incident — 2026-08-28
+
+After PR #41 deployed, production remained globally enforced with the correct
+Workflow 64 + tenant execution 36 pool split, no overrides, no expired leases,
+and no new permanent enqueue/resume OCC. A one-workspace traffic burst exposed
+two remaining hot-path problems:
+
+- the queue reached 219 queued and 20 running jobs while 16 of 36 execution
+  slots were still free; oldest queue age rose from about 370 to 386 seconds;
+  the queue later drained without mutation, but the last 800 admissions retained
+  p50 about 122 seconds, p95 about 439 seconds, and max about 474 seconds;
+- `activateLaneInternal` accumulated about 4,007 OCC retries on
+  `tenantJobLanes` and 2,524 on the queued `tenantJobs` range because every
+  enqueue scheduled a full same-lane reconciliation; and
+- `createProspectsBatch` bytes-read failures continued after the five-row batch
+  mitigation, reaching 126, while new permanent OCC appeared on `prospects`,
+  `prospectSummaries`, and `workspaceStatsStripes`. Each failed transaction
+  repeated heavyweight identity reads and a full qualified-prospect capacity
+  scan before the row could be persisted.
+
+The queue recovery proves no durable scheduler job was lost, but it does not
+meet the admission SLO. This evidence is the gate for the focused stabilization
+branch; the deferred fit-score Aggregate branch remains unpushed until these
+write-path failures are fixed and canaried.
+
 ## Changes and invariants
 
 ### Tenant enqueue contention
@@ -155,16 +180,26 @@ updates and deletes of pre-cutover rows without scanning 60,000+ prospects.
 `tenantJobs` is now the durable queue source of truth. Enqueue resolves its lane
 through an immutable per-tenant binding, inserts a job without reading or
 incrementing the mutable lane row, then schedules a lane activation.
-Activation rebuilds exact `pendingCount`, `minPriority`, and ready/paused state
-from the lane's indexed queued jobs. A one-minute bounded repair pass catches a
+Activation now reads at most the first indexed queued job and stores only a 0/1
+ready marker plus its priority. Once a lane is ready, duplicate burst
+activations return without reading the queued range, rewriting the lane, or
+pinging the dispatcher. Durable job rows remain the exact queue source, and the
+workspace status query counts bounded indexed queued/running rows rather than
+presenting the marker as a total. A one-minute bounded repair pass catches a
 missed activation independently of the external heartbeat.
 
 This preserves one fair lane per workspace, exact priority/queue ordering,
 idempotency keys, workspace ownership checks, and pause semantics. It does not
 replace the lane with a deployment-wide counter or another global write point.
 The 100-job same-workspace concurrency test asserts one immutable binding, 100
-durable jobs, and exact reconciled lane totals; activation can no longer make a
-steady-state producer read `tenantJobLanes`.
+durable jobs, and one ready marker; activation can no longer make a steady-state
+producer read or update the mutable lane.
+
+The per-tenant start limiter now matches the existing 240 starts/minute global
+budget with an initial capacity of 36. Per-tenant slot caps remain the fairness
+authority: one active workspace may borrow capacity, while 2, 3, 10, 50, or 100
+active lanes immediately reduce its fair share. The measured 219-job burst is
+therefore no longer forced past one minute by the old 60 starts/minute limiter.
 
 Every action caller now uses a shared, bounded three-attempt recovery helper;
 setup and plan-batch workflows put the same idempotent operation behind durable
@@ -181,7 +216,7 @@ remain visible for operator action.
 `resumeWorkspaceInternal` no longer reads or writes `tenantJobLanes` or scans
 the queued `tenantJobs` range in the caller's transaction. It atomically
 schedules an internal reconciliation mutation and returns. The scheduled
-mutation resolves the lane and rebuilds exact queue metadata with resume
+mutation resolves the lane and rebuilds its bounded ready marker with resume
 enabled; Convex durably retries internal OCC errors, and duplicate resume
 requests are idempotent. This removes both measured conflict surfaces from the
 recovery call while preserving jobs enqueued before or after the resume request.
@@ -200,10 +235,19 @@ stale RAG entries can be reindexed later as a bounded cleanup.
 ### Prospect persistence read budget
 
 All three production writers that call `createProspectsBatch` now use one
-central persistence batch size of 5. The mutation rejects a larger internal
-batch so a future caller cannot silently reintroduce the large transaction.
-Twitter, LinkedIn, and setup-preview writers retain every input and combine the
-per-batch results; no prospect is truncated or filtered by this change.
+prospect per transaction. The mutation rejects a larger internal batch so a
+future caller cannot silently reintroduce read amplification. Identity lookup
+stops after a stable Twitter/LinkedIn actor match instead of also reading the
+external-ID row, and pending discovery no longer repeats the full qualified
+capacity scan already owned by the workflow gate and qualification transition.
+
+Every one-row save is idempotent by stable provider identity and has a bounded
+five-attempt action-level OCC retry after Convex's built-in retries are
+exhausted. Twitter, LinkedIn, and setup-preview writers retain every input and
+combine the per-row results; no prospect is truncated or filtered by this
+change. This also covers measured conflicts in `prospectSummaries` and
+`workspaceStatsStripes`, because those trigger writes remain in the same
+one-prospect transaction and the entire idempotent operation is retried.
 
 ### Setup workflow self-healing
 
@@ -247,17 +291,17 @@ reports the expected split and the repair pass bounds external drift.
 
 ## Contention audit
 
-| State                     | Write shape               | Finding                                                                      | Decision                                                                              |
-| ------------------------- | ------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `prospectSummaries`       | One row per prospect      | Naturally partitioned; the large batch amplified reads, not one global write | Keep; batch writers at 5                                                              |
-| `workspaceStats`          | One row per workspace     | 3 permanent failures and 64 measured retries                                 | Widen to 32 deterministic signed-delta stripes                                        |
-| `workspaceAnalyticsDaily` | One row per workspace/day | 12 permanent failures and 23,000+ measured retries                           | Widen to 32 deterministic signed-delta stripes                                        |
-| `workspaceAgentOpsDaily`  | One row per workspace/day | 85 permanent failures and 10,000+ measured retries                           | Widen to 32 deterministic signed-delta stripes                                        |
-| Provider budget state     | One row per provider      | Deliberate serialization enforces exact request spacing                      | Keep; existing action-level bounded OCC retry is appropriate                          |
-| Provider circuit state    | One row per provider      | Healthy calls caused unnecessary writes                                      | Fixed by writing only state transitions                                               |
-| Action Retrier            | Component-owned run rows  | Automatic cleanup permanently exceeds bytes read at 1,040 large rows         | Upgrade to 0.3.1 and schedule per-run cleanup after terminal state is safely observed |
-| Scheduler resume          | One lane + queued range   | Two permanent conflicts while enqueue traffic continued                      | Fixed by durable, idempotent reconciliation outside the caller transaction            |
-| Memory RAG ID hydration   | Up to 64 indexed reads    | Stale component IDs failed strict canonical-ID argument validation           | Widen reader; resolve through the existing workspace-scoped legacy-ID index           |
+| State                     | Write shape               | Finding                                                              | Decision                                                                              |
+| ------------------------- | ------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `prospectSummaries`       | One row per prospect      | Naturally partitioned; multi-row retries amplified heavyweight reads | Keep; one prospect per idempotent transaction with bounded OCC retry                  |
+| `workspaceStats`          | One row per workspace     | 3 permanent failures and 64 measured retries                         | Widen to 32 deterministic signed-delta stripes                                        |
+| `workspaceAnalyticsDaily` | One row per workspace/day | 12 permanent failures and 23,000+ measured retries                   | Widen to 32 deterministic signed-delta stripes                                        |
+| `workspaceAgentOpsDaily`  | One row per workspace/day | 85 permanent failures and 10,000+ measured retries                   | Widen to 32 deterministic signed-delta stripes                                        |
+| Provider budget state     | One row per provider      | Deliberate serialization enforces exact request spacing              | Keep; existing action-level bounded OCC retry is appropriate                          |
+| Provider circuit state    | One row per provider      | Healthy calls caused unnecessary writes                              | Fixed by writing only state transitions                                               |
+| Action Retrier            | Component-owned run rows  | Automatic cleanup permanently exceeds bytes read at 1,040 large rows | Upgrade to 0.3.1 and schedule per-run cleanup after terminal state is safely observed |
+| Scheduler resume          | One lane + queued range   | Two permanent conflicts while enqueue traffic continued              | Fixed by durable, idempotent reconciliation outside the caller transaction            |
+| Memory RAG ID hydration   | Up to 64 indexed reads    | Stale component IDs failed strict canonical-ID argument validation   | Widen reader; resolve through the existing workspace-scoped legacy-ID index           |
 
 Aggregate is a good fit for the exact fit-score histogram: it can namespace by
 workspace/filter scope and count ten bounded score bins without reading every
@@ -408,6 +452,31 @@ event is newer than the pre-fix incident window.
   internal and validates the component run ID with the package validator.
 - Realtime behavior is preserved because the public readers remain reactive
   Convex queries; they now subscribe to both baseline and stripe index ranges.
+
+### Focused stabilization verification — 2026-08-28
+
+- Full Convex suite: 108 files and 546 tests passed. New coverage uses a 250 KB
+  provider payload, proves stable actor identity makes an uncertain repeat
+  converge on one prospect, rejects multi-row persistence, verifies 100 durable
+  queued jobs behind one lane-ready marker, reports the real bounded queue count,
+  and repairs a stale ready marker.
+- The observed 219-job production burst is below the pure rate-budget
+  one-minute gate after initial capacity; A=100/B=C=1 and 10/50/100-lane
+  fairness coverage remains green.
+- TypeScript, strict Oxlint, changed-file ESLint, `git diff --check`, and the
+  production Next.js build with all 74 static/PPR pages passed.
+- Convex review found no unbounded collection added: persistence is one row,
+  activation reads zero rows for an already-ready/paused lane and at most one
+  queued row otherwise, repair samples at most 100 queued jobs and 100 ready
+  lanes, and the authenticated status query caps each indexed job range at
+  1,001 rows.
+- Security review found no new public write or authorization surface. The only
+  changed public query retains `requireOwnedWorkspace`; scheduler and
+  persistence writes remain internal, scheduled targets remain internal, and
+  the provider `v.any()` payload is pre-existing and inaccessible to clients.
+- No React/TSX or schema file changed in this focused hotfix. The production
+  build is the proportionate React verification; no migration or backfill is
+  required for deployment.
 
 ## Cleanup candidates — no deletion in this phase
 

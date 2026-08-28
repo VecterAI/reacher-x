@@ -1064,6 +1064,11 @@ export const createProspectsBatch = internalMutation({
       })
     ),
   },
+  returns: v.object({
+    created: v.number(),
+    updated: v.number(),
+    prospectIds: v.array(v.id("prospects")),
+  }),
   handler: async (ctx, args) => {
     // Project logging policy requires console.log for canonical success-path events.
     // eslint-disable-next-line no-console
@@ -1136,10 +1141,15 @@ export const createProspectsBatch = internalMutation({
       }
     }
 
+    // Qualification transitions own exact cycle-limit accounting and schedule
+    // capacity reconciliation. Prospect discovery only creates pending rows,
+    // so repeating the full qualified-prospect scan here amplified every save
+    // and pushed burst transactions over Convex's read limit.
     const canCreateNewProspects =
       isValidatedSetupPreviewBatch ||
-      (workspace?.prospectingWorkflowStatus !== "limit_reached" &&
-        (await canAddProspects(ctx, args.workspaceId, 1)).allowed);
+      Boolean(
+        workspace && workspace.prospectingWorkflowStatus !== "limit_reached"
+      );
 
     if (!canCreateNewProspects && processingMode !== "preview") {
       await ctx.scheduler.runAfter(
@@ -1184,15 +1194,18 @@ export const createProspectsBatch = internalMutation({
               )
               .first()
           : null;
-      const existingByExternalId = await ctx.db
-        .query("prospects")
-        .withIndex("by_external_id", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .eq("platform", p.platform)
-            .eq("externalId", p.externalId)
-        )
-        .first();
+      const existingByExternalId =
+        existingByTwitterUserId || existingByLinkedInUrn
+          ? null
+          : await ctx.db
+              .query("prospects")
+              .withIndex("by_external_id", (q) =>
+                q
+                  .eq("workspaceId", args.workspaceId)
+                  .eq("platform", p.platform)
+                  .eq("externalId", p.externalId)
+              )
+              .first();
       const existing =
         existingByTwitterUserId ??
         existingByLinkedInUrn ??

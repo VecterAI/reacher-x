@@ -412,8 +412,8 @@ export const enqueueTenantJobInternal = internalMutation({
 
     // Do not update the lane in the enqueue transaction. Concurrent producers
     // for one workspace used to conflict permanently on this shared row. The
-    // durable job is the source of truth; an idempotent activation reconciles
-    // exact queue metadata after commit.
+    // durable job is the source of truth; an idempotent activation maintains
+    // only the O(1) ready marker after commit.
     await ctx.scheduler.runAfter(
       0,
       internal.tenantScheduler.activateLaneInternal,
@@ -538,7 +538,7 @@ export const activateLaneInternal = internalMutation({
   returns: v.object({ pendingCount: v.number() }),
   handler: async (ctx, args) => {
     const result = await reconcileTenantLaneQueueState(ctx, args);
-    if (result.pendingCount > 0 && result.lane?.state !== "paused") {
+    if (result.activated) {
       await pingDispatcher(ctx);
     }
     return { pendingCount: result.pendingCount };
@@ -549,22 +549,39 @@ export const reconcileQueuedLanesInternal = internalMutation({
   args: {},
   returns: v.object({ reconciled: v.number(), hasMore: v.boolean() }),
   handler: async (ctx) => {
-    const queuedJobs = await ctx.db
-      .query("tenantJobs")
-      .withIndex("by_status_and_lease_expires_at", (q) =>
-        q.eq("status", "queued")
-      )
-      .take(100);
-    const laneIds = Array.from(new Set(queuedJobs.map((job) => job.laneId)));
+    const [queuedJobs, readyLanes] = await Promise.all([
+      ctx.db
+        .query("tenantJobs")
+        .withIndex("by_status_and_lease_expires_at", (q) =>
+          q.eq("status", "queued")
+        )
+        .take(100),
+      ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_state_and_last_dispatched_at", (q) =>
+          q.eq("state", "ready")
+        )
+        .take(100),
+    ]);
+    const laneIds = Array.from(
+      new Set([
+        ...queuedJobs.map((job) => job.laneId),
+        ...readyLanes.map((lane) => lane._id),
+      ])
+    );
+    const readyLaneIds = new Set(readyLanes.map((lane) => String(lane._id)));
     for (const laneId of laneIds) {
-      await reconcileTenantLaneQueueState(ctx, { laneId });
+      await reconcileTenantLaneQueueState(ctx, {
+        laneId,
+        resume: readyLaneIds.has(String(laneId)) ? true : undefined,
+      });
     }
     if (laneIds.length > 0) {
       await pingDispatcher(ctx);
     }
     return {
       reconciled: laneIds.length,
-      hasMore: queuedJobs.length === 100,
+      hasMore: queuedJobs.length === 100 || readyLanes.length === 100,
     };
   },
 });
@@ -837,7 +854,7 @@ export const dispatchBatchInternal = internalMutation({
 
       const now = getCurrentUTCTimestamp();
       const leaseExpiresAt = now + control.leaseDurationMs;
-      const nextPendingCount = Math.max(0, lane.pendingCount - 1);
+      const hasNextQueuedJob = candidate.nextPriority !== undefined;
       await Promise.all([
         ctx.db.patch("tenantJobs", job._id, {
           status: "running",
@@ -857,12 +874,10 @@ export const dispatchBatchInternal = internalMutation({
           updatedAt: now,
         }),
         ctx.db.patch("tenantJobLanes", lane._id, {
-          pendingCount: nextPendingCount,
+          pendingCount: hasNextQueuedJob ? 1 : 0,
           runningCount: lane.runningCount + 1,
-          minPriority:
-            candidate.nextPriority ??
-            (nextPendingCount > 0 ? lane.minPriority : Number.MAX_SAFE_INTEGER),
-          state: nextPendingCount > 0 ? "ready" : "idle",
+          minPriority: candidate.nextPriority ?? Number.MAX_SAFE_INTEGER,
+          state: hasNextQueuedJob ? "ready" : "idle",
           lastDispatchedAt: now,
           updatedAt: now,
         }),
@@ -1465,27 +1480,40 @@ export const getWorkspaceSchedulerStatus = query({
   }),
   handler: async (ctx, { workspaceId }) => {
     await requireOwnedWorkspace(ctx, workspaceId);
-    const [control, override, lane] = await Promise.all([
-      ctx.db
-        .query("tenantSchedulerControls")
-        .withIndex("by_key", (q) => q.eq("key", "global"))
-        .unique(),
-      ctx.db
-        .query("tenantSchedulerWorkspaceOverrides")
-        .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
-        .unique(),
-      ctx.db
-        .query("tenantJobLanes")
-        .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
-        .unique(),
-    ]);
+    const [control, override, lane, queuedJobs, runningJobs] =
+      await Promise.all([
+        ctx.db
+          .query("tenantSchedulerControls")
+          .withIndex("by_key", (q) => q.eq("key", "global"))
+          .unique(),
+        ctx.db
+          .query("tenantSchedulerWorkspaceOverrides")
+          .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+          .unique(),
+        ctx.db
+          .query("tenantJobLanes")
+          .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+          .unique(),
+        ctx.db
+          .query("tenantJobs")
+          .withIndex("by_workspace_and_status", (q) =>
+            q.eq("workspaceId", workspaceId).eq("status", "queued")
+          )
+          .take(1001),
+        ctx.db
+          .query("tenantJobs")
+          .withIndex("by_workspace_and_status", (q) =>
+            q.eq("workspaceId", workspaceId).eq("status", "running")
+          )
+          .take(1001),
+      ]);
     const state: "not_initialized" | "idle" | "ready" | "paused" =
       lane?.state ?? "not_initialized";
     return {
       mode: override?.mode ?? control?.mode ?? "legacy",
       state,
-      queuedCount: lane?.pendingCount ?? 0,
-      runningCount: lane?.runningCount ?? 0,
+      queuedCount: Math.min(queuedJobs.length, 1000),
+      runningCount: Math.min(runningJobs.length, 1000),
       globalSlots: control?.slotCount ?? DEFAULT_TENANT_SCHEDULER_SLOT_COUNT,
       baseSlotsPerTenant:
         control?.baseSlotsPerTenant ?? DEFAULT_TENANT_BASE_SLOTS,

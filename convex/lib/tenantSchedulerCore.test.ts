@@ -7,6 +7,7 @@ import {
   clampTenantSchedulerSlotCount,
   getTenantEnqueueRetryDelayMs,
   getTenantDispatchCap,
+  getTenantStartRateDrainTimeMs,
 } from "./tenantSchedulerCore";
 
 describe("tenant scheduler capacity policy", () => {
@@ -71,5 +72,9 @@ describe("tenant scheduler capacity policy", () => {
     expect(getTenantEnqueueRetryDelayMs(1, 0)).toBe(250);
     expect(getTenantEnqueueRetryDelayMs(2, 0.5)).toBe(625);
     expect(getTenantEnqueueRetryDelayMs(3, 1)).toBe(1_250);
+  });
+
+  it("does not rate-limit the observed 219-job single-tenant burst past one minute", () => {
+    expect(getTenantStartRateDrainTimeMs(219)).toBeLessThan(60_000);
   });
 });
