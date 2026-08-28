@@ -360,6 +360,7 @@ describe("tenant scheduler integration", () => {
       shouldEnqueue: true,
       reason: "queued",
       eventId,
+      enqueueToken: expect.any(Number),
     });
     expect(retry).toEqual(first);
 
@@ -375,6 +376,7 @@ describe("tenant scheduler integration", () => {
       shouldEnqueue: false,
       reason: "queued",
       eventId,
+      enqueueToken: first.enqueueToken,
     });
   });
 

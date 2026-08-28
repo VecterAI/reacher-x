@@ -836,7 +836,13 @@ export const dispatchBatchInternal = internalMutation({
               ctx,
               internal.workflows.memory
                 .runQueuedWorkspaceMemoryEvaluationInternal,
-              { workspaceId: payload.workspaceId },
+              {
+                workspaceId: payload.workspaceId,
+                ...(payload.enqueueToken === undefined
+                  ? {}
+                  : { enqueueToken: payload.enqueueToken }),
+                workId: String(job._id),
+              },
               {
                 onComplete:
                   internal.workflows.memory
