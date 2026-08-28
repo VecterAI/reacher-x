@@ -1,6 +1,7 @@
 import type { Id } from "../_generated/dataModel";
 
 export const TENANT_EXECUTION_POOL_MAX_PARALLELISM = 36;
+export const TENANT_JOB_START_RATE_PER_MINUTE = 240;
 export const DEFAULT_TENANT_SCHEDULER_SLOT_COUNT = 36;
 export const DEFAULT_TENANT_BASE_SLOTS = 1;
 export const DEFAULT_TENANT_BURST_SLOTS = 30;
@@ -76,6 +77,17 @@ export function getTenantDispatchCap(args: {
     Math.floor(args.slotCount / activeTenantCount)
   );
   return Math.min(args.burstSlotsPerTenant, fairShare);
+}
+
+export function getTenantStartRateDrainTimeMs(jobCount: number) {
+  const normalizedJobCount = Math.max(0, Math.floor(jobCount));
+  const jobsAfterInitialCapacity = Math.max(
+    0,
+    normalizedJobCount - TENANT_EXECUTION_POOL_MAX_PARALLELISM
+  );
+  return Math.ceil(
+    (jobsAfterInitialCapacity / TENANT_JOB_START_RATE_PER_MINUTE) * 60_000
+  );
 }
 
 export function isTenantJobTerminal(status: string) {

@@ -2,7 +2,7 @@
 
 import { convexTest } from "convex-test";
 import { describe, expect, test, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
@@ -226,7 +226,7 @@ describe("tenant scheduler integration", () => {
     expect(
       lanesAfter.find((lane) => lane.workspaceId === paused.workspaceId)
         ?.pendingCount
-    ).toBe(2);
+    ).toBe(1);
     expect(
       lanesAfter.find((lane) => lane.workspaceId === running.workspaceId)?.state
     ).toBe("ready");
@@ -431,7 +431,7 @@ describe("tenant scheduler integration", () => {
     expect(beforeActivation.lane?.pendingCount).toBe(0);
 
     const activation = await activateWorkspaceLane(t, workspace.workspaceId);
-    expect(activation.pendingCount).toBe(100);
+    expect(activation.pendingCount).toBe(1);
     const laneAfter = await t.run(async (ctx) =>
       ctx.db
         .query("tenantJobLanes")
@@ -441,9 +441,59 @@ describe("tenant scheduler integration", () => {
         .unique()
     );
     expect(laneAfter).toMatchObject({
-      pendingCount: 100,
+      pendingCount: 1,
       minPriority: 30,
       state: "ready",
+    });
+    expect(
+      await t
+        .withIdentity({ subject: "tenant-scheduler-burst" })
+        .query(api.tenantScheduler.getWorkspaceSchedulerStatus, {
+          workspaceId: workspace.workspaceId,
+        })
+    ).toMatchObject({
+      state: "ready",
+      queuedCount: 100,
+      runningCount: 0,
+    });
+
+    expect(await activateWorkspaceLane(t, workspace.workspaceId)).toEqual({
+      pendingCount: 1,
+    });
+  });
+
+  test("repairs a stale ready marker without scanning scheduler history", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const workspace = await seedWorkspace(t, "stale-ready-marker");
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+    const laneId = await t.run((ctx) =>
+      ctx.db.insert("tenantJobLanes", {
+        tenantKey: `workspace:${workspace.workspaceId}`,
+        workspaceId: workspace.workspaceId,
+        userId: workspace.userId,
+        state: "ready",
+        pendingCount: 1,
+        runningCount: 0,
+        minPriority: 30,
+        lastDispatchedAt: 0,
+        updatedAt: 1,
+      })
+    );
+
+    expect(
+      await t.mutation(
+        internal.tenantScheduler.reconcileQueuedLanesInternal,
+        {}
+      )
+    ).toMatchObject({ reconciled: 1, hasMore: false });
+    expect(await t.run((ctx) => ctx.db.get(laneId))).toMatchObject({
+      state: "idle",
+      pendingCount: 0,
+      minPriority: Number.MAX_SAFE_INTEGER,
     });
   });
 
@@ -1039,7 +1089,7 @@ describe("tenant scheduler integration", () => {
           )
           .unique()
       )
-    ).toMatchObject({ state: "paused", pendingCount: 5 });
+    ).toMatchObject({ state: "paused", pendingCount: 1 });
     await t.mutation(internal.tenantScheduler.resumeWorkspaceInternal, {
       workspaceId: owner.workspaceId,
     });
@@ -1055,7 +1105,7 @@ describe("tenant scheduler integration", () => {
           )
           .unique()
       )
-    ).toMatchObject({ state: "ready", pendingCount: 5 });
+    ).toMatchObject({ state: "ready", pendingCount: 1 });
 
     await t.run(async (ctx) => {
       const countsByLane = new Map<string, number>();
