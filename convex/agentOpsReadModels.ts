@@ -200,6 +200,32 @@ export const listWorkspaceAgentMemoryInventoryRecentPageInternal =
     },
   });
 
+export const getWorkspaceAgentMemoryInventoryRowsInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    memoryIds: v.array(v.string()),
+  },
+  handler: async (ctx, { workspaceId, memoryIds }) => {
+    const rows = await Promise.all(
+      memoryIds.slice(0, 50).map(
+        async (memoryId) =>
+          await ctx.db
+            .query("workspaceAgentMemoryInventory")
+            .withIndex("by_workspace_memory_id", (q) =>
+              q.eq("workspaceId", workspaceId).eq("memoryId", memoryId)
+            )
+            .first()
+      )
+    );
+
+    return rows
+      .filter(
+        (row): row is Doc<"workspaceAgentMemoryInventory"> => row !== null
+      )
+      .map(toWorkspaceAgentMemoryInventoryRecord);
+  },
+});
+
 export const listWorkspaceAgentMemoryInventoryImpactPageInternal =
   internalQuery({
     args: {
@@ -213,7 +239,11 @@ export const listWorkspaceAgentMemoryInventoryImpactPageInternal =
           q.eq("workspaceId", workspaceId)
         )
         .order("desc")
-        .paginate(paginationOpts);
+        .paginate({
+          ...paginationOpts,
+          maximumRowsRead: 300,
+          maximumBytesRead: 2_000_000,
+        });
 
       return {
         ...result,
@@ -260,7 +290,11 @@ export const listWorkspaceAgentMemoryInventoryConfidencePageInternal =
           q.eq("workspaceId", workspaceId)
         )
         .order("desc")
-        .paginate(paginationOpts);
+        .paginate({
+          ...paginationOpts,
+          maximumRowsRead: 300,
+          maximumBytesRead: 2_000_000,
+        });
 
       return {
         ...result,
