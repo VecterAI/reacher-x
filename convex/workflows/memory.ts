@@ -111,7 +111,8 @@ async function getMemoryEvaluationQueueWorkState(
 async function recoverStaleMemoryEvaluationQueue(
   ctx: MutationCtx,
   queue: Doc<"memoryEvaluationWorkspaceQueues">,
-  now: number
+  now: number,
+  enqueueToken: number
 ) {
   if (queue.workId && !ctx.db.normalizeId("tenantJobs", queue.workId)) {
     try {
@@ -173,7 +174,7 @@ async function recoverStaleMemoryEvaluationQueue(
     workId: undefined,
     activeEventId: undefined,
     lastError: "Recovered stale memory evaluation queue work",
-    lastEnqueuedAt: now,
+    lastEnqueuedAt: enqueueToken,
     updatedAt: now,
   });
 }
@@ -186,6 +187,7 @@ async function enqueueWorkspaceMemoryEvaluation(
     shouldEnqueue: boolean;
     reason: "no_pending" | "queued" | "running";
     eventId: Id<"memoryWorkflowEvents"> | null;
+    enqueueToken: number | null;
   } = await ctx.runMutation(
     internal.workflows.memory.prepareMemoryEvaluationQueueEnqueueInternal,
     {
@@ -197,6 +199,9 @@ async function enqueueWorkspaceMemoryEvaluation(
       enqueued: false as const,
       reason: prepared.reason,
     };
+  }
+  if (!prepared.eventId || prepared.enqueueToken === null) {
+    return { enqueued: false as const, reason: "missing_event" as const };
   }
 
   const workspace = await ctx.runQuery(internal.workspaces.getById, {
@@ -211,15 +216,30 @@ async function enqueueWorkspaceMemoryEvaluation(
     userId: workspace.userId,
     class: "background",
     priority: TENANT_JOB_PRIORITY.background,
-    idempotencyKey: `memory-evaluation:${String(workspaceId)}:${String(prepared.eventId)}`,
-    payload: { kind: "memory_evaluation", workspaceId },
+    idempotencyKey: `memory-evaluation:${String(workspaceId)}:${String(prepared.eventId)}:${String(prepared.enqueueToken)}`,
+    payload: {
+      kind: "memory_evaluation",
+      workspaceId,
+      enqueueToken: prepared.enqueueToken,
+    },
   });
   if (tenantRoute.route === "enforced") {
     const schedulerWorkId = String(tenantRoute.jobId);
-    await ctx.runMutation(
+    const attachment: { attached: boolean } = await ctx.runMutation(
       internal.workflows.memory.setMemoryEvaluationQueueWorkIdInternal,
-      { workspaceId, workId: schedulerWorkId }
+      {
+        workspaceId,
+        workId: schedulerWorkId,
+        enqueueToken: prepared.enqueueToken,
+      }
     );
+    if (!attachment.attached) {
+      await ctx.runMutation(
+        internal.tenantScheduler.cancelJobByExternalIdInternal,
+        { workId: schedulerWorkId }
+      );
+      return { enqueued: false as const, reason: "queued" as const };
+    }
     return { enqueued: true as const, workId: schedulerWorkId };
   }
 
@@ -228,6 +248,7 @@ async function enqueueWorkspaceMemoryEvaluation(
     internal.workflows.memory.runQueuedWorkspaceMemoryEvaluationInternal,
     {
       workspaceId,
+      enqueueToken: prepared.enqueueToken,
     },
     {
       onComplete:
@@ -237,13 +258,19 @@ async function enqueueWorkspaceMemoryEvaluation(
     }
   );
 
-  await ctx.runMutation(
+  const attachment: { attached: boolean } = await ctx.runMutation(
     internal.workflows.memory.setMemoryEvaluationQueueWorkIdInternal,
     {
       workspaceId,
       workId: String(workId),
+      enqueueToken: prepared.enqueueToken,
     }
   );
+
+  if (!attachment.attached) {
+    await memoryEvaluationPool.cancel(ctx, workId as WorkId);
+    return { enqueued: false as const, reason: "queued" as const };
+  }
 
   return {
     enqueued: true as const,
@@ -397,6 +424,7 @@ export const prepareMemoryEvaluationQueueEnqueueInternal = internalMutation({
       v.literal("running")
     ),
     eventId: v.union(v.id("memoryWorkflowEvents"), v.null()),
+    enqueueToken: v.union(v.number(), v.null()),
   }),
   handler: async (ctx, { workspaceId }) => {
     const queue = await getWorkspaceQueueRow(ctx, workspaceId);
@@ -404,9 +432,18 @@ export const prepareMemoryEvaluationQueueEnqueueInternal = internalMutation({
     const queueWorkState = queue
       ? await getMemoryEvaluationQueueWorkState(ctx, queue, now)
       : "unattached";
+    const recoveredEnqueueToken =
+      queue && queueWorkState === "stale"
+        ? Math.max(now, (queue.lastEnqueuedAt ?? 0) + 1)
+        : null;
 
-    if (queue && queueWorkState === "stale") {
-      await recoverStaleMemoryEvaluationQueue(ctx, queue, now);
+    if (queue && recoveredEnqueueToken !== null) {
+      await recoverStaleMemoryEvaluationQueue(
+        ctx,
+        queue,
+        now,
+        recoveredEnqueueToken
+      );
     }
 
     const nextPending = await getNextPendingMemoryWorkflowEvent(
@@ -423,6 +460,7 @@ export const prepareMemoryEvaluationQueueEnqueueInternal = internalMutation({
         shouldEnqueue: false as const,
         reason: queue.status,
         eventId: queue.activeEventId ?? nextPending?._id ?? null,
+        enqueueToken: queue.lastEnqueuedAt ?? null,
       };
     }
 
@@ -441,14 +479,25 @@ export const prepareMemoryEvaluationQueueEnqueueInternal = internalMutation({
         shouldEnqueue: false as const,
         reason: "no_pending" as const,
         eventId: null,
+        enqueueToken: null,
       };
     }
 
     if (queue && (queue.status === "queued" || queueWorkState === "stale")) {
+      const enqueueToken =
+        recoveredEnqueueToken ??
+        (queue.lastEnqueuedAt === undefined ? now : queue.lastEnqueuedAt);
+      if (queue.lastEnqueuedAt !== enqueueToken) {
+        await ctx.db.patch(queue._id, {
+          lastEnqueuedAt: enqueueToken,
+          updatedAt: now,
+        });
+      }
       return {
         shouldEnqueue: true as const,
         reason: "queued" as const,
         eventId: nextPending._id,
+        enqueueToken,
       };
     }
 
@@ -478,6 +527,7 @@ export const prepareMemoryEvaluationQueueEnqueueInternal = internalMutation({
       shouldEnqueue: true as const,
       reason: "queued" as const,
       eventId: nextPending._id,
+      enqueueToken: now,
     };
   },
 });
@@ -486,47 +536,54 @@ export const setMemoryEvaluationQueueWorkIdInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
     workId: v.string(),
+    enqueueToken: v.optional(v.number()),
   },
-  returns: v.null(),
-  handler: async (ctx, { workspaceId, workId }) => {
+  returns: v.object({ attached: v.boolean() }),
+  handler: async (ctx, { workspaceId, workId, enqueueToken }) => {
     const queue = await getWorkspaceQueueRow(ctx, workspaceId);
     const now = getCurrentUTCTimestamp();
 
     if (!queue) {
-      await ctx.db.insert("memoryEvaluationWorkspaceQueues", {
-        workspaceId,
-        status: "queued",
-        workId,
-        activeEventId: undefined,
-        lastError: undefined,
-        lastEnqueuedAt: now,
-        lastStartedAt: undefined,
-        lastFinishedAt: undefined,
-        updatedAt: now,
-      });
-      return null;
+      return { attached: false };
     }
 
-    await ctx.db.patch(queue._id, {
-      status: "queued",
-      workId,
-      updatedAt: now,
-    });
-    return null;
+    if (
+      (queue.status !== "queued" && queue.status !== "running") ||
+      (enqueueToken !== undefined && queue.lastEnqueuedAt !== enqueueToken) ||
+      (queue.workId !== undefined && queue.workId !== workId)
+    ) {
+      return { attached: false };
+    }
+
+    if (queue.status === "queued") {
+      await ctx.db.patch(queue._id, {
+        workId,
+        updatedAt: now,
+      });
+    }
+    return { attached: true };
   },
 });
 
 export const beginMemoryEvaluationQueueWorkInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
+    enqueueToken: v.optional(v.number()),
+    workId: v.optional(v.string()),
   },
   returns: v.object({
     eventId: v.union(v.id("memoryWorkflowEvents"), v.null()),
     workId: v.union(v.string(), v.null()),
   }),
-  handler: async (ctx, { workspaceId }) => {
+  handler: async (
+    ctx,
+    { workspaceId, enqueueToken, workId: expectedWorkId }
+  ) => {
     const queue = await getWorkspaceQueueRow(ctx, workspaceId);
-    if (!queue) {
+    if (
+      !queue ||
+      (enqueueToken !== undefined && queue.lastEnqueuedAt !== enqueueToken)
+    ) {
       return {
         eventId: null,
         workId: null,
@@ -563,7 +620,9 @@ export const beginMemoryEvaluationQueueWorkInternal = internalMutation({
     }
 
     const workId =
-      queue.workId ?? `memory-eval:${workspaceId}:${nextPending._id}`;
+      queue.workId ??
+      expectedWorkId ??
+      `memory-eval:${workspaceId}:${nextPending._id}`;
 
     if (isPriorityMemoryEvaluationEvent(nextPending)) {
       console.warn("[MemoryEvaluationQueue] Prioritizing repair event", {
@@ -730,15 +789,19 @@ export const handleMemoryEvaluationQueueWorkCompletionInternal =
 export const runQueuedWorkspaceMemoryEvaluationInternal = internalAction({
   args: {
     workspaceId: v.id("workspaces"),
+    enqueueToken: v.optional(v.number()),
+    workId: v.optional(v.string()),
   },
   handler: async (
     ctx,
-    { workspaceId }
+    { workspaceId, enqueueToken, workId }
   ): Promise<MemoryEvaluationQueueRunResult> => {
     const queueWork = await ctx.runMutation(
       internal.workflows.memory.beginMemoryEvaluationQueueWorkInternal,
       {
         workspaceId,
+        enqueueToken,
+        workId,
       }
     );
 

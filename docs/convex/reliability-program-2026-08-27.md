@@ -731,3 +731,32 @@ This hotfix does not close the remaining reliability program. The next focused
 phases remain: eliminate measured `prospectSummaries` batch contention, finish
 bounded Action Retrier historical cleanup, observe scheduler admission latency,
 and only then prepare a separate evidence-backed legacy cleanup PR.
+
+### Post-deployment queue gate and enqueue-generation follow-up
+
+The read-only gate after PR #47 deployed found no duplicate or running evaluator
+runs and a healthy tenant scheduler: enforced mode, an empty queue, 36/36 tenant
+slots free, no expired lease, unresolved enqueue failure, or pool drift. Convex
+Insights also showed no newer scheduler OCC, prospect-batch bytes-read,
+`prospectSummaries` OCC, or Action Retrier cleanup event than the prior snapshot.
+
+The affected workspace was not recovered, however. Its queue had been reclaimed
+and prepared again, but the scheduler idempotency key still used only workspace
+and event. Enqueue therefore returned the historical cancelled `tenantJobs` row,
+and the queue attached that terminal ID again. The failure was silent in
+evaluator-run telemetry because no evaluator action started.
+
+The local follow-up gives every prepared queue generation a stable numeric token
+stored in the existing `lastEnqueuedAt` field. Concurrent retries reuse that
+token and converge on one scheduler job; stale recovery advances it monotonically
+and therefore cannot reuse the cancelled generation. The token travels in the
+optional memory-evaluation payload for widen compatibility. Queue attachment and
+worker start compare it before changing state, so a delayed older enqueue cannot
+overwrite or execute a newer generation. A rejected duplicate is cancelled
+best-effort. No schema change or data backfill is required.
+
+Rollout remains code-only: deploy first, confirm the existing stale pointer is
+replaced by a different queued/running job, then require one evaluator run for
+the selected event and no duplicate run, scheduler failure, or new Insights
+regression. Do not start the `prospectSummaries` contention change until this
+gate passes, because combining the two fixes would make rollback ambiguous.

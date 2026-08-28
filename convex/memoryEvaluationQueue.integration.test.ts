@@ -7,6 +7,32 @@ import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+const WORKPOOL_NAMES = [
+  "qualificationPool",
+  "enrichmentPool",
+  "previewQualificationPool",
+  "previewEnrichmentPool",
+  "outreachPlanPool",
+  "memoryEvaluationPool",
+  "tenantExecutionPool",
+] as const;
+
+async function registerSchedulerComponents(t: ReturnType<typeof convexTest>) {
+  const workpoolPath = ["@convex-dev/workpool", "test"].join("/");
+  const batchWorkerPath = ["@convex-dev/batch-worker", "test"].join("/");
+  const rateLimiterPath = ["@convex-dev/rate-limiter", "test"].join("/");
+  const [workpoolTest, batchWorkerTest, rateLimiterTest] = await Promise.all([
+    import(workpoolPath),
+    import(batchWorkerPath),
+    import(rateLimiterPath),
+  ]);
+
+  for (const name of WORKPOOL_NAMES) {
+    workpoolTest.default.register(t, name);
+  }
+  batchWorkerTest.default.register(t, "batchWorker");
+  rateLimiterTest.default.register(t, "rateLimiter");
+}
 
 async function seedWorkspace(t: ReturnType<typeof convexTest>, suffix: string) {
   return await t.run(async (ctx) => {
@@ -60,8 +86,9 @@ async function insertTenantJob(
   args: {
     workspaceId: Id<"workspaces">;
     userId: Id<"users">;
-    status: "queued" | "running" | "succeeded";
+    status: "queued" | "running" | "succeeded" | "cancelled";
     suffix: string;
+    idempotencyKey?: string;
   }
 ) {
   return await t.run(async (ctx) => {
@@ -85,14 +112,17 @@ async function insertTenantJob(
       kind: "memory_evaluation",
       status: args.status,
       priority: 50,
-      idempotencyKey: `memory-queue-job-${args.suffix}`,
+      idempotencyKey: args.idempotencyKey ?? `memory-queue-job-${args.suffix}`,
       payload: {
         kind: "memory_evaluation",
         workspaceId: args.workspaceId,
       },
       queuedAt: 1,
       startedAt: args.status === "running" ? 2 : undefined,
-      completedAt: args.status === "succeeded" ? 3 : undefined,
+      completedAt:
+        args.status === "succeeded" || args.status === "cancelled"
+          ? 3
+          : undefined,
       attemptCount: args.status === "queued" ? 0 : 1,
       updatedAt: 3,
     });
@@ -204,6 +234,7 @@ describe("memory evaluation workspace queue", () => {
       shouldEnqueue: true,
       reason: "queued",
       eventId,
+      enqueueToken: expect.any(Number),
     });
     expect(
       await t.mutation(
@@ -259,6 +290,7 @@ describe("memory evaluation workspace queue", () => {
       shouldEnqueue: false,
       reason: "running",
       eventId,
+      enqueueToken: null,
     });
     const state = await t.run(async (ctx) => ({
       queue: await ctx.db
@@ -319,6 +351,7 @@ describe("memory evaluation workspace queue", () => {
       shouldEnqueue: true,
       reason: "queued",
       eventId,
+      enqueueToken: expect.any(Number),
     });
     const state = await t.run(async (ctx) => ({
       event: await ctx.db.get("memoryWorkflowEvents", eventId),
@@ -336,5 +369,136 @@ describe("memory evaluation workspace queue", () => {
       status: "failed",
       error: "Recovered after stale memory evaluation queue work",
     });
+  });
+
+  test("creates a new scheduler job after a cancelled pointer and converges retries", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-29T00:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const workspace = await seedWorkspace(t, "cancelled-reenqueue");
+    const eventId = await insertEvent(t, {
+      workspaceId: workspace.workspaceId,
+      suffix: "cancelled-reenqueue-event",
+      occurredAt: 1,
+    });
+    const legacyIdempotencyKey = `memory-evaluation:${String(workspace.workspaceId)}:${String(eventId)}`;
+    const cancelledJobId = await insertTenantJob(t, {
+      ...workspace,
+      status: "cancelled",
+      suffix: "cancelled-reenqueue",
+      idempotencyKey: legacyIdempotencyKey,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("memoryEvaluationWorkspaceQueues", {
+        workspaceId: workspace.workspaceId,
+        status: "queued",
+        workId: String(cancelledJobId),
+        lastEnqueuedAt: 1,
+        updatedAt: 1,
+      });
+    });
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+
+    const first = await t.action(
+      internal.workflows.memory.enqueueWorkspaceMemoryEvaluationInternal,
+      { workspaceId: workspace.workspaceId }
+    );
+    expect(first).toMatchObject({ enqueued: true });
+    expect(first.enqueued && first.workId).not.toBe(String(cancelledJobId));
+
+    const retry = await t.action(
+      internal.workflows.memory.enqueueWorkspaceMemoryEvaluationInternal,
+      { workspaceId: workspace.workspaceId }
+    );
+    expect(retry).toEqual({ enqueued: false, reason: "queued" });
+
+    const state = await t.run(async (ctx) => ({
+      jobs: await ctx.db.query("tenantJobs").collect(),
+      queue: await ctx.db
+        .query("memoryEvaluationWorkspaceQueues")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", workspace.workspaceId)
+        )
+        .unique(),
+    }));
+    expect(state.jobs).toHaveLength(2);
+    const replacement = state.jobs.find((job) => job._id !== cancelledJobId);
+    expect(replacement?.idempotencyKey).toBe(
+      `${legacyIdempotencyKey}:${Date.parse("2026-08-29T00:00:00.000Z")}`
+    );
+    expect(state.queue?.workId).toBe(String(replacement?._id));
+  });
+
+  test("rejects delayed attachment and execution from an older enqueue generation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-29T00:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const workspace = await seedWorkspace(t, "generation-guard");
+    const eventId = await insertEvent(t, {
+      workspaceId: workspace.workspaceId,
+      suffix: "generation-guard-event",
+      occurredAt: 1,
+    });
+    const prepared = await t.mutation(
+      internal.workflows.memory.prepareMemoryEvaluationQueueEnqueueInternal,
+      { workspaceId: workspace.workspaceId }
+    );
+    if (prepared.enqueueToken === null) {
+      throw new Error("Expected an enqueue token");
+    }
+    const newerToken = prepared.enqueueToken + 1;
+    await t.run(async (ctx) => {
+      const queue = await ctx.db
+        .query("memoryEvaluationWorkspaceQueues")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", workspace.workspaceId)
+        )
+        .unique();
+      if (!queue) throw new Error("Expected queue row");
+      await ctx.db.patch(queue._id, { lastEnqueuedAt: newerToken });
+    });
+
+    expect(
+      await t.mutation(
+        internal.workflows.memory.setMemoryEvaluationQueueWorkIdInternal,
+        {
+          workspaceId: workspace.workspaceId,
+          workId: "old-work",
+          enqueueToken: prepared.enqueueToken,
+        }
+      )
+    ).toEqual({ attached: false });
+    expect(
+      await t.mutation(
+        internal.workflows.memory.beginMemoryEvaluationQueueWorkInternal,
+        {
+          workspaceId: workspace.workspaceId,
+          enqueueToken: prepared.enqueueToken,
+        }
+      )
+    ).toEqual({ eventId: null, workId: null });
+
+    expect(
+      await t.mutation(
+        internal.workflows.memory.setMemoryEvaluationQueueWorkIdInternal,
+        {
+          workspaceId: workspace.workspaceId,
+          workId: "new-work",
+          enqueueToken: newerToken,
+        }
+      )
+    ).toEqual({ attached: true });
+    expect(
+      await t.mutation(
+        internal.workflows.memory.beginMemoryEvaluationQueueWorkInternal,
+        {
+          workspaceId: workspace.workspaceId,
+          enqueueToken: newerToken,
+        }
+      )
+    ).toEqual({ eventId, workId: "new-work" });
   });
 });

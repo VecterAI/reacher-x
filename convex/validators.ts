@@ -1668,6 +1668,7 @@ export const tenantJobPayloadValidator = v.union(
   v.object({
     kind: v.literal("memory_evaluation"),
     workspaceId: v.id("workspaces"),
+    enqueueToken: v.optional(v.number()),
   })
 );
 
