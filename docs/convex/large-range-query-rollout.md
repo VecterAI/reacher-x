@@ -115,3 +115,30 @@ gate before step 5 is authorized.
 8. Handle legacy tables, indexes, compatibility endpoints, and component state
    only in the separately approved cleanup phase after proving reads and writes
    are absent.
+
+### Production Aggregate rollout — 2026-08-28
+
+The cursor-pagination production gate passed before the first Aggregate row was
+created. The workspace-scoped rollout then verified 12 of 34 production
+workspaces with 25-row backfill transactions and 100-row verification
+transactions. Every migrated workspace reached exact source/Aggregate bin
+parity; the largest workspace verified 61,247 eligible summaries without a
+global prospect scan.
+
+The only originally running workspace was paused for maintenance, its active
+workflow and six queued race-window jobs were cancelled, and its 28 monitors
+were paused before migration. After exact verification, a new workflow was
+started, all 28 monitors were resumed, and the scheduler returned to enforced
+mode with 36/36 free slots, no queue, expired lease, drift, or unresolved
+enqueue failure. Workspaces that were already paused remained paused.
+
+The remaining 22 workspaces have never started prospecting and therefore have
+no workflow status or workflow ID. Seventeen are empty; five contain 70 legacy
+or setup-summary rows in total, with zero eligible scored summaries. The
+deployed migration correctly rejected this previously unhandled state instead
+of mutating the workspace status. The follow-up widens only the migration
+eligibility check: a non-deleting workspace with neither a workflow status nor
+a workflow ID may run the same bounded migration, while running workspaces and
+inconsistent workflow-ID-without-status rows remain rejected. Production
+rollout of those 22 workspaces remains pending deployment of that reviewed
+follow-up.

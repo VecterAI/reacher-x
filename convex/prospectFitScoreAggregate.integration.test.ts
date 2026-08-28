@@ -348,7 +348,83 @@ describe("fit-score Aggregate migration", () => {
     });
 
     await expect(t.mutation(startMigration, { workspaceId })).rejects.toThrow(
-      "requires an existing, non-deleting workspace with prospecting paused or stopped"
+      "requires an existing, non-deleting workspace that is inactive or has never started prospecting"
+    );
+  });
+
+  test("verifies a workspace that has never started prospecting", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 7, 28, 11));
+    const t = convexTest({ schema, modules, transactionLimits: true });
+    await registerAggregate(t);
+    const workspaceId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "fit-score-uninitialized-owner",
+        email: "fit-score-uninitialized@example.com",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Uninitialized Aggregate migration",
+        description: "Has never started prospecting",
+        isDefault: true,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "setup_preview",
+        externalId: "uninitialized-preview",
+        data: {},
+        status: "new",
+        prospectType: "individual",
+        qualificationStatus: "qualified",
+        qualificationScore: 95,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      const prospect = await ctx.db.get("prospects", prospectId);
+      if (!prospect) throw new Error("Failed to seed preview prospect");
+      await ctx.db.insert(
+        "prospectSummaries",
+        buildProspectSummaryRecord(prospect)
+      );
+      return workspaceId;
+    });
+
+    const start = await t.mutation(startMigration, { workspaceId });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const rollout = await t.run(async (ctx) =>
+      ctx.db.get("fitScoreAggregateRollouts", start.rolloutId)
+    );
+    expect(rollout).toMatchObject({
+      status: "verified",
+      backfilledCount: 0,
+      verifiedSourceCount: 0,
+      expectedBinCounts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      aggregateBinCounts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    });
+  });
+
+  test("rejects an uninitialized status with an active workflow id", async () => {
+    const t = convexTest(schema, modules);
+    await registerAggregate(t);
+    const workspaceId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "fit-score-inconsistent-owner",
+        email: "fit-score-inconsistent@example.com",
+      });
+      return await ctx.db.insert("workspaces", {
+        userId,
+        name: "Inconsistent workspace",
+        description: "Workflow id without a status",
+        isDefault: true,
+        prospectingWorkflowId: "active-workflow-id",
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+    });
+
+    await expect(t.mutation(startMigration, { workspaceId })).rejects.toThrow(
+      "requires an existing, non-deleting workspace that is inactive or has never started prospecting"
     );
   });
 });

@@ -51,13 +51,19 @@ function clampBatchSize(
 function isWorkspaceSafeForMigration(
   workspace: Pick<
     Doc<"workspaces">,
-    "deletionWorkflowId" | "prospectingWorkflowStatus"
+    | "deletionWorkflowId"
+    | "prospectingWorkflowId"
+    | "prospectingWorkflowStatus"
   >
 ) {
+  const hasNeverStartedProspecting =
+    workspace.prospectingWorkflowStatus === undefined &&
+    workspace.prospectingWorkflowId === undefined;
   return (
     workspace.deletionWorkflowId === undefined &&
-    workspace.prospectingWorkflowStatus !== undefined &&
-    workspace.prospectingWorkflowStatus !== "running"
+    (hasNeverStartedProspecting ||
+      (workspace.prospectingWorkflowStatus !== undefined &&
+        workspace.prospectingWorkflowStatus !== "running"))
   );
 }
 
@@ -78,7 +84,7 @@ export const startWorkspaceMigrationInternal = internalMutation({
     const workspace = await ctx.db.get("workspaces", args.workspaceId);
     if (!workspace || !isWorkspaceSafeForMigration(workspace)) {
       throw new Error(
-        "Fit-score Aggregate migration requires an existing, non-deleting workspace with prospecting paused or stopped"
+        "Fit-score Aggregate migration requires an existing, non-deleting workspace that is inactive or has never started prospecting"
       );
     }
 
@@ -180,7 +186,7 @@ export const backfillWorkspacePageInternal = internalMutation({
     if (!workspace || !isWorkspaceSafeForMigration(workspace)) {
       await ctx.db.patch(args.rolloutId, {
         status: "failed",
-        error: "Workspace started running or deletion began during backfill",
+        error: "Workspace became active or deletion began during backfill",
         updatedAt: getCurrentUTCTimestamp(),
       });
       return { status: "failed", processed: 0 };
@@ -264,8 +270,7 @@ export const verifyWorkspacePageInternal = internalMutation({
     if (!workspace || !isWorkspaceSafeForMigration(workspace)) {
       await ctx.db.patch(args.rolloutId, {
         status: "failed",
-        error:
-          "Workspace started running or deletion began during verification",
+        error: "Workspace became active or deletion began during verification",
         updatedAt: getCurrentUTCTimestamp(),
       });
       return { status: "failed", processed: 0 };
