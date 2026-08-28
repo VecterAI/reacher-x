@@ -64,7 +64,7 @@ against the daily source, and gated before read cutover.
   millisecond of the selected window.
 - 31/32-day and 180/181-day granularity boundaries are covered.
 - Existing analytics and usage exactness tests still pass.
-- The full Convex suite passes with 541 tests.
+- The full Convex suite passes with 549 tests after rebasing on deployed PR #42.
 
 Production largest-workspace verification cannot run until this code is merged
 and deployed. No production control or data was changed while preparing it.

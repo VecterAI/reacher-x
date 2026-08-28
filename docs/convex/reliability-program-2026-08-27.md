@@ -543,6 +543,22 @@ event is newer than the pre-fix incident window.
   build is the proportionate React verification; no migration or backfill is
   required for deployment.
 
+### Focused stabilization production checkpoint — 2026-08-28
+
+PR #42 deployed successfully before the read-only checkpoint at 11:33 UTC. The
+deployment inherited a qualification backlog, but the queue drained from 459
+jobs to zero by 11:39 UTC without a control mutation. All 546 jobs queued in the
+rollout window succeeded; none failed or were cancelled. The final snapshot had
+zero queued/running jobs, 36/36 free tenant slots, zero expired leases, zero
+unresolved enqueue failures, no pool/mode drift, and no ready lane left behind.
+
+Convex Insights contained no scheduler OCC or `createProspectsBatch` bytes-read
+event newer than the deployment. The historical admission sample still includes
+the pre-deploy/backlog delay and therefore is not evidence that the long-term
+latency gate has passed. The next natural post-deploy burst must still meet the
+documented p95 below 30 seconds, max below 60 seconds, and zero-permanent-error
+gate before the scheduler stabilization work is considered fully observed.
+
 ## Cleanup candidates — no deletion in this phase
 
 The 2026-08-28 static call-site audit produced three different outcomes; they
@@ -621,3 +637,10 @@ count/histogram with a measured 18.6 MB failure. Persisted weekly/monthly tables
 remain gated on post-deployment evidence: current production history is too
 short to justify their dual-write and backfill risk before the bounded snapshot
 canary is measured.
+
+Local verification after rebasing this work on deployed PR #42 passed 109
+Convex test files / 549 tests, TypeScript, strict Oxlint, changed-file ESLint,
+`git diff --check`, and the 74-route production build. React Doctor reported no
+blocking changed-dashboard issue; the flagged sequential waits are the bounded
+transaction/export sequencing that prevents a wide report from recreating a
+read burst.
