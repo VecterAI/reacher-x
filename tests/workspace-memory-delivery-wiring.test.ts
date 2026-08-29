@@ -35,16 +35,19 @@ test("every downstream generation surface consumes shared memory context", async
 });
 
 test("generated downstream output is checked against the same operator instructions", async () => {
-  const [memory, autoPlan, adaptive, generatePlan, refinePlan] =
+  const [memory, qualification, autoPlan, adaptive, generatePlan, refinePlan] =
     await Promise.all([
       source("convex/memory.ts"),
+      source("convex/lib/qualificationCore.ts"),
       source("convex/autoPlanActions.ts"),
       source("convex/adaptiveOutreachActions.ts"),
       source("convex/agents/outreach/tools/generatePlan.ts"),
       source("convex/agents/outreach/tools/refinePlan.ts"),
     ]);
   assert.match(memory, /evaluateWorkspaceMemoryCompliance/);
+  assert.match(qualification, /runWithWorkspaceMemoryCompliance/);
   assert.match(autoPlan, /workspaceMemoryContext\.complianceInstructions/);
+  assert.match(autoPlan, /runWithWorkspaceMemoryCompliance/);
   assert.match(adaptive, /workspaceMemoryContext\.complianceInstructions/);
   assert.match(generatePlan, /evaluateWorkspaceMemoryComplianceInternal/);
   assert.match(refinePlan, /evaluateWorkspaceMemoryComplianceInternal/);
