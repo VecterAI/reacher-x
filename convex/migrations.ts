@@ -295,8 +295,10 @@ export const backfillCanonicalWorkspaceMemories = migrations.define({
   migrateOne: async (ctx, inventory) => {
     const existing = await ctx.db
       .query("workspaceMemories")
-      .withIndex("by_legacy_memory_id", (q) =>
-        q.eq("legacyMemoryId", inventory.memoryId)
+      .withIndex("by_workspace_and_legacy_memory_id", (q) =>
+        q
+          .eq("workspaceId", inventory.workspaceId)
+          .eq("legacyMemoryId", inventory.memoryId)
       )
       .first();
     if (existing) {

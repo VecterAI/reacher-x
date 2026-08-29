@@ -906,3 +906,45 @@ eight-slot dispatch, stale compatibility counters, A=100/B=C=1 fairness, and
 production build also passed. Rollout is code-only: deploy after review, then
 require the next natural burst to keep admission p95 below 30 seconds and max
 below 60 seconds with no permanent scheduler OCC, expired lease, or slot drift.
+
+## Post-deployment baseline and final cleanup audit — 2026-08-29
+
+PR #51 deployed as merge commit `294357f71cf7a47ac4c3ab98d3af29bb8e7e5f64`.
+The first read-only baseline after deployment was drained: enforced mode, zero
+queued or running jobs, 36/36 tenant slots free, Workflow parallelism 64,
+tenant-execution parallelism 36, and no expired lease, unresolved enqueue
+failure, or configuration drift. The latest 1,000-job sample at that cutoff
+still contained work completed before the baseline, so its p95 of 72,789 ms and
+maximum of 78,830 ms cannot be used as a post-deploy acceptance result. The
+next natural burst remains the acceptance gate: p95 below 30 seconds, maximum
+below 60 seconds, and no permanent scheduler error.
+
+The Action Retrier historical cleanup is complete. An indexed, bounded
+component query found zero terminal runs older than the seven-day retention
+window. Insights still contains only the three historical bytes-read failures,
+newest 2026-08-28 13:13:24 UTC; no failure was added by the bounded drain.
+
+The cleanup audit paired repository reachability with 50,000 recent production
+function executions and bounded component/table checks. This commit removes
+only artifacts whose reads and writes are absent:
+
+- `setupSessions:markWorkflowStartedInternal`, superseded by the atomic setup
+  workflow claim, had no repository caller and no execution in the inspected
+  production window;
+- `PREVIEW_BATCH_LIMITS.previewProspectWriteBatch` had no reader after preview
+  persistence batching was centralized;
+- `tenantSchedulerSlots.by_job` and
+  `workspaceMemories.by_workspace_and_prospect_and_status` had no query site;
+- the canonical-memory migration now uses the live workspace-scoped legacy-ID
+  index, allowing the otherwise unused global `by_legacy_memory_id` index to be
+  removed without changing migration behavior.
+
+No document, table, component, or rollback path is removed. Production still
+contains canonical memories with legacy IDs and legacy memory-inventory rows,
+so the workspace-scoped compatibility reader remains required. The six legacy
+Workpools are paused and empty, but their modules and scheduler configuration
+remain active rollback paths. Scheduler `legacy`/`shadow` modes, workspace
+overrides, persisted plan-batch compatibility, and lane `runningCount` also
+remain until an explicit end-of-rollback-window decision. Removing
+`runningCount` requires a separate widen-migrate-narrow data change because the
+field is still present on production lane rows.
