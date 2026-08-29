@@ -933,11 +933,18 @@ only artifacts whose reads and writes are absent:
   production window;
 - `PREVIEW_BATCH_LIMITS.previewProspectWriteBatch` had no reader after preview
   persistence batching was centralized;
-- `tenantSchedulerSlots.by_job` and
-  `workspaceMemories.by_workspace_and_prospect_and_status` had no query site;
 - the canonical-memory migration now uses the live workspace-scoped legacy-ID
-  index, allowing the otherwise unused global `by_legacy_memory_id` index to be
-  removed without changing migration behavior.
+  index instead of the global `by_legacy_memory_id` index.
+
+The audit also proved that `tenantSchedulerSlots.by_job`,
+`workspaceMemories.by_workspace_and_prospect_and_status`, and the global
+`workspaceMemories.by_legacy_memory_id` have no remaining query site. They stay
+defined for this deployment because Convex classifies removing the two memory
+indexes across 106,480 documents as a large-index deletion requiring an
+explicit production confirmation flag. PR #52's first deployment attempt was
+therefore blocked before any production change. Index removal is deferred to a
+separate explicitly approved operation; the documents themselves are not
+cleanup candidates.
 
 No document, table, component, or rollback path is removed. Production still
 contains canonical memories with legacy IDs and legacy memory-inventory rows,
