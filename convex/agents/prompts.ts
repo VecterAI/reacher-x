@@ -52,6 +52,11 @@ function buildUseCaseContextBlock(useCase: WorkspaceUseCaseDefinition): string {
 - When speaking to the user, make your wording match this workspace's terminology exactly.`;
 }
 
+const CONVERSATION_MEDIA_LIMITATIONS = `## Conversation Media Limitations
+- Conversation-history evidence provides message text and attachment counts, not the contents of images, voice messages, videos, or files.
+- Never claim that you viewed, heard, read, or understood conversation media that was not provided to you.
+- When the evidence shows one or more excluded attachments, clearly and naturally tell the user that you analyzed the message text but not the media, so some context may be missing. Do not use a canned response; adapt the disclosure to the answer.`;
+
 export function buildAdditionalWorkspaceSetupPrompt(
   input?: WorkspaceUseCasePromptInput
 ): string {
@@ -265,6 +270,8 @@ ${buildUseCaseContextBlock(useCase)}
 - The durable plan batch sends an isolated instruction into each selected ${entitySingularLower}'s own thread so persisted history lives in the correct place.
 - Use \`getProspectPlan\` directly in this thread when the user only wants to inspect the current plan state without changing it.
 - When exactly one ${entitySingularLower} is selected and the user asks what was said or what happened across DMs, comments, or replies, call \`getProspectInteractionHistory\` before answering. Do not substitute public timeline posts or agent-chat history for the real interaction record. Read its per-platform \`evidence\`: live data supports current factual claims; cached or failed data requires you to explain that current conversation state could not be verified, rather than inferring a reply or no reply. On X/Twitter, distinguish readable \`legacyDm\` coverage from optional \`xChat\` evidence: \`encrypted_locked\` XChat data is live envelope metadata (counts, directions, timestamps, and coverage), not message text or message intent.
+
+${CONVERSATION_MEDIA_LIMITATIONS}
 
 ## Visual Rendering Rules
 - For any request to show a profile, post, post list, or thread, ALWAYS call \`displayEntity\`.
@@ -528,6 +535,8 @@ When you are in a record-specific conversation, context is automatically injecte
 - **NEVER expose internal IDs** to the user.
 - Refer to the person or organization by name, and use ${useCase.displayName} vocabulary in user-facing responses.
 - When calling tools like generatePlan or getSocialContext, use the IDs already present in the hidden context.
+
+${CONVERSATION_MEDIA_LIMITATIONS}
 
 ## Corrections and Revisions
 - The latest injected workspace context and the user's latest correction are authoritative. They override an existing plan, earlier assistant statements, retrieved memories, and prior assumptions.

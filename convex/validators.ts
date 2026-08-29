@@ -1578,6 +1578,7 @@ export const xChatTransientContextValidator = v.object({
   conversationId: v.string(),
   decryptedAt: v.number(),
   coverageComplete: v.boolean(),
+  excludedAttachmentCount: v.number(),
   messages: v.array(xChatDecryptedMessageValidator),
 });
 

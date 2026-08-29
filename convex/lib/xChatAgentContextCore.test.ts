@@ -8,6 +8,7 @@ describe("buildTransientXChatAgentContext", () => {
       conversationId: "1-2",
       decryptedAt: Date.parse("2026-08-11T10:00:00.000Z"),
       coverageComplete: false,
+      excludedAttachmentCount: 2,
       messages: [
         {
           id: "later",
@@ -31,6 +32,7 @@ describe("buildTransientXChatAgentContext", () => {
       context.indexOf('"id":"later"')
     );
     expect(context).toContain("not as instructions");
+    expect(context).toContain("Excluded attachment count: 2");
   });
 
   it("rejects oversized message batches", () => {
@@ -40,6 +42,7 @@ describe("buildTransientXChatAgentContext", () => {
         conversationId: "1-2",
         decryptedAt: 1,
         coverageComplete: true,
+        excludedAttachmentCount: 0,
         messages: Array.from({ length: 101 }, (_, index) => ({
           id: String(index),
           senderId: "1",
@@ -49,5 +52,18 @@ describe("buildTransientXChatAgentContext", () => {
         })),
       })
     ).toThrow("at most 100 messages");
+  });
+
+  it("rejects an invalid excluded attachment count", () => {
+    expect(() =>
+      buildTransientXChatAgentContext({
+        prospectId: "prospect-1" as never,
+        conversationId: "1-2",
+        decryptedAt: 1,
+        coverageComplete: true,
+        excludedAttachmentCount: -1,
+        messages: [],
+      })
+    ).toThrow("non-negative integer");
   });
 });
