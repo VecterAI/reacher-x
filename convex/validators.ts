@@ -1339,6 +1339,10 @@ export const qualificationFailureValidator = v.object({
   code: v.string(),
   message: v.string(),
   attemptCount: v.optional(v.number()),
+  /** Number of completed durable qualification runs for the same failure. */
+  workflowAttemptCount: v.optional(v.number()),
+  /** Earliest time the single bounded automatic retry may start. */
+  nextRetryAt: v.optional(v.number()),
   failedAt: v.number(),
 });
 
@@ -2607,6 +2611,7 @@ export const autoPlanFailureCodeValidator = v.union(
   v.literal("reconnect_required"),
   v.literal("writing_style_unavailable"),
   v.literal("grounding_unavailable"),
+  v.literal("provider_data_unavailable"),
   v.literal("provider_balance_unavailable"),
   v.literal("provider_schema_unsupported"),
   v.literal("context_too_large"),

@@ -3,26 +3,28 @@
 // Docs: https://openrouter.ai/docs
 
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { generateText, type JSONValue } from "ai";
+import {
+  generateText,
+  NoObjectGeneratedError,
+  Output,
+  type JSONValue,
+} from "ai";
 import { z } from "zod";
 import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { env } from "../_generated/server";
 import { getConfiguredModel } from "./modelConfigHelpers";
+import {
+  combineStructuredGenerationErrors,
+  getStructuredAttemptProviderOptions,
+  StructuredGenerationError,
+  type OpenRouterProviderOptions,
+  type OpenRouterProviderRouting,
+  type StructuredGenerationAttempt,
+} from "./structuredOutputCore";
 
-type OpenRouterProviderRouting = Record<string, JSONValue> & {
-  only?: string[];
-  order?: string[];
-  allow_fallbacks?: boolean;
-  require_parameters?: boolean;
-  sort?: "price" | "throughput" | "latency";
-};
-
-export type OpenRouterProviderOptions = {
-  openrouter: Record<string, JSONValue> & {
-    provider: OpenRouterProviderRouting;
-  };
-};
+export type { OpenRouterProviderOptions } from "./structuredOutputCore";
+export { StructuredGenerationError } from "./structuredOutputCore";
 
 // ============================================================================
 // Provider Factory
@@ -665,6 +667,10 @@ interface RobustGenerateObjectOptions<T> {
   initialDelayMs?: number;
   /** fast/reasoning resolve through the active local routing preset */
   routing?: ModelRouting;
+  /** Optional one-shot stronger route after the primary route is exhausted. */
+  fallbackRouting?: ModelRouting;
+  /** Ask the provider for schema-constrained output and validate it in SDK. */
+  nativeStructuredOutput?: boolean;
   /** Optional repair step before Zod validation for known provider edge cases. */
   normalizeParsed?: (value: unknown) => unknown;
   /**
@@ -689,6 +695,8 @@ export async function robustGenerateObject<T>({
   maxRetries = 2,
   initialDelayMs = 500,
   routing = "reasoning",
+  fallbackRouting,
+  nativeStructuredOutput = false,
   normalizeParsed,
   failureLogLevel = "error",
 }: RobustGenerateObjectOptions<T>): Promise<{
@@ -709,6 +717,7 @@ export async function robustGenerateObject<T>({
         maxRetries: 1,
         initialDelayMs,
         routing,
+        nativeStructuredOutput,
         normalizeParsed,
         failureLogLevel,
       });
@@ -721,7 +730,57 @@ export async function robustGenerateObject<T>({
         errorMessage
       );
 
-      return robustGenerateObject({
+      try {
+        return await robustGenerateObject({
+          operation,
+          schema,
+          system,
+          prompt,
+          temperature,
+          maxOutputTokens,
+          maxRetries: 1,
+          initialDelayMs,
+          routing: "reasoning",
+          fallbackRouting,
+          nativeStructuredOutput,
+          normalizeParsed,
+          failureLogLevel,
+        });
+      } catch (fallbackError) {
+        throw combineStructuredGenerationErrors({
+          operation,
+          errors: [error, fallbackError],
+        });
+      }
+    }
+  }
+
+  try {
+    return await generateTextWithJsonParse({
+      operation,
+      schema,
+      system,
+      prompt,
+      temperature,
+      maxOutputTokens,
+      maxRetries,
+      initialDelayMs,
+      routing,
+      nativeStructuredOutput,
+      normalizeParsed,
+      failureLogLevel,
+    });
+  } catch (error) {
+    if (!fallbackRouting || fallbackRouting === routing) {
+      throw error;
+    }
+
+    logJsonAttemptFailure(
+      failureLogLevel,
+      `[AI] ${operation} ${routing} structured generation failed; falling back to ${fallbackRouting} route`
+    );
+    try {
+      return await generateTextWithJsonParse({
         operation,
         schema,
         system,
@@ -730,26 +789,18 @@ export async function robustGenerateObject<T>({
         maxOutputTokens,
         maxRetries: 1,
         initialDelayMs,
-        routing: "reasoning",
+        routing: fallbackRouting,
+        nativeStructuredOutput,
         normalizeParsed,
         failureLogLevel,
       });
+    } catch (fallbackError) {
+      throw combineStructuredGenerationErrors({
+        operation,
+        errors: [error, fallbackError],
+      });
     }
   }
-
-  return generateTextWithJsonParse({
-    operation,
-    schema,
-    system,
-    prompt,
-    temperature,
-    maxOutputTokens,
-    maxRetries,
-    initialDelayMs,
-    routing,
-    normalizeParsed,
-    failureLogLevel,
-  });
 }
 
 /**
@@ -766,6 +817,7 @@ export async function generateTextWithJsonParse<T>({
   maxRetries = 2,
   initialDelayMs = 500,
   routing = "fast",
+  nativeStructuredOutput = false,
   normalizeParsed,
   failureLogLevel = "error",
 }: RobustGenerateObjectOptions<T>): Promise<{
@@ -777,30 +829,59 @@ export async function generateTextWithJsonParse<T>({
   const provider = createAIProvider();
   const modelConfig = getModelForRouting(routing);
   const jsonSchema = JSON.stringify(z.toJSONSchema(schema), null, 2);
-  let lastError: Error | null = null;
+  const attempts: StructuredGenerationAttempt[] = [];
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const startTime = getCurrentUTCTimestamp();
+    const attemptRouting = getStructuredAttemptProviderOptions({
+      providerOptions: modelConfig.providerOptions,
+      attemptIndex: attempt,
+      totalAttempts: maxRetries,
+      requireStructuredOutput: nativeStructuredOutput,
+    });
+    let resultDiagnostics:
+      | Omit<StructuredGenerationAttempt, "errorMessage" | "durationMs">
+      | undefined;
 
     try {
       const result = await generateText({
-        model: provider(modelConfig.model) as any,
+        model: provider(
+          modelConfig.model,
+          nativeStructuredOutput
+            ? { plugins: [{ id: "response-healing" }] }
+            : undefined
+        ) as any,
         system: `${system}\n\nIMPORTANT: You MUST respond with ONLY valid JSON. No markdown, no explanations, just one JSON object that validates against the provided JSON Schema.`,
         prompt: `${prompt}\n\nReturn exactly one JSON object matching this JSON Schema:\n${jsonSchema}\n\nDo not rename keys. Do not wrap the object in another property. Do not return an array unless the schema root is an array.`,
         temperature,
         ...(maxOutputTokens ? { maxOutputTokens } : {}),
-        providerOptions: modelConfig.providerOptions,
+        ...(nativeStructuredOutput
+          ? { output: Output.object({ schema }) }
+          : {}),
+        providerOptions: attemptRouting.providerOptions,
         ...(modelConfig.timeoutMs
           ? { abortSignal: AbortSignal.timeout(modelConfig.timeoutMs) }
           : {}),
       });
 
-      const parsed = JSON.parse(extractJsonPayload(result.text));
+      const usage = extractUsage(result);
+      resultDiagnostics = {
+        attemptNumber: attempt + 1,
+        routing,
+        model: modelConfig.model,
+        configuredProvider: attemptRouting.configuredProvider,
+        providerSelected: usage.providerSelected,
+        modelSelected: usage.modelSelected,
+        finishReason: result.finishReason,
+        responseLength: result.text.length,
+        outputTokens: usage.outputTokens,
+      };
+      const parsed = nativeStructuredOutput
+        ? result.output
+        : JSON.parse(extractJsonPayload(result.text));
       const validated = schema.parse(
         normalizeParsed ? normalizeParsed(parsed) : parsed
       );
-
-      const usage = extractUsage(result);
 
       return {
         object: validated,
@@ -811,15 +892,31 @@ export async function generateTextWithJsonParse<T>({
       };
     } catch (error) {
       const durationMs = getCurrentUTCTimestamp() - startTime;
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      lastError = error instanceof Error ? error : new Error(errorMessage);
+      const errorMessage = getSafeStructuredGenerationErrorMessage(error);
+      const noObjectDiagnostics = NoObjectGeneratedError.isInstance(error)
+        ? {
+            finishReason: error.finishReason,
+            responseLength: error.text?.length,
+            outputTokens: error.usage?.outputTokens,
+            modelSelected: error.response?.modelId,
+          }
+        : undefined;
+      const attemptFailure: StructuredGenerationAttempt = {
+        attemptNumber: attempt + 1,
+        routing,
+        model: modelConfig.model,
+        configuredProvider: attemptRouting.configuredProvider,
+        durationMs,
+        errorMessage,
+        ...resultDiagnostics,
+        ...noObjectDiagnostics,
+      };
+      attempts.push(attemptFailure);
 
       logJsonAttemptFailure(
         failureLogLevel,
-        `[AI] ${operation} JSON attempt ${attempt + 1} failed on ${modelConfig.model}:`,
-        errorMessage,
-        `(${durationMs}ms)`
+        `[AI] ${operation} structured attempt failed`,
+        attemptFailure
       );
 
       if (attempt < maxRetries - 1) {
@@ -831,8 +928,29 @@ export async function generateTextWithJsonParse<T>({
 
   logJsonFailure(
     failureLogLevel,
-    `[AI] ${operation} JSON generation failed:`,
-    lastError?.message
+    `[AI] ${operation} structured generation failed`,
+    { attempts }
   );
-  throw lastError || new Error("Failed to generate structured JSON");
+  throw new StructuredGenerationError({ operation, attempts });
+}
+
+function getSafeStructuredGenerationErrorMessage(error: unknown): string {
+  if (NoObjectGeneratedError.isInstance(error)) {
+    const causeName =
+      error.cause instanceof Error ? error.cause.name : "unknown_parse_error";
+    return `${error.name}: ${causeName}`;
+  }
+  if (error instanceof z.ZodError) {
+    return "Structured output did not match the required schema";
+  }
+  if (error instanceof SyntaxError) {
+    return error.message;
+  }
+  if (error instanceof Error && error.name === "AbortError") {
+    return "Structured output request timed out";
+  }
+  if (error instanceof Error) {
+    return error.message.slice(0, 500);
+  }
+  return "Unknown structured output error";
 }

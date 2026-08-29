@@ -196,8 +196,12 @@ export const getProfilePostsInternal = internalAction({
         consumer: `linkedin.getProfilePosts:${profileUrn}:${args.cursor ?? "first"}`,
       });
     } catch (error) {
-      if (args.cursor && isLinkdApiNoDataError(error)) {
-        return { posts: [], nextCursor: null };
+      if (isLinkdApiNoDataError(error)) {
+        return {
+          posts: [],
+          nextCursor: null,
+          unavailableReason: "profile_data_unavailable" as const,
+        };
       }
       throw error;
     }

@@ -56,6 +56,19 @@ export function requireLinkedInProfileQueryUrn(value?: string | null): string {
   return profileUrn;
 }
 
+export function buildLinkedInProfileQueryUrnCandidates(
+  values: ReadonlyArray<string | null | undefined>
+): string[] {
+  const candidates = new Set<string>();
+  for (const value of values) {
+    const normalized = normalizeLinkedInProfileQueryUrn(value);
+    if (normalized) {
+      candidates.add(normalized);
+    }
+  }
+  return [...candidates];
+}
+
 export function resolveLinkedInProspectProfileIdentifiers(
   prospect: Record<string, unknown>
 ): {

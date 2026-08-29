@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   getRoutingTelemetry,
   robustGenerateObject,
+  StructuredGenerationError,
   type ModelRouting,
 } from "./ai";
 import { runWithWorkspaceMemoryCompliance } from "./workspaceMemoryCompliance";
@@ -98,15 +99,20 @@ export class QualificationEvaluationError extends Error {
   readonly stage = "model_evaluation" as const;
   readonly provider: string;
   readonly model: string;
-  readonly attemptCount = 2;
+  readonly attemptCount: number;
   readonly originalMessage: string;
 
-  constructor(args: { message: string; provider: string; model: string }) {
+  constructor(args: {
+    message: string;
+    provider: string;
+    model: string;
+    attemptCount: number;
+  }) {
     super(
       formatQualificationModelFailure({
         provider: args.provider,
         model: args.model,
-        attemptCount: 2,
+        attemptCount: args.attemptCount,
         message: args.message,
       })
     );
@@ -114,6 +120,7 @@ export class QualificationEvaluationError extends Error {
     this.originalMessage = args.message;
     this.provider = args.provider;
     this.model = args.model;
+    this.attemptCount = args.attemptCount;
   }
 }
 
@@ -327,6 +334,8 @@ Evaluate this prospect against the ICP.`;
           ? `${prompt}\n\nThe previous candidate violated workspace policy. Regenerate the complete object with this repair: ${repairInstruction}`
           : prompt,
         routing,
+        fallbackRouting: routing === "onboarding" ? undefined : "onboarding",
+        nativeStructuredOutput: true,
       });
     const generation = await runWithWorkspaceMemoryCompliance<
       Awaited<ReturnType<typeof generateQualificationCandidate>>
@@ -377,18 +386,36 @@ Evaluate this prospect against the ICP.`;
       qualifiedAt: finalQualified ? now : undefined,
     };
   } catch (error) {
+    const structuredFailure =
+      error instanceof StructuredGenerationError ? error : undefined;
     const routingTelemetry = getRoutingTelemetry(routing);
+    const attemptedProviders = structuredFailure?.attempts.map(
+      (attempt) => attempt.providerSelected ?? attempt.configuredProvider
+    );
+    const attemptedModels = structuredFailure?.attempts.map(
+      (attempt) => attempt.modelSelected ?? attempt.model
+    );
+    const provider = attemptedProviders?.length
+      ? [...new Set(attemptedProviders)].join(" -> ")
+      : routingTelemetry.providerLabel;
+    const model = attemptedModels?.length
+      ? [...new Set(attemptedModels)].join(" -> ")
+      : routingTelemetry.model;
+    const attemptCount = structuredFailure?.attempts.length ?? 2;
     const errorMessage =
       error instanceof Error ? error.message : "Unknown model evaluation error";
     qualificationLogger.error("LLM qualification failed", {
       error: errorMessage,
-      model: routingTelemetry.model,
-      provider: routingTelemetry.providerLabel,
+      model,
+      provider,
+      attemptCount,
+      attempts: structuredFailure?.attempts,
     });
     throw new QualificationEvaluationError({
       message: errorMessage,
-      model: routingTelemetry.model,
-      provider: routingTelemetry.providerLabel,
+      model,
+      provider,
+      attemptCount,
     });
   }
 }

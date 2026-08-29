@@ -1027,3 +1027,112 @@ The final post-cleanup snapshot was enforced, zero queued, zero running, 36/36
 free, zero expired leases, zero unresolved enqueue failures, and no pool or mode
 drift. This closes the scheduler burst-throughput investigation without an
 unsupported production-capacity change.
+
+## Qualification structured-output incident — 2026-08-29
+
+The 12:46 UTC read-only production gate found a new provider-output incident,
+not a scheduler-capacity failure. The newest 1,000 tenant jobs contained 74
+failed qualification jobs completed between 12:40:49 and 12:44:45 UTC. They
+represented 41 unique prospects in one workspace: 20 prospects had one failed
+job, 9 had two, and 12 had three. Sixty failures were `Unexpected end of JSON
+input`; the other fourteen were malformed-JSON errors such as unterminated
+strings or missing delimiters. Every failed job exhausted two model attempts on
+the configured `openai/gpt-oss-120b` Cerebras/Groq route. At the snapshot, 11
+jobs were running, zero were queued, 25/36 tenant slots were free, and there was
+no expired lease, pool drift, or scheduler-control error.
+
+A later read-only checkpoint found 241 additional completed jobs after the
+incident cutoff and no new qualification model-output failure. Scheduler state
+was enforced and drained with 36/36 slots free, zero queued/running jobs, zero
+expired leases, zero unresolved enqueue failures, and no pool drift. Three
+later failures were unrelated auto-plan jobs whose LinkedIn recent-post refresh
+received invalid/missing URNs from LinkdAPI; they are not attributed to this
+qualification incident or scheduler capacity.
+
+The application retry loop previously resent both attempts with the same
+ordered provider options. OpenRouter can fail over when a provider request
+fails, but a provider returning HTTP success with malformed JSON is an
+application-level parse failure; retrying the same order can select the same
+endpoint again. Qualification also requested JSON only through prompt text
+instead of the AI SDK's schema-constrained output contract. Finally, the
+capacity reconciler could see the prospect as pending immediately after a
+failed workflow and launch it again, explaining why 74 jobs mapped to only 41
+prospects.
+
+The local hotfix makes qualification use native schema-constrained output with
+OpenRouter response healing, while retaining final Zod validation and all
+evidence gates. It pins the first two application attempts to different
+providers (Cerebras, then Groq) and makes one bounded recovery attempt on the
+stronger onboarding model. Arbitrary truncated output is never guessed or
+accepted. Failed attempts log only safe metadata: configured/selected provider,
+model, finish reason, response length, output-token count, duration, and error
+class; prospect and model content are not logged.
+
+The failure record is widened with optional `workflowAttemptCount` and
+`nextRetryAt` fields. The first exhausted workflow schedules one retry after a
+five-minute cooldown. A second exhausted workflow records the failure and
+stops. Capacity reconciliation respects the cooldown and exhaustion marker, so
+it cannot create an unbounded retry loop. This is an additive optional-field
+change: existing documents remain valid and no scan or backfill is required.
+
+Local verification includes provider-rotation and error-chain unit tests plus a
+Convex integration test proving exactly one delayed workflow retry and no second
+schedule after exhaustion. The complete suite passed 115 test files and 577
+tests. TypeScript, strict Oxlint, formatting, the 74-route production build, and
+the production-targeted Convex dry run also passed; the dry run reported no
+index deletion. Cleanup remains paused until the hotfix deploys and the recovery
+gate passes.
+
+Rollout is code-first. After deployment, confirm no new malformed-output burst,
+then replay only the 41 unique affected prospects whose latest state is still
+pending, lease-free, and carries the diagnosed model-failure marker. Reuse the
+existing qualification enqueue idempotency contract, verify each prospect
+reaches one terminal qualification result or the bounded exhausted state, and
+require no duplicate active workflow, retry storm, new permanent scheduler
+error, or schema/bytes-read failure. Resume the separate destructive-cleanup
+sequence only after that gate passes.
+
+### Separate LinkedIn provider-data incident
+
+The 13:03 UTC follow-up contained three additional `auto_plan` failures at
+12:49:54, 12:50:26, and 12:52:24 UTC. All three came from LinkdAPI's successful-
+HTTP no-data response during recent-post refresh: the data could not be
+displayed or did not exist and the supplied URN needed verification. The queue
+still drained with all 36 tenant slots free and no lease, pool, mode, or
+scheduler failure. This is a stale provider-identity/data-availability defect,
+not part of the qualification JSON incident and not scheduler exhaustion.
+
+The background social-context path previously called the user-authenticated
+LinkedIn profile action even though that action deliberately returns no recent
+posts. On failure it retried the stored prospect URN directly. A stale URN then
+escaped as a generic retryable auto-plan generation error, causing repeated
+paid work without changing the underlying identity.
+
+The local fix resolves the prospect through the existing canonical LinkedIn
+identity helper, refreshes the live profile by username without sending the
+stale URN, and tries the provider's canonical profile URN before the stored
+fallback. LinkdAPI's exact no-data response becomes an explicit empty recent-
+post result; authentication, rate-limit, network, and server failures still
+throw and retain transient retry behavior.
+
+An empty post result degrades only when another verified outreach channel is
+available. Connected prospects and the existing connect-first LinkedIn flow
+may receive a grounded DM plan, while the draft validator continues to reject
+invented post IDs. If neither a verified post nor an allowed messaging path is
+available, the run stops with the new terminal `provider_data_unavailable`
+code. That code is intentionally excluded from automatic recovery, preventing
+a stale-URN retry storm. No prospect identifier is rewritten and no data
+migration or backfill is required by this hotfix.
+
+After deployment, verify a diagnosed prospect once. Acceptance requires either
+a plan grounded in a provider-returned post, a valid DM/connect-first plan with
+no post reference, or one terminal provider-data notification. It must not
+create repeated auto-plan runs, invent a post, or hide transient provider
+outages. Repairing stored LinkedIn identifiers, if later justified by bounded
+evidence, remains a separate data migration.
+
+Combined local verification passed 115 Convex test files and 578 tests,
+TypeScript, strict Oxlint, changed-file formatting, and the 74-route production
+build. The production-targeted Convex dry run passed schema validation and
+reported no index deletion. No production function, control, or document was
+changed.

@@ -80,6 +80,7 @@ export type AutoPlanFailureCode =
   | "reconnect_required"
   | "writing_style_unavailable"
   | "grounding_unavailable"
+  | "provider_data_unavailable"
   | "provider_balance_unavailable"
   | "provider_schema_unsupported"
   | "context_too_large"
@@ -138,6 +139,18 @@ function stringifyAutoPlanError(error: unknown): string {
 
 export function classifyAutoPlanFailure(error: unknown): AutoPlanFailure {
   const message = stringifyAutoPlanError(error).toLowerCase();
+
+  if (
+    message.includes("linkedin provider data unavailable") ||
+    message.includes("no verified recent linkedin posts are available")
+  ) {
+    return {
+      code: "provider_data_unavailable",
+      retryable: false,
+      userMessage:
+        "Agent couldn’t verify recent LinkedIn activity for this prospect. Refresh their profile before trying again.",
+    };
+  }
 
   if (
     message.includes("insufficient balance") ||
@@ -540,6 +553,22 @@ export function validateAutoPlanDraftAgainstGrounding(args: {
   }
 
   return errors;
+}
+
+export function hasVerifiedAutoPlanOutreachChannel(args: {
+  platform?: "twitter" | "linkedin" | string | null;
+  recentPostCount: number;
+  linkedinRelationship?: LinkedInRelationshipStatus | null;
+  linkedinHasExistingConversation?: boolean;
+}): boolean {
+  if (args.platform !== "linkedin" || args.recentPostCount > 0) {
+    return true;
+  }
+
+  return isLinkedInDmPlanAllowed(
+    args.linkedinRelationship,
+    args.linkedinHasExistingConversation
+  );
 }
 
 export function buildGroundedAutoPlanPrompt(args: {

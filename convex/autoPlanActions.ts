@@ -21,6 +21,7 @@ import {
   buildAutoPlanResearchQueries,
   buildGroundedAutoPlanPrompt,
   classifyAutoPlanFailure,
+  hasVerifiedAutoPlanOutreachChannel,
   normalizeAutoPlanDraft,
   parseAutoPlanTransportDraft,
   validateAutoPlanDraftAgainstGrounding,
@@ -520,6 +521,19 @@ export const generateGroundedAutoPlanDraft = internalAction({
           }
         );
         linkedinRelationship = "unknown";
+      }
+
+      if (
+        !hasVerifiedAutoPlanOutreachChannel({
+          platform: prospect.platform,
+          recentPostCount: recentPosts.length,
+          linkedinRelationship,
+          linkedinHasExistingConversation,
+        })
+      ) {
+        throw new NonRetryableError(
+          "LinkedIn provider data unavailable: no verified recent LinkedIn posts are available and messaging eligibility could not be verified."
+        );
       }
     }
 

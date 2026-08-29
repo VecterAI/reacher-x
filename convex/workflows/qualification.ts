@@ -21,7 +21,12 @@ import { isValidatedSetupPreviewProspect } from "../lib/setupSessionCore";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
-import { parseQualificationModelFailure } from "../lib/qualificationFailureCore";
+import {
+  parseQualificationModelFailure,
+  QUALIFICATION_MAX_WORKFLOW_ATTEMPTS,
+  QUALIFICATION_MODEL_FAILURE_CODE,
+  QUALIFICATION_MODEL_RETRY_DELAY_MS,
+} from "../lib/qualificationFailureCore";
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
 import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
@@ -672,6 +677,18 @@ export const handleQualificationComplete = internalMutation({
     const now = getCurrentUTCTimestamp();
     if (args.result.kind === "failed") {
       const modelFailure = parseQualificationModelFailure(args.result.error);
+      const previousWorkflowAttemptCount =
+        prospect.qualificationLastFailure?.code ===
+        QUALIFICATION_MODEL_FAILURE_CODE
+          ? (prospect.qualificationLastFailure.workflowAttemptCount ?? 0)
+          : 0;
+      const workflowAttemptCount = previousWorkflowAttemptCount + 1;
+      const shouldRetry =
+        Boolean(modelFailure) &&
+        workflowAttemptCount < QUALIFICATION_MAX_WORKFLOW_ATTEMPTS;
+      const nextRetryAt = shouldRetry
+        ? now + QUALIFICATION_MODEL_RETRY_DELAY_MS
+        : undefined;
       await ctx.db.patch(prospect._id, {
         qualificationWorkflowId: undefined,
         qualificationLastFailure: {
@@ -679,10 +696,12 @@ export const handleQualificationComplete = internalMutation({
           provider: modelFailure?.provider ?? "convex_workflow",
           model: modelFailure?.model,
           code: modelFailure
-            ? "qualification_model_evaluation_failed"
+            ? QUALIFICATION_MODEL_FAILURE_CODE
             : "qualification_workflow_failed",
           message: modelFailure?.message ?? args.result.error,
           attemptCount: modelFailure?.attemptCount,
+          workflowAttemptCount,
+          nextRetryAt,
           failedAt: now,
         },
         updatedAt: now,
@@ -693,6 +712,17 @@ export const handleQualificationComplete = internalMutation({
           status: "failed",
           errorMessage: args.result.error,
         });
+      }
+      if (shouldRetry && nextRetryAt !== undefined) {
+        await ctx.scheduler.runAt(
+          nextRetryAt,
+          internal.workflows.qualification.startQualification,
+          {
+            prospectId: prospect._id,
+            workspaceId: prospect.workspaceId,
+            expectedModelFailureAt: now,
+          }
+        );
       }
       return null;
     }
@@ -720,6 +750,7 @@ export const startQualification = internalAction({
   args: {
     prospectId: v.id("prospects"),
     workspaceId: v.id("workspaces"),
+    expectedModelFailureAt: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
     const prospect = await ctx.runQuery(
@@ -736,6 +767,35 @@ export const startQualification = internalAction({
       typeof prospect.qualificationWorkflowId === "string"
     ) {
       return { workId: "" };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    const modelFailure =
+      prospect.qualificationLastFailure?.code ===
+      QUALIFICATION_MODEL_FAILURE_CODE
+        ? prospect.qualificationLastFailure
+        : undefined;
+    if (args.expectedModelFailureAt !== undefined) {
+      if (
+        modelFailure?.failedAt !== args.expectedModelFailureAt ||
+        modelFailure.nextRetryAt === undefined ||
+        modelFailure.nextRetryAt > now ||
+        (modelFailure.workflowAttemptCount ?? 0) >=
+          QUALIFICATION_MAX_WORKFLOW_ATTEMPTS
+      ) {
+        return { workId: "" };
+      }
+    } else if (modelFailure) {
+      const retryAt =
+        modelFailure.nextRetryAt ??
+        modelFailure.failedAt + QUALIFICATION_MODEL_RETRY_DELAY_MS;
+      if (
+        retryAt > now ||
+        (modelFailure.workflowAttemptCount ?? 0) >=
+          QUALIFICATION_MAX_WORKFLOW_ATTEMPTS
+      ) {
+        return { workId: "" };
+      }
     }
 
     const limitState = await ctx.runQuery(
