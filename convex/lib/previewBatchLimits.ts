@@ -17,7 +17,6 @@ export const PREVIEW_BATCH_LIMITS = {
   readyTargetCount: 3,
   minReadyCount: 1,
   previewEnrichmentWindow: 8,
-  previewProspectWriteBatch: 250,
   socialQueriesPerCycle: 15,
   twitterSearchBatch: 10,
   twitterGraphSeedSearchBatch: 5,

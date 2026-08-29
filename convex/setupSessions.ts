@@ -2352,19 +2352,6 @@ export const getSetupUserFlowContextInternal = internalQuery({
   },
 });
 
-export const markWorkflowStartedInternal = internalMutation({
-  args: {
-    sessionId: v.id("workspaceSetupSessions"),
-    workflowId: v.string(),
-  },
-  handler: async (ctx, { sessionId, workflowId }) => {
-    await ctx.db.patch(sessionId, {
-      workflowId,
-      lastActiveAt: getCurrentUTCTimestamp(),
-    });
-  },
-});
-
 export const markPreviewWorkflowStartedInternal = internalMutation({
   args: {
     sessionId: v.id("workspaceSetupSessions"),

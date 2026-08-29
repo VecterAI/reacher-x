@@ -1116,8 +1116,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_slot_number", ["slotNumber"])
-    .index("by_status_and_slot_number", ["status", "slotNumber"])
-    .index("by_job", ["jobId"]),
+    .index("by_status_and_slot_number", ["status", "slotNumber"]),
 
   /**
    * Per-workspace queue state for throttled memory evaluation.
@@ -2579,11 +2578,6 @@ export default defineSchema({
       "status",
       "precedence",
     ])
-    .index("by_workspace_and_prospect_and_status", [
-      "workspaceId",
-      "prospectId",
-      "status",
-    ])
     .index("by_workspace_source_category_status", [
       "workspaceId",
       "source",
@@ -2594,7 +2588,6 @@ export default defineSchema({
       "workspaceId",
       "legacyMemoryId",
     ])
-    .index("by_legacy_memory_id", ["legacyMemoryId"])
     .index("by_status_index_retry", [
       "status",
       "indexStatus",
