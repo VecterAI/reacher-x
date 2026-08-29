@@ -904,8 +904,11 @@ Local verification passed 114 test files and 576 tests, including one-lane
 eight-slot dispatch, stale compatibility counters, A=100/B=C=1 fairness, and
 10/50/100 active-lane visibility. TypeScript, strict Oxlint, and the 74-route
 production build also passed. Rollout is code-only: deploy after review, then
-require the next natural burst to keep admission p95 below 30 seconds and max
-below 60 seconds with no permanent scheduler OCC, expired lease, or slot drift.
+require the A=100/B=C=1 acceptance load to keep admission p95 below 30 seconds
+and max below 60 seconds with no permanent scheduler OCC, expired lease, or
+slot drift. Larger natural bursts must be evaluated against their measured
+arrival rate, job duration, and 30-slot single-tenant cap instead of applying
+that fixed latency threshold to an overload that cannot physically meet it.
 
 ## Post-deployment baseline and final cleanup audit — 2026-08-29
 
@@ -916,13 +919,21 @@ tenant-execution parallelism 36, and no expired lease, unresolved enqueue
 failure, or configuration drift. The latest 1,000-job sample at that cutoff
 still contained work completed before the baseline, so its p95 of 72,789 ms and
 maximum of 78,830 ms cannot be used as a post-deploy acceptance result. The
-next natural burst remains the acceptance gate: p95 below 30 seconds, maximum
-below 60 seconds, and no permanent scheduler error.
+next natural workload therefore remained an observation gate pending workload-
+normalized analysis rather than a blanket latency pass/fail.
 
-The Action Retrier historical cleanup is complete. An indexed, bounded
+The Action Retrier expired-terminal cleanup is complete. An indexed, bounded
 component query found zero terminal runs older than the seven-day retention
 window. Insights still contains only the three historical bytes-read failures,
 newest 2026-08-28 13:13:24 UTC; no failure was added by the bounded drain.
+
+A final ascending component-table audit found one separate historical run from
+2026-05-12 still marked `inProgress`. Its referenced scheduled-function row has
+already aged out, so it is not executing and cannot enter the terminal-only
+cleanup index. It is retained without mutation. A future bounded stale-run
+repair may mark it terminal and let the existing cleanup remove it, but that is
+a component-state cleanup candidate rather than an active bytes-read or
+scheduler defect.
 
 The cleanup audit paired repository reachability with 50,000 recent production
 function executions and bounded component/table checks. This commit removes
@@ -955,3 +966,64 @@ overrides, persisted plan-batch compatibility, and lane `runningCount` also
 remain until an explicit end-of-rollback-window decision. Removing
 `runningCount` requires a separate widen-migrate-narrow data change because the
 field is still present on production lane rows.
+
+### Cleanup deployment correction
+
+PR #52's first production build was correctly blocked before changing
+production because Convex classified deletion of two indexes across 106,480
+`workspaceMemories` rows and one index across 36 `tenantSchedulerSlots` rows as
+destructive index removal. PR #53 restored all three definitions while keeping
+the proven dead-code cleanup. Its dry-run reported zero index deletions, and it
+deployed as merge commit `a0c45767`.
+
+The post-deployment read-only gate confirmed all three retained indexes were
+queryable, the removed setup function was absent from the deployed function
+specification, the scheduler was enforced and drained with 36/36 slots free,
+and there was no expired lease, unresolved enqueue failure, pool drift, or new
+permanent Insight. No production document, table, component state, or control
+was changed by this correction.
+
+## Final scheduler burst diagnosis — 2026-08-29
+
+A clearly post-PR #51 production window initially appeared to fail the proposed
+p95-below-30-seconds and max-below-60-seconds gate. The broader sample contained
+668 successful admissions with p50 about 349 ms, p95 about 66.4 seconds, max
+about 77.8 seconds, and 161 admissions over 30 seconds. The queue drained on its
+own and produced no permanent scheduler error, failed job, expired lease,
+unresolved enqueue failure, or slot drift.
+
+The bounded job-level trace isolated the delayed interval instead of treating
+the whole 1,000-job window as one burst:
+
+- 286 jobs arrived in 89.9 seconds; 282 were qualification and 4 were memory
+  evaluation;
+- arrival rate was 3.18 jobs/second;
+- qualification-dominated execution averaged 18.1 seconds, with median 13.9
+  seconds and p95 36.5 seconds;
+- the scheduler reached the configured 30 concurrent jobs for that tenant;
+- peak starts in any rolling minute were 105, far below the 240/minute token
+  bucket, proving the admission rate limiter was not binding; and
+- at the observed mean duration, 30 slots can finish about 1.66 jobs/second.
+  Even lending all 36 slots would provide only about 1.99 jobs/second, still
+  below the measured 3.18 jobs/second arrival rate.
+
+The resulting queue was therefore bounded overload/backpressure, not a stuck
+dispatcher or unused-capacity defect. Removing the rate limiter, adding an
+Aggregate, or replacing exact slot rows with a sharded counter would not make
+that workload satisfy the fixed gate and would weaken provider protection or
+tenant isolation. The correct production criteria are now:
+
+1. For the specified A=100/B=C=1 acceptance load, keep p95 below 30 seconds and
+   max below 60 seconds while B and C start before A drains.
+2. For larger natural overloads, require the busy tenant to reach its 30-slot
+   cap, preserve the six newcomer slots, make continuous forward progress,
+   drain without intervention, and produce no permanent scheduler error,
+   expired lease, duplicate, lost job, or slot drift.
+3. Report overload queue age and admission distribution separately from
+   scheduler correctness. Capacity increases require a separate provider and
+   Workflow-capacity review; they are not a reliability hotfix.
+
+The final post-cleanup snapshot was enforced, zero queued, zero running, 36/36
+free, zero expired leases, zero unresolved enqueue failures, and no pool or mode
+drift. This closes the scheduler burst-throughput investigation without an
+unsupported production-capacity change.
