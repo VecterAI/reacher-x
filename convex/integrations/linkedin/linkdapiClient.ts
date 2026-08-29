@@ -60,10 +60,18 @@ export function isLinkdApiNoDataError(
     return false;
   }
 
-  const message = error.message.toLowerCase();
+  return isLinkdApiNoDataMessage(error.message);
+}
+
+export function isLinkdApiNoDataMessage(message: string): boolean {
+  const normalizedMessage = message.toLowerCase();
   return (
-    message.includes("the data cannot be displayed or it doesn't exist") ||
-    message.includes("the data cannot be displayed or it does not exist")
+    normalizedMessage.includes(
+      "the data cannot be displayed or it doesn't exist"
+    ) ||
+    normalizedMessage.includes(
+      "the data cannot be displayed or it does not exist"
+    )
   );
 }
 

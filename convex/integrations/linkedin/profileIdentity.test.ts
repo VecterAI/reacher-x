@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  buildLinkedInProfileQueryUrnCandidates,
   normalizeLinkedInProfileQueryUrn,
   requireLinkedInProfileQueryUrn,
   resolveLinkedInProspectProfileIdentifiers,
@@ -42,5 +43,17 @@ describe("LinkedIn profile query URNs", () => {
       username: undefined,
       profileUrn: "ACoAA-prospect",
     });
+  });
+
+  test("builds unique canonical profile URN candidates", () => {
+    expect(
+      buildLinkedInProfileQueryUrnCandidates([
+        "urn:li:fsd_profile:ACoAA-live",
+        "ACoAA-live",
+        "urn:li:member:ACoAA-stored",
+        "urn:li:activity:123",
+        undefined,
+      ])
+    ).toEqual(["ACoAA-live", "ACoAA-stored"]);
   });
 });

@@ -3,6 +3,7 @@ import test from "node:test";
 import type { ActionCtx } from "../convex/_generated/server";
 import {
   isLinkdApiNoDataError,
+  isLinkdApiNoDataMessage,
   LinkdApiRequestError,
   requestLinkdApiData,
 } from "../convex/integrations/linkedin/linkdapiClient";
@@ -98,6 +99,12 @@ test("LinkdAPI client pagination and circuit evidence", async (t) => {
                 "the data cannot be displayed or it doesn't exist, make sure the URN is correct",
               status: 200,
             })
+          ),
+          true
+        );
+        assert.equal(
+          isLinkdApiNoDataMessage(
+            "The data cannot be displayed or it does not exist; verify the URN"
           ),
           true
         );

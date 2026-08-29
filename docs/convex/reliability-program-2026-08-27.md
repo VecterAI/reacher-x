@@ -1091,3 +1091,48 @@ reaches one terminal qualification result or the bounded exhausted state, and
 require no duplicate active workflow, retry storm, new permanent scheduler
 error, or schema/bytes-read failure. Resume the separate destructive-cleanup
 sequence only after that gate passes.
+
+### Separate LinkedIn provider-data incident
+
+The 13:03 UTC follow-up contained three additional `auto_plan` failures at
+12:49:54, 12:50:26, and 12:52:24 UTC. All three came from LinkdAPI's successful-
+HTTP no-data response during recent-post refresh: the data could not be
+displayed or did not exist and the supplied URN needed verification. The queue
+still drained with all 36 tenant slots free and no lease, pool, mode, or
+scheduler failure. This is a stale provider-identity/data-availability defect,
+not part of the qualification JSON incident and not scheduler exhaustion.
+
+The background social-context path previously called the user-authenticated
+LinkedIn profile action even though that action deliberately returns no recent
+posts. On failure it retried the stored prospect URN directly. A stale URN then
+escaped as a generic retryable auto-plan generation error, causing repeated
+paid work without changing the underlying identity.
+
+The local fix resolves the prospect through the existing canonical LinkedIn
+identity helper, refreshes the live profile by username without sending the
+stale URN, and tries the provider's canonical profile URN before the stored
+fallback. LinkdAPI's exact no-data response becomes an explicit empty recent-
+post result; authentication, rate-limit, network, and server failures still
+throw and retain transient retry behavior.
+
+An empty post result degrades only when another verified outreach channel is
+available. Connected prospects and the existing connect-first LinkedIn flow
+may receive a grounded DM plan, while the draft validator continues to reject
+invented post IDs. If neither a verified post nor an allowed messaging path is
+available, the run stops with the new terminal `provider_data_unavailable`
+code. That code is intentionally excluded from automatic recovery, preventing
+a stale-URN retry storm. No prospect identifier is rewritten and no data
+migration or backfill is required by this hotfix.
+
+After deployment, verify a diagnosed prospect once. Acceptance requires either
+a plan grounded in a provider-returned post, a valid DM/connect-first plan with
+no post reference, or one terminal provider-data notification. It must not
+create repeated auto-plan runs, invent a post, or hide transient provider
+outages. Repairing stored LinkedIn identifiers, if later justified by bounded
+evidence, remains a separate data migration.
+
+Combined local verification passed 115 Convex test files and 578 tests,
+TypeScript, strict Oxlint, changed-file formatting, and the 74-route production
+build. The production-targeted Convex dry run passed schema validation and
+reported no index deletion. No production function, control, or document was
+changed.

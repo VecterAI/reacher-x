@@ -36,7 +36,7 @@ export class StructuredGenerationError extends Error {
     operation: string;
     attempts: readonly StructuredGenerationAttempt[];
   }) {
-    const lastAttempt = args.attempts.at(-1);
+    const lastAttempt = args.attempts[args.attempts.length - 1];
     super(lastAttempt?.errorMessage ?? "Failed to generate structured output");
     this.name = "StructuredGenerationError";
     this.operation = args.operation;

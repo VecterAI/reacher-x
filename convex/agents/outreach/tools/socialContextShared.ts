@@ -26,6 +26,11 @@ import { fetchSocialApi } from "../../../lib/socialApiFetch";
 import { hydrateTwitterProfileLinkMetadata } from "../../../lib/twitterProfileLinkResolver";
 import type { LinkedInProfilePost } from "../../../integrations/linkedin/getProfilePosts";
 import {
+  buildLinkedInProfileQueryUrnCandidates,
+  resolveLinkedInProspectProfileIdentifiers,
+} from "../../../integrations/linkedin/profileIdentity";
+import { isLinkdApiNoDataMessage } from "../../../integrations/linkedin/linkdapiClient";
+import {
   extractProspectThreadContext,
   MISSING_PROSPECT_SELECTION_MESSAGE,
 } from "./helpers";
@@ -727,33 +732,6 @@ async function fetchSocialApiJson(
   return await response.json();
 }
 
-function resolveLinkedInIdentity(prospect: ProspectDoc) {
-  const socialProfiles = isRecord(prospect.socialProfiles)
-    ? (prospect.socialProfiles as Record<string, unknown>)
-    : undefined;
-  const socialLinkedIn = isRecord(socialProfiles?.linkedin)
-    ? (socialProfiles?.linkedin as Record<string, unknown>)
-    : undefined;
-  const data = isRecord(prospect.data) ? prospect.data : undefined;
-  const author = isRecord(data?.author)
-    ? (data.author as Record<string, unknown>)
-    : undefined;
-  const profileUrl =
-    asString(socialLinkedIn?.url) ??
-    asString(author?.url) ??
-    asString(prospect.profileUrl);
-
-  return {
-    username:
-      asString(socialLinkedIn?.username) ??
-      (profileUrl ? extractLinkedInUsername(profileUrl) : undefined),
-    providerId:
-      asString(prospect.linkedinUserUrn) ??
-      asString(socialLinkedIn?.urn) ??
-      asString(author?.urn),
-  };
-}
-
 async function fetchTwitterProfile(
   ctx: ToolContext,
   username: string
@@ -994,8 +972,8 @@ async function fetchLinkedInProfile(
       currentCompany,
     };
   } catch {
-    const identity = resolveLinkedInIdentity(prospect);
-    if (!identity.username && !identity.providerId) {
+    const identity = resolveLinkedInProspectProfileIdentifiers(prospect);
+    if (!identity.username && !identity.profileUrn) {
       return null;
     }
 
@@ -1003,7 +981,7 @@ async function fetchLinkedInProfile(
       internal.integrations.linkedin.getProfile.getProfile,
       {
         username: identity.username,
-        urn: identity.providerId,
+        urn: identity.username ? undefined : identity.profileUrn,
         includeContactInfo: false,
       }
     );
@@ -1043,38 +1021,47 @@ async function fetchLinkedInPosts(
   ctx: ToolContext,
   prospect: ProspectDoc
 ): Promise<NormalizedSocialPost[]> {
-  try {
-    const result = await ctx.runAction(api.linkedin.getLinkedInProfile, {
-      prospectId: prospect._id as Id<"prospects">,
-    });
+  const identity = resolveLinkedInProspectProfileIdentifiers(prospect);
+  let liveProfileUrn: string | undefined;
+  let profileResolutionError: string | undefined;
 
-    if (!result) {
-      return [];
-    }
-
-    return dedupePosts(
-      sortPostsDescending(
-        result.recentPosts
-          .map((post: unknown) => normalizeLinkedInPost(post))
-          .filter(
-            (post: NormalizedSocialPost | null): post is NormalizedSocialPost =>
-              post !== null
-          )
-      )
-    );
-  } catch {
-    const identity = resolveLinkedInIdentity(prospect);
-    if (!identity.providerId) {
-      return [];
-    }
-
-    const result = await ctx.runAction(
-      internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
+  if (identity.username) {
+    const profileResult = await ctx.runAction(
+      internal.integrations.linkedin.getProfile.getProfile,
       {
-        urn: identity.providerId,
-        maxPosts: 20,
+        username: identity.username,
+        includeContactInfo: false,
       }
     );
+    if (profileResult.success && profileResult.profile) {
+      liveProfileUrn = profileResult.profile.urn;
+    } else if (
+      profileResult.error &&
+      !isLinkdApiNoDataMessage(profileResult.error)
+    ) {
+      profileResolutionError = profileResult.error;
+    }
+  }
+
+  const urnCandidates = buildLinkedInProfileQueryUrnCandidates([
+    liveProfileUrn,
+    identity.profileUrn,
+  ]);
+  if (urnCandidates.length === 0) {
+    if (profileResolutionError) {
+      throw new Error(profileResolutionError);
+    }
+    return [];
+  }
+
+  for (const urn of urnCandidates) {
+    const result = await ctx.runAction(
+      internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
+      { urn, maxPosts: 20 }
+    );
+    if (result.unavailableReason === "profile_data_unavailable") {
+      continue;
+    }
 
     return dedupePosts(
       sortPostsDescending(
@@ -1107,6 +1094,16 @@ async function fetchLinkedInPosts(
       )
     );
   }
+
+  if (profileResolutionError) {
+    throw new Error(profileResolutionError);
+  }
+
+  console.warn("[SocialContext] LinkedIn recent posts are unavailable", {
+    prospectId: String(prospect._id),
+    attemptedIdentityCount: urnCandidates.length,
+  });
+  return [];
 }
 
 async function fetchTwitterThread(

@@ -9,6 +9,7 @@ import {
   autoPlanDraftSchema,
   autoPlanTransportSchema,
   classifyAutoPlanFailure,
+  hasVerifiedAutoPlanOutreachChannel,
   hasAutoPlanRecoveryCapacity,
   isAutoPlanFailureRecoveryEligible,
   parseAutoPlanTransportDraft,
@@ -302,9 +303,7 @@ test("automatic plan failures distinguish terminal setup issues from transient p
       code: "writing_style_unavailable",
       retryable: false,
       userMessage:
-        "Writing style is unavailable. Refresh it from Connected accounts.",
-      actionLabel: "Reconnect",
-      targetHref: "/settings/connected-accounts",
+        "Agent is refreshing the writing style and will retry automatically.",
     }
   );
   assert.equal(
@@ -343,11 +342,61 @@ test("automatic plan failures distinguish terminal setup issues from transient p
     isAutoPlanFailureRecoveryEligible("provider_schema_unsupported"),
     false
   );
+  assert.deepEqual(
+    classifyAutoPlanFailure(
+      "LinkedIn provider data unavailable: no verified recent LinkedIn posts are available"
+    ),
+    {
+      code: "provider_data_unavailable",
+      retryable: false,
+      userMessage:
+        "Agent couldn’t verify recent LinkedIn activity for this prospect. Refresh their profile before trying again.",
+    }
+  );
+  assert.equal(
+    isAutoPlanFailureRecoveryEligible("provider_data_unavailable"),
+    false
+  );
   assert.equal(isAutoPlanFailureRecoveryEligible("context_too_large"), false);
   assert.equal(isAutoPlanFailureRecoveryEligible("reconnect_required"), false);
   assert.equal(
     isAutoPlanFailureRecoveryEligible("writing_style_unavailable"),
+    true
+  );
+});
+
+test("LinkedIn plans degrade to messaging only when that channel is verified", () => {
+  assert.equal(
+    hasVerifiedAutoPlanOutreachChannel({
+      platform: "linkedin",
+      recentPostCount: 0,
+      linkedinRelationship: "connected",
+    }),
+    true
+  );
+  assert.equal(
+    hasVerifiedAutoPlanOutreachChannel({
+      platform: "linkedin",
+      recentPostCount: 0,
+      linkedinRelationship: "not_connected",
+    }),
+    true
+  );
+  assert.equal(
+    hasVerifiedAutoPlanOutreachChannel({
+      platform: "linkedin",
+      recentPostCount: 0,
+      linkedinRelationship: "unknown",
+    }),
     false
+  );
+  assert.equal(
+    hasVerifiedAutoPlanOutreachChannel({
+      platform: "linkedin",
+      recentPostCount: 1,
+      linkedinRelationship: "unknown",
+    }),
+    true
   );
 });
 
@@ -412,7 +461,7 @@ test("automatic plan reliability prevents repeated paid work and dead notificati
     `${ROOT}/convex/socialapiMonitors.ts`,
     "utf8"
   );
-  assert.match(monitorSource, /withIndex\("by_workspace_value"/);
+  assert.match(monitorSource, /withIndex\("by_workspace_type_and_value"/);
   assert.match(monitorSource, /normalizeMemoryText\(args\.query\)/);
   assert.doesNotMatch(
     monitorSource,

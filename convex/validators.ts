@@ -2611,6 +2611,7 @@ export const autoPlanFailureCodeValidator = v.union(
   v.literal("reconnect_required"),
   v.literal("writing_style_unavailable"),
   v.literal("grounding_unavailable"),
+  v.literal("provider_data_unavailable"),
   v.literal("provider_balance_unavailable"),
   v.literal("provider_schema_unsupported"),
   v.literal("context_too_large"),

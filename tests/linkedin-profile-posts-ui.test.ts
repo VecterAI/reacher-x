@@ -30,7 +30,7 @@ test("an empty cursor page ends pagination without becoming a UI error", () => {
 
   assert.match(
     source,
-    /if \(args\.cursor && isLinkdApiNoDataError\(error\)\) \{\s*return \{ posts: \[\], nextCursor: null \};/
+    /if \(isLinkdApiNoDataError\(error\)\) \{\s*return \{\s*posts: \[\],\s*nextCursor: null,\s*unavailableReason: "profile_data_unavailable" as const,\s*\};/
   );
 });
 
