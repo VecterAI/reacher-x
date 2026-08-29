@@ -1,5 +1,10 @@
 const MODEL_FAILURE_PREFIX = "[QUALIFICATION_MODEL_EVALUATION_FAILED]";
 
+export const QUALIFICATION_MODEL_FAILURE_CODE =
+  "qualification_model_evaluation_failed";
+export const QUALIFICATION_MODEL_RETRY_DELAY_MS = 5 * 60 * 1000;
+export const QUALIFICATION_MAX_WORKFLOW_ATTEMPTS = 2;
+
 export function formatQualificationModelFailure(args: {
   provider: string;
   model: string;
