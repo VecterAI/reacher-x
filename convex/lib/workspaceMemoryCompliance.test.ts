@@ -1,12 +1,24 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   runWithWorkspaceMemoryCompliance,
+  WORKSPACE_MEMORY_COMPLIANCE_GENERATION_POLICY,
   WorkspaceMemoryComplianceError,
 } from "./workspaceMemoryCompliance";
 import { resolveWorkspaceMemoryScope } from "./workspaceMemoryScope";
 import type { Id } from "../_generated/dataModel";
 
 describe("workspace memory compliance", () => {
+  test("uses schema output, provider rotation, and one stronger fallback", () => {
+    expect(WORKSPACE_MEMORY_COMPLIANCE_GENERATION_POLICY).toEqual({
+      routing: "reasoning",
+      fallbackRouting: "onboarding",
+      temperature: 0,
+      maxRetries: 2,
+      maxOutputTokens: 1_000,
+      nativeStructuredOutput: true,
+    });
+  });
+
   test("regenerates from generic evaluator feedback and returns the repaired value", async () => {
     const repairs: Array<string | undefined> = [];
     const evaluate = vi

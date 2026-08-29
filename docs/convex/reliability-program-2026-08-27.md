@@ -1077,7 +1077,7 @@ change: existing documents remain valid and no scan or backfill is required.
 
 Local verification includes provider-rotation and error-chain unit tests plus a
 Convex integration test proving exactly one delayed workflow retry and no second
-schedule after exhaustion. The complete suite passed 115 test files and 577
+schedule after exhaustion. The complete suite passed 115 test files and 578
 tests. TypeScript, strict Oxlint, formatting, the 74-route production build, and
 the production-targeted Convex dry run also passed; the dry run reported no
 index deletion. Cleanup remains paused until the hotfix deploys and the recovery
@@ -1091,6 +1091,67 @@ reaches one terminal qualification result or the bounded exhausted state, and
 require no duplicate active workflow, retry storm, new permanent scheduler
 error, or schema/bytes-read failure. Resume the separate destructive-cleanup
 sequence only after that gate passes.
+
+### Post-deployment compliance-evaluator regression
+
+PR #55 deployed successfully, but the read-only gate blocked the manual replay.
+The first post-deployment window contained ten organic qualification failures,
+and the later retry/burst window increased the total to 66 failed qualification
+jobs across 44 unique prospects after the rollout cutoff. Sixty-five reported
+exactly one structured-generation attempt on Cerebras or Groq. The other failure
+was a legitimate fail-closed result after both generated candidates violated a
+workspace instruction. The strengthened qualification candidate generator is
+configured for two provider-pinned attempts plus one stronger fallback, so the
+one-attempt signature isolated the remaining malformed-JSON defect to the shared
+`workspace-memory-compliance` evaluator. It still requested prompt-only JSON
+with `maxRetries: 1` after candidate generation succeeded.
+
+The existing workflow recovery remained bounded: the first failure stored a
+five-minute retry time and a second exhausted workflow stopped. Twenty-two of
+the 44 affected prospects subsequently cleared the failure through a successful
+qualification and 22 stopped at the configured two-workflow limit. No manual
+replay or production control mutation was performed. The scheduler continued to
+use the enforced 36-slot tenant pool with no expired lease or configuration
+drift; during the verification burst it reached 29 running jobs and queued work
+made forward progress.
+
+The follow-up widens the shared evaluator to the same strict structured-output
+contract: native schema output with response healing, two provider-pinned
+reasoning attempts, and one onboarding fallback. Final Zod validation remains
+mandatory, arbitrary malformed JSON is never guessed, and the evaluator still
+fails closed after the bounded attempts. Because this is generation-policy only,
+it requires no schema or data migration. The production replay remains blocked
+until this follow-up deploys and a fresh read-only gate shows no new one-attempt
+compliance failures.
+
+The 14:08 UTC monitor confirmed the scope is shared rather than qualification-
+only. Three `auto_plan` jobs for the same prospect failed at 13:59:11, 14:01:22,
+and 14:03:25 UTC with `StructuredGenerationError: Unexpected end of JSON input`.
+All three stacks terminate at the same `runWithWorkspaceMemoryCompliance` call
+used by qualification, after auto-plan candidate generation. The workload then
+drained to zero queued/running jobs and 36/36 free slots with no lease, pool, or
+mode drift. The follow-up policy therefore covers both surfaces without a
+second generator-specific workaround; the recovery gate must verify both job
+kinds before any replay.
+
+The incident recurred after that pause. At 15:20 UTC, the newest 1,000 jobs
+contained 19 failures: 17 qualification and 2 auto-plan malformed structured
+outputs, with the newest failure at 15:05:28 UTC. The same monitor measured
+admission p50 328 ms, p95 118.931 seconds, and max 138.039 seconds. A fresh
+read-only sample taken afterward still had p50 328 ms, p95 80.816 seconds, and
+max 138.039 seconds as older jobs moved through the sliding window. Production
+was drained with 36/36 slots free, no expired lease, and no mode or pool drift.
+The structured-output hotfix and the admission-tail investigation therefore
+remain separate active gates: this branch addresses the shared provider-output
+failure only and does not claim to resolve the repeated two-minute admission
+tail.
+
+Follow-up verification passed 115 test files and 579 tests, the standalone
+provider-rotation and shared-consumer wiring suites, TypeScript, strict lint,
+formatting, the 74-route production build, and a production-targeted Convex dry run. The dry run
+validated the schema and reported zero index deletions. Convex security and
+performance review found no new public function, database read/write, schema,
+authorization, or unbounded-work surface in this policy-only change.
 
 ### Separate LinkedIn provider-data incident
 
