@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   combineStructuredGenerationErrors,
   getStructuredAttemptProviderOptions,
+  resolveOpenRouterProviderSlug,
   StructuredGenerationError,
   type OpenRouterProviderOptions,
 } from "../convex/lib/structuredOutputCore";
@@ -57,15 +58,53 @@ test("structured retries escape an exhausted provider-only allowlist", () => {
         },
       },
     },
-    ignoredProviders: ["Cerebras"],
+    ignoredProviders: ["cerebras"],
     requireStructuredOutput: true,
   });
 
   assert.equal(retry.providerOptions.openrouter.provider.only, undefined);
   assert.deepEqual(retry.providerOptions.openrouter.provider.ignore, [
-    "Cerebras",
+    "cerebras",
   ]);
   assert.equal(retry.providerOptions.openrouter.provider.allow_fallbacks, true);
+});
+
+test("provider metadata display names resolve to configured OpenRouter slugs", () => {
+  assert.equal(
+    resolveOpenRouterProviderSlug({
+      providerName: "Cerebras",
+      configuredProviderSlugs: ["cerebras", "groq"],
+    }),
+    "cerebras"
+  );
+  assert.equal(
+    resolveOpenRouterProviderSlug({
+      providerName: "OpenAI",
+      configuredProviderSlugs: ["openai", "azure"],
+    }),
+    "openai"
+  );
+  assert.equal(
+    resolveOpenRouterProviderSlug({
+      providerName: "WandB",
+      configuredProviderSlugs: ["baseten", "wandb/fp4"],
+    }),
+    "wandb"
+  );
+  assert.equal(
+    resolveOpenRouterProviderSlug({
+      providerName: "Google Vertex",
+      configuredProviderSlugs: ["google-vertex/us-east5"],
+    }),
+    "google-vertex"
+  );
+  assert.equal(
+    resolveOpenRouterProviderSlug({
+      providerName: "Unknown Provider",
+      configuredProviderSlugs: ["cerebras", "groq"],
+    }),
+    undefined
+  );
 });
 
 test("one-shot recovery retains request-level provider fallback", () => {

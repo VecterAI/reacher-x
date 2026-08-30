@@ -24,6 +24,7 @@ import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import {
   parseQualificationModelFailure,
   getQualificationFailureRetryDelayMs,
+  shouldRecoverQualificationWorkflowStatusError,
   QUALIFICATION_MODEL_FAILURE_CODE,
 } from "../lib/qualificationFailureCore";
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
@@ -766,6 +767,8 @@ export const startQualification = internalAction({
           return { workId: existingWorkflowId };
         }
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         qualificationWorkflowLogger.warn(
           "Unable to verify existing qualification workflow",
           {
@@ -775,7 +778,15 @@ export const startQualification = internalAction({
           },
           error instanceof Error ? error : new Error(String(error))
         );
-        return { workId: existingWorkflowId };
+        if (
+          !shouldRecoverQualificationWorkflowStatusError({
+            errorMessage,
+            leaseUpdatedAt: prospect.updatedAt,
+            now: getCurrentUTCTimestamp(),
+          })
+        ) {
+          return { workId: existingWorkflowId };
+        }
       }
 
       const cleared = await ctx.runMutation(

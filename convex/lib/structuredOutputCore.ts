@@ -46,6 +46,34 @@ export class StructuredGenerationError extends Error {
 }
 
 /**
+ * OpenRouter response metadata uses display names (for example "Cerebras"),
+ * while provider routing requires slugs. Resolve only against the configured
+ * route so an unknown display name can never become an invalid ignore value.
+ */
+export function resolveOpenRouterProviderSlug(args: {
+  providerName: string;
+  configuredProviderSlugs: readonly string[];
+}): string | undefined {
+  const normalizedProviderName = args.providerName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  if (!normalizedProviderName) {
+    return undefined;
+  }
+
+  for (const configuredSlug of args.configuredProviderSlugs) {
+    const baseSlug = configuredSlug.split("/")[0];
+    const normalizedBaseSlug = baseSlug.replace(/[^a-z0-9]/g, "");
+    if (normalizedBaseSlug === normalizedProviderName) {
+      return baseSlug;
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Keep OpenRouter's request-level failover available for every structured
  * attempt. After an application-level parse/schema failure, a caller can add
  * the provider that served the failed response to `ignoredProviders` so the

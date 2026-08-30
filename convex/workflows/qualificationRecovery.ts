@@ -5,6 +5,7 @@ import type { ActionCtx } from "../_generated/server";
 import { internalAction } from "../lib/functionBuilders";
 import { workflow } from "../lib/workflow";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { shouldRecoverQualificationWorkflowStatusError } from "../lib/qualificationFailureCore";
 
 export const QUALIFICATION_STALE_PENDING_MS = 15 * 60 * 1000;
 const QUALIFICATION_RECOVERY_BATCH_SIZE = 25;
@@ -54,15 +55,25 @@ async function recoverStalePendingQualifications(
             return "active" as const;
           }
         } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const shouldRecover = shouldRecoverQualificationWorkflowStatusError({
+            errorMessage,
+            leaseUpdatedAt: candidate.updatedAt,
+            now,
+          });
           console.warn(
             "[QualificationRecovery] Unable to read workflow status",
             {
               prospectId: String(candidate.prospectId),
               workflowId: candidate.qualificationWorkflowId,
-              error: error instanceof Error ? error.message : String(error),
+              error: errorMessage,
+              shouldRecover,
             }
           );
-          return "status_error" as const;
+          if (!shouldRecover) {
+            return "status_error" as const;
+          }
         }
       }
 

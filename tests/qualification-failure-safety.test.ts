@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  QUALIFICATION_WORKFLOW_STATUS_ERROR_HARD_STALE_MS,
   formatQualificationModelFailure,
   getQualificationFailureRetryAt,
   parseQualificationModelFailure,
+  shouldRecoverQualificationWorkflowStatusError,
 } from "../convex/lib/qualificationFailureCore";
 
 const qualificationCoreSource = readFileSync(
@@ -95,4 +97,47 @@ test("technical failures keep one rate-bounded durable retry scheduled", () => {
   assert.match(completionHandler, /expectedFailureAt:\s*now/);
   assert.match(qualificationValidatorSource, /workflowAttemptCount:/);
   assert.match(qualificationValidatorSource, /nextRetryAt:/);
+});
+
+test("permanent workflow lookup failures release their leases immediately", () => {
+  const now = Date.parse("2026-08-30T17:00:00.000Z");
+
+  assert.equal(
+    shouldRecoverQualificationWorkflowStatusError({
+      errorMessage: "Workflow not found: missing-workflow",
+      leaseUpdatedAt: now - 1_000,
+      now,
+    }),
+    true
+  );
+  assert.equal(
+    shouldRecoverQualificationWorkflowStatusError({
+      errorMessage: "ArgumentValidationError: invalid workflow id",
+      leaseUpdatedAt: now - 1_000,
+      now,
+    }),
+    true
+  );
+});
+
+test("unknown workflow lookup failures preserve only recent leases", () => {
+  const now = Date.parse("2026-08-30T17:00:00.000Z");
+  const errorMessage = "System error while reading workflow status";
+
+  assert.equal(
+    shouldRecoverQualificationWorkflowStatusError({
+      errorMessage,
+      leaseUpdatedAt: now - 15 * 60 * 1_000,
+      now,
+    }),
+    false
+  );
+  assert.equal(
+    shouldRecoverQualificationWorkflowStatusError({
+      errorMessage,
+      leaseUpdatedAt: now - QUALIFICATION_WORKFLOW_STATUS_ERROR_HARD_STALE_MS,
+      now,
+    }),
+    true
+  );
 });

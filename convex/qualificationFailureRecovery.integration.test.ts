@@ -294,6 +294,76 @@ describe("qualification model failure recovery", () => {
     ).toHaveLength(1);
   });
 
+  test("reconciler replaces an invalid workflow lease exactly once", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T14:30:00.000Z"));
+    const t = convexTest(schema, modules);
+    const prospectId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "qualification-invalid-lease-user",
+        email: "qualification-invalid-lease@example.test",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Qualification invalid lease",
+        description: "Invalid workflow lease recovery test workspace",
+        isDefault: true,
+        updatedAt: 1,
+      });
+      return await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "qualification-invalid-lease-prospect",
+        data: {},
+        status: "new",
+        qualificationStatus: "pending",
+        qualificationWorkflowId: "missing-qualification-workflow",
+        updatedAt: 1,
+      });
+    });
+
+    const firstResult = await t.action(
+      internal.workflows.qualificationRecovery
+        .recoverStalePendingQualificationsInternal,
+      { limit: 25 }
+    );
+    const secondResult = await t.action(
+      internal.workflows.qualificationRecovery
+        .recoverStalePendingQualificationsInternal,
+      { limit: 25 }
+    );
+    const state = await t.run(async (ctx) => ({
+      prospect: await ctx.db.get("prospects", prospectId),
+      scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+
+    expect(firstResult).toEqual({
+      checked: 1,
+      active: 0,
+      scheduled: 1,
+      leasesCleared: 0,
+      notDue: 0,
+      skipped: 0,
+      statusErrors: 0,
+    });
+    expect(secondResult).toEqual({
+      checked: 0,
+      active: 0,
+      scheduled: 0,
+      leasesCleared: 0,
+      notDue: 0,
+      skipped: 0,
+      statusErrors: 0,
+    });
+    expect(state.prospect?.qualificationWorkflowId).toBeUndefined();
+    expect(state.prospect?.updatedAt).toBe(Date.now());
+    expect(
+      state.scheduled.filter((job) => job.name.includes("startQualification"))
+    ).toHaveLength(1);
+  });
+
   test("only one caller can claim a due qualification failure retry", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-30T15:00:00.000Z"));
@@ -341,9 +411,18 @@ describe("qualification model failure recovery", () => {
       internal.prospects.claimQualificationFailureRetryInternal,
       { prospectId, expectedFailureAt: failedAt, now: Date.now() }
     );
+    const claimedProspect = await t.run((ctx) =>
+      ctx.db.get("prospects", prospectId)
+    );
 
     expect(firstClaim).toBe(true);
     expect(duplicateClaim).toBe(false);
+    expect(
+      claimedProspect?.qualificationLastFailure?.workflowAttemptCount
+    ).toBe(1);
+    expect(claimedProspect?.qualificationLastFailure?.nextRetryAt).toBe(
+      Date.now() + getQualificationFailureRetryDelayMs(1)
+    );
   });
 
   test("legacy failure backoff and archived rows cannot consume recovery slots", async () => {

@@ -3496,6 +3496,8 @@ export const claimQualificationFailureRetryInternal = internalMutation({
     await ctx.db.patch(args.prospectId, {
       qualificationLastFailure: {
         ...failure,
+        // Only handleQualificationComplete increments workflowAttemptCount.
+        // Claiming or deferring a dispatch is not another failed workflow.
         nextRetryAt:
           args.now +
           getQualificationFailureRetryDelayMs(

@@ -17,6 +17,7 @@ import { getConfiguredModel } from "./modelConfigHelpers";
 import {
   combineStructuredGenerationErrors,
   getStructuredAttemptProviderOptions,
+  resolveOpenRouterProviderSlug,
   StructuredGenerationError,
   type OpenRouterProviderOptions,
   type OpenRouterProviderRouting,
@@ -932,7 +933,15 @@ export async function generateTextWithJsonParse<T>({
       attempts.push(attemptFailure);
 
       if (attemptFailure.providerSelected) {
-        ignoredProviders.add(attemptFailure.providerSelected.toLowerCase());
+        const providerRouting = modelConfig.providerOptions.openrouter.provider;
+        const providerSlug = resolveOpenRouterProviderSlug({
+          providerName: attemptFailure.providerSelected,
+          configuredProviderSlugs:
+            providerRouting.only ?? providerRouting.order ?? [],
+        });
+        if (providerSlug) {
+          ignoredProviders.add(providerSlug);
+        }
       }
 
       logJsonAttemptFailure(

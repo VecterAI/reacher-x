@@ -4,6 +4,30 @@ export const QUALIFICATION_MODEL_FAILURE_CODE =
   "qualification_model_evaluation_failed";
 export const QUALIFICATION_MODEL_RETRY_DELAY_MS = 5 * 60 * 1000;
 export const QUALIFICATION_MODEL_MAX_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
+export const QUALIFICATION_WORKFLOW_STATUS_ERROR_HARD_STALE_MS = 60 * 60 * 1000;
+
+/**
+ * A missing or invalid component workflow cannot become healthy on its own.
+ * Unknown status errors may be transient, so preserve the lease until it is
+ * far older than the maximum expected qualification runtime.
+ */
+export function shouldRecoverQualificationWorkflowStatusError(args: {
+  errorMessage: string;
+  leaseUpdatedAt: number;
+  now: number;
+}): boolean {
+  const normalizedMessage = args.errorMessage.toLowerCase();
+  const permanentLookupFailure =
+    normalizedMessage.includes("workflow not found") ||
+    normalizedMessage.includes("invalid workflow id") ||
+    normalizedMessage.includes("argumentvalidationerror");
+
+  return (
+    permanentLookupFailure ||
+    args.leaseUpdatedAt <=
+      args.now - QUALIFICATION_WORKFLOW_STATUS_ERROR_HARD_STALE_MS
+  );
+}
 
 /**
  * Keep each workflow's model attempts bounded while ensuring a technical
