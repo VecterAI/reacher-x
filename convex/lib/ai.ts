@@ -474,7 +474,7 @@ export const PINNED_VISION_PROVIDER_OPTIONS: OpenRouterProviderOptions =
     defaultModel: MODELS.KIMI_K2_6,
     defaultOptions: createOrderedProviderOptions({
       order: [OPENROUTER_PROVIDERS.BASETEN, OPENROUTER_PROVIDERS.WANDB_FP4],
-      allowFallbacks: false,
+      allowFallbacks: true,
     }),
   });
 
