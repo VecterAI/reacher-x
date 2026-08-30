@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   formatQualificationModelFailure,
+  getQualificationFailureRetryAt,
   parseQualificationModelFailure,
 } from "../convex/lib/qualificationFailureCore";
 
@@ -62,6 +63,14 @@ test("model failures retain provider, model, attempts, and original error", () =
   });
 });
 
+test("legacy exhausted failures without nextRetryAt become due after backoff", () => {
+  const failedAt = Date.parse("2026-08-29T12:00:00.000Z");
+  assert.equal(
+    getQualificationFailureRetryAt({ failedAt, workflowAttemptCount: 2 }),
+    failedAt + 10 * 60 * 1000
+  );
+});
+
 test("qualification uses native structured output and a stronger fallback", () => {
   assert.match(qualificationCoreSource, /nativeStructuredOutput:\s*true/);
   assert.match(
@@ -74,17 +83,16 @@ test("qualification uses native structured output and a stronger fallback", () =
   );
 });
 
-test("model failures schedule only one bounded delayed workflow retry", () => {
+test("technical failures keep one rate-bounded durable retry scheduled", () => {
   const completionHandler = qualificationWorkflowSource.slice(
     qualificationWorkflowSource.indexOf(
       "export const handleQualificationComplete"
     ),
     qualificationWorkflowSource.indexOf("export const startQualification")
   );
-  assert.match(completionHandler, /QUALIFICATION_MAX_WORKFLOW_ATTEMPTS/);
-  assert.match(completionHandler, /QUALIFICATION_MODEL_RETRY_DELAY_MS/);
+  assert.match(completionHandler, /getQualificationFailureRetryDelayMs/);
   assert.match(completionHandler, /ctx\.scheduler\.runAt/);
-  assert.match(completionHandler, /expectedModelFailureAt:\s*now/);
+  assert.match(completionHandler, /expectedFailureAt:\s*now/);
   assert.match(qualificationValidatorSource, /workflowAttemptCount:/);
   assert.match(qualificationValidatorSource, /nextRetryAt:/);
 });

@@ -17,41 +17,60 @@ const orderedProviders: OpenRouterProviderOptions = {
   },
 };
 
-test("structured retries pin different providers after malformed success", () => {
+test("structured retries preserve fallback and exclude a failed provider", () => {
   const first = getStructuredAttemptProviderOptions({
     providerOptions: orderedProviders,
-    attemptIndex: 0,
-    totalAttempts: 2,
     requireStructuredOutput: true,
   });
   const second = getStructuredAttemptProviderOptions({
     providerOptions: orderedProviders,
-    attemptIndex: 1,
-    totalAttempts: 2,
+    ignoredProviders: ["cerebras"],
     requireStructuredOutput: true,
   });
 
-  assert.equal(first.configuredProvider, "cerebras");
-  assert.deepEqual(first.providerOptions.openrouter.provider.only, [
-    "cerebras",
-  ]);
-  assert.equal(
-    first.providerOptions.openrouter.provider.allow_fallbacks,
-    false
-  );
+  assert.equal(first.configuredProvider, "cerebras/groq");
+  assert.equal(first.providerOptions.openrouter.provider.only, undefined);
+  assert.equal(first.providerOptions.openrouter.provider.allow_fallbacks, true);
   assert.equal(
     first.providerOptions.openrouter.provider.require_parameters,
     true
   );
-  assert.equal(second.configuredProvider, "groq");
-  assert.deepEqual(second.providerOptions.openrouter.provider.only, ["groq"]);
+  assert.equal(second.configuredProvider, "cerebras/groq excluding cerebras");
+  assert.deepEqual(second.providerOptions.openrouter.provider.order, ["groq"]);
+  assert.deepEqual(second.providerOptions.openrouter.provider.ignore, [
+    "cerebras",
+  ]);
+  assert.equal(second.providerOptions.openrouter.provider.only, undefined);
+  assert.equal(
+    second.providerOptions.openrouter.provider.allow_fallbacks,
+    true
+  );
+});
+
+test("structured retries escape an exhausted provider-only allowlist", () => {
+  const retry = getStructuredAttemptProviderOptions({
+    providerOptions: {
+      openrouter: {
+        provider: {
+          only: ["cerebras"],
+          require_parameters: true,
+        },
+      },
+    },
+    ignoredProviders: ["Cerebras"],
+    requireStructuredOutput: true,
+  });
+
+  assert.equal(retry.providerOptions.openrouter.provider.only, undefined);
+  assert.deepEqual(retry.providerOptions.openrouter.provider.ignore, [
+    "Cerebras",
+  ]);
+  assert.equal(retry.providerOptions.openrouter.provider.allow_fallbacks, true);
 });
 
 test("one-shot recovery retains request-level provider fallback", () => {
   const recovery = getStructuredAttemptProviderOptions({
     providerOptions: orderedProviders,
-    attemptIndex: 0,
-    totalAttempts: 1,
     requireStructuredOutput: true,
   });
 
@@ -64,6 +83,30 @@ test("one-shot recovery retains request-level provider fallback", () => {
     "cerebras",
     "groq",
   ]);
+});
+
+test("structured output overrides a disabled provider fallback", () => {
+  const result = getStructuredAttemptProviderOptions({
+    providerOptions: {
+      openrouter: {
+        provider: {
+          order: ["baseten", "wandb"],
+          allow_fallbacks: false,
+        },
+      },
+    },
+    requireStructuredOutput: true,
+  });
+
+  assert.equal(
+    result.providerOptions.openrouter.provider.allow_fallbacks,
+    true
+  );
+  assert.equal(
+    result.providerOptions.openrouter.provider.require_parameters,
+    true
+  );
+  assert.equal(result.providerOptions.openrouter.provider.only, undefined);
 });
 
 test("fallback errors preserve every provider attempt", () => {

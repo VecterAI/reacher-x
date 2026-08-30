@@ -71,6 +71,12 @@ crons.interval(
 );
 
 crons.interval(
+  "recover stale pending qualifications",
+  { minutes: 5 },
+  internal.workflows.qualificationRecovery.recoverStalePendingQualificationsCron
+);
+
+crons.interval(
   "recover expired tenant scheduler leases",
   { minutes: 10 },
   internal.tenantScheduler.reapExpiredJobsInternal

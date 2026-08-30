@@ -1341,7 +1341,7 @@ export const qualificationFailureValidator = v.object({
   attemptCount: v.optional(v.number()),
   /** Number of completed durable qualification runs for the same failure. */
   workflowAttemptCount: v.optional(v.number()),
-  /** Earliest time the single bounded automatic retry may start. */
+  /** Earliest time the next rate-bounded automatic retry may start. */
   nextRetryAt: v.optional(v.number()),
   failedAt: v.number(),
 });

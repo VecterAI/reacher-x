@@ -1,6 +1,7 @@
 import type { JSONValue } from "ai";
 
 export type OpenRouterProviderRouting = Record<string, JSONValue> & {
+  ignore?: string[];
   only?: string[];
   order?: string[];
   allow_fallbacks?: boolean;
@@ -45,37 +46,55 @@ export class StructuredGenerationError extends Error {
 }
 
 /**
- * OpenRouter provider fallback handles request failures, but a provider can
- * return HTTP success with malformed JSON. Pin each application-level retry to
- * a different configured provider so a parse/schema failure gets real provider
- * diversity instead of returning to the first provider in the order.
+ * Keep OpenRouter's request-level failover available for every structured
+ * attempt. After an application-level parse/schema failure, a caller can add
+ * the provider that served the failed response to `ignoredProviders` so the
+ * next attempt gets provider diversity without narrowing the request to one
+ * endpoint.
  */
 export function getStructuredAttemptProviderOptions(args: {
   providerOptions: OpenRouterProviderOptions;
-  attemptIndex: number;
-  totalAttempts: number;
+  ignoredProviders?: readonly string[];
   requireStructuredOutput: boolean;
 }): {
   providerOptions: OpenRouterProviderOptions;
   configuredProvider: string;
 } {
   const routing = args.providerOptions.openrouter.provider;
-  const order = routing.order ?? [];
-  const shouldPinProvider = args.totalAttempts > 1 && order.length > 1;
-  const selectedProvider = shouldPinProvider
-    ? order[args.attemptIndex % order.length]
-    : undefined;
+  const ignoredProviders = [
+    ...new Set([...(routing.ignore ?? []), ...(args.ignoredProviders ?? [])]),
+  ];
+  const normalizedIgnoredProviders = new Set(
+    ignoredProviders.map((provider) => provider.toLowerCase())
+  );
+  const remainingOnly = routing.only?.filter(
+    (provider) => !normalizedIgnoredProviders.has(provider.toLowerCase())
+  );
+  const remainingOrder = routing.order?.filter(
+    (provider) => !normalizedIgnoredProviders.has(provider.toLowerCase())
+  );
   const nextRouting: OpenRouterProviderRouting = {
     ...routing,
+    allow_fallbacks: true,
     ...(args.requireStructuredOutput ? { require_parameters: true } : {}),
-    ...(selectedProvider
-      ? {
-          only: [selectedProvider],
-          order: [selectedProvider],
-          allow_fallbacks: false,
-        }
-      : {}),
+    ...(ignoredProviders.length > 0 ? { ignore: ignoredProviders } : {}),
   };
+  if (routing.only) {
+    if (remainingOnly && remainingOnly.length > 0) {
+      nextRouting.only = remainingOnly;
+    } else {
+      delete nextRouting.only;
+    }
+  }
+  if (routing.order) {
+    if (remainingOrder && remainingOrder.length > 0) {
+      nextRouting.order = remainingOrder;
+    } else {
+      delete nextRouting.order;
+    }
+  }
+  const configuredProviders = routing.only ?? routing.order ?? [];
+  const configuredProvider = configuredProviders.join("/") || "openrouter";
 
   return {
     providerOptions: {
@@ -85,10 +104,9 @@ export function getStructuredAttemptProviderOptions(args: {
       },
     },
     configuredProvider:
-      selectedProvider ??
-      routing.only?.join("/") ??
-      routing.order?.join("/") ??
-      "openrouter",
+      ignoredProviders.length > 0
+        ? `${configuredProvider} excluding ${ignoredProviders.join("/")}`
+        : configuredProvider,
   };
 }
 

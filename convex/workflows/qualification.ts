@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { vWorkflowId } from "@convex-dev/workflow";
+import { vWorkflowId, type WorkflowId } from "@convex-dev/workflow";
 import { vResultValidator } from "@convex-dev/workpool";
 import { workflow } from "../lib/workflow";
 import { internal } from "../_generated/api";
@@ -23,9 +23,8 @@ import type { ActionCtx } from "../_generated/server";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import {
   parseQualificationModelFailure,
-  QUALIFICATION_MAX_WORKFLOW_ATTEMPTS,
+  getQualificationFailureRetryDelayMs,
   QUALIFICATION_MODEL_FAILURE_CODE,
-  QUALIFICATION_MODEL_RETRY_DELAY_MS,
 } from "../lib/qualificationFailureCore";
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
 import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
@@ -678,17 +677,10 @@ export const handleQualificationComplete = internalMutation({
     if (args.result.kind === "failed") {
       const modelFailure = parseQualificationModelFailure(args.result.error);
       const previousWorkflowAttemptCount =
-        prospect.qualificationLastFailure?.code ===
-        QUALIFICATION_MODEL_FAILURE_CODE
-          ? (prospect.qualificationLastFailure.workflowAttemptCount ?? 0)
-          : 0;
+        prospect.qualificationLastFailure?.workflowAttemptCount ?? 0;
       const workflowAttemptCount = previousWorkflowAttemptCount + 1;
-      const shouldRetry =
-        Boolean(modelFailure) &&
-        workflowAttemptCount < QUALIFICATION_MAX_WORKFLOW_ATTEMPTS;
-      const nextRetryAt = shouldRetry
-        ? now + QUALIFICATION_MODEL_RETRY_DELAY_MS
-        : undefined;
+      const nextRetryAt =
+        now + getQualificationFailureRetryDelayMs(workflowAttemptCount);
       await ctx.db.patch(prospect._id, {
         qualificationWorkflowId: undefined,
         qualificationLastFailure: {
@@ -713,17 +705,15 @@ export const handleQualificationComplete = internalMutation({
           errorMessage: args.result.error,
         });
       }
-      if (shouldRetry && nextRetryAt !== undefined) {
-        await ctx.scheduler.runAt(
-          nextRetryAt,
-          internal.workflows.qualification.startQualification,
-          {
-            prospectId: prospect._id,
-            workspaceId: prospect.workspaceId,
-            expectedModelFailureAt: now,
-          }
-        );
-      }
+      await ctx.scheduler.runAt(
+        nextRetryAt,
+        internal.workflows.qualification.startQualification,
+        {
+          prospectId: prospect._id,
+          workspaceId: prospect.workspaceId,
+          expectedFailureAt: now,
+        }
+      );
       return null;
     }
 
@@ -750,49 +740,91 @@ export const startQualification = internalAction({
   args: {
     prospectId: v.id("prospects"),
     workspaceId: v.id("workspaces"),
-    expectedModelFailureAt: v.optional(v.number()),
+    expectedFailureAt: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
-    const prospect = await ctx.runQuery(
-      internal.prospects.getProspectInternal,
-      {
-        prospectId: args.prospectId,
-      }
-    );
+    let prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
+      prospectId: args.prospectId,
+    });
     if (
       !prospect ||
       prospect.status === "archived" ||
       prospect.qualificationStatus === "qualified" ||
-      prospect.qualificationStatus === "disqualified" ||
-      typeof prospect.qualificationWorkflowId === "string"
+      prospect.qualificationStatus === "disqualified"
     ) {
       return { workId: "" };
     }
 
-    const now = getCurrentUTCTimestamp();
-    const modelFailure =
-      prospect.qualificationLastFailure?.code ===
-      QUALIFICATION_MODEL_FAILURE_CODE
-        ? prospect.qualificationLastFailure
-        : undefined;
-    if (args.expectedModelFailureAt !== undefined) {
+    if (typeof prospect.qualificationWorkflowId === "string") {
+      const existingWorkflowId = prospect.qualificationWorkflowId;
+      try {
+        const status = await workflow.status(
+          ctx,
+          existingWorkflowId as WorkflowId
+        );
+        if (status.type === "inProgress") {
+          return { workId: existingWorkflowId };
+        }
+      } catch (error) {
+        qualificationWorkflowLogger.warn(
+          "Unable to verify existing qualification workflow",
+          {
+            prospectId: String(prospect._id),
+            workspaceId: String(prospect.workspaceId),
+            workflowId: existingWorkflowId,
+          },
+          error instanceof Error ? error : new Error(String(error))
+        );
+        return { workId: existingWorkflowId };
+      }
+
+      const cleared = await ctx.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        {
+          prospectId: prospect._id,
+          workflowId: existingWorkflowId,
+        }
+      );
+      if (!cleared) {
+        return { workId: "" };
+      }
+      prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
+        prospectId: args.prospectId,
+      });
       if (
-        modelFailure?.failedAt !== args.expectedModelFailureAt ||
-        modelFailure.nextRetryAt === undefined ||
-        modelFailure.nextRetryAt > now ||
-        (modelFailure.workflowAttemptCount ?? 0) >=
-          QUALIFICATION_MAX_WORKFLOW_ATTEMPTS
+        !prospect ||
+        prospect.status === "archived" ||
+        prospect.qualificationStatus === "qualified" ||
+        prospect.qualificationStatus === "disqualified" ||
+        typeof prospect.qualificationWorkflowId === "string"
       ) {
         return { workId: "" };
       }
-    } else if (modelFailure) {
-      const retryAt =
-        modelFailure.nextRetryAt ??
-        modelFailure.failedAt + QUALIFICATION_MODEL_RETRY_DELAY_MS;
+    }
+
+    const now = getCurrentUTCTimestamp();
+    const failure = prospect.qualificationLastFailure;
+    const retryFailureAt = args.expectedFailureAt ?? failure?.failedAt;
+    if (retryFailureAt !== undefined) {
+      const claimed = await ctx.runMutation(
+        internal.prospects.claimQualificationFailureRetryInternal,
+        {
+          prospectId: prospect._id,
+          expectedFailureAt: retryFailureAt,
+          now,
+        }
+      );
+      if (!claimed) {
+        return { workId: "" };
+      }
+      prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
+        prospectId: args.prospectId,
+      });
       if (
-        retryAt > now ||
-        (modelFailure.workflowAttemptCount ?? 0) >=
-          QUALIFICATION_MAX_WORKFLOW_ATTEMPTS
+        !prospect ||
+        prospect.status === "archived" ||
+        prospect.qualificationStatus !== "pending" ||
+        typeof prospect.qualificationWorkflowId === "string"
       ) {
         return { workId: "" };
       }
