@@ -17,6 +17,7 @@ import { getConfiguredModel } from "./modelConfigHelpers";
 import {
   combineStructuredGenerationErrors,
   getStructuredAttemptProviderOptions,
+  resolveOpenRouterProviderSlug,
   StructuredGenerationError,
   type OpenRouterProviderOptions,
   type OpenRouterProviderRouting,
@@ -830,16 +831,19 @@ export async function generateTextWithJsonParse<T>({
   const modelConfig = getModelForRouting(routing);
   const jsonSchema = JSON.stringify(z.toJSONSchema(schema), null, 2);
   const attempts: StructuredGenerationAttempt[] = [];
+  const ignoredProviders = new Set<string>();
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const startTime = getCurrentUTCTimestamp();
     const attemptRouting = getStructuredAttemptProviderOptions({
       providerOptions: modelConfig.providerOptions,
-      attemptIndex: attempt,
-      totalAttempts: maxRetries,
+      ignoredProviders: [...ignoredProviders],
       requireStructuredOutput: nativeStructuredOutput,
     });
     let resultDiagnostics:
+      | Omit<StructuredGenerationAttempt, "errorMessage" | "durationMs">
+      | undefined;
+    let completedStepDiagnostics:
       | Omit<StructuredGenerationAttempt, "errorMessage" | "durationMs">
       | undefined;
 
@@ -859,6 +863,20 @@ export async function generateTextWithJsonParse<T>({
           ? { output: Output.object({ schema }) }
           : {}),
         providerOptions: attemptRouting.providerOptions,
+        onStepFinish: (stepResult) => {
+          const usage = extractUsage(stepResult);
+          completedStepDiagnostics = {
+            attemptNumber: attempt + 1,
+            routing,
+            model: modelConfig.model,
+            configuredProvider: attemptRouting.configuredProvider,
+            providerSelected: usage.providerSelected,
+            modelSelected: usage.modelSelected,
+            finishReason: stepResult.finishReason,
+            responseLength: stepResult.text.length,
+            outputTokens: usage.outputTokens,
+          };
+        },
         ...(modelConfig.timeoutMs
           ? { abortSignal: AbortSignal.timeout(modelConfig.timeoutMs) }
           : {}),
@@ -908,10 +926,23 @@ export async function generateTextWithJsonParse<T>({
         configuredProvider: attemptRouting.configuredProvider,
         durationMs,
         errorMessage,
+        ...completedStepDiagnostics,
         ...resultDiagnostics,
         ...noObjectDiagnostics,
       };
       attempts.push(attemptFailure);
+
+      if (attemptFailure.providerSelected) {
+        const providerRouting = modelConfig.providerOptions.openrouter.provider;
+        const providerSlug = resolveOpenRouterProviderSlug({
+          providerName: attemptFailure.providerSelected,
+          configuredProviderSlugs:
+            providerRouting.only ?? providerRouting.order ?? [],
+        });
+        if (providerSlug) {
+          ignoredProviders.add(providerSlug);
+        }
+      }
 
       logJsonAttemptFailure(
         failureLogLevel,

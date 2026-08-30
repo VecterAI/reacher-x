@@ -865,6 +865,12 @@ export default defineSchema({
     .index("by_external_id", ["workspaceId", "platform", "externalId"])
     .index("by_setup_session", ["setupSessionId"])
     .index("by_setup_session_revision", ["setupSessionId", "setupRevision"])
+    .index("by_qualification_status_and_origin_and_status_and_updated_at", [
+      "qualificationStatus",
+      "origin",
+      "status",
+      "updatedAt",
+    ])
     .index("by_workspace_qualification", ["workspaceId", "qualificationStatus"])
     .index("by_workspace_enrichment", ["workspaceId", "enrichmentStatus"]),
 

@@ -25,6 +25,7 @@ import {
   qualificationSourceValidator,
   qualificationVerificationValidator,
   qualificationScoreBreakdownValidator,
+  qualificationFailureValidator,
   prospectTypeValidator,
   enrichmentStatusValidator,
   planGenerationStatusValidator,
@@ -62,6 +63,10 @@ import {
 } from "./lib/outreachCore";
 import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import { getProspectingRecoveryDelayMs } from "./lib/prospectingHelpers";
+import {
+  getQualificationFailureRetryAt,
+  getQualificationFailureRetryDelayMs,
+} from "./lib/qualificationFailureCore";
 import { PROSPECT_WRITE_TRANSACTION_BATCH_SIZE } from "./lib/prospectPersistenceHelpers";
 import {
   buildProspectAnalyticsBackfillPatch,
@@ -2724,6 +2729,25 @@ export const clearQualificationWorkflowId = internalMutation({
   },
 });
 
+export const clearQualificationWorkflowIdIfMatchesInternal = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    workflowId: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (prospect?.qualificationWorkflowId !== args.workflowId) {
+      return false;
+    }
+    await ctx.db.patch(args.prospectId, {
+      qualificationWorkflowId: undefined,
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+    return true;
+  },
+});
+
 export const claimEnrichmentWorkflowIdInternal = internalMutation({
   args: {
     prospectId: v.id("prospects"),
@@ -3387,6 +3411,191 @@ export const listWorkspaceCapacityRestartCandidatesInternal = internalQuery({
         qualificationStatus: prospect.qualificationStatus,
         enrichmentStatus: prospect.enrichmentStatus,
       }));
+  },
+});
+
+export const listStalePendingQualificationCandidatesInternal = internalQuery({
+  args: {
+    cutoff: v.number(),
+    limit: v.number(),
+  },
+  returns: v.array(
+    v.object({
+      prospectId: v.id("prospects"),
+      workspaceId: v.id("workspaces"),
+      qualificationWorkflowId: v.optional(v.string()),
+      qualificationLastFailure: v.optional(qualificationFailureValidator),
+      updatedAt: v.number(),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(Math.floor(args.limit), 50));
+    const origins = ["workspace_discovery", "manual"] as const;
+    const activeStatuses = [
+      "new",
+      "contacted",
+      "in_progress",
+      "converted",
+    ] as const;
+    const pages = await Promise.all(
+      origins.flatMap((origin) =>
+        activeStatuses.map((status) =>
+          ctx.db
+            .query("prospects")
+            .withIndex(
+              "by_qualification_status_and_origin_and_status_and_updated_at",
+              (q) =>
+                q
+                  .eq("qualificationStatus", "pending")
+                  .eq("origin", origin)
+                  .eq("status", status)
+                  .lte("updatedAt", args.cutoff)
+            )
+            .order("asc")
+            .take(limit)
+        )
+      )
+    );
+    const rows = pages
+      .flat()
+      .sort((left, right) => left.updatedAt - right.updatedAt)
+      .slice(0, limit);
+
+    return rows.map((prospect) => ({
+      prospectId: prospect._id,
+      workspaceId: prospect.workspaceId,
+      qualificationWorkflowId: prospect.qualificationWorkflowId,
+      qualificationLastFailure: prospect.qualificationLastFailure,
+      updatedAt: prospect.updatedAt,
+    }));
+  },
+});
+
+export const claimQualificationFailureRetryInternal = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    expectedFailureAt: v.number(),
+    now: v.number(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    const failure = prospect?.qualificationLastFailure;
+    if (
+      !prospect ||
+      prospect.status === "archived" ||
+      prospect.qualificationStatus !== "pending" ||
+      prospect.qualificationWorkflowId !== undefined ||
+      !failure ||
+      failure.failedAt !== args.expectedFailureAt ||
+      getQualificationFailureRetryAt(failure) > args.now
+    ) {
+      return false;
+    }
+
+    await ctx.db.patch(args.prospectId, {
+      qualificationLastFailure: {
+        ...failure,
+        // Only handleQualificationComplete increments workflowAttemptCount.
+        // Claiming or deferring a dispatch is not another failed workflow.
+        nextRetryAt:
+          args.now +
+          getQualificationFailureRetryDelayMs(
+            failure.workflowAttemptCount ?? 1
+          ),
+      },
+      updatedAt: args.now,
+    });
+    return true;
+  },
+});
+
+export const claimPendingQualificationRecoveryInternal = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    expectedUpdatedAt: v.number(),
+    expectedWorkflowId: v.optional(v.string()),
+    expectedFailureAt: v.optional(v.number()),
+    now: v.number(),
+  },
+  returns: v.object({
+    claimed: v.boolean(),
+    scheduled: v.boolean(),
+    reason: v.union(
+      v.literal("scheduled"),
+      v.literal("lease_cleared"),
+      v.literal("not_due"),
+      v.literal("stale_snapshot"),
+      v.literal("ineligible")
+    ),
+  }),
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (
+      !prospect ||
+      prospect.status === "archived" ||
+      prospect.origin === "setup_preview" ||
+      prospect.qualificationStatus !== "pending"
+    ) {
+      return {
+        claimed: false,
+        scheduled: false,
+        reason: "ineligible" as const,
+      };
+    }
+    if (
+      prospect.updatedAt !== args.expectedUpdatedAt ||
+      prospect.qualificationWorkflowId !== args.expectedWorkflowId ||
+      prospect.qualificationLastFailure?.failedAt !== args.expectedFailureAt
+    ) {
+      return {
+        claimed: false,
+        scheduled: false,
+        reason: "stale_snapshot" as const,
+      };
+    }
+
+    const retryAt = prospect.qualificationLastFailure
+      ? getQualificationFailureRetryAt(prospect.qualificationLastFailure)
+      : undefined;
+    const retryDue = retryAt === undefined || retryAt <= args.now;
+    if (!retryDue && args.expectedWorkflowId === undefined) {
+      return {
+        claimed: false,
+        scheduled: false,
+        reason: "not_due" as const,
+      };
+    }
+
+    await ctx.db.patch(args.prospectId, {
+      qualificationWorkflowId: undefined,
+      updatedAt: args.now,
+    });
+
+    if (!retryDue) {
+      return {
+        claimed: true,
+        scheduled: false,
+        reason: "lease_cleared" as const,
+      };
+    }
+
+    await ctx.scheduler.runAfter(
+      0,
+      internal.workflows.qualification.startQualification,
+      {
+        prospectId: prospect._id,
+        workspaceId: prospect.workspaceId,
+        ...(prospect.qualificationLastFailure
+          ? { expectedFailureAt: prospect.qualificationLastFailure.failedAt }
+          : {}),
+      }
+    );
+    return {
+      claimed: true,
+      scheduled: true,
+      reason: "scheduled" as const,
+    };
   },
 });
 

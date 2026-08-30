@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  QUALIFICATION_WORKFLOW_STATUS_ERROR_HARD_STALE_MS,
   formatQualificationModelFailure,
+  getQualificationFailureRetryAt,
   parseQualificationModelFailure,
+  shouldRecoverQualificationWorkflowStatusError,
 } from "../convex/lib/qualificationFailureCore";
 
 const qualificationCoreSource = readFileSync(
@@ -62,6 +65,14 @@ test("model failures retain provider, model, attempts, and original error", () =
   });
 });
 
+test("legacy exhausted failures without nextRetryAt become due after backoff", () => {
+  const failedAt = Date.parse("2026-08-29T12:00:00.000Z");
+  assert.equal(
+    getQualificationFailureRetryAt({ failedAt, workflowAttemptCount: 2 }),
+    failedAt + 10 * 60 * 1000
+  );
+});
+
 test("qualification uses native structured output and a stronger fallback", () => {
   assert.match(qualificationCoreSource, /nativeStructuredOutput:\s*true/);
   assert.match(
@@ -74,17 +85,59 @@ test("qualification uses native structured output and a stronger fallback", () =
   );
 });
 
-test("model failures schedule only one bounded delayed workflow retry", () => {
+test("technical failures keep one rate-bounded durable retry scheduled", () => {
   const completionHandler = qualificationWorkflowSource.slice(
     qualificationWorkflowSource.indexOf(
       "export const handleQualificationComplete"
     ),
     qualificationWorkflowSource.indexOf("export const startQualification")
   );
-  assert.match(completionHandler, /QUALIFICATION_MAX_WORKFLOW_ATTEMPTS/);
-  assert.match(completionHandler, /QUALIFICATION_MODEL_RETRY_DELAY_MS/);
+  assert.match(completionHandler, /getQualificationFailureRetryDelayMs/);
   assert.match(completionHandler, /ctx\.scheduler\.runAt/);
-  assert.match(completionHandler, /expectedModelFailureAt:\s*now/);
+  assert.match(completionHandler, /expectedFailureAt:\s*now/);
   assert.match(qualificationValidatorSource, /workflowAttemptCount:/);
   assert.match(qualificationValidatorSource, /nextRetryAt:/);
+});
+
+test("permanent workflow lookup failures release their leases immediately", () => {
+  const now = Date.parse("2026-08-30T17:00:00.000Z");
+
+  assert.equal(
+    shouldRecoverQualificationWorkflowStatusError({
+      errorMessage: "Workflow not found: missing-workflow",
+      leaseUpdatedAt: now - 1_000,
+      now,
+    }),
+    true
+  );
+  assert.equal(
+    shouldRecoverQualificationWorkflowStatusError({
+      errorMessage: "ArgumentValidationError: invalid workflow id",
+      leaseUpdatedAt: now - 1_000,
+      now,
+    }),
+    true
+  );
+});
+
+test("unknown workflow lookup failures preserve only recent leases", () => {
+  const now = Date.parse("2026-08-30T17:00:00.000Z");
+  const errorMessage = "System error while reading workflow status";
+
+  assert.equal(
+    shouldRecoverQualificationWorkflowStatusError({
+      errorMessage,
+      leaseUpdatedAt: now - 15 * 60 * 1_000,
+      now,
+    }),
+    false
+  );
+  assert.equal(
+    shouldRecoverQualificationWorkflowStatusError({
+      errorMessage,
+      leaseUpdatedAt: now - QUALIFICATION_WORKFLOW_STATUS_ERROR_HARD_STALE_MS,
+      now,
+    }),
+    true
+  );
 });
