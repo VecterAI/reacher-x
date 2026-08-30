@@ -34,6 +34,17 @@ test("prospect agent prompt routes real conversation questions to interaction hi
   assert.match(prompt, /Do not treat public timeline posts/);
 });
 
+test("workspace and prospect agents disclose excluded conversation media without canned responses", () => {
+  for (const prompt of [buildMainAgentPrompt(), buildOutreachAgentPrompt()]) {
+    assert.match(prompt, /attachment counts, not the contents/);
+    assert.match(
+      prompt,
+      /Never claim that you viewed, heard, read, or understood/
+    );
+    assert.match(prompt, /Do not use a canned response/);
+  }
+});
+
 test("prospect agent refines the active plan without a redundant plan read", () => {
   const prompt = buildOutreachAgentPrompt();
 

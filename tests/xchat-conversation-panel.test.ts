@@ -287,6 +287,9 @@ test("the X conversation panel gates history behind the shared XChat lifecycle",
   assert.match(unlockSource, /void prepareBundle\(\)/);
   assert.doesNotMatch(unlockSource, /setInterval/);
   assert.doesNotMatch(agentUnlockSource, /No readable messages/);
+  assert.match(agentUnlockSource, /buildXChatAgentSharePayload/);
+  assert.match(agentUnlockSource, /XCHAT_AGENT_MEDIA_LIMITATION_COPY/);
+  assert.doesNotMatch(agentUnlockSource, /Messages shared with the Agent/);
 });
 
 test("XChat publishes verified messages before best-effort media hydration", () => {

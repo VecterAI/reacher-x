@@ -20,6 +20,14 @@ export function buildTransientXChatAgentContext(
       `XChat context can contain at most ${MAX_XCHAT_AGENT_MESSAGES} messages.`
     );
   }
+  if (
+    !Number.isSafeInteger(context.excludedAttachmentCount) ||
+    context.excludedAttachmentCount < 0
+  ) {
+    throw new Error(
+      "Excluded XChat attachment count must be a non-negative integer."
+    );
+  }
 
   const messages = [...context.messages]
     .map((message) => ({
@@ -52,6 +60,7 @@ export function buildTransientXChatAgentContext(
     `Conversation id: ${context.conversationId}`,
     `Decrypted at: ${new Date(context.decryptedAt).toISOString()}`,
     `Coverage: ${context.coverageComplete ? "complete for the requested XChat history" : "partial; older messages may exist"}`,
+    `Excluded attachment count: ${context.excludedAttachmentCount}`,
     "Messages are chronological JSON Lines:",
     transcript || "(No decryptable text messages were returned.)",
   ].join("\n");

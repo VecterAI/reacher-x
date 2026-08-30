@@ -46,10 +46,14 @@ import {
   type XChatDecryptBundleResponse,
 } from "@/features/agent/lib/xChatBrowserSession";
 import type { LockedXChatToolEvidence } from "@/features/agent/lib/xChatToolEvidence";
+import {
+  buildXChatAgentSharePayload,
+  MAX_SHARED_XCHAT_MESSAGES,
+  XCHAT_AGENT_MEDIA_LIMITATION_COPY,
+} from "@/features/agent/lib/xChatAgentShare";
 import { getXChatUnlockGateMode } from "@/features/prospects/lib/xChatUnlockGate";
 import { forgetAllRememberedXChatPins } from "@/features/agent/lib/xChatDeviceCredentialStorage";
 
-const MAX_SHARED_XCHAT_MESSAGES = 100;
 const XCHAT_PIN_LENGTH = 4;
 export function XChatUnlockCard({
   threadId,
@@ -271,7 +275,7 @@ export function XChatUnlockCard({
     }
     setIsSharing(true);
     setError(null);
-    const sharedMessages = messages.slice(-MAX_SHARED_XCHAT_MESSAGES);
+    const sharedPayload = buildXChatAgentSharePayload(messages);
     const coverageComplete =
       !browserSession.hasMore &&
       messages.length <= MAX_SHARED_XCHAT_MESSAGES &&
@@ -285,7 +289,6 @@ export function XChatUnlockCard({
       });
       bundleRef.current = null;
       setOpen(false);
-      toast.success("Messages shared with the Agent");
       void streamAnalysis({
         threadId,
         promptMessageId: saved.messageId,
@@ -294,7 +297,8 @@ export function XChatUnlockCard({
           conversationId: browserSession.conversationId,
           decryptedAt: getCurrentUTCTimestamp(),
           coverageComplete,
-          messages: sharedMessages,
+          excludedAttachmentCount: sharedPayload.excludedAttachmentCount,
+          messages: sharedPayload.messages,
         },
       })
         .catch((streamError) => {
@@ -568,8 +572,11 @@ export function XChatUnlockCard({
                 }
               />
               <p className="text-muted-foreground text-xs leading-5">
-                Shared text goes to the model for this response. ReacherX does
-                not keep that plaintext.
+                {XCHAT_AGENT_MEDIA_LIMITATION_COPY}
+              </p>
+              <p className="text-muted-foreground text-xs leading-5">
+                Shared message text goes to the model for this response.
+                ReacherX does not keep that plaintext.
               </p>
               {error ? (
                 <p className="text-destructive text-sm" role="alert">
