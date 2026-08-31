@@ -328,4 +328,162 @@ describe("workspace reporting Aggregate", () => {
     expect(rollout?.aggregateAnalyticsSums?.[9]).toBe(2);
     expect(rollout?.aggregateAnalyticsSums?.[11]).toBe(2);
   });
+
+  test("does not start backfill when a reporting write lands during preparation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 7, 30, 12, 30));
+    const t = convexTest({ schema, modules, transactionLimits: true });
+    await registerPolar(t);
+
+    const seeded = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "reporting-preparation-fence-owner",
+        email: "reporting-preparation-fence@example.com",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Fenced reporting preparation",
+        description: "Paused reporting preparation fixture",
+        isDefault: true,
+        setupCompletedAt: getCurrentUTCTimestamp(),
+        prospectingWorkflowStatus: "paused",
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      return { userId, workspaceId };
+    });
+
+    const preparation = await t.mutation(
+      internal.workspaceReportingMigration
+        .beginWorkspaceMigrationPreparationInternal,
+      { workspaceId: seeded.workspaceId, batchSize: 2 }
+    );
+    expect(preparation).toMatchObject({
+      status: "preparing",
+      preparationVersion: 0,
+      alreadyActive: false,
+    });
+
+    await t.mutation(internal.prospects.createProspectsBatch, {
+      userId: seeded.userId,
+      workspaceId: seeded.workspaceId,
+      prospects: [
+        {
+          platform: "twitter",
+          origin: "workspace_discovery",
+          externalId: "reporting-during-preparation",
+          data: {},
+          qualificationStatus: "disqualified",
+        },
+      ],
+    });
+
+    const fenced = await t.mutation(
+      internal.workspaceReportingMigration
+        .completeWorkspaceMigrationPreparationInternal,
+      {
+        rolloutId: preparation.rolloutId,
+        revision: preparation.revision,
+        expectedPreparationVersion: preparation.preparationVersion,
+      }
+    );
+    expect(fenced).toMatchObject({ status: "preparing", started: false });
+    expect(fenced.preparationVersion).toBeGreaterThan(0);
+
+    const started = await t.mutation(
+      internal.workspaceReportingMigration
+        .completeWorkspaceMigrationPreparationInternal,
+      {
+        rolloutId: preparation.rolloutId,
+        revision: preparation.revision,
+        expectedPreparationVersion: fenced.preparationVersion,
+      }
+    );
+    expect(started).toMatchObject({ status: "backfilling", started: true });
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const rollout = await t.run((ctx) =>
+      ctx.db.get("workspaceReportingRollouts", preparation.rolloutId)
+    );
+    expect(rollout).toMatchObject({ status: "verified" });
+    expect(rollout?.expectedAnalyticsSums).toEqual(
+      rollout?.aggregateAnalyticsSums
+    );
+  });
+
+  test("fences a memory inventory write during preparation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 7, 30, 12, 30));
+    const t = convexTest({ schema, modules, transactionLimits: true });
+    await registerPolar(t);
+
+    const workspaceId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "reporting-memory-fence-owner",
+        email: "reporting-memory-fence@example.com",
+      });
+      return await ctx.db.insert("workspaces", {
+        userId,
+        name: "Memory preparation fence",
+        description: "Paused memory preparation fixture",
+        isDefault: true,
+        setupCompletedAt: getCurrentUTCTimestamp(),
+        prospectingWorkflowStatus: "paused",
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+    });
+
+    const preparation = await t.mutation(
+      internal.workspaceReportingMigration
+        .beginWorkspaceMigrationPreparationInternal,
+      { workspaceId }
+    );
+    await t.mutation(
+      internal.memory.ensureWorkspaceAgentMemoryInventoryBatchInternal,
+      {
+        workspaceId,
+        rows: [
+          {
+            memoryId: "memory-created-during-preparation",
+            createdAt: getCurrentUTCTimestamp(),
+            title: "Concurrent memory",
+            summary: "A memory created while reporting is preparing",
+            source: "qualification",
+            category: "qualification_win_pattern",
+            confidence: 0.95,
+            impactScore: 0.9,
+            relatedQueriesCount: 1,
+            evidenceCount: 1,
+          },
+        ],
+      }
+    );
+
+    const rollout = await t.run((ctx) =>
+      ctx.db.get("workspaceReportingRollouts", preparation.rolloutId)
+    );
+    expect(rollout).toMatchObject({ status: "preparing" });
+    expect(rollout?.preparationVersion).toBeGreaterThan(0);
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const failure = await t.mutation(
+        internal.workspaceReportingMigration
+          .recordWorkspaceMigrationPreparationFailureInternal,
+        {
+          rolloutId: preparation.rolloutId,
+          revision: preparation.revision,
+          error: `Preparation failure ${attempt}`,
+        }
+      );
+      expect(failure.status).toBe(attempt === 3 ? "failed" : "preparing");
+    }
+    await expect(
+      t.run((ctx) =>
+        ctx.db.get("workspaceReportingRollouts", preparation.rolloutId)
+      )
+    ).resolves.toMatchObject({
+      status: "failed",
+      preparationFailureCount: 3,
+      error: "Preparation failure 3",
+    });
+  });
 });

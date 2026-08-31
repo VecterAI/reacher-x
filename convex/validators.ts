@@ -2695,13 +2695,18 @@ export const readModelRolloutTerminalStatusValidator = v.union(
 
 // Per-workspace Aggregate migration lifecycle.
 export const aggregateRolloutStatusValidator = v.union(
+  v.literal("preparing"),
   v.literal("backfilling"),
   v.literal("verifying"),
   v.literal("verified"),
   v.literal("failed")
 );
-export const fitScoreAggregateRolloutStatusValidator =
-  aggregateRolloutStatusValidator;
+export const fitScoreAggregateRolloutStatusValidator = v.union(
+  v.literal("backfilling"),
+  v.literal("verifying"),
+  v.literal("verified"),
+  v.literal("failed")
+);
 
 export const workspaceReportingMigrationStageValidator = v.union(
   v.literal("prospects"),

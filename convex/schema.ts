@@ -2683,6 +2683,8 @@ export default defineSchema({
     status: aggregateRolloutStatusValidator,
     aggregateVersion: v.number(),
     revision: v.number(),
+    preparationVersion: v.optional(v.number()),
+    preparationFailureCount: v.optional(v.number()),
     stage: workspaceReportingMigrationStageValidator,
     cursor: v.optional(v.string()),
     batchSize: v.number(),

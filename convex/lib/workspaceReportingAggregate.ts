@@ -15,6 +15,7 @@ import {
   type WorkspaceAnalyticsDailyRecord,
 } from "./readModelHelpers";
 import type { TimeWindow, TrendBucketSet } from "./analyticsCore";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 export const WORKSPACE_REPORTING_AGGREGATE_VERSION = 1;
 
@@ -127,11 +128,18 @@ async function syncAggregateItems(
       .unique();
     if (
       rollout?.aggregateVersion === WORKSPACE_REPORTING_AGGREGATE_VERSION &&
-      (rollout.status === "backfilling" ||
+      (rollout.status === "preparing" ||
+        rollout.status === "backfilling" ||
         rollout.status === "verifying" ||
         rollout.status === "verified")
     ) {
       enabledWorkspaceIds.add(workspaceId);
+      if (rollout.status === "preparing") {
+        await ctx.db.patch("workspaceReportingRollouts", rollout._id, {
+          preparationVersion: (rollout.preparationVersion ?? 0) + 1,
+          updatedAt: getCurrentUTCTimestamp(),
+        });
+      }
     }
   }
 

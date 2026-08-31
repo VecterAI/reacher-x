@@ -1,6 +1,7 @@
 import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import {
   internalAction,
   internalMutation,
@@ -43,11 +44,30 @@ import { shouldCountQualifiedProspectUsageInWindow } from "./lib/planQualifiedUs
 const DEFAULT_BATCH_SIZE = 10;
 const MAX_BATCH_SIZE = 25;
 const VERIFY_BATCH_SIZE = 50;
+const MAX_PREPARATION_FAILURES = 3;
+const PREPARATION_RETRY_MS = 5 * 1000;
+const PREPARATION_WATCHDOG_MS = 9 * 60 * 1000;
 const MIN_TIMESTAMP = Number.MIN_SAFE_INTEGER;
 const MAX_TIMESTAMP = Number.MAX_SAFE_INTEGER;
 
 type MigrationStage = Infer<typeof workspaceReportingMigrationStageValidator>;
 type MigrationStatus = Infer<typeof aggregateRolloutStatusValidator>;
+
+type PreparationReadModelResults = {
+  analytics: {
+    workspaceId: Id<"workspaces">;
+    analyticsRowsRebuilt: number;
+    prospectsProcessed: number;
+    activityLogsProcessed: number;
+    plansProcessed: number;
+    tasksProcessed: number;
+  };
+  agentOps: {
+    workspaceId: Id<"workspaces">;
+    agentOpsRowsRebuilt: number;
+    queryPerformanceRowsRebuilt: number;
+  };
+};
 
 const BACKFILL_STAGES = [
   "prospects",
@@ -111,6 +131,70 @@ async function scheduleNextPage(
   );
 }
 
+async function rebuildPreparationReadModels(
+  ctx: ActionCtx,
+  workspaceId: Id<"workspaces">
+): Promise<PreparationReadModelResults> {
+  const analytics = await ctx.runAction(
+    internal.workspaceAnalyticsDaily.rebuildWorkspaceAnalyticsDailyInternal,
+    { workspaceId }
+  );
+  const agentOps = await ctx.runAction(
+    internal.agentOpsReadModels.rebuildWorkspaceAgentOpsReadModelsInternal,
+    { workspaceId }
+  );
+  return { analytics, agentOps };
+}
+
+async function resetWorkspaceMigration(
+  ctx: Parameters<typeof clearWorkspaceReportingAggregate>[0],
+  args: {
+    workspace: Doc<"workspaces">;
+    existing: Doc<"workspaceReportingRollouts"> | null;
+    batchSize?: number;
+    status: "preparing" | "backfilling";
+  }
+) {
+  await clearWorkspaceReportingAggregate(ctx, args.workspace._id);
+  const now = getCurrentUTCTimestamp();
+  const revision = (args.existing?.revision ?? 0) + 1;
+  const record = {
+    workspaceId: args.workspace._id,
+    userId: args.workspace.userId,
+    status: args.status,
+    aggregateVersion: WORKSPACE_REPORTING_AGGREGATE_VERSION,
+    revision,
+    preparationVersion: args.status === "preparing" ? 0 : undefined,
+    preparationFailureCount: args.status === "preparing" ? 0 : undefined,
+    stage: "prospects" as const,
+    cursor: undefined,
+    batchSize: clampBatchSize(args.batchSize),
+    backfilledCount: 0,
+    verifiedSourceCount: 0,
+    expectedAnalyticsSums: zeroes(WORKSPACE_ANALYTICS_HOURLY_FIELDS.length),
+    expectedAgentOpsSums: zeroes(AGENT_OPS_HOURLY_FIELDS.length),
+    expectedQualifiedUsageCount: 0,
+    aggregateAnalyticsSums: undefined,
+    aggregateAgentOpsSums: undefined,
+    aggregateQualifiedUsageCount: undefined,
+    error: undefined,
+    startedAt: now,
+    verifiedAt: undefined,
+    updatedAt: now,
+  };
+  const rolloutId = args.existing
+    ? args.existing._id
+    : await ctx.db.insert("workspaceReportingRollouts", record);
+  if (args.existing) {
+    await ctx.db.replace(
+      "workspaceReportingRollouts",
+      args.existing._id,
+      record
+    );
+  }
+  return { rolloutId, revision };
+}
+
 export const startWorkspaceMigrationInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
@@ -154,37 +238,12 @@ export const startWorkspaceMigrationInternal = internalMutation({
       };
     }
 
-    await clearWorkspaceReportingAggregate(ctx, args.workspaceId);
-    const now = getCurrentUTCTimestamp();
-    const revision = (existing?.revision ?? 0) + 1;
-    const record = {
-      workspaceId: args.workspaceId,
-      userId: workspace.userId,
-      status: "backfilling" as const,
-      aggregateVersion: WORKSPACE_REPORTING_AGGREGATE_VERSION,
-      revision,
-      stage: "prospects" as const,
-      cursor: undefined,
-      batchSize: clampBatchSize(args.batchSize),
-      backfilledCount: 0,
-      verifiedSourceCount: 0,
-      expectedAnalyticsSums: zeroes(WORKSPACE_ANALYTICS_HOURLY_FIELDS.length),
-      expectedAgentOpsSums: zeroes(AGENT_OPS_HOURLY_FIELDS.length),
-      expectedQualifiedUsageCount: 0,
-      aggregateAnalyticsSums: undefined,
-      aggregateAgentOpsSums: undefined,
-      aggregateQualifiedUsageCount: undefined,
-      error: undefined,
-      startedAt: now,
-      verifiedAt: undefined,
-      updatedAt: now,
-    };
-    const rolloutId = existing
-      ? existing._id
-      : await ctx.db.insert("workspaceReportingRollouts", record);
-    if (existing) {
-      await ctx.db.replace("workspaceReportingRollouts", existing._id, record);
-    }
+    const { rolloutId, revision } = await resetWorkspaceMigration(ctx, {
+      workspace,
+      existing,
+      batchSize: args.batchSize,
+      status: "backfilling",
+    });
     await scheduleNextPage(ctx, { rolloutId, revision, cursor: null });
     return {
       rolloutId,
@@ -195,9 +254,228 @@ export const startWorkspaceMigrationInternal = internalMutation({
   },
 });
 
+export const beginWorkspaceMigrationPreparationInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    batchSize: v.optional(v.number()),
+    restart: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const workspace = await ctx.db.get("workspaces", args.workspaceId);
+    if (!workspace || !isWorkspaceSafeForAggregateMigration(workspace)) {
+      throw new Error(
+        "Reporting Aggregate migration requires an existing, non-deleting workspace that is inactive or has never started prospecting"
+      );
+    }
+    const existing = await ctx.db
+      .query("workspaceReportingRollouts")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .unique();
+    if (
+      existing &&
+      existing.status !== "failed" &&
+      existing.aggregateVersion === WORKSPACE_REPORTING_AGGREGATE_VERSION &&
+      !args.restart
+    ) {
+      return {
+        rolloutId: existing._id,
+        status: existing.status,
+        revision: existing.revision,
+        preparationVersion: existing.preparationVersion ?? 0,
+        alreadyActive: true,
+      };
+    }
+
+    const { rolloutId, revision } = await resetWorkspaceMigration(ctx, {
+      workspace,
+      existing,
+      batchSize: args.batchSize,
+      status: "preparing",
+    });
+    await ctx.scheduler.runAfter(
+      PREPARATION_WATCHDOG_MS,
+      internal.workspaceReportingMigration
+        .continueWorkspaceMigrationPreparationInternal,
+      { rolloutId, revision }
+    );
+    return {
+      rolloutId,
+      status: "preparing" as const,
+      revision,
+      preparationVersion: 0,
+      alreadyActive: false,
+    };
+  },
+});
+
+export const completeWorkspaceMigrationPreparationInternal = internalMutation({
+  args: {
+    rolloutId: v.id("workspaceReportingRollouts"),
+    revision: v.number(),
+    expectedPreparationVersion: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const rollout = await ctx.db.get(
+      "workspaceReportingRollouts",
+      args.rolloutId
+    );
+    if (
+      !rollout ||
+      rollout.revision !== args.revision ||
+      rollout.status !== "preparing"
+    ) {
+      return {
+        status: rollout?.status ?? ("failed" as const),
+        started: false,
+        preparationVersion: rollout?.preparationVersion ?? 0,
+      };
+    }
+
+    const preparationVersion = rollout.preparationVersion ?? 0;
+    if (preparationVersion !== args.expectedPreparationVersion) {
+      await ctx.db.patch("workspaceReportingRollouts", rollout._id, {
+        preparationFailureCount: 0,
+        error: undefined,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaceReportingMigration
+          .continueWorkspaceMigrationPreparationInternal,
+        { rolloutId: rollout._id, revision: rollout.revision }
+      );
+      return {
+        status: "preparing" as const,
+        started: false,
+        preparationVersion,
+      };
+    }
+
+    await ctx.db.patch("workspaceReportingRollouts", rollout._id, {
+      status: "backfilling",
+      preparationFailureCount: 0,
+      error: undefined,
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+    await scheduleNextPage(ctx, {
+      rolloutId: rollout._id,
+      revision: rollout.revision,
+      cursor: null,
+    });
+    return {
+      status: "backfilling" as const,
+      started: true,
+      preparationVersion,
+    };
+  },
+});
+
+export const recordWorkspaceMigrationPreparationFailureInternal =
+  internalMutation({
+    args: {
+      rolloutId: v.id("workspaceReportingRollouts"),
+      revision: v.number(),
+      error: v.string(),
+    },
+    handler: async (ctx, args) => {
+      const rollout = await ctx.db.get(
+        "workspaceReportingRollouts",
+        args.rolloutId
+      );
+      if (
+        !rollout ||
+        rollout.revision !== args.revision ||
+        rollout.status !== "preparing"
+      ) {
+        return { status: rollout?.status ?? ("failed" as const) };
+      }
+
+      const preparationFailureCount =
+        (rollout.preparationFailureCount ?? 0) + 1;
+      if (preparationFailureCount >= MAX_PREPARATION_FAILURES) {
+        await ctx.db.patch("workspaceReportingRollouts", rollout._id, {
+          status: "failed",
+          preparationFailureCount,
+          error: args.error,
+          updatedAt: getCurrentUTCTimestamp(),
+        });
+        return { status: "failed" as const };
+      }
+
+      await ctx.db.patch("workspaceReportingRollouts", rollout._id, {
+        preparationFailureCount,
+        error: args.error,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      await ctx.scheduler.runAfter(
+        PREPARATION_RETRY_MS * preparationFailureCount,
+        internal.workspaceReportingMigration
+          .continueWorkspaceMigrationPreparationInternal,
+        { rolloutId: rollout._id, revision: rollout.revision }
+      );
+      return { status: "preparing" as const };
+    },
+  });
+
+export const continueWorkspaceMigrationPreparationInternal = internalAction({
+  args: {
+    rolloutId: v.id("workspaceReportingRollouts"),
+    revision: v.number(),
+  },
+  handler: async (ctx, args): Promise<{ status: MigrationStatus }> => {
+    const rollout = await ctx.runQuery(
+      internal.workspaceReportingMigration
+        .getWorkspaceMigrationStatusByIdInternal,
+      { rolloutId: args.rolloutId }
+    );
+    if (
+      !rollout ||
+      rollout.revision !== args.revision ||
+      rollout.status !== "preparing"
+    ) {
+      return { status: rollout?.status ?? "failed" };
+    }
+
+    const expectedPreparationVersion = rollout.preparationVersion ?? 0;
+    try {
+      await rebuildPreparationReadModels(ctx, rollout.workspaceId);
+    } catch (error) {
+      const failure: { status: MigrationStatus } = await ctx.runMutation(
+        internal.workspaceReportingMigration
+          .recordWorkspaceMigrationPreparationFailureInternal,
+        {
+          rolloutId: rollout._id,
+          revision: rollout.revision,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Reporting preparation rebuild failed",
+        }
+      );
+      return failure;
+    }
+    const completion: {
+      status: MigrationStatus;
+      started: boolean;
+      preparationVersion: number;
+    } = await ctx.runMutation(
+      internal.workspaceReportingMigration
+        .completeWorkspaceMigrationPreparationInternal,
+      {
+        rolloutId: rollout._id,
+        revision: rollout.revision,
+        expectedPreparationVersion,
+      }
+    );
+    return { status: completion.status };
+  },
+});
+
 /**
  * Repairs the memory inventory mirror and rebuilds the current Analytics and
- * Agent Ops read models before starting the exact Aggregate migration.
+ * Agent Ops read models behind a write fence before starting the exact
+ * Aggregate migration. If a relevant source write lands during rebuilding, a
+ * durable continuation repeats the preparation pass before backfill begins.
  * Operators should use this entry point; the mutation above remains the
  * resumable/testable core.
  */
@@ -267,34 +545,63 @@ export const prepareAndStartWorkspaceMigrationInternal = internalAction({
       internal.memory.backfillWorkspaceAgentMemoryInventoryInternal,
       { workspaceId: args.workspaceId, userId: workspace.userId }
     );
-    const analyticsRebuilt = await ctx.runAction(
-      internal.workspaceAnalyticsDaily.rebuildWorkspaceAnalyticsDailyInternal,
-      { workspaceId: args.workspaceId }
-    );
-    const agentOpsRebuilt = await ctx.runAction(
-      internal.agentOpsReadModels.rebuildWorkspaceAgentOpsReadModelsInternal,
-      { workspaceId: args.workspaceId }
-    );
-    const migration = await ctx.runMutation(
-      internal.workspaceReportingMigration.startWorkspaceMigrationInternal,
+    const preparation: {
+      rolloutId: Id<"workspaceReportingRollouts">;
+      status: MigrationStatus;
+      revision: number;
+      preparationVersion: number;
+      alreadyActive: boolean;
+    } = await ctx.runMutation(
+      internal.workspaceReportingMigration
+        .beginWorkspaceMigrationPreparationInternal,
       args
+    );
+    if (preparation.alreadyActive) {
+      return {
+        rolloutId: preparation.rolloutId,
+        status: preparation.status,
+        revision: preparation.revision,
+        alreadyActive: true,
+        prepared: false,
+        inventoryBackfill: null,
+        analyticsReadModelRebuild: null,
+        agentOpsReadModelRebuild: null,
+      };
+    }
+
+    const rebuilt = await rebuildPreparationReadModels(ctx, args.workspaceId);
+    const completion: {
+      status: MigrationStatus;
+      started: boolean;
+      preparationVersion: number;
+    } = await ctx.runMutation(
+      internal.workspaceReportingMigration
+        .completeWorkspaceMigrationPreparationInternal,
+      {
+        rolloutId: preparation.rolloutId,
+        revision: preparation.revision,
+        expectedPreparationVersion: preparation.preparationVersion,
+      }
     );
 
     return {
-      ...migration,
+      rolloutId: preparation.rolloutId,
+      status: completion.status,
+      revision: preparation.revision,
+      alreadyActive: false,
       prepared: true,
       inventoryBackfill,
       analyticsReadModelRebuild: {
-        analyticsRowsRebuilt: analyticsRebuilt.analyticsRowsRebuilt,
-        prospectsProcessed: analyticsRebuilt.prospectsProcessed,
-        activityLogsProcessed: analyticsRebuilt.activityLogsProcessed,
-        plansProcessed: analyticsRebuilt.plansProcessed,
-        tasksProcessed: analyticsRebuilt.tasksProcessed,
+        analyticsRowsRebuilt: rebuilt.analytics.analyticsRowsRebuilt,
+        prospectsProcessed: rebuilt.analytics.prospectsProcessed,
+        activityLogsProcessed: rebuilt.analytics.activityLogsProcessed,
+        plansProcessed: rebuilt.analytics.plansProcessed,
+        tasksProcessed: rebuilt.analytics.tasksProcessed,
       },
       agentOpsReadModelRebuild: {
-        agentOpsRowsRebuilt: agentOpsRebuilt.agentOpsRowsRebuilt,
+        agentOpsRowsRebuilt: rebuilt.agentOps.agentOpsRowsRebuilt,
         queryPerformanceRowsRebuilt:
-          agentOpsRebuilt.queryPerformanceRowsRebuilt,
+          rebuilt.agentOps.queryPerformanceRowsRebuilt,
       },
     };
   },
@@ -738,5 +1045,12 @@ export const getWorkspaceMigrationStatusInternal = internalQuery({
       .query("workspaceReportingRollouts")
       .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
       .unique();
+  },
+});
+
+export const getWorkspaceMigrationStatusByIdInternal = internalQuery({
+  args: { rolloutId: v.id("workspaceReportingRollouts") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get("workspaceReportingRollouts", args.rolloutId);
   },
 });
