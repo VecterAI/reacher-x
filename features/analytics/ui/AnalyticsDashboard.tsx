@@ -11,6 +11,7 @@ import {
   useActiveUseCaseLabels,
   usePreferredShellQueryArgs,
   useQueryWithStatus,
+  useReportingQueryNow,
   useWorkspaceReportingTimeZone,
 } from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
@@ -63,6 +64,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
   const router = useRouter();
   const { entityPlural, stageLabels } = useActiveUseCaseLabels();
   const [refreshKey, setRefreshKey] = React.useState(0);
+  const { queryNowMs, refreshQueryNowMs } = useReportingQueryNow();
   const entityPluralLower = entityPlural.toLowerCase();
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
 
@@ -88,19 +90,48 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
       : null
   );
   const loadAnalytics = useAction(api.analytics.getDashboardAnalyticsSnapshot);
-  const [analyticsResult, setAnalyticsResult] =
+  const reportingStatusQuery = useQueryWithStatus(
+    api.workspaceReporting.getWorkspaceReportingStatus,
+    workspaceId ? { workspaceId } : "skip"
+  );
+  const reportingReady = reportingStatusQuery.data?.ready === true;
+  const realtimeAnalyticsQuery = useQueryWithStatus(
+    api.analytics.getDashboardAnalytics,
+    workspaceId && reportingReady
+      ? {
+          workspaceId,
+          range,
+          timeZone: reportingTimeZone,
+          ...(from ? { fromDate: from } : {}),
+          ...(to ? { toDate: to } : {}),
+          refreshKey,
+          nowMs: queryNowMs,
+        }
+      : "skip"
+  );
+  const [analyticsSnapshot, setAnalyticsSnapshot] =
     React.useState<AnalyticsQueryResult>();
-  const [analyticsError, setAnalyticsError] = React.useState<Error>();
+  const [analyticsSnapshotError, setAnalyticsSnapshotError] =
+    React.useState<Error>();
+
+  React.useEffect(() => {
+    refreshQueryNowMs();
+  }, [from, range, refreshQueryNowMs, to]);
 
   React.useEffect(() => {
     let cancelled = false;
-    if (!workspaceId) {
-      setAnalyticsResult(undefined);
+    if (!workspaceId || reportingStatusQuery.data === undefined) {
+      setAnalyticsSnapshot(undefined);
+      return;
+    }
+    if (reportingReady) {
+      setAnalyticsSnapshot(undefined);
+      setAnalyticsSnapshotError(undefined);
       return;
     }
 
-    setAnalyticsResult(undefined);
-    setAnalyticsError(undefined);
+    setAnalyticsSnapshot(undefined);
+    setAnalyticsSnapshotError(undefined);
     void loadAnalytics({
       workspaceId,
       range,
@@ -110,12 +141,12 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
     })
       .then((result) => {
         if (!cancelled) {
-          setAnalyticsResult(result);
+          setAnalyticsSnapshot(result);
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setAnalyticsError(
+          setAnalyticsSnapshotError(
             error instanceof Error ? error : new Error("Please try again.")
           );
         }
@@ -129,10 +160,19 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
     loadAnalytics,
     range,
     refreshKey,
+    reportingReady,
+    reportingStatusQuery.data,
     reportingTimeZone,
     to,
     workspaceId,
   ]);
+
+  const analyticsResult = reportingReady
+    ? realtimeAnalyticsQuery.data
+    : analyticsSnapshot;
+  const analyticsError =
+    reportingStatusQuery.error ??
+    (reportingReady ? realtimeAnalyticsQuery.error : analyticsSnapshotError);
 
   const defaultData = React.useMemo(
     () => getDefaultAnalyticsData(range),
@@ -277,7 +317,10 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
             variant="outline"
             size="sm"
             className="mt-3"
-            onClick={() => setRefreshKey((value) => value + 1)}
+            onClick={() => {
+              refreshQueryNowMs();
+              setRefreshKey((value) => value + 1);
+            }}
           >
             Retry
           </Button>

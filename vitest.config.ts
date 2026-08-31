@@ -9,6 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "edge-runtime",
+    setupFiles: ["./test/convex.setup.ts"],
     include: [
       "convex/**/*.test.ts",
       "features/**/*.test.ts",

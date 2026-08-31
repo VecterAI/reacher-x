@@ -13,6 +13,7 @@ export { useOgPreview } from "./useOgPreview";
 export type { UseOgPreviewOptions, UseOgPreviewResult } from "./useOgPreview";
 export { useOutreachPlanPreviewState } from "./useOutreachPlanPreviewState";
 export { useQueryWithStatus } from "./useQueryWithStatus";
+export { useReportingQueryNow } from "./useReportingQueryNow";
 export { useNotificationWorkspace } from "./useNotificationWorkspace";
 export { usePreferredShellQueryArgs } from "./usePreferredShellQueryArgs";
 export { useSetupThreadDraft } from "./useSetupThreadDraft";

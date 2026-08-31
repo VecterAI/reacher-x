@@ -2693,12 +2693,31 @@ export const readModelRolloutTerminalStatusValidator = v.union(
   v.literal("canceled")
 );
 
-// Per-workspace fit-score Aggregate migration lifecycle.
-export const fitScoreAggregateRolloutStatusValidator = v.union(
+// Per-workspace Aggregate migration lifecycle.
+export const aggregateRolloutStatusValidator = v.union(
   v.literal("backfilling"),
   v.literal("verifying"),
   v.literal("verified"),
   v.literal("failed")
+);
+export const fitScoreAggregateRolloutStatusValidator =
+  aggregateRolloutStatusValidator;
+
+export const workspaceReportingMigrationStageValidator = v.union(
+  v.literal("prospects"),
+  v.literal("prospectActivityLog"),
+  v.literal("outreachPlans"),
+  v.literal("outreachTasks"),
+  v.literal("keywords"),
+  v.literal("queryCandidates"),
+  v.literal("memorySuggestions"),
+  v.literal("memoryWorkflowEvents"),
+  v.literal("memoryEvaluatorRuns"),
+  v.literal("workspaceAgentMemoryInventory"),
+  v.literal("verifyAnalyticsDaily"),
+  v.literal("verifyAnalyticsStripes"),
+  v.literal("verifyAgentOpsDaily"),
+  v.literal("verifyAgentOpsStripes")
 );
 
 // Per-workspace rebuild counters emitted by the read-model rollout workflow.

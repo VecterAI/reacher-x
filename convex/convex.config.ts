@@ -90,6 +90,7 @@ app.use(migrations);
 app.use(batchWorker, { env: { LOG_LEVEL: "REPORT" } });
 app.use(rateLimiter);
 app.use(aggregate, { name: "fitScoreHistogramAggregate" });
+app.use(aggregate, { name: "workspaceReportingAggregate" });
 // Workpools for throttling (prevents OCC errors on rate limit table)
 app.use(workpool, { name: "qualificationPool" });
 app.use(workpool, { name: "enrichmentPool" });

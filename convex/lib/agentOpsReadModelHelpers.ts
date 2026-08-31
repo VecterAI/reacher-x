@@ -38,7 +38,7 @@ const AGENT_OPS_NUMERIC_FIELDS = [
   "outreachTaskApprovedEditedCount",
 ] as const;
 
-const AGENT_OPS_HOURLY_FIELDS = [
+export const AGENT_OPS_HOURLY_FIELDS = [
   "hourlyKeywordsCreatedCounts",
   "hourlyQueriesGeneratedCounts",
   "hourlyQueriesReviewedCounts",
@@ -735,26 +735,28 @@ export function getWorkspaceAgentOpsContributionsFromEvaluatorRun(
   return contributions;
 }
 
-export function getWorkspaceAgentOpsContributionsFromBuiltInMemory(args: {
+function getWorkspaceAgentOpsContributionsFromMemoryMetrics(args: {
   workspaceId: Id<"workspaces">;
-  memory: Pick<WorkspaceAgentMemoryRecord, "createdAt" | "parsed">;
+  createdAt: number;
+  impactScore: number;
+  confidence: number;
 }) {
   return [
     buildTimedAgentOpsContribution({
       workspaceId: args.workspaceId,
-      timestamp: args.memory.createdAt,
+      timestamp: args.createdAt,
       apply: (contribution) => {
         applyTimedAgentOpsValue(
           contribution,
-          args.memory.createdAt,
+          args.createdAt,
           "memoriesWrittenCount",
           "hourlyMemoriesWrittenCounts",
           1
         );
-        if (args.memory.parsed.impactScore >= HIGH_IMPACT_MEMORY_THRESHOLD) {
+        if (args.impactScore >= HIGH_IMPACT_MEMORY_THRESHOLD) {
           applyTimedAgentOpsValue(
             contribution,
-            args.memory.createdAt,
+            args.createdAt,
             "highImpactMemoriesCount",
             "hourlyHighImpactMemoriesCounts",
             1
@@ -762,21 +764,47 @@ export function getWorkspaceAgentOpsContributionsFromBuiltInMemory(args: {
         }
         applyTimedAgentOpsValue(
           contribution,
-          args.memory.createdAt,
+          args.createdAt,
           "memoryImpactScoreSum",
           "hourlyMemoryImpactScoreSums",
-          Math.max(0, args.memory.parsed.impactScore * 100)
+          Math.max(0, args.impactScore * 100)
         );
         applyTimedAgentOpsValue(
           contribution,
-          args.memory.createdAt,
+          args.createdAt,
           "memoryConfidenceSum",
           "hourlyMemoryConfidenceSums",
-          Math.max(0, args.memory.parsed.confidence * 100)
+          Math.max(0, args.confidence * 100)
         );
       },
     }),
   ];
+}
+
+export function getWorkspaceAgentOpsContributionsFromBuiltInMemory(args: {
+  workspaceId: Id<"workspaces">;
+  memory: Pick<WorkspaceAgentMemoryRecord, "createdAt" | "parsed">;
+}) {
+  return getWorkspaceAgentOpsContributionsFromMemoryMetrics({
+    workspaceId: args.workspaceId,
+    createdAt: args.memory.createdAt,
+    impactScore: args.memory.parsed.impactScore,
+    confidence: args.memory.parsed.confidence,
+  });
+}
+
+export function getWorkspaceAgentOpsContributionsFromMemoryInventory(
+  memory: Pick<
+    Doc<"workspaceAgentMemoryInventory">,
+    "workspaceId" | "createdAt" | "impactScore" | "confidence"
+  >
+) {
+  return getWorkspaceAgentOpsContributionsFromMemoryMetrics({
+    workspaceId: memory.workspaceId,
+    createdAt: memory.createdAt,
+    impactScore: memory.impactScore,
+    confidence: memory.confidence,
+  });
 }
 
 export function mergeWorkspaceAgentOpsContributions(

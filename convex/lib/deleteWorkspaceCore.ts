@@ -7,6 +7,7 @@ import { internalMutation, internalQuery } from "./functionBuilders";
 import { reconcilePlanUsageForUser } from "./planUsageCore";
 import { deleteWorkspaceAgentMemoryBatch } from "./agentMemoryCore";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { clearWorkspaceReportingAggregate } from "./workspaceReportingAggregate";
 
 export const WORKSPACE_DELETE_BATCH_SIZE = 25;
 const SWEEP_BATCH_SIZE = 25;
@@ -77,6 +78,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
       analyticsStripes,
       agentOps,
       agentOpsStripes,
+      reportingRollouts,
       agentSettings,
       queryPerformance,
       queryCandidates,
@@ -209,6 +211,10 @@ export const sweepWorkspaceRowsInternal = internalMutation({
         .withIndex("by_workspace_day_and_stripe", (q) => q.eq("workspaceId", w))
         .take(n),
       ctx.db
+        .query("workspaceReportingRollouts")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", w))
+        .take(n),
+      ctx.db
         .query("workspaceAgentSettings")
         .withIndex("by_workspace", (q) => q.eq("workspaceId", w))
         .take(n),
@@ -309,6 +315,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
     deleted += await deleteDocuments(ctx, analyticsStripes);
     deleted += await deleteDocuments(ctx, agentOps);
     deleted += await deleteDocuments(ctx, agentOpsStripes);
+    deleted += await deleteDocuments(ctx, reportingRollouts);
     deleted += await deleteDocuments(ctx, agentSettings);
     deleted += await deleteDocuments(ctx, queryPerformance);
     deleted += await deleteDocuments(ctx, queryCandidates);
@@ -775,6 +782,7 @@ export const finalizeWorkspaceDeletionInternal = internalMutation({
     if (fitScoreAggregateRollout) {
       await ctx.db.delete(fitScoreAggregateRollout._id);
     }
+    await clearWorkspaceReportingAggregate(ctx, args.workspaceId);
     await ctx.db.delete(workspace._id);
 
     const subscription = await polar.getCurrentSubscription(ctx, {

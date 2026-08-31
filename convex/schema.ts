@@ -76,6 +76,8 @@ import {
   readModelRolloutScopeValidator,
   readModelRolloutStatusValidator,
   fitScoreAggregateRolloutStatusValidator,
+  aggregateRolloutStatusValidator,
+  workspaceReportingMigrationStageValidator,
   memorySourceTypeValidator,
   memoryEvaluatorRunStatusValidator,
   memorySuggestionStatusValidator,
@@ -2672,6 +2674,35 @@ export default defineSchema({
     .index("by_status_updated", ["status", "updatedAt"]),
 
   /**
+   * Per-workspace checkpoint for the reactive reporting Aggregate rollout.
+   * Dashboard reads cut over only after exact parity verification.
+   */
+  workspaceReportingRollouts: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    status: aggregateRolloutStatusValidator,
+    aggregateVersion: v.number(),
+    revision: v.number(),
+    stage: workspaceReportingMigrationStageValidator,
+    cursor: v.optional(v.string()),
+    batchSize: v.number(),
+    backfilledCount: v.number(),
+    verifiedSourceCount: v.number(),
+    expectedAnalyticsSums: v.array(v.number()),
+    expectedAgentOpsSums: v.array(v.number()),
+    expectedQualifiedUsageCount: v.number(),
+    aggregateAnalyticsSums: v.optional(v.array(v.number())),
+    aggregateAgentOpsSums: v.optional(v.array(v.number())),
+    aggregateQualifiedUsageCount: v.optional(v.number()),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    verifiedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_status_updated", ["status", "updatedAt"]),
+
+  /**
    * Candidate discovery terms before or after activation, with deterministic
    * canonical identity for novelty gates and future evaluator loops.
    */
@@ -2842,6 +2873,7 @@ export default defineSchema({
     reviewedAt: v.optional(v.number()),
     updatedAt: v.number(),
   })
+    .index("by_workspace_updated_at", ["workspaceId", "updatedAt"])
     .index("by_workspace_status_updated_at", [
       "workspaceId",
       "status",
@@ -2963,6 +2995,7 @@ export default defineSchema({
     // Set when plan is paused because the prospect was archived; cleared on unarchive restore
     archiveHold: v.optional(outreachPlanArchiveHoldValidator),
   })
+    .index("by_workspace", ["workspaceId"])
     .index("by_prospect", ["prospectId"])
     .index("by_prospect_and_status", ["prospectId", "status"])
     .index("by_status", ["status"])

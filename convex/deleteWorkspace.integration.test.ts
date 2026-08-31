@@ -85,6 +85,23 @@ describe("durable workspace deletion", () => {
         setupCompletedAt: 1,
         updatedAt: 1,
       });
+      await ctx.db.insert("workspaceReportingRollouts", {
+        workspaceId,
+        userId,
+        status: "verified",
+        aggregateVersion: 1,
+        revision: 1,
+        stage: "verifyAgentOpsStripes",
+        batchSize: 5,
+        backfilledCount: 0,
+        verifiedSourceCount: 0,
+        expectedAnalyticsSums: [],
+        expectedAgentOpsSums: [],
+        expectedQualifiedUsageCount: 0,
+        startedAt: 1,
+        verifiedAt: 1,
+        updatedAt: 1,
+      });
       const replacementId = await ctx.db.insert("workspaces", {
         userId,
         name: "Keep me",
@@ -260,6 +277,12 @@ describe("durable workspace deletion", () => {
 
     const state = await t.run(async (ctx) => ({
       workspace: await ctx.db.get("workspaces", seeded.workspaceId),
+      reportingRollout: await ctx.db
+        .query("workspaceReportingRollouts")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", seeded.workspaceId)
+        )
+        .unique(),
       replacement: await ctx.db.get("workspaces", seeded.replacementId),
       plan: await ctx.db.get("outreachPlans", seeded.planId),
       prospect: await ctx.db.get("prospects", seeded.prospectId),
@@ -292,6 +315,7 @@ describe("durable workspace deletion", () => {
     );
 
     expect(state.workspace).toBeNull();
+    expect(state.reportingRollout).toBeNull();
     expect(state.replacement?.isDefault).toBe(true);
     expect(state.plan).toBeNull();
     expect(state.prospect).toBeNull();

@@ -41,13 +41,17 @@ import {
   listWorkspaceAgentMemoryInventoryInWindow,
 } from "./lib/agentMemoryCore";
 import { getUtcDayStartTimestamp } from "./lib/readModelHelpers";
-import { listWorkspaceQueryPerformanceDailyRows } from "./workspaceQueryPerformanceDaily";
 import {
   mapDashboardChunksSequentially,
   splitDashboardDayRange,
 } from "./lib/dashboardReadCore";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { buildQueryCandidateCanonicalRecord } from "./lib/memoryHelpers";
+import {
+  getWorkspaceAgentOpsAggregateRows,
+  getWorkspaceAnalyticsAggregateRows,
+} from "./lib/workspaceReportingAggregate";
+import { isWorkspaceReportingAggregateReady } from "./lib/workspaceReportingRollout";
 
 const AGENT_OPS_ACTIVITY_MEMORY_LIMIT = 80;
 const AGENT_OPS_MEMORY_PAGE_SIZE_MAX = 100;
@@ -985,6 +989,7 @@ export const getAgentOpsDashboard = query({
     to: v.optional(v.number()),
     fromDate: v.optional(v.string()),
     toDate: v.optional(v.string()),
+    nowMs: v.number(),
   },
   handler: async (ctx, args) => {
     const { workspace } = await requireOwnedWorkspaceContext(
@@ -993,6 +998,12 @@ export const getAgentOpsDashboard = query({
     );
     const selectedTab = args.tab ?? "overview";
 
+    if (!(await isWorkspaceReportingAggregateReady(ctx.db, args.workspaceId))) {
+      throw new Error(
+        "Realtime reporting is still being prepared for this workspace"
+      );
+    }
+
     const normalizedWindow = normalizeAnalyticsWindow({
       range: args.range,
       timeZone: workspace.reportingTimeZone ?? args.timeZone,
@@ -1000,27 +1011,14 @@ export const getAgentOpsDashboard = query({
       to: args.to,
       fromDate: args.fromDate,
       toDate: args.toDate,
+      nowMs: args.nowMs,
     });
 
     const bucketSet = createTrendBucketSet(normalizedWindow);
-    const currentDayRange = getWindowDayRange(normalizedWindow.current);
-    const previousDayRange = getWindowDayRange(normalizedWindow.previous);
-
-    const startDayStartUtcMs = Math.min(
-      currentDayRange.startDayStartUtcMs,
-      previousDayRange.startDayStartUtcMs
-    );
-    const endDayStartUtcMs = Math.max(
-      currentDayRange.endDayStartUtcMs,
-      previousDayRange.endDayStartUtcMs
-    );
-    const shouldLoadDiscovery = selectedTab === "discovery";
     const shouldLoadActivity = selectedTab === "activity";
     const [
       analyticsRows,
       agentOpsRows,
-      queryCandidates,
-      queryPerformanceDailyRows,
       workflowEvents,
       evaluatorRuns,
       suggestionPending,
@@ -1028,38 +1026,18 @@ export const getAgentOpsDashboard = query({
       suggestionRejected,
       memoryInventoryRows,
     ] = await Promise.all([
-      listWorkspaceAnalyticsDailyRows({
-        db: ctx.db,
+      getWorkspaceAnalyticsAggregateRows({
+        ctx,
         workspaceId: args.workspaceId,
-        startDayStartUtcMs,
-        endDayStartUtcMs,
+        bucketSet,
+        previousWindow: normalizedWindow.previous,
       }),
-      listWorkspaceAgentOpsDailyRows({
-        db: ctx.db,
+      getWorkspaceAgentOpsAggregateRows({
+        ctx,
         workspaceId: args.workspaceId,
-        startDayStartUtcMs,
-        endDayStartUtcMs,
+        bucketSet,
+        previousWindow: normalizedWindow.previous,
       }),
-      shouldLoadDiscovery
-        ? ctx.db
-            .query("queryCandidates")
-            .withIndex("by_workspace_updated_at", (q) =>
-              q
-                .eq("workspaceId", args.workspaceId)
-                .gte("updatedAt", normalizedWindow.current.startMs)
-                .lte("updatedAt", normalizedWindow.current.endMs)
-            )
-            .order("desc")
-            .collect()
-        : Promise.resolve([]),
-      shouldLoadDiscovery
-        ? listWorkspaceQueryPerformanceDailyRows({
-            db: ctx.db,
-            workspaceId: args.workspaceId,
-            startDayStartUtcMs: currentDayRange.startDayStartUtcMs,
-            endDayStartUtcMs: currentDayRange.endDayStartUtcMs,
-          })
-        : Promise.resolve([]),
       shouldLoadActivity
         ? ctx.db
             .query("memoryWorkflowEvents")
@@ -1139,8 +1117,8 @@ export const getAgentOpsDashboard = query({
       previousWindow: normalizedWindow.previous,
       analyticsRows,
       agentOpsRows,
-      queryCandidates,
-      queryPerformanceDailyRows,
+      // Detailed discovery rows and rankings stay in the bounded, paginated
+      // inventory action rather than this stats subscription.
       workflowEvents,
       evaluatorRuns,
       memorySuggestions: [
