@@ -16,6 +16,7 @@ import {
   getWorkspaceAgentOpsContributionsFromKeyword,
   mergeWorkspaceAgentOpsContributions,
 } from "./lib/agentOpsReadModelHelpers";
+import { getWorkspaceReportingMetricSums } from "./lib/workspaceReportingAggregate";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -126,6 +127,35 @@ describe("workspace reporting Aggregate", () => {
       return { userId, workspaceId };
     });
 
+    await t.mutation(internal.prospects.createProspectsBatch, {
+      userId: seeded.userId,
+      workspaceId: seeded.workspaceId,
+      prospects: [
+        {
+          platform: "linkedin",
+          origin: "workspace_discovery",
+          externalId: "reporting-pre-rollout",
+          data: {},
+          qualificationStatus: "disqualified",
+        },
+      ],
+    });
+    await expect(
+      t.run((ctx) =>
+        getWorkspaceReportingMetricSums(ctx, {
+          workspaceId: seeded.workspaceId,
+          dataset: "analytics",
+          queries: [
+            {
+              metric: "hourlyNewProspectsCounts",
+              startMs: Number.MIN_SAFE_INTEGER,
+              endMs: Number.MAX_SAFE_INTEGER,
+            },
+          ],
+        })
+      )
+    ).resolves.toEqual([0]);
+
     const migration = await t.mutation(startMigration, {
       workspaceId: seeded.workspaceId,
       batchSize: 2,
@@ -152,7 +182,8 @@ describe("workspace reporting Aggregate", () => {
       queryArgs
     );
     expect(before.status).toBe("success");
-    expect(before.data.newProspects.value).toBe(1);
+    expect(before.data.newProspects.value).toBe(2);
+    expect(before.data.processingSummary.disqualified.value).toBe(1);
     const agentOpsBefore = await owner.query(
       api.agentOps.getAgentOpsDashboard,
       {
@@ -187,11 +218,11 @@ describe("workspace reporting Aggregate", () => {
       queryArgs
     );
     expect(after.status).toBe("success");
-    expect(after.data.newProspects.value).toBe(2);
+    expect(after.data.newProspects.value).toBe(3);
     expect(after.data.platformDistribution).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ platform: "Twitter/X", count: 1 }),
-        expect.objectContaining({ platform: "LinkedIn", count: 1 }),
+        expect.objectContaining({ platform: "LinkedIn", count: 2 }),
       ])
     );
     const usageAfter = await owner.query(api.usage.getUsageDashboard, {

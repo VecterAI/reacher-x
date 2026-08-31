@@ -115,7 +115,31 @@ async function syncAggregateItems(
   oldItems: Map<string, AggregateItem>,
   newItems: Map<string, AggregateItem>
 ) {
+  const workspaceIds = new Set<Id<"workspaces">>();
+  for (const item of oldItems.values()) workspaceIds.add(item.namespace[1]);
+  for (const item of newItems.values()) workspaceIds.add(item.namespace[1]);
+
+  const enabledWorkspaceIds = new Set<Id<"workspaces">>();
+  for (const workspaceId of workspaceIds) {
+    const rollout = await ctx.db
+      .query("workspaceReportingRollouts")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+      .unique();
+    if (
+      rollout?.aggregateVersion === WORKSPACE_REPORTING_AGGREGATE_VERSION &&
+      (rollout.status === "backfilling" ||
+        rollout.status === "verifying" ||
+        rollout.status === "verified")
+    ) {
+      enabledWorkspaceIds.add(workspaceId);
+    }
+  }
+
+  // Existing workspaces stay snapshot-only until their rollout starts. This
+  // also prevents preparation repairs from paying Aggregate B-tree costs for
+  // every repaired row before the resumable backfill checkpoint exists.
   for (const [mapKey, oldItem] of oldItems) {
+    if (!enabledWorkspaceIds.has(oldItem.namespace[1])) continue;
     const newItem = newItems.get(mapKey);
     if (!newItem) {
       await workspaceReportingAggregate.deleteIfExists(ctx, oldItem);
@@ -127,6 +151,7 @@ async function syncAggregateItems(
   }
 
   for (const [mapKey, newItem] of newItems) {
+    if (!enabledWorkspaceIds.has(newItem.namespace[1])) continue;
     if (!oldItems.has(mapKey)) {
       await workspaceReportingAggregate.insertIfDoesNotExist(ctx, newItem);
     }
