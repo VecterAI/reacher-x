@@ -87,6 +87,7 @@ const MAX_LIST_LIMIT = 200;
 const DISCOVERY_CONTEXT_LIMIT = 6;
 const DISCOVERY_SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
 const MEMORY_INVENTORY_BACKFILL_PAGE_SIZE = 100;
+const MEMORY_INVENTORY_ID_PAGE_SIZE = 500;
 const MEMORY_INVENTORY_RECONCILIATION_PAGE_SIZE = 100;
 const MAX_REPORTED_ORPHANED_MEMORY_IDS = 100;
 const memoryLogger = logger.withScope("Memory");
@@ -805,12 +806,57 @@ export const reconcileWorkspaceAgentMemoryInventoryInternal = internalAction({
   },
 });
 
+export const listWorkspaceAgentMemoryInventoryIdsPageInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("workspaceAgentMemoryInventory")
+      .withIndex("by_workspace_created_at", (q) =>
+        q.eq("workspaceId", args.workspaceId)
+      )
+      .paginate(args.paginationOpts);
+    return {
+      ...page,
+      page: page.page.map((row) => row.memoryId),
+    };
+  },
+});
+
 export const backfillWorkspaceAgentMemoryInventoryInternal = internalAction({
   args: {
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    const existingMemoryIds = new Set<string>();
+    let inventoryCursor: string | null = null;
+    while (true) {
+      const inventoryPage: {
+        page: string[];
+        continueCursor: string;
+        isDone: boolean;
+      } = await ctx.runQuery(
+        internal.memory.listWorkspaceAgentMemoryInventoryIdsPageInternal,
+        {
+          workspaceId: args.workspaceId,
+          paginationOpts: {
+            cursor: inventoryCursor,
+            numItems: MEMORY_INVENTORY_ID_PAGE_SIZE,
+          },
+        }
+      );
+      for (const memoryId of inventoryPage.page) {
+        existingMemoryIds.add(memoryId);
+      }
+      if (inventoryPage.isDone) {
+        break;
+      }
+      inventoryCursor = inventoryPage.continueCursor;
+    }
+
     let cursor: string | null = null;
     let scanned = 0;
     let inserted = 0;
@@ -837,19 +883,26 @@ export const backfillWorkspaceAgentMemoryInventoryInternal = internalAction({
       };
 
       scanned += page.page.length;
+      const missingRows = page.page.filter(
+        (memory) => !existingMemoryIds.has(memory.memoryId)
+      );
+      existing += page.page.length - missingRows.length;
 
-      if (page.page.length > 0) {
+      if (missingRows.length > 0) {
         const batchResult = await ctx.runMutation(
           internal.memory.ensureWorkspaceAgentMemoryInventoryBatchInternal,
           {
             workspaceId: args.workspaceId,
-            rows: page.page.map((memory) =>
+            rows: missingRows.map((memory) =>
               buildWorkspaceAgentMemoryInventoryRecord(memory)
             ),
           }
         );
         inserted += batchResult.inserted;
         existing += batchResult.existing;
+        for (const memory of missingRows) {
+          existingMemoryIds.add(memory.memoryId);
+        }
       }
 
       if (page.isDone) {
