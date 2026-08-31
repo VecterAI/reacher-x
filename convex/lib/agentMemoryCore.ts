@@ -819,6 +819,17 @@ export async function ensureWorkspaceAgentMemoryInventoryRecord(
     return false;
   }
 
+  await insertWorkspaceAgentMemoryInventoryRecord(db, args);
+  return true;
+}
+
+async function insertWorkspaceAgentMemoryInventoryRecord(
+  db: MemoryDbWriter,
+  args: {
+    workspaceId: Id<"workspaces">;
+    record: WorkspaceAgentMemoryInventoryRecord;
+  }
+) {
   const prospectId = args.record.prospectId
     ? (db.normalizeId("prospects", args.record.prospectId) ?? undefined)
     : undefined;
@@ -838,8 +849,6 @@ export async function ensureWorkspaceAgentMemoryInventoryRecord(
     evidenceCount: args.record.evidenceCount,
     prospectId,
   });
-
-  return true;
 }
 
 export async function ensureWorkspaceAgentMemoryInventoryRecords(
@@ -849,22 +858,77 @@ export async function ensureWorkspaceAgentMemoryInventoryRecords(
     records: WorkspaceAgentMemoryInventoryRecord[];
   }
 ): Promise<{ inserted: number; existing: number }> {
+  const existingRows = await Promise.all(
+    args.records.map((record) =>
+      db
+        .query("workspaceAgentMemoryInventory")
+        .withIndex("by_memory_id", (q) => q.eq("memoryId", record.memoryId))
+        .first()
+    )
+  );
   let inserted = 0;
   let existing = 0;
+  const seenMemoryIds = new Set<string>();
 
-  for (const record of args.records) {
-    const created = await ensureWorkspaceAgentMemoryInventoryRecord(db, {
+  for (const [index, record] of args.records.entries()) {
+    if (existingRows[index] || seenMemoryIds.has(record.memoryId)) {
+      existing += 1;
+      continue;
+    }
+    seenMemoryIds.add(record.memoryId);
+    await insertWorkspaceAgentMemoryInventoryRecord(db, {
       workspaceId: args.workspaceId,
       record,
     });
-    if (created) {
-      inserted += 1;
-    } else {
-      existing += 1;
-    }
+    inserted += 1;
   }
 
   return { inserted, existing };
+}
+
+export async function reconcileWorkspaceAgentMemoryInventoryPage(
+  db: MemoryDbWriter,
+  args: {
+    workspaceId: Id<"workspaces">;
+    cursor: string | null;
+    limit: number;
+  }
+): Promise<{
+  continueCursor: string;
+  isDone: boolean;
+  scanned: number;
+  deleted: number;
+  deletedMemoryIds: string[];
+}> {
+  const page = await db
+    .query("workspaceAgentMemoryInventory")
+    .withIndex("by_workspace_created_at", (q) =>
+      q.eq("workspaceId", args.workspaceId)
+    )
+    .paginate({
+      cursor: args.cursor,
+      numItems: Math.max(1, args.limit),
+    });
+  const sourceRows = await Promise.all(
+    page.page.map((row) => getBuiltInAgentMemoryRowById(db, row.memoryId))
+  );
+  const deletedMemoryIds: string[] = [];
+
+  for (const [index, row] of page.page.entries()) {
+    if (sourceRows[index]) {
+      continue;
+    }
+    await db.delete(row._id);
+    deletedMemoryIds.push(row.memoryId);
+  }
+
+  return {
+    continueCursor: page.continueCursor,
+    isDone: page.isDone,
+    scanned: page.page.length,
+    deleted: deletedMemoryIds.length,
+    deletedMemoryIds,
+  };
 }
 
 export async function listWorkspaceAgentMemoryInventoryInWindow(
