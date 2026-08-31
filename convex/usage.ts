@@ -10,13 +10,14 @@ import {
 } from "../shared/lib/utils/time/timeUtils";
 import { polar } from "./polar";
 import { getOrCreateUserPlan } from "./lib/planCore";
-import { readQualifiedProspectUsageForWorkspaceWindow } from "./lib/planQualifiedUsageCore";
 import { computeUsageCycleWindow } from "./lib/planCycleUtils";
 import {
   createUsageCycleKey,
   dedupeUsageCycleWindows,
   formatUsageCycleLabel,
   buildUsageTrendPoints,
+  buildUsageTrendPointsFromCounts,
+  createUsageTrendBucketSet,
   parseUsageCycleKey,
   resolveUsagePlanSnapshot,
   sameUsageCycleWindow,
@@ -26,6 +27,8 @@ import { getUserFromIdentity } from "./lib/userUtils";
 import { filterCompletedWorkspaces } from "./lib/workspaceSetup";
 import { shouldCountQualifiedProspectUsageInWindow } from "./lib/planQualifiedUsageCore";
 import type { UserPlan } from "./lib/planConstants";
+import { getWorkspaceReportingMetricSums } from "./lib/workspaceReportingAggregate";
+import { isWorkspaceReportingAggregateReady } from "./lib/workspaceReportingRollout";
 
 type UsageSnapshotContext = {
   plan: UserPlan;
@@ -54,12 +57,12 @@ export const getUsageSnapshotContextInternal = internalQuery({
       ctx.db
         .query("workspaces")
         .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-        .collect(),
+        .take(100),
       ctx.db
         .query("planUsageCycles")
         .withIndex("by_user_cycle_start", (q) => q.eq("userId", user._id))
         .order("desc")
-        .collect(),
+        .take(120),
     ]);
     return { plan, subscription, workspaces, cycleRows };
   },
@@ -248,6 +251,7 @@ export const getUsageDashboardSnapshot = action({
 export const getUsageDashboard = query({
   args: {
     selectedCycleKey: v.optional(v.string()),
+    nowMs: v.number(),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -260,19 +264,19 @@ export const getUsageDashboard = query({
       return null;
     }
 
-    const now = getCurrentUTCTimestamp();
+    const now = args.nowMs;
     const [plan, subscription, workspaces, cycleRows] = await Promise.all([
       getOrCreateUserPlan(ctx, user._id),
       polar.getCurrentSubscription(ctx, { userId: user._id }),
       ctx.db
         .query("workspaces")
         .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-        .collect(),
+        .take(100),
       ctx.db
         .query("planUsageCycles")
         .withIndex("by_user_cycle_start", (q) => q.eq("userId", user._id))
         .order("desc")
-        .collect(),
+        .take(120),
     ]);
 
     const currentWindow = computeUsageCycleWindow({
@@ -281,6 +285,16 @@ export const getUsageDashboard = query({
       subscription,
     });
     const completedWorkspaces = filterCompletedWorkspaces(workspaces);
+    const reportingReady = await Promise.all(
+      completedWorkspaces.map((workspace) =>
+        isWorkspaceReportingAggregateReady(ctx.db, workspace._id)
+      )
+    );
+    if (reportingReady.some((ready) => !ready)) {
+      throw new Error(
+        "Realtime reporting is still being prepared for one or more workspaces"
+      );
+    }
 
     const cycleOptions = dedupeUsageCycleWindows([
       { ...currentWindow, isCurrent: true },
@@ -334,31 +348,46 @@ export const getUsageDashboard = query({
     const workspaceRows = sortUsageWorkspaceRows(
       await Promise.all(
         completedWorkspaces.map(async (workspace) => {
-          const usage = await readQualifiedProspectUsageForWorkspaceWindow(
-            ctx,
-            workspace._id,
-            selectedWindow
-          );
+          const bucketSet = createUsageTrendBucketSet({
+            window: selectedWindow,
+            now,
+          });
+          const windows = bucketSet?.buckets ?? [];
+          const [used = 0, ...trendCounts] =
+            await getWorkspaceReportingMetricSums(ctx, {
+              workspaceId: workspace._id,
+              dataset: "usage",
+              queries: [
+                {
+                  metric: "qualifiedProspectsCount",
+                  startMs: selectedWindow.cycleStart,
+                  endMs: selectedWindow.cycleEnd + 1,
+                },
+                ...windows.map((window) => ({
+                  metric: "qualifiedProspectsCount" as const,
+                  startMs: window.startMs,
+                  endMs: window.endMs,
+                })),
+              ],
+            });
           const percentUsed =
             selectedLimit === -1
               ? 0
               : Math.min(
                   100,
-                  Math.round((usage.used / Math.max(1, selectedLimit)) * 100)
+                  Math.round((used / Math.max(1, selectedLimit)) * 100)
                 );
 
           return {
             workspaceId: workspace._id,
             name: workspace.name,
-            used: usage.used,
+            used,
             limit: selectedLimit,
             unlimited: selectedLimit === -1,
             percentUsed,
-            trend: buildUsageTrendPoints({
-              window: selectedWindow,
-              timestamps: usage.timestamps,
-              now,
-            }),
+            trend: bucketSet
+              ? buildUsageTrendPointsFromCounts(bucketSet, trendCounts)
+              : [],
           };
         })
       )

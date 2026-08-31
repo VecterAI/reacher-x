@@ -16,6 +16,7 @@ import { getDefaultAgentOpsData } from "../lib/defaults";
 import {
   usePreferredShellQueryArgs,
   useQueryWithStatus,
+  useReportingQueryNow,
   useWorkspaceReportingTimeZone,
 } from "@/shared/hooks";
 import { cn } from "@/shared/lib/utils";
@@ -119,6 +120,7 @@ export function AgentOpsDashboard() {
   const [memoryPageSize, setMemoryPageSize] = React.useState(10);
   const [activityPageSize, setActivityPageSize] = React.useState(10);
   const [dashboardRefreshKey, setDashboardRefreshKey] = React.useState(0);
+  const { queryNowMs, refreshQueryNowMs } = useReportingQueryNow();
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
 
   const [params, setParams] = useQueryStates({
@@ -171,23 +173,54 @@ export function AgentOpsDashboard() {
   const loadMemoryPage = useAction(
     api.agentOps.getAgentOpsMemoryInventoryPageSnapshot
   );
-  const [dashboardData, setDashboardData] =
+  const reportingStatusQuery = useQueryWithStatus(
+    api.workspaceReporting.getWorkspaceReportingStatus,
+    workspaceId ? { workspaceId } : "skip"
+  );
+  const reportingReady = reportingStatusQuery.data?.ready === true;
+  const realtimeDashboardQuery = useQueryWithStatus(
+    api.agentOps.getAgentOpsDashboard,
+    workspaceId && reportingReady
+      ? {
+          workspaceId,
+          range: params.range,
+          tab: params.tab,
+          timeZone: reportingTimeZone,
+          ...(params.from ? { fromDate: params.from } : {}),
+          ...(params.to ? { toDate: params.to } : {}),
+          nowMs: queryNowMs,
+        }
+      : "skip"
+  );
+  const [dashboardSnapshot, setDashboardSnapshot] =
     React.useState<AgentOpsDashboardData>();
-  const [dashboardError, setDashboardError] = React.useState<Error>();
+  const [dashboardSnapshotError, setDashboardSnapshotError] =
+    React.useState<Error>();
   const [isDashboardSnapshotLoading, setIsDashboardSnapshotLoading] =
     React.useState(false);
   const [discoveryPageData, setDiscoveryPageData] =
     React.useState<DiscoveryInventoryPageData>();
+  const [discoveryPageError, setDiscoveryPageError] = React.useState<Error>();
   const [isDiscoveryPageLoading, setIsDiscoveryPageLoading] =
     React.useState(false);
   const debouncedQuerySearch = useDebouncedValue(querySearch, 300);
 
   React.useEffect(() => {
+    refreshQueryNowMs();
+  }, [params.from, params.range, params.to, refreshQueryNowMs]);
+
+  React.useEffect(() => {
     let cancelled = false;
-    if (!workspaceId) return;
+    if (!workspaceId || reportingStatusQuery.data === undefined) return;
+    if (reportingReady) {
+      setDashboardSnapshot(undefined);
+      setDashboardSnapshotError(undefined);
+      setIsDashboardSnapshotLoading(false);
+      return;
+    }
     setIsDashboardSnapshotLoading(true);
-    setDashboardData(undefined);
-    setDashboardError(undefined);
+    setDashboardSnapshot(undefined);
+    setDashboardSnapshotError(undefined);
     void loadDashboard({
       workspaceId,
       range: params.range,
@@ -197,11 +230,11 @@ export function AgentOpsDashboard() {
       ...(params.to ? { toDate: params.to } : {}),
     })
       .then((result) => {
-        if (!cancelled) setDashboardData(result as AgentOpsDashboardData);
+        if (!cancelled) setDashboardSnapshot(result as AgentOpsDashboardData);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setDashboardError(
+          setDashboardSnapshotError(
             error instanceof Error ? error : new Error("Please try again.")
           );
         }
@@ -219,15 +252,26 @@ export function AgentOpsDashboard() {
     params.range,
     params.tab,
     params.to,
+    reportingReady,
+    reportingStatusQuery.data,
     reportingTimeZone,
     workspaceId,
   ]);
+
+  const dashboardData = reportingReady
+    ? (realtimeDashboardQuery.data as AgentOpsDashboardData | undefined)
+    : dashboardSnapshot;
+  const dashboardError =
+    reportingStatusQuery.error ??
+    (reportingReady ? realtimeDashboardQuery.error : dashboardSnapshotError) ??
+    discoveryPageError;
 
   React.useEffect(() => {
     let cancelled = false;
     if (!workspaceId || params.tab !== "discovery") return;
     setIsDiscoveryPageLoading(true);
     setDiscoveryPageData(undefined);
+    setDiscoveryPageError(undefined);
     void loadDiscoveryPage({
       workspaceId,
       range: params.range,
@@ -248,7 +292,7 @@ export function AgentOpsDashboard() {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setDashboardError(
+          setDiscoveryPageError(
             error instanceof Error ? error : new Error("Please try again.")
           );
         }
@@ -364,7 +408,11 @@ export function AgentOpsDashboard() {
   );
   const data = dashboardData ?? defaultData;
   const isDashboardLoading =
-    workspaceStatusQuery.isPending || isDashboardSnapshotLoading;
+    workspaceStatusQuery.isPending ||
+    reportingStatusQuery.isPending ||
+    (reportingReady
+      ? realtimeDashboardQuery.isPending
+      : isDashboardSnapshotLoading);
   const isMemoryLoading = isDashboardLoading || isMemorySnapshotLoading;
   const resolvedMemoryInventoryData = memoryInventoryData ?? {
     rows: [],
@@ -848,6 +896,7 @@ export function AgentOpsDashboard() {
             size="sm"
             className="mt-3"
             onClick={() => {
+              refreshQueryNowMs();
               setDashboardRefreshKey((value) => value + 1);
               router.refresh();
             }}

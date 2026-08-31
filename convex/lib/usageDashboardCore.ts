@@ -103,9 +103,22 @@ export function buildUsageTrendPoints(args: {
   timestamps: number[];
   now: number;
 }) {
+  const bucketSet = createUsageTrendBucketSet(args);
+  if (!bucketSet) {
+    return [] satisfies UsageTrendPoint[];
+  }
+  const counts = countTimestampsByBucket(args.timestamps, bucketSet);
+
+  return buildUsageTrendPointsFromCounts(bucketSet, counts);
+}
+
+export function createUsageTrendBucketSet(args: {
+  window: UsageCycleWindow;
+  now: number;
+}) {
   const effectiveEnd = Math.min(args.window.cycleEnd, args.now);
   if (effectiveEnd <= args.window.cycleStart) {
-    return [] satisfies UsageTrendPoint[];
+    return null;
   }
 
   const durationMs = effectiveEnd - args.window.cycleStart;
@@ -122,9 +135,13 @@ export function buildUsageTrendPoints(args: {
       endMs: args.window.cycleStart,
     },
   };
-  const bucketSet = createTrendBucketSet(normalizedWindow);
-  const counts = countTimestampsByBucket(args.timestamps, bucketSet);
+  return createTrendBucketSet(normalizedWindow);
+}
 
+export function buildUsageTrendPointsFromCounts(
+  bucketSet: ReturnType<typeof createTrendBucketSet>,
+  counts: number[]
+) {
   return bucketSet.buckets.map((bucket, index) => ({
     date: bucket.label,
     value: counts[index] ?? 0,

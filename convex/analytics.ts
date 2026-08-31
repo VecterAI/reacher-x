@@ -2,6 +2,8 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { action, internalQuery, query } from "./lib/functionBuilders";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { getWorkspaceAnalyticsAggregateRows } from "./lib/workspaceReportingAggregate";
+import { isWorkspaceReportingAggregateReady } from "./lib/workspaceReportingRollout";
 import { analyticsDateRangeValidator } from "./validators";
 import { getOwnedWorkspace, getUserByIdentity } from "./lib/accessHelpers";
 import {
@@ -153,8 +155,9 @@ function buildDashboardAnalyticsResult(args: {
   analyticsRows: AnalyticsDailyRow[];
   normalizedWindow: NormalizedAnalyticsWindow;
   bucketSet: ReturnType<typeof createTrendBucketSet>;
+  generatedAt: number;
 }): AnalyticsQueryResult {
-  const { analyticsRows, normalizedWindow, bucketSet } = args;
+  const { analyticsRows, normalizedWindow, bucketSet, generatedAt } = args;
   const currentProspectsCount = sumHourlyFieldInWindow(
     analyticsRows,
     "hourlyNewProspectsCounts",
@@ -373,7 +376,7 @@ function buildDashboardAnalyticsResult(args: {
         normalizedWindow.current
       ),
     },
-    generatedAt: getCurrentUTCTimestamp(),
+    generatedAt,
   };
 }
 
@@ -459,6 +462,7 @@ export const getDashboardAnalyticsSnapshot = action({
         analyticsRows,
         normalizedWindow,
         bucketSet,
+        generatedAt: nowMs,
       });
     } catch (error) {
       return createErrorResult(
@@ -481,10 +485,15 @@ export const getDashboardAnalytics = query({
     fromDate: v.optional(v.string()),
     toDate: v.optional(v.string()),
     refreshKey: v.optional(v.number()),
+    nowMs: v.number(),
   },
   handler: async (ctx, args): Promise<AnalyticsQueryResult> => {
     let bucketSet = createTrendBucketSet(
-      normalizeAnalyticsWindow({ range: "7d", timeZone: args.timeZone })
+      normalizeAnalyticsWindow({
+        range: "7d",
+        timeZone: args.timeZone,
+        nowMs: args.nowMs,
+      })
     );
 
     try {
@@ -495,6 +504,7 @@ export const getDashboardAnalytics = query({
         to: args.to,
         fromDate: args.fromDate,
         toDate: args.toDate,
+        nowMs: args.nowMs,
       });
       bucketSet = createTrendBucketSet(normalizedWindow);
 
@@ -520,6 +530,15 @@ export const getDashboardAnalytics = query({
         );
       }
 
+      if (
+        !(await isWorkspaceReportingAggregateReady(ctx.db, args.workspaceId))
+      ) {
+        return createErrorResult(
+          "Realtime reporting is still being prepared for this workspace",
+          bucketSet
+        );
+      }
+
       normalizedWindow = normalizeAnalyticsWindow({
         range: args.range,
         timeZone: workspace.reportingTimeZone ?? args.timeZone,
@@ -527,30 +546,22 @@ export const getDashboardAnalytics = query({
         to: args.to,
         fromDate: args.fromDate,
         toDate: args.toDate,
+        nowMs: args.nowMs,
       });
       bucketSet = createTrendBucketSet(normalizedWindow);
 
-      const currentDayRange = getWindowDayRange(normalizedWindow.current);
-      const previousDayRange = getWindowDayRange(normalizedWindow.previous);
-      const startDayStartUtcMs = Math.min(
-        currentDayRange.startDayStartUtcMs,
-        previousDayRange.startDayStartUtcMs
-      );
-      const endDayStartUtcMs = Math.max(
-        currentDayRange.endDayStartUtcMs,
-        previousDayRange.endDayStartUtcMs
-      );
-      const analyticsRows = await listWorkspaceAnalyticsDailyRows({
-        db: ctx.db,
+      const analyticsRows = await getWorkspaceAnalyticsAggregateRows({
+        ctx,
         workspaceId: args.workspaceId,
-        startDayStartUtcMs,
-        endDayStartUtcMs,
+        bucketSet,
+        previousWindow: normalizedWindow.previous,
       });
 
       return buildDashboardAnalyticsResult({
         analyticsRows,
         normalizedWindow,
         bucketSet,
+        generatedAt: args.nowMs,
       });
     } catch (error) {
       const errorMessage =

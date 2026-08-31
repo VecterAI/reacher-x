@@ -82,8 +82,20 @@ export interface CalendarDateTimeParts extends CalendarDateParts {
 export const RELATIVE_TIMESTAMP_PATTERN = /^(\d+)([smhd])$/;
 export const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const DEFAULT_REPORTING_TIME_ZONE = "UTC";
+const HOUR_IN_MILLISECONDS = 60 * 60 * 1000;
 
 const timeZoneDateTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+export function getDelayUntilNextUtcHour(
+  timestamp: number,
+  settleMilliseconds = 0
+): number {
+  return (
+    HOUR_IN_MILLISECONDS -
+    (timestamp % HOUR_IN_MILLISECONDS) +
+    settleMilliseconds
+  );
+}
 
 function getTimeZoneDateTimeFormatter(timeZone: string) {
   const normalized = normalizeTimeZoneIdentifier(timeZone);

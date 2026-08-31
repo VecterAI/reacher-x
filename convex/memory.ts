@@ -730,6 +730,7 @@ export const ensureWorkspaceAgentMemoryInventoryBatchInternal =
           impactScore: v.number(),
           relatedQueriesCount: v.number(),
           evidenceCount: v.number(),
+          prospectId: v.optional(v.string()),
         })
       ),
     },

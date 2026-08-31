@@ -1,5 +1,11 @@
 # Large-range query reliability rollout
 
+> Historical note: this document records the 2026-08-28 snapshot rollout. The
+> reactive Aggregate follow-up in
+> [realtime-reporting-rollout.md](./realtime-reporting-rollout.md) restores live
+> dashboard subscriptions without bringing back the unbounded reads described
+> below.
+
 ## Why this exists
 
 The fit-score histogram was the first measured failure, but it was not the only

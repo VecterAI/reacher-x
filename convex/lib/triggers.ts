@@ -13,6 +13,7 @@ import {
   isWorkspaceStatsStripeEmpty,
   mergeWorkspaceAnalyticsStripeContributions,
   mergeWorkspaceStatsStripeContributions,
+  WORKSPACE_ANALYTICS_HOURLY_FIELDS,
   type TargetedWorkspaceAnalyticsContribution,
   type WorkspaceStatsContribution,
 } from "./readModelHelpers";
@@ -20,16 +21,25 @@ import {
   getWorkspaceAgentOpsContributionsFromEvaluatorRun,
   getWorkspaceAgentOpsContributionsFromKeyword,
   getWorkspaceAgentOpsContributionsFromMemorySuggestion,
+  getWorkspaceAgentOpsContributionsFromMemoryInventory,
   getWorkspaceAgentOpsContributionsFromQueryCandidate,
   getWorkspaceAgentOpsContributionsFromWorkflowEvent,
   isWorkspaceAgentOpsStripeEmpty,
   mergeWorkspaceAgentOpsStripeContributions,
+  AGENT_OPS_HOURLY_FIELDS,
   type TargetedWorkspaceAgentOpsContribution,
 } from "./agentOpsReadModelHelpers";
 import { buildOutreachProgressSummary } from "./outreachProgressHelpers";
 import { buildChangedPatchWithUpdatedAt } from "./patchHelpers";
 import { getReadModelStripe } from "./readModelStripeHelpers";
 import { syncProspectFitScoreAggregate } from "./prospectFitScoreAggregate";
+import {
+  syncWorkspaceAgentOpsReportingAggregate,
+  syncWorkspaceAnalyticsReportingAggregate,
+  syncWorkspaceQualifiedUsageAggregate,
+  WORKSPACE_REPORTING_AGGREGATE_VERSION,
+} from "./workspaceReportingAggregate";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 export const triggers = new Triggers<DataModel>();
 
@@ -429,6 +439,44 @@ async function applyWorkspaceAgentOpsChanges(
   }
 }
 
+triggers.register("workspaces", async (ctx, change) => {
+  if (change.oldDoc || !change.newDoc) return;
+
+  const now = getCurrentUTCTimestamp();
+  await ctx.innerDb.insert("workspaceReportingRollouts", {
+    workspaceId: change.newDoc._id,
+    userId: change.newDoc.userId,
+    status: "verified",
+    aggregateVersion: WORKSPACE_REPORTING_AGGREGATE_VERSION,
+    revision: 1,
+    stage: "verifyAgentOpsStripes",
+    batchSize: 25,
+    backfilledCount: 0,
+    verifiedSourceCount: 0,
+    expectedAnalyticsSums: Array.from(
+      { length: WORKSPACE_ANALYTICS_HOURLY_FIELDS.length },
+      () => 0
+    ),
+    expectedAgentOpsSums: Array.from(
+      { length: AGENT_OPS_HOURLY_FIELDS.length },
+      () => 0
+    ),
+    expectedQualifiedUsageCount: 0,
+    aggregateAnalyticsSums: Array.from(
+      { length: WORKSPACE_ANALYTICS_HOURLY_FIELDS.length },
+      () => 0
+    ),
+    aggregateAgentOpsSums: Array.from(
+      { length: AGENT_OPS_HOURLY_FIELDS.length },
+      () => 0
+    ),
+    aggregateQualifiedUsageCount: 0,
+    startedAt: now,
+    verifiedAt: now,
+    updatedAt: now,
+  });
+});
+
 triggers.register("prospects", async (ctx, change) => {
   if (isProspectWorkflowBookkeepingOnlyChange(change.oldDoc, change.newDoc)) {
     return;
@@ -455,6 +503,12 @@ triggers.register("prospects", async (ctx, change) => {
   await syncProspectFitScoreAggregate(ctx, {
     oldDoc: change.oldDoc,
     newDoc: change.newDoc,
+  });
+
+  await syncWorkspaceQualifiedUsageAggregate(ctx, {
+    sourceKey: `prospects:${String(change.id)}`,
+    oldProspect: change.oldDoc,
+    newProspect: change.newDoc,
   });
 
   if (!areJsonValuesEqual(oldStatsContribution, newStatsContribution)) {
@@ -491,34 +545,53 @@ triggers.register("prospects", async (ctx, change) => {
       remove: oldAnalyticsContributions,
       add: newAnalyticsContributions,
     });
+    await syncWorkspaceAnalyticsReportingAggregate(ctx, {
+      sourceKey: `prospects:${String(change.id)}`,
+      remove: oldAnalyticsContributions,
+      add: newAnalyticsContributions,
+    });
   }
 });
 
 triggers.register("prospectActivityLog", async (ctx, change) => {
+  const remove = toArray(
+    change.oldDoc
+      ? getWorkspaceAnalyticsContributionFromActivityLog(change.oldDoc)
+      : null
+  );
+  const add = toArray(
+    change.newDoc
+      ? getWorkspaceAnalyticsContributionFromActivityLog(change.newDoc)
+      : null
+  );
   await applyWorkspaceAnalyticsChanges(ctx.innerDb, {
     sourceKey: String(change.id),
-    remove: toArray(
-      change.oldDoc
-        ? getWorkspaceAnalyticsContributionFromActivityLog(change.oldDoc)
-        : null
-    ),
-    add: toArray(
-      change.newDoc
-        ? getWorkspaceAnalyticsContributionFromActivityLog(change.newDoc)
-        : null
-    ),
+    remove,
+    add,
+  });
+  await syncWorkspaceAnalyticsReportingAggregate(ctx, {
+    sourceKey: `prospectActivityLog:${String(change.id)}`,
+    remove,
+    add,
   });
 });
 
 triggers.register("outreachPlans", async (ctx, change) => {
+  const remove = change.oldDoc
+    ? getWorkspaceAnalyticsContributionsFromPlan(change.oldDoc)
+    : [];
+  const add = change.newDoc
+    ? getWorkspaceAnalyticsContributionsFromPlan(change.newDoc)
+    : [];
   await applyWorkspaceAnalyticsChanges(ctx.innerDb, {
     sourceKey: String(change.id),
-    remove: change.oldDoc
-      ? getWorkspaceAnalyticsContributionsFromPlan(change.oldDoc)
-      : [],
-    add: change.newDoc
-      ? getWorkspaceAnalyticsContributionsFromPlan(change.newDoc)
-      : [],
+    remove,
+    add,
+  });
+  await syncWorkspaceAnalyticsReportingAggregate(ctx, {
+    sourceKey: `outreachPlans:${String(change.id)}`,
+    remove,
+    add,
   });
 
   await syncProspectsOutreachProgress(
@@ -541,22 +614,29 @@ triggers.register("outreachTasks", async (ctx, change) => {
       )) as Doc<"outreachPlans"> | null)
     : null;
 
+  const remove =
+    change.oldDoc && oldPlan
+      ? getWorkspaceAnalyticsContributionsFromTask({
+          task: change.oldDoc,
+          workspaceId: oldPlan.workspaceId,
+        })
+      : [];
+  const add =
+    change.newDoc && newPlan
+      ? getWorkspaceAnalyticsContributionsFromTask({
+          task: change.newDoc,
+          workspaceId: newPlan.workspaceId,
+        })
+      : [];
   await applyWorkspaceAnalyticsChanges(ctx.innerDb, {
     sourceKey: String(change.id),
-    remove:
-      change.oldDoc && oldPlan
-        ? getWorkspaceAnalyticsContributionsFromTask({
-            task: change.oldDoc,
-            workspaceId: oldPlan.workspaceId,
-          })
-        : [],
-    add:
-      change.newDoc && newPlan
-        ? getWorkspaceAnalyticsContributionsFromTask({
-            task: change.newDoc,
-            workspaceId: newPlan.workspaceId,
-          })
-        : [],
+    remove,
+    add,
+  });
+  await syncWorkspaceAnalyticsReportingAggregate(ctx, {
+    sourceKey: `outreachTasks:${String(change.id)}`,
+    remove,
+    add,
   });
 
   await syncProspectsOutreachProgress(
@@ -596,61 +676,110 @@ triggers.register("outreachNotifications", async (ctx, change) => {
 });
 
 triggers.register("keywords", async (ctx, change) => {
+  const remove = change.oldDoc
+    ? getWorkspaceAgentOpsContributionsFromKeyword(change.oldDoc)
+    : [];
+  const add = change.newDoc
+    ? getWorkspaceAgentOpsContributionsFromKeyword(change.newDoc)
+    : [];
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
     sourceKey: String(change.id),
-    remove: change.oldDoc
-      ? getWorkspaceAgentOpsContributionsFromKeyword(change.oldDoc)
-      : [],
-    add: change.newDoc
-      ? getWorkspaceAgentOpsContributionsFromKeyword(change.newDoc)
-      : [],
+    remove,
+    add,
+  });
+  await syncWorkspaceAgentOpsReportingAggregate(ctx, {
+    sourceKey: `keywords:${String(change.id)}`,
+    remove,
+    add,
   });
 });
 
 triggers.register("queryCandidates", async (ctx, change) => {
+  const remove = change.oldDoc
+    ? getWorkspaceAgentOpsContributionsFromQueryCandidate(change.oldDoc)
+    : [];
+  const add = change.newDoc
+    ? getWorkspaceAgentOpsContributionsFromQueryCandidate(change.newDoc)
+    : [];
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
     sourceKey: String(change.id),
-    remove: change.oldDoc
-      ? getWorkspaceAgentOpsContributionsFromQueryCandidate(change.oldDoc)
-      : [],
-    add: change.newDoc
-      ? getWorkspaceAgentOpsContributionsFromQueryCandidate(change.newDoc)
-      : [],
+    remove,
+    add,
+  });
+  await syncWorkspaceAgentOpsReportingAggregate(ctx, {
+    sourceKey: `queryCandidates:${String(change.id)}`,
+    remove,
+    add,
   });
 });
 
 triggers.register("memorySuggestions", async (ctx, change) => {
+  const remove = change.oldDoc
+    ? getWorkspaceAgentOpsContributionsFromMemorySuggestion(change.oldDoc)
+    : [];
+  const add = change.newDoc
+    ? getWorkspaceAgentOpsContributionsFromMemorySuggestion(change.newDoc)
+    : [];
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
     sourceKey: String(change.id),
-    remove: change.oldDoc
-      ? getWorkspaceAgentOpsContributionsFromMemorySuggestion(change.oldDoc)
-      : [],
-    add: change.newDoc
-      ? getWorkspaceAgentOpsContributionsFromMemorySuggestion(change.newDoc)
-      : [],
+    remove,
+    add,
+  });
+  await syncWorkspaceAgentOpsReportingAggregate(ctx, {
+    sourceKey: `memorySuggestions:${String(change.id)}`,
+    remove,
+    add,
   });
 });
 
 triggers.register("memoryWorkflowEvents", async (ctx, change) => {
+  const remove = change.oldDoc
+    ? getWorkspaceAgentOpsContributionsFromWorkflowEvent(change.oldDoc)
+    : [];
+  const add = change.newDoc
+    ? getWorkspaceAgentOpsContributionsFromWorkflowEvent(change.newDoc)
+    : [];
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
     sourceKey: String(change.id),
-    remove: change.oldDoc
-      ? getWorkspaceAgentOpsContributionsFromWorkflowEvent(change.oldDoc)
-      : [],
-    add: change.newDoc
-      ? getWorkspaceAgentOpsContributionsFromWorkflowEvent(change.newDoc)
-      : [],
+    remove,
+    add,
+  });
+  await syncWorkspaceAgentOpsReportingAggregate(ctx, {
+    sourceKey: `memoryWorkflowEvents:${String(change.id)}`,
+    remove,
+    add,
   });
 });
 
 triggers.register("memoryEvaluatorRuns", async (ctx, change) => {
+  const remove = change.oldDoc
+    ? getWorkspaceAgentOpsContributionsFromEvaluatorRun(change.oldDoc)
+    : [];
+  const add = change.newDoc
+    ? getWorkspaceAgentOpsContributionsFromEvaluatorRun(change.newDoc)
+    : [];
   await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
     sourceKey: String(change.id),
+    remove,
+    add,
+  });
+  await syncWorkspaceAgentOpsReportingAggregate(ctx, {
+    sourceKey: `memoryEvaluatorRuns:${String(change.id)}`,
+    remove,
+    add,
+  });
+});
+
+triggers.register("workspaceAgentMemoryInventory", async (ctx, change) => {
+  const memoryId = change.newDoc?.memoryId ?? change.oldDoc?.memoryId;
+  if (!memoryId) return;
+  await syncWorkspaceAgentOpsReportingAggregate(ctx, {
+    sourceKey: `workspaceAgentMemory:${memoryId}`,
     remove: change.oldDoc
-      ? getWorkspaceAgentOpsContributionsFromEvaluatorRun(change.oldDoc)
+      ? getWorkspaceAgentOpsContributionsFromMemoryInventory(change.oldDoc)
       : [],
     add: change.newDoc
-      ? getWorkspaceAgentOpsContributionsFromEvaluatorRun(change.newDoc)
+      ? getWorkspaceAgentOpsContributionsFromMemoryInventory(change.newDoc)
       : [],
   });
 });

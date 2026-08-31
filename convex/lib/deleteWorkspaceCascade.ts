@@ -329,6 +329,14 @@ export async function deleteWorkspaceCascade(
     await ctx.db.delete(stripe._id);
   }
 
+  const reportingRollout = await ctx.db
+    .query("workspaceReportingRollouts")
+    .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+    .unique();
+  if (reportingRollout) {
+    await ctx.db.delete(reportingRollout._id);
+  }
+
   const memoryInventory = await ctx.db
     .query("workspaceAgentMemoryInventory")
     .withIndex("by_workspace_created_at", (q) =>

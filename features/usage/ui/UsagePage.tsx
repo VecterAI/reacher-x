@@ -9,7 +9,11 @@ import {
   PageHeader,
   PageLayout,
 } from "@/features/webapp/ui/components";
-import { usePreferredShellQueryArgs, useQueryWithStatus } from "@/shared/hooks";
+import {
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+  useReportingQueryNow,
+} from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Select,
@@ -52,6 +56,7 @@ export function UsagePage() {
     string | undefined
   >(undefined);
   const [usageRefreshKey, setUsageRefreshKey] = React.useState(0);
+  const { queryNowMs, refreshQueryNowMs } = useReportingQueryNow();
   const layoutCache = React.useSyncExternalStore(
     subscribeUsageLayoutCache,
     getUsageLayoutCacheSnapshot,
@@ -61,31 +66,64 @@ export function UsagePage() {
     React.useState<UsageDashboardData | null>(null);
 
   const loadUsage = useAction(api.usage.getUsageDashboardSnapshot);
-  const [usage, setUsage] = React.useState<UsageDashboardData | null>();
-  const [usageError, setUsageError] = React.useState<Error>();
-  const [isUsagePending, setIsUsagePending] = React.useState(true);
+  const reportingStatusQuery = useQueryWithStatus(
+    api.workspaceReporting.getUserWorkspaceReportingStatus
+  );
+  const reportingReady = reportingStatusQuery.data?.ready === true;
+  const realtimeUsageQuery = useQueryWithStatus(
+    api.usage.getUsageDashboard,
+    reportingReady ? { selectedCycleKey, nowMs: queryNowMs } : "skip"
+  );
+  const [usageSnapshot, setUsageSnapshot] =
+    React.useState<UsageDashboardData | null>();
+  const [usageSnapshotError, setUsageSnapshotError] = React.useState<Error>();
+  const [isUsageSnapshotPending, setIsUsageSnapshotPending] =
+    React.useState(true);
   React.useEffect(() => {
     let cancelled = false;
-    setIsUsagePending(true);
-    setUsageError(undefined);
+    if (reportingStatusQuery.data === undefined) return;
+    if (reportingReady) {
+      setUsageSnapshot(undefined);
+      setUsageSnapshotError(undefined);
+      setIsUsageSnapshotPending(false);
+      return;
+    }
+    setIsUsageSnapshotPending(true);
+    setUsageSnapshotError(undefined);
     void loadUsage({ selectedCycleKey })
       .then((result) => {
-        if (!cancelled) setUsage(result as UsageDashboardData | null);
+        if (!cancelled) setUsageSnapshot(result as UsageDashboardData | null);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setUsageError(
+          setUsageSnapshotError(
             error instanceof Error ? error : new Error("Please try again.")
           );
         }
       })
       .finally(() => {
-        if (!cancelled) setIsUsagePending(false);
+        if (!cancelled) setIsUsageSnapshotPending(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [loadUsage, selectedCycleKey, usageRefreshKey]);
+  }, [
+    loadUsage,
+    reportingReady,
+    reportingStatusQuery.data,
+    selectedCycleKey,
+    usageRefreshKey,
+  ]);
+  const usage = reportingReady
+    ? (realtimeUsageQuery.data as UsageDashboardData | null | undefined)
+    : usageSnapshot;
+  const usageError =
+    reportingStatusQuery.error ??
+    (reportingReady ? realtimeUsageQuery.error : usageSnapshotError);
+  const isUsagePending =
+    !reportingStatusQuery.error &&
+    (reportingStatusQuery.isPending ||
+      (reportingReady ? realtimeUsageQuery.isPending : isUsageSnapshotPending));
   const shellStateQuery = useQueryWithStatus(
     api.shell.getAppShellState,
     preferredShellQueryArgs
@@ -277,6 +315,7 @@ export function UsagePage() {
               size="sm"
               className="mt-3"
               onClick={() => {
+                refreshQueryNowMs();
                 setUsageRefreshKey((value) => value + 1);
                 router.refresh();
               }}

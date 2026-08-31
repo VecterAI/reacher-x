@@ -141,7 +141,7 @@ const WORKSPACE_ANALYTICS_NUMERIC_FIELDS = [
   "failedTasksCount",
 ] as const;
 
-const WORKSPACE_ANALYTICS_HOURLY_FIELDS = [
+export const WORKSPACE_ANALYTICS_HOURLY_FIELDS = [
   "hourlyNewProspectsCounts",
   "hourlyReachedContactedProspectsCounts",
   "hourlyReachedInProgressProspectsCounts",

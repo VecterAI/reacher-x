@@ -1,6 +1,6 @@
 import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
 import {
   addFitScoreToHistogram,
@@ -11,6 +11,7 @@ import {
 } from "./lib/prospectFitScoreAggregate";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { fitScoreAggregateRolloutStatusValidator } from "./validators";
+import { isWorkspaceSafeForAggregateMigration } from "./lib/aggregateMigrationHelpers";
 
 const DEFAULT_BACKFILL_BATCH_SIZE = 25;
 const MAX_BACKFILL_BATCH_SIZE = 25;
@@ -48,25 +49,6 @@ function clampBatchSize(
   return Math.max(1, Math.min(maximum, Math.floor(requested ?? fallback)));
 }
 
-function isWorkspaceSafeForMigration(
-  workspace: Pick<
-    Doc<"workspaces">,
-    | "deletionWorkflowId"
-    | "prospectingWorkflowId"
-    | "prospectingWorkflowStatus"
-  >
-) {
-  const hasNeverStartedProspecting =
-    workspace.prospectingWorkflowStatus === undefined &&
-    workspace.prospectingWorkflowId === undefined;
-  return (
-    workspace.deletionWorkflowId === undefined &&
-    (hasNeverStartedProspecting ||
-      (workspace.prospectingWorkflowStatus !== undefined &&
-        workspace.prospectingWorkflowStatus !== "running"))
-  );
-}
-
 export const startWorkspaceMigrationInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
@@ -82,7 +64,7 @@ export const startWorkspaceMigrationInternal = internalMutation({
   }),
   handler: async (ctx, args): Promise<StartMigrationResult> => {
     const workspace = await ctx.db.get("workspaces", args.workspaceId);
-    if (!workspace || !isWorkspaceSafeForMigration(workspace)) {
+    if (!workspace || !isWorkspaceSafeForAggregateMigration(workspace)) {
       throw new Error(
         "Fit-score Aggregate migration requires an existing, non-deleting workspace that is inactive or has never started prospecting"
       );
@@ -183,7 +165,7 @@ export const backfillWorkspacePageInternal = internalMutation({
     }
 
     const workspace = await ctx.db.get("workspaces", rollout.workspaceId);
-    if (!workspace || !isWorkspaceSafeForMigration(workspace)) {
+    if (!workspace || !isWorkspaceSafeForAggregateMigration(workspace)) {
       await ctx.db.patch(args.rolloutId, {
         status: "failed",
         error: "Workspace became active or deletion began during backfill",
@@ -267,7 +249,7 @@ export const verifyWorkspacePageInternal = internalMutation({
     }
 
     const workspace = await ctx.db.get("workspaces", rollout.workspaceId);
-    if (!workspace || !isWorkspaceSafeForMigration(workspace)) {
+    if (!workspace || !isWorkspaceSafeForAggregateMigration(workspace)) {
       await ctx.db.patch(args.rolloutId, {
         status: "failed",
         error: "Workspace became active or deletion began during verification",

@@ -1,0 +1,204 @@
+/// <reference types="vite/client" />
+
+import { makeFunctionReference } from "convex/server";
+import { convexTest } from "convex-test";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import {
+  getWorkspaceAnalyticsContributionsFromProspect,
+  mergeWorkspaceAnalyticsContributions,
+  type WorkspaceAnalyticsDailyRecord,
+} from "./lib/readModelHelpers";
+import schema from "./schema";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import {
+  getWorkspaceAgentOpsContributionsFromKeyword,
+  mergeWorkspaceAgentOpsContributions,
+} from "./lib/agentOpsReadModelHelpers";
+
+const modules = import.meta.glob("./**/*.ts");
+
+const startMigration = makeFunctionReference<
+  "mutation",
+  { workspaceId: Id<"workspaces">; batchSize?: number },
+  {
+    rolloutId: Id<"workspaceReportingRollouts">;
+    status: "backfilling" | "verifying" | "verified" | "failed";
+    revision: number;
+    alreadyActive: boolean;
+  }
+>("workspaceReportingMigration:startWorkspaceMigrationInternal");
+
+async function registerPolar(t: ReturnType<typeof convexTest>) {
+  const polarTestPath = ["@convex-dev/polar", "test"].join("/");
+  const polarTest = (await import(polarTestPath)) as {
+    default: { register: (instance: typeof t) => void };
+  };
+  polarTest.default.register(t);
+}
+
+describe("workspace reporting Aggregate", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("backfills exact totals and keeps analytics reactive after cutover", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 7, 30, 12, 30));
+    const t = convexTest({ schema, modules, transactionLimits: true });
+    await registerPolar(t);
+
+    const seeded = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "reporting-aggregate-owner",
+        email: "reporting-aggregate@example.com",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Realtime reporting",
+        description: "Paused reporting migration fixture",
+        isDefault: true,
+        setupCompletedAt: getCurrentUTCTimestamp(),
+        prospectingWorkflowStatus: "paused",
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "pro",
+        prospectsLimit: -1,
+        workspacesLimit: -1,
+        currentProspectsCount: 1,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "reporting-existing",
+        data: {},
+        status: "new",
+        qualificationStatus: "qualified",
+        qualifiedAt: getCurrentUTCTimestamp(),
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      const prospect = await ctx.db.get("prospects", prospectId);
+      if (!prospect) throw new Error("Failed to seed prospect");
+
+      const rows = new Map<number, WorkspaceAnalyticsDailyRecord>();
+      for (const targeted of getWorkspaceAnalyticsContributionsFromProspect(
+        prospect
+      )) {
+        rows.set(
+          targeted.dayStartUtcMs,
+          mergeWorkspaceAnalyticsContributions(
+            rows.get(targeted.dayStartUtcMs) ?? null,
+            {
+              workspaceId,
+              dayStartUtcMs: targeted.dayStartUtcMs,
+              add: [targeted.contribution],
+            }
+          )
+        );
+      }
+      for (const row of rows.values()) {
+        await ctx.db.insert("workspaceAnalyticsDaily", row);
+      }
+      const keywordId = await ctx.db.insert("keywords", {
+        workspaceId,
+        type: "seed",
+        value: "realtime",
+      });
+      const keyword = await ctx.db.get("keywords", keywordId);
+      if (!keyword) throw new Error("Failed to seed keyword");
+      const keywordContribution =
+        getWorkspaceAgentOpsContributionsFromKeyword(keyword)[0];
+      if (!keywordContribution) throw new Error("Missing keyword contribution");
+      await ctx.db.insert(
+        "workspaceAgentOpsDaily",
+        mergeWorkspaceAgentOpsContributions(null, {
+          workspaceId,
+          dayStartUtcMs: keywordContribution.dayStartUtcMs,
+          add: [keywordContribution.contribution],
+        })
+      );
+      return { userId, workspaceId };
+    });
+
+    const migration = await t.mutation(startMigration, {
+      workspaceId: seeded.workspaceId,
+      batchSize: 2,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await expect(
+      t.run((ctx) =>
+        ctx.db.get("workspaceReportingRollouts", migration.rolloutId)
+      )
+    ).resolves.toMatchObject({
+      status: "verified",
+      expectedQualifiedUsageCount: 1,
+      aggregateQualifiedUsageCount: 1,
+    });
+
+    const owner = t.withIdentity({ subject: "reporting-aggregate-owner" });
+    const queryArgs = {
+      workspaceId: seeded.workspaceId,
+      range: "7d" as const,
+      nowMs: getCurrentUTCTimestamp(),
+    };
+    const before = await owner.query(
+      api.analytics.getDashboardAnalytics,
+      queryArgs
+    );
+    expect(before.status).toBe("success");
+    expect(before.data.newProspects.value).toBe(1);
+    const agentOpsBefore = await owner.query(
+      api.agentOps.getAgentOpsDashboard,
+      {
+        ...queryArgs,
+        tab: "overview",
+      }
+    );
+    expect(agentOpsBefore.discovery.stats.keywordsCreated.value).toBe(1);
+    const usageBefore = await owner.query(api.usage.getUsageDashboard, {
+      nowMs: queryArgs.nowMs,
+    });
+    expect(usageBefore?.workspaces).toEqual([
+      expect.objectContaining({ workspaceId: seeded.workspaceId, used: 1 }),
+    ]);
+
+    await t.mutation(internal.prospects.createProspectsBatch, {
+      userId: seeded.userId,
+      workspaceId: seeded.workspaceId,
+      prospects: [
+        {
+          platform: "linkedin",
+          origin: "workspace_discovery",
+          externalId: "reporting-live",
+          data: {},
+          qualificationStatus: "qualified",
+        },
+      ],
+    });
+
+    const after = await owner.query(
+      api.analytics.getDashboardAnalytics,
+      queryArgs
+    );
+    expect(after.status).toBe("success");
+    expect(after.data.newProspects.value).toBe(2);
+    expect(after.data.platformDistribution).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ platform: "Twitter/X", count: 1 }),
+        expect.objectContaining({ platform: "LinkedIn", count: 1 }),
+      ])
+    );
+    const usageAfter = await owner.query(api.usage.getUsageDashboard, {
+      nowMs: queryArgs.nowMs,
+    });
+    expect(usageAfter?.workspaces).toEqual([
+      expect.objectContaining({ workspaceId: seeded.workspaceId, used: 2 }),
+    ]);
+  });
+});
