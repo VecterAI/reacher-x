@@ -232,4 +232,100 @@ describe("workspace reporting Aggregate", () => {
       expect.objectContaining({ workspaceId: seeded.workspaceId, used: 2 }),
     ]);
   });
+
+  test("rebuilds stale analytics before the Aggregate migration", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 7, 30, 12, 30));
+    const t = convexTest({ schema, modules, transactionLimits: true });
+    await registerPolar(t);
+
+    const seeded = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "reporting-stale-analytics-owner",
+        email: "reporting-stale-analytics@example.com",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Stale analytics reporting",
+        description: "Paused stale analytics migration fixture",
+        isDefault: true,
+        setupCompletedAt: getCurrentUTCTimestamp(),
+        prospectingWorkflowStatus: "paused",
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      const firstProspectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "reporting-stale-first",
+        data: {},
+        status: "new",
+        qualificationStatus: "disqualified",
+        qualificationScore: 45,
+        disqualifiedAt: getCurrentUTCTimestamp(),
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "reporting-stale-second",
+        data: {},
+        status: "new",
+        qualificationStatus: "disqualified",
+        qualificationScore: 45,
+        disqualifiedAt: getCurrentUTCTimestamp(),
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+
+      const firstProspect = await ctx.db.get("prospects", firstProspectId);
+      if (!firstProspect) throw new Error("Failed to seed stale prospect");
+      for (const targeted of getWorkspaceAnalyticsContributionsFromProspect(
+        firstProspect
+      )) {
+        await ctx.db.insert(
+          "workspaceAnalyticsDaily",
+          mergeWorkspaceAnalyticsContributions(null, {
+            workspaceId,
+            dayStartUtcMs: targeted.dayStartUtcMs,
+            add: [targeted.contribution],
+          })
+        );
+      }
+
+      return { workspaceId };
+    });
+
+    const analyticsRebuilt = await t.action(
+      internal.workspaceAnalyticsDaily.rebuildWorkspaceAnalyticsDailyInternal,
+      { workspaceId: seeded.workspaceId }
+    );
+    expect(analyticsRebuilt).toMatchObject({
+      prospectsProcessed: 2,
+    });
+
+    const migration = await t.mutation(startMigration, {
+      workspaceId: seeded.workspaceId,
+      batchSize: 2,
+    });
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const rollout = await t.run((ctx) =>
+      ctx.db.get("workspaceReportingRollouts", migration.rolloutId)
+    );
+    expect(rollout).toMatchObject({
+      status: "verified",
+      expectedQualifiedUsageCount: 0,
+      aggregateQualifiedUsageCount: 0,
+    });
+    expect(rollout?.expectedAnalyticsSums).toEqual(
+      rollout?.aggregateAnalyticsSums
+    );
+    expect(rollout?.aggregateAnalyticsSums?.[0]).toBe(2);
+    expect(rollout?.aggregateAnalyticsSums?.[4]).toBe(2);
+    expect(rollout?.aggregateAnalyticsSums?.[9]).toBe(2);
+    expect(rollout?.aggregateAnalyticsSums?.[11]).toBe(2);
+  });
 });

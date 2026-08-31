@@ -196,9 +196,10 @@ export const startWorkspaceMigrationInternal = internalMutation({
 });
 
 /**
- * Repairs the memory inventory mirror and rebuilds the current Agent Ops read
- * model before starting the exact Aggregate migration. Operators should use
- * this entry point; the mutation above remains the resumable/testable core.
+ * Repairs the memory inventory mirror and rebuilds the current Analytics and
+ * Agent Ops read models before starting the exact Aggregate migration.
+ * Operators should use this entry point; the mutation above remains the
+ * resumable/testable core.
  */
 export const prepareAndStartWorkspaceMigrationInternal = internalAction({
   args: {
@@ -219,6 +220,13 @@ export const prepareAndStartWorkspaceMigrationInternal = internalAction({
       scanned: number;
       inserted: number;
       existing: number;
+    } | null;
+    analyticsReadModelRebuild: {
+      analyticsRowsRebuilt: number;
+      prospectsProcessed: number;
+      activityLogsProcessed: number;
+      plansProcessed: number;
+      tasksProcessed: number;
     } | null;
     agentOpsReadModelRebuild: {
       agentOpsRowsRebuilt: number;
@@ -250,6 +258,7 @@ export const prepareAndStartWorkspaceMigrationInternal = internalAction({
         alreadyActive: true,
         prepared: false,
         inventoryBackfill: null,
+        analyticsReadModelRebuild: null,
         agentOpsReadModelRebuild: null,
       };
     }
@@ -258,7 +267,11 @@ export const prepareAndStartWorkspaceMigrationInternal = internalAction({
       internal.memory.backfillWorkspaceAgentMemoryInventoryInternal,
       { workspaceId: args.workspaceId, userId: workspace.userId }
     );
-    const rebuilt = await ctx.runAction(
+    const analyticsRebuilt = await ctx.runAction(
+      internal.workspaceAnalyticsDaily.rebuildWorkspaceAnalyticsDailyInternal,
+      { workspaceId: args.workspaceId }
+    );
+    const agentOpsRebuilt = await ctx.runAction(
       internal.agentOpsReadModels.rebuildWorkspaceAgentOpsReadModelsInternal,
       { workspaceId: args.workspaceId }
     );
@@ -271,9 +284,17 @@ export const prepareAndStartWorkspaceMigrationInternal = internalAction({
       ...migration,
       prepared: true,
       inventoryBackfill,
+      analyticsReadModelRebuild: {
+        analyticsRowsRebuilt: analyticsRebuilt.analyticsRowsRebuilt,
+        prospectsProcessed: analyticsRebuilt.prospectsProcessed,
+        activityLogsProcessed: analyticsRebuilt.activityLogsProcessed,
+        plansProcessed: analyticsRebuilt.plansProcessed,
+        tasksProcessed: analyticsRebuilt.tasksProcessed,
+      },
       agentOpsReadModelRebuild: {
-        agentOpsRowsRebuilt: rebuilt.agentOpsRowsRebuilt,
-        queryPerformanceRowsRebuilt: rebuilt.queryPerformanceRowsRebuilt,
+        agentOpsRowsRebuilt: agentOpsRebuilt.agentOpsRowsRebuilt,
+        queryPerformanceRowsRebuilt:
+          agentOpsRebuilt.queryPerformanceRowsRebuilt,
       },
     };
   },
