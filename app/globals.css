@@ -40,6 +40,15 @@
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
 
+  --color-platform-twitter-badge: hsl(var(--platform-twitter-badge));
+  --color-platform-twitter-badge-foreground: hsl(
+    var(--platform-twitter-badge-foreground)
+  );
+  --color-platform-linkedin-badge: hsl(var(--platform-linkedin-badge));
+  --color-platform-linkedin-badge-foreground: hsl(
+    var(--platform-linkedin-badge-foreground)
+  );
+
   --color-chart-1: hsl(var(--chart-1));
   --color-chart-2: hsl(var(--chart-2));
   --color-chart-3: hsl(var(--chart-3));
@@ -233,6 +242,10 @@
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
+    --platform-twitter-badge: 82.712 77.974% 55.49%;
+    --platform-twitter-badge-foreground: 0 0% 9%;
+    --platform-linkedin-badge: 172.455 66.008% 50.392%;
+    --platform-linkedin-badge-foreground: 0 0% 9%;
     --chart-1: 0 0% 9%;
     --chart-2: 0 0% 35%;
     --chart-3: 0 0% 55%;
@@ -271,6 +284,10 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
+    --platform-twitter-badge: 81.972 84.524% 67.059%;
+    --platform-twitter-badge-foreground: 0 0% 9%;
+    --platform-linkedin-badge: 170.571 76.923% 64.314%;
+    --platform-linkedin-badge-foreground: 0 0% 9%;
     --chart-1: 0 0% 98%;
     --chart-2: 0 0% 75%;
     --chart-3: 0 0% 55%;
