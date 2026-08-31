@@ -64,6 +64,16 @@ describe("workspace reporting Aggregate", () => {
         prospectingWorkflowStatus: "paused",
         updatedAt: getCurrentUTCTimestamp(),
       });
+      await ctx.db.insert("workspaces", {
+        userId,
+        name: "Deleting workspace",
+        description: "Should not block account-wide realtime reporting",
+        isDefault: false,
+        setupCompletedAt: getCurrentUTCTimestamp(),
+        deletionWorkflowId: "deleting-workspace-workflow",
+        deletionStartedAt: getCurrentUTCTimestamp(),
+        updatedAt: getCurrentUTCTimestamp(),
+      });
       await ctx.db.insert("userPlans", {
         userId,
         tier: "pro",
@@ -172,6 +182,9 @@ describe("workspace reporting Aggregate", () => {
     });
 
     const owner = t.withIdentity({ subject: "reporting-aggregate-owner" });
+    await expect(
+      owner.query(api.workspaceReporting.getUserWorkspaceReportingStatus, {})
+    ).resolves.toEqual({ ready: true, workspaceCount: 1 });
     const queryArgs = {
       workspaceId: seeded.workspaceId,
       range: "7d" as const,

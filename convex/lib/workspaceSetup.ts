@@ -8,6 +8,8 @@ type WorkspaceSetupCompletionFields = Pick<
   Doc<"workspaces">,
   "setupCompletedAt"
 >;
+type ReportableWorkspaceFields = WorkspaceSetupCompletionFields &
+  Pick<Doc<"workspaces">, "deletionWorkflowId">;
 
 type WorkspaceWithRequiredAgentData<T extends WorkspaceAgentSetupFields> = T & {
   improvedDescription: string;
@@ -32,6 +34,14 @@ export function filterCompletedWorkspaces<
   return workspaces.filter(
     (workspace): workspace is WorkspaceWithCompletedSetup<T> =>
       isWorkspaceSetupCompleted(workspace)
+  );
+}
+
+export function filterReportableWorkspaces<T extends ReportableWorkspaceFields>(
+  workspaces: readonly T[]
+): Array<WorkspaceWithCompletedSetup<T>> {
+  return filterCompletedWorkspaces(workspaces).filter(
+    (workspace) => workspace.deletionWorkflowId === undefined
   );
 }
 

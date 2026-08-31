@@ -4,7 +4,7 @@ import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import { getWorkspaceReportingRollout } from "./lib/workspaceReportingRollout";
 import { WORKSPACE_REPORTING_AGGREGATE_VERSION } from "./lib/workspaceReportingAggregate";
 import { getUserByIdentity } from "./lib/accessHelpers";
-import { filterCompletedWorkspaces } from "./lib/workspaceSetup";
+import { filterReportableWorkspaces } from "./lib/workspaceSetup";
 
 export const getWorkspaceReportingStatus = query({
   args: { workspaceId: v.id("workspaces") },
@@ -39,7 +39,7 @@ export const getUserWorkspaceReportingStatus = query({
     if (!identity) return { ready: false, workspaceCount: 0 };
     const user = await getUserByIdentity(ctx, identity);
     if (!user) return { ready: false, workspaceCount: 0 };
-    const workspaces = filterCompletedWorkspaces(
+    const workspaces = filterReportableWorkspaces(
       await ctx.db
         .query("workspaces")
         .withIndex("by_user_id", (q) => q.eq("userId", user._id))

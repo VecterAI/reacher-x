@@ -24,7 +24,7 @@ import {
   sortUsageWorkspaceRows,
 } from "./lib/usageDashboardCore";
 import { getUserFromIdentity } from "./lib/userUtils";
-import { filterCompletedWorkspaces } from "./lib/workspaceSetup";
+import { filterReportableWorkspaces } from "./lib/workspaceSetup";
 import { shouldCountQualifiedProspectUsageInWindow } from "./lib/planQualifiedUsageCore";
 import type { UserPlan } from "./lib/planConstants";
 import { getWorkspaceReportingMetricSums } from "./lib/workspaceReportingAggregate";
@@ -129,7 +129,7 @@ export const getUsageDashboardSnapshot = action({
       tier: context.plan.tier,
       subscription: context.subscription,
     });
-    const completedWorkspaces = filterCompletedWorkspaces(context.workspaces);
+    const completedWorkspaces = filterReportableWorkspaces(context.workspaces);
     const cycleOptions = dedupeUsageCycleWindows([
       { ...currentWindow, isCurrent: true },
       ...context.cycleRows.map((row) => ({
@@ -284,7 +284,7 @@ export const getUsageDashboard = query({
       tier: plan.tier,
       subscription,
     });
-    const completedWorkspaces = filterCompletedWorkspaces(workspaces);
+    const completedWorkspaces = filterReportableWorkspaces(workspaces);
     const reportingReady = await Promise.all(
       completedWorkspaces.map((workspace) =>
         isWorkspaceReportingAggregateReady(ctx.db, workspace._id)
