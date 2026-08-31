@@ -45,6 +45,60 @@ describe("canonical workspace memory", () => {
     ).toEqual(["operator_instruction"]);
   });
 
+  test("reconciles orphaned inventory rows without deleting valid memories", async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await seedWorkspace(t);
+
+    const valid = await t.run(async (ctx) => {
+      const promoted = await promoteAgentMemory(ctx.db, {
+        userId: String(seeded.userId),
+        workspaceId: String(seeded.workspaceId),
+        source: "qualification",
+        category: "qualification_win_pattern",
+        namespace: "wins",
+        title: "Valid memory",
+        summary: "This memory still has a source record.",
+        confidence: 0.9,
+        impactScore: 0.8,
+      });
+      await ctx.db.insert("workspaceAgentMemoryInventory", {
+        workspaceId: seeded.workspaceId,
+        memoryId: "missing-agent-memory",
+        createdAt: 2,
+        createdDayStartUtcMs: 0,
+        title: "Orphaned memory",
+        summary: "Its Agent memory no longer exists.",
+        source: "style_analysis",
+        category: "writing_style_profile_twitter",
+        confidence: 0.96,
+        impactScore: 0.95,
+        relatedQueriesCount: 0,
+        evidenceCount: 0,
+      });
+      return promoted.memoryId;
+    });
+
+    const reconciliation = await t.action(
+      internal.memory.reconcileWorkspaceAgentMemoryInventoryInternal,
+      { workspaceId: seeded.workspaceId }
+    );
+    expect(reconciliation).toEqual({
+      scanned: 2,
+      deleted: 1,
+      deletedMemoryIds: ["missing-agent-memory"],
+    });
+
+    const remaining = await t.run((ctx) =>
+      ctx.db
+        .query("workspaceAgentMemoryInventory")
+        .withIndex("by_workspace_created_at", (q) =>
+          q.eq("workspaceId", seeded.workspaceId)
+        )
+        .collect()
+    );
+    expect(remaining.map((row) => row.memoryId)).toEqual([valid]);
+  });
+
   test("is idempotent and a newer correction supersedes the prior value", async () => {
     const t = convexTest(schema, modules);
     const seeded = await seedWorkspace(t);
@@ -175,20 +229,21 @@ describe("canonical workspace memory", () => {
     const t = convexTest(schema, modules);
     const seeded = await seedWorkspace(t);
 
-    const canonical = await t.run(async (ctx) =>
-      await upsertCanonicalWorkspaceMemory(ctx.db, {
-        ...seeded,
-        legacyMemoryId: "legacy-component-memory-id",
-        source: "qualification",
-        category: "qualification_win_pattern",
-        namespace: "wins",
-        kind: "qualification_pattern",
-        title: "Verified hiring signal",
-        summary: "Prioritize direct evidence of active hiring.",
-        canonicalContent: "Prioritize direct evidence of active hiring.",
-        confidence: 0.9,
-        impactScore: 0.8,
-      })
+    const canonical = await t.run(
+      async (ctx) =>
+        await upsertCanonicalWorkspaceMemory(ctx.db, {
+          ...seeded,
+          legacyMemoryId: "legacy-component-memory-id",
+          source: "qualification",
+          category: "qualification_win_pattern",
+          namespace: "wins",
+          kind: "qualification_pattern",
+          title: "Verified hiring signal",
+          summary: "Prioritize direct evidence of active hiring.",
+          canonicalContent: "Prioritize direct evidence of active hiring.",
+          confidence: 0.9,
+          impactScore: 0.8,
+        })
     );
     const resolved = await t.query(
       internal.memory.getCanonicalWorkspaceMemoriesByIdsInternal,

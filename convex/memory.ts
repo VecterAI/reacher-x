@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx as ConvexActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -34,6 +35,7 @@ import {
   listWorkspaceAgentMemoriesByCategory,
   listWorkspaceAgentMemoriesBySource,
   promoteAgentMemory,
+  reconcileWorkspaceAgentMemoryInventoryPage,
   type ParsedAgentMemory,
   type WorkspaceMemoryCategory,
   type WorkspaceMemorySource,
@@ -85,6 +87,8 @@ const MAX_LIST_LIMIT = 200;
 const DISCOVERY_CONTEXT_LIMIT = 6;
 const DISCOVERY_SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
 const MEMORY_INVENTORY_BACKFILL_PAGE_SIZE = 100;
+const MEMORY_INVENTORY_RECONCILIATION_PAGE_SIZE = 100;
+const MAX_REPORTED_ORPHANED_MEMORY_IDS = 100;
 const memoryLogger = logger.withScope("Memory");
 
 type WorkspaceSemanticMatch = {
@@ -741,6 +745,65 @@ export const ensureWorkspaceAgentMemoryInventoryBatchInternal =
       });
     },
   });
+
+export const reconcileWorkspaceAgentMemoryInventoryBatchInternal =
+  internalMutation({
+    args: {
+      workspaceId: v.id("workspaces"),
+      paginationOpts: paginationOptsValidator,
+    },
+    handler: async (ctx, args) => {
+      return await reconcileWorkspaceAgentMemoryInventoryPage(ctx.db, {
+        workspaceId: args.workspaceId,
+        cursor: args.paginationOpts.cursor,
+        limit: args.paginationOpts.numItems,
+      });
+    },
+  });
+
+export const reconcileWorkspaceAgentMemoryInventoryInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    let cursor: string | null = null;
+    let scanned = 0;
+    let deleted = 0;
+    const deletedMemoryIds: string[] = [];
+
+    while (true) {
+      const result: {
+        continueCursor: string;
+        isDone: boolean;
+        scanned: number;
+        deleted: number;
+        deletedMemoryIds: string[];
+      } = await ctx.runMutation(
+        internal.memory.reconcileWorkspaceAgentMemoryInventoryBatchInternal,
+        {
+          workspaceId: args.workspaceId,
+          paginationOpts: {
+            cursor,
+            numItems: MEMORY_INVENTORY_RECONCILIATION_PAGE_SIZE,
+          },
+        }
+      );
+      scanned += result.scanned;
+      deleted += result.deleted;
+      deletedMemoryIds.push(
+        ...result.deletedMemoryIds.slice(
+          0,
+          MAX_REPORTED_ORPHANED_MEMORY_IDS - deletedMemoryIds.length
+        )
+      );
+
+      if (result.isDone) {
+        return { scanned, deleted, deletedMemoryIds };
+      }
+      cursor = result.continueCursor;
+    }
+  },
+});
 
 export const backfillWorkspaceAgentMemoryInventoryInternal = internalAction({
   args: {

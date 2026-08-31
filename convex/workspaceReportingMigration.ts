@@ -499,6 +499,11 @@ export const prepareAndStartWorkspaceMigrationInternal = internalAction({
       inserted: number;
       existing: number;
     } | null;
+    inventoryReconciliation: {
+      scanned: number;
+      deleted: number;
+      deletedMemoryIds: string[];
+    } | null;
     analyticsReadModelRebuild: {
       analyticsRowsRebuilt: number;
       prospectsProcessed: number;
@@ -536,11 +541,16 @@ export const prepareAndStartWorkspaceMigrationInternal = internalAction({
         alreadyActive: true,
         prepared: false,
         inventoryBackfill: null,
+        inventoryReconciliation: null,
         analyticsReadModelRebuild: null,
         agentOpsReadModelRebuild: null,
       };
     }
 
+    const inventoryReconciliation = await ctx.runAction(
+      internal.memory.reconcileWorkspaceAgentMemoryInventoryInternal,
+      { workspaceId: args.workspaceId }
+    );
     const inventoryBackfill = await ctx.runAction(
       internal.memory.backfillWorkspaceAgentMemoryInventoryInternal,
       { workspaceId: args.workspaceId, userId: workspace.userId }
@@ -564,6 +574,7 @@ export const prepareAndStartWorkspaceMigrationInternal = internalAction({
         alreadyActive: true,
         prepared: false,
         inventoryBackfill: null,
+        inventoryReconciliation: null,
         analyticsReadModelRebuild: null,
         agentOpsReadModelRebuild: null,
       };
@@ -591,6 +602,7 @@ export const prepareAndStartWorkspaceMigrationInternal = internalAction({
       alreadyActive: false,
       prepared: true,
       inventoryBackfill,
+      inventoryReconciliation,
       analyticsReadModelRebuild: {
         analyticsRowsRebuilt: rebuilt.analytics.analyticsRowsRebuilt,
         prospectsProcessed: rebuilt.analytics.prospectsProcessed,
