@@ -35,6 +35,7 @@ const SECTION_LABELS = [
   "Narrative:",
 ] as const;
 const MAX_RELEVANCE_CANDIDATES = 120;
+const MAX_AGENT_MEMORY_MIGRATION_PAGE_SIZE = 500;
 const AGENT_MEMORY_USER_INDEX = "userId";
 const STOP_WORDS = new Set([
   "a",
@@ -640,7 +641,7 @@ async function paginateAgentMemoriesByUser(
   const componentDb = getComponentMemoryReader(db);
   const limit = Math.max(
     1,
-    Math.min(MAX_RELEVANCE_CANDIDATES, args.limit ?? 50)
+    Math.min(MAX_AGENT_MEMORY_MIGRATION_PAGE_SIZE, args.limit ?? 50)
   );
 
   try {
