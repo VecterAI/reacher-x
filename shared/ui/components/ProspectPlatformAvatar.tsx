@@ -11,17 +11,53 @@ export type ProspectPlatform = "twitter" | "linkedin";
 
 /**
  * Shell diameters stay fixed (~30–35% of parent avatar in Figma). xs/sm/md use a
- * larger icon asset clipped to the same disc (`overflow-hidden`) so the glyph
- * reads bigger without growing the badge circle.
+ * larger icon asset clipped to the same tile (`overflow-hidden`) so the glyph
+ * reads bigger without growing the badge tile.
  */
 const BADGE: Record<
   "xs" | "sm" | "md" | "lg",
-  { shell: string; icon: string; clipIcon: boolean }
+  { shell: string; icon: string; radius: string; clipIcon: boolean }
 > = {
-  xs: { shell: "size-2", icon: "size-2.5", clipIcon: true },
-  sm: { shell: "size-[11px]", icon: "size-2.5", clipIcon: true },
-  md: { shell: "size-[13px]", icon: "size-2.5", clipIcon: true },
-  lg: { shell: "size-4", icon: "size-3", clipIcon: false },
+  xs: {
+    shell: "size-2",
+    icon: "size-2.5",
+    radius: "rounded-[2px]",
+    clipIcon: true,
+  },
+  sm: {
+    shell: "size-[11px]",
+    icon: "size-2.5",
+    radius: "rounded-[3px]",
+    clipIcon: true,
+  },
+  md: {
+    shell: "size-[13px]",
+    icon: "size-2.5",
+    radius: "rounded-[3px]",
+    clipIcon: true,
+  },
+  lg: {
+    shell: "size-4",
+    icon: "size-3",
+    radius: "rounded-[4px]",
+    clipIcon: false,
+  },
+};
+
+const PLATFORM_BADGE: Record<
+  ProspectPlatform,
+  { className: string; label: string }
+> = {
+  twitter: {
+    className:
+      "bg-platform-twitter-badge text-platform-twitter-badge-foreground",
+    label: "Found on X/Twitter",
+  },
+  linkedin: {
+    className:
+      "bg-platform-linkedin-badge text-platform-linkedin-badge-foreground",
+    label: "Found on LinkedIn",
+  },
 };
 
 export interface ProspectPlatformAvatarProps {
@@ -32,7 +68,7 @@ export interface ProspectPlatformAvatarProps {
   children: React.ReactNode;
 }
 
-/** Theme tokens only: `bg-muted` + `ring-border` on the disc, `ring-background` halo, `foreground` icons. */
+/** Platform-branded tile separated from the avatar by a surface-colored halo. */
 export function ProspectPlatformAvatar({
   platform,
   badgeIcon,
@@ -41,33 +77,35 @@ export function ProspectPlatformAvatar({
   children,
 }: ProspectPlatformAvatarProps) {
   const b = BADGE[badgeSize];
+  const platformBadge = platform ? PLATFORM_BADGE[platform] : null;
 
   return (
     <div className={cn("relative inline-flex shrink-0", className)}>
       {children}
-      {platform ? (
+      {platform && platformBadge ? (
         <span
           className={cn(
-            "ring-background absolute -right-0.5 -bottom-0.5 rounded-full ring-[3px]"
+            "ring-background absolute -right-0.5 -bottom-0.5 ring-[3px]",
+            b.radius
           )}
-          aria-hidden
+          role="img"
+          aria-label={platformBadge.label}
+          title={platformBadge.label}
         >
           <span
             className={cn(
-              "bg-muted ring-muted flex items-center justify-center rounded-full ring-1",
+              "flex items-center justify-center",
+              platformBadge.className,
               b.clipIcon && "overflow-hidden",
-              b.shell
+              b.shell,
+              b.radius
             )}
           >
             {badgeIcon ??
               (platform === "twitter" ? (
-                <FilledTwitterIcon
-                  className={cn("text-foreground shrink-0", b.icon)}
-                />
+                <FilledTwitterIcon className={cn("shrink-0", b.icon)} />
               ) : (
-                <FilledLinkedinIcon
-                  className={cn("text-foreground shrink-0", b.icon)}
-                />
+                <FilledLinkedinIcon className={cn("shrink-0", b.icon)} />
               ))}
           </span>
         </span>
