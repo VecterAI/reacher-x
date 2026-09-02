@@ -19,11 +19,28 @@ import {
   useXChatRetryCooldown,
   type XChatDecryptBundle,
   type XChatDecryptBundleResponse,
+  type XChatBrowserSessionState,
 } from "@/features/agent/lib/xChatBrowserSession";
 import { XChatUnlockGate } from "./XChatUnlockGate";
 import { forgetAllRememberedXChatPins } from "@/features/agent/lib/xChatDeviceCredentialStorage";
+import {
+  advanceXChatTargetGeneration,
+  createXChatTargetGeneration,
+  isCurrentXChatTargetGeneration,
+} from "@/features/prospects/lib/xChatTargetGeneration";
 
 const XCHAT_PIN_LENGTH = 4;
+
+function getBlockedSessionState(
+  reason: Extract<
+    XChatDecryptBundleResponse,
+    { availability: "blocked" }
+  >["reason"]
+): XChatBrowserSessionState {
+  return reason === "xchat_access_denied"
+    ? { status: "configuration_required" }
+    : { status: "dm_restricted", reason };
+}
 
 /**
  * Browser-only XChat unlock state. The PIN and decrypted plaintext stay in
@@ -31,17 +48,29 @@ const XCHAT_PIN_LENGTH = 4;
  */
 export function XChatConversationUnlock({
   prospectId,
+  viewerUserId,
   participantUserId,
+  recipientName,
+  recipientUsername,
+  senderUsername,
   className,
 }: {
   prospectId: string;
+  viewerUserId?: string | null;
   participantUserId?: string | null;
+  recipientName?: string;
+  recipientUsername?: string;
+  senderUsername?: string;
   className?: string;
 }) {
   const getDecryptBundle = useAction(api.x.getXChatDecryptBundle);
   const getEncryptedMedia = useAction(api.x.getXChatEncryptedMedia);
   const getRealmAuthToken = useAction(api.x.getXChatRealmAuthToken);
-  const session = useXChatBrowserSession({ prospectId, participantUserId });
+  const session = useXChatBrowserSession({
+    prospectId,
+    viewerUserId,
+    participantUserId,
+  });
   const sessionState = useXChatBrowserSessionState(prospectId);
   const pinInputId = React.useId();
   const errorDescriptionId = React.useId();
@@ -50,24 +79,50 @@ export function XChatConversationUnlock({
   const [pin, setPin] = React.useState("");
   const [rememberOnDevice, setRememberOnDevice] = React.useState(true);
   const [localError, setLocalError] = React.useState<string | null>(null);
+  const targetKey = `${prospectId}:${viewerUserId ?? "unknown-viewer"}:${participantUserId ?? "unknown-participant"}`;
+  const [initialTargetGeneration] = React.useState(() =>
+    createXChatTargetGeneration(targetKey)
+  );
+  const targetGenerationRef = React.useRef(initialTargetGeneration);
   const isBusy =
     sessionState.status === "checking" || sessionState.status === "unlocking";
   const isCoolingDown = useXChatRetryCooldown(
     sessionState.status === "rate_limited" ? sessionState.retryAt : undefined
   );
 
+  React.useEffect(() => {
+    const nextGeneration = advanceXChatTargetGeneration(
+      targetGenerationRef.current,
+      targetKey
+    );
+    if (nextGeneration === targetGenerationRef.current) return;
+    targetGenerationRef.current = nextGeneration;
+    unlockInFlightRef.current = false;
+    bundleRef.current = null;
+    setPin("");
+    setLocalError(null);
+    setXChatBrowserSessionState(prospectId, { status: "unknown" });
+  }, [prospectId, targetKey]);
+
   const prepareBundle = React.useCallback(async () => {
     if (isBusy || isCoolingDown) return;
+    const requestGeneration = targetGenerationRef.current;
+    const isCurrentRequest = () =>
+      isCurrentXChatTargetGeneration(
+        targetGenerationRef.current,
+        requestGeneration
+      );
     setLocalError(null);
     setXChatBrowserSessionState(prospectId, { status: "checking" });
     try {
       const response = await requestXChatDecryptBundleOnce(
-        prospectId,
+        targetKey,
         async () =>
           (await getDecryptBundle({
             prospectId: prospectId as Id<"prospects">,
           })) as XChatDecryptBundleResponse
       );
+      if (!isCurrentRequest()) return;
       if (response.availability === "unavailable") {
         bundleRef.current = null;
         setXChatBrowserSessionState(prospectId, { status: "unavailable" });
@@ -75,9 +130,10 @@ export function XChatConversationUnlock({
       }
       if (response.availability === "blocked") {
         bundleRef.current = null;
-        setXChatBrowserSessionState(prospectId, {
-          status: "configuration_required",
-        });
+        setXChatBrowserSessionState(
+          prospectId,
+          getBlockedSessionState(response.reason)
+        );
         return;
       }
       const bundle = response;
@@ -88,13 +144,24 @@ export function XChatConversationUnlock({
           prospectId,
           bundle,
           pin: "",
-          getRealmAuthToken: async (realmId) =>
-            await getRealmAuthToken({ realmId }),
-          getEncryptedMedia: async (mediaHashKey) =>
-            await getEncryptedMedia({
+          isCurrent: isCurrentRequest,
+          getRealmAuthToken: async (realmId) => {
+            const token = await getRealmAuthToken({ realmId });
+            if (!isCurrentRequest()) {
+              throw new Error("X/Twitter Chat target changed.");
+            }
+            return token;
+          },
+          getEncryptedMedia: async (mediaHashKey) => {
+            const media = await getEncryptedMedia({
               prospectId: prospectId as Id<"prospects">,
               mediaHashKey,
-            }),
+            });
+            if (!isCurrentRequest()) {
+              throw new Error("X/Twitter Chat target changed.");
+            }
+            return media;
+          },
         });
         return;
       }
@@ -102,14 +169,26 @@ export function XChatConversationUnlock({
       const rememberedUnlock = await decryptXChatWithRememberedPin({
         prospectId,
         bundle,
-        getRealmAuthToken: async (realmId) =>
-          await getRealmAuthToken({ realmId }),
-        getEncryptedMedia: async (mediaHashKey) =>
-          await getEncryptedMedia({
+        isCurrent: isCurrentRequest,
+        getRealmAuthToken: async (realmId) => {
+          const token = await getRealmAuthToken({ realmId });
+          if (!isCurrentRequest()) {
+            throw new Error("X/Twitter Chat target changed.");
+          }
+          return token;
+        },
+        getEncryptedMedia: async (mediaHashKey) => {
+          const media = await getEncryptedMedia({
             prospectId: prospectId as Id<"prospects">,
             mediaHashKey,
-          }),
+          });
+          if (!isCurrentRequest()) {
+            throw new Error("X/Twitter Chat target changed.");
+          }
+          return media;
+        },
       });
+      if (!isCurrentRequest()) return;
       if (rememberedUnlock.status === "unlocked") return;
       if (rememberedUnlock.status === "invalid") {
         const attemptsRemaining = rememberedUnlock.attemptsRemaining;
@@ -135,7 +214,8 @@ export function XChatConversationUnlock({
       }
       setXChatBrowserSessionState(prospectId, { status: "locked" });
     } catch (error) {
-      const message = "We couldn't check XChat messages. Try again.";
+      if (!isCurrentRequest()) return;
+      const message = "We couldn't check X/Twitter Chat messages. Try again.";
       setLocalError(message);
       setXChatBrowserSessionState(
         prospectId,
@@ -149,6 +229,7 @@ export function XChatConversationUnlock({
     isBusy,
     isCoolingDown,
     prospectId,
+    targetKey,
   ]);
 
   const handleUnlock = React.useCallback(
@@ -162,6 +243,12 @@ export function XChatConversationUnlock({
         return;
       }
 
+      const requestGeneration = targetGenerationRef.current;
+      const isCurrentRequest = () =>
+        isCurrentXChatTargetGeneration(
+          targetGenerationRef.current,
+          requestGeneration
+        );
       unlockInFlightRef.current = true;
       setLocalError(null);
       setXChatBrowserSessionState(prospectId, { status: "unlocking" });
@@ -170,12 +257,13 @@ export function XChatConversationUnlock({
         const response = cachedBundle
           ? ({ availability: "available", ...cachedBundle } as const)
           : await requestXChatDecryptBundleOnce(
-              prospectId,
+              targetKey,
               async () =>
                 (await getDecryptBundle({
                   prospectId: prospectId as Id<"prospects">,
                 })) as XChatDecryptBundleResponse
             );
+        if (!isCurrentRequest()) return;
         if (response.availability === "unavailable") {
           bundleRef.current = null;
           setPin("");
@@ -185,9 +273,10 @@ export function XChatConversationUnlock({
         if (response.availability === "blocked") {
           bundleRef.current = null;
           setPin("");
-          setXChatBrowserSessionState(prospectId, {
-            status: "configuration_required",
-          });
+          setXChatBrowserSessionState(
+            prospectId,
+            getBlockedSessionState(response.reason)
+          );
           return;
         }
         const bundle = response;
@@ -199,20 +288,34 @@ export function XChatConversationUnlock({
           prospectId,
           bundle,
           pin: pinToUse,
-          getRealmAuthToken: async (realmId) =>
-            await getRealmAuthToken({ realmId }),
-          getEncryptedMedia: async (mediaHashKey) =>
-            await getEncryptedMedia({
+          isCurrent: isCurrentRequest,
+          getRealmAuthToken: async (realmId) => {
+            const token = await getRealmAuthToken({ realmId });
+            if (!isCurrentRequest()) {
+              throw new Error("X/Twitter Chat target changed.");
+            }
+            return token;
+          },
+          getEncryptedMedia: async (mediaHashKey) => {
+            const media = await getEncryptedMedia({
               prospectId: prospectId as Id<"prospects">,
               mediaHashKey,
-            }),
+            });
+            if (!isCurrentRequest()) {
+              throw new Error("X/Twitter Chat target changed.");
+            }
+            return media;
+          },
         });
+        if (!isCurrentRequest()) return;
         if (pinToUse && rememberOnDevice) {
           await rememberSuccessfulXChatPin({ bundle, pin: pinToUse });
+          if (!isCurrentRequest()) return;
         }
         setPin("");
         setLocalError(null);
       } catch (error) {
+        if (!isCurrentRequest()) return;
         setPin("");
         const message = getXChatUnlockErrorMessage(error);
         setLocalError(message);
@@ -221,7 +324,9 @@ export function XChatConversationUnlock({
           getXChatRateLimitState(error) ?? getXChatUnlockFailureState(error)
         );
       } finally {
-        unlockInFlightRef.current = false;
+        if (isCurrentRequest()) {
+          unlockInFlightRef.current = false;
+        }
       }
     },
     [
@@ -232,6 +337,7 @@ export function XChatConversationUnlock({
       isCoolingDown,
       prospectId,
       rememberOnDevice,
+      targetKey,
     ]
   );
 
@@ -257,6 +363,9 @@ export function XChatConversationUnlock({
     <XChatUnlockGate
       className={className}
       sessionState={sessionState}
+      recipientName={recipientName}
+      recipientUsername={recipientUsername}
+      senderUsername={senderUsername}
       pin={pin}
       errorMessage={errorMessage}
       isBusy={isBusy}

@@ -3,14 +3,31 @@ export type XDmEligibilityReasonCode =
   | "not_allowed"
   | "missing_connection"
   | "missing_scopes"
+  | "subscription_required"
   | "unknown";
+
+export type XDmEligibilityNextStep =
+  | "connect_account"
+  | "reconnect_account"
+  | "verify_account"
+  | "switch_account"
+  | "public_engagement"
+  | "wait_for_follow_back"
+  | "recheck_eligibility";
 
 export interface XDmEligibility {
   enabled: boolean;
   reasonCode: XDmEligibilityReasonCode;
+  reasonTitle?: string;
   reasonLabel: string;
   receivesYourDm?: boolean;
   conversationId?: string;
+  recipientLabel?: string;
+  recipientUsername?: string;
+  recipientVerified?: boolean;
+  senderUsername?: string;
+  senderVerified?: boolean;
+  nextSteps?: XDmEligibilityNextStep[];
 }
 
 export interface XDmParticipantSummary {
@@ -154,6 +171,8 @@ export interface ConversationHistoryPageState {
 
 export interface XDmPanelContext {
   platform: "twitter";
+  /** Connected X/Twitter account id; keeps browser-only Chat state account-scoped. */
+  viewerUserId?: string;
   conversationId?: string;
   participantUserId?: string;
   /** From cached platform conversation; use when prospect.username is not yet resolved. */

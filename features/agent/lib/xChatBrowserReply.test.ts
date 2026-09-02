@@ -13,6 +13,7 @@ vi.mock("@xdevplatform/chat-xdk", async (importOriginal) => {
 
 import {
   decryptXChatInBrowser,
+  getXChatBrowserSession,
   lockXChatInBrowser,
   prepareXChatMediaMessageInBrowser,
   prepareXChatReplyMessageInBrowser,
@@ -254,5 +255,57 @@ describe("XChat signed reply encryption", () => {
       })
     );
     expect(encryptReply.mock.calls[0]?.[0]).not.toHaveProperty("replyToCkces");
+  });
+
+  it("does not cache a decrypt result after the account target changes", async () => {
+    let finishUnlock: () => void = () => {};
+    const unlockPending = new Promise<void>((resolve) => {
+      finishUnlock = resolve;
+    });
+    const chat = {
+      unlock: vi.fn(() => unlockPending),
+      isUnlocked: vi.fn(() => true),
+      updateConfig: vi.fn(),
+      setIdentity: vi.fn(),
+      setCacheKeys: vi.fn(),
+      setSigningKeys: vi.fn(),
+      setRejectUnverified: vi.fn(),
+      decryptEvents: vi.fn(() => ({
+        messages: [],
+        conversationKeys: { keys: {}, latestVersion: undefined },
+        errors: {},
+      })),
+      free: vi.fn(),
+    } as unknown as ChatWithJuicebox;
+    createChatMock.mockResolvedValue(chat);
+    let isCurrent = true;
+
+    const pending = decryptXChatInBrowser({
+      prospectId: "prospect-account-switch",
+      bundle: {
+        viewerUserId: "viewer-old",
+        participantUserId: "participant",
+        conversationId: "viewer-old-participant",
+        signingKeyVersion: "signing-v1",
+        juiceboxConfig: "{}",
+        signingKeys: [],
+        events: [],
+        eventPagesFetched: 1,
+        hasMore: false,
+      },
+      pin: "1234",
+      isCurrent: () => isCurrent,
+      getRealmAuthToken: async () => "realm-token",
+    });
+
+    await vi.waitFor(() => expect(chat.unlock).toHaveBeenCalled());
+    isCurrent = false;
+    finishUnlock();
+
+    await expect(pending).rejects.toThrow("target changed");
+    expect(
+      getXChatBrowserSession({ prospectId: "prospect-account-switch" })
+    ).toBeNull();
+    expect(chat.free).toHaveBeenCalledOnce();
   });
 });

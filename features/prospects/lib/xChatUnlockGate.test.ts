@@ -15,6 +15,7 @@ describe("getXChatUnlockGateMode", () => {
 
   it.each([
     ["configuration_required", "configuration_required"],
+    ["dm_restricted", "dm_restricted"],
     ["attempts_exhausted", "attempts_exhausted"],
     ["error", "error"],
     ["rate_limited", "error"],

@@ -29,7 +29,7 @@ export function XChatRememberPinOption({
         onCheckedChange={(checked) =>
           onRememberOnDeviceChange(checked === true)
         }
-        aria-label="Remember XChat PIN on this device"
+        aria-label="Remember X/Twitter Chat PIN on this device"
       />
       <span>Remember this device</span>
     </label>

@@ -990,12 +990,12 @@ export function Header({
                 <DropdownMenuItem
                   onClick={() => {
                     void forgetAllRememberedXChatPins().then(() =>
-                      toast.success("Saved XChat PINs removed")
+                      toast.success("Saved X/Twitter Chat PINs removed")
                     );
                   }}
                 >
                   <LockIcon className="fill-current" aria-hidden="true" />
-                  Forget saved XChat PINs
+                  Forget saved X/Twitter Chat PINs
                 </DropdownMenuItem>
 
                 {/* Log out */}

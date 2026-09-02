@@ -2,6 +2,7 @@
 
 import { REGEXP_ONLY_DIGITS } from "input-otp";
 import Link from "next/link";
+import { useId } from "react";
 import { Button } from "@/shared/ui/components/Button";
 import {
   InputOTP,
@@ -22,6 +23,9 @@ import { getXChatUnlockGateMode } from "@/features/prospects/lib/xChatUnlockGate
 const XCHAT_PIN_LENGTH = 4;
 export function XChatUnlockGate({
   sessionState,
+  recipientName,
+  recipientUsername,
+  senderUsername,
   pin,
   errorMessage,
   isBusy,
@@ -37,6 +41,9 @@ export function XChatUnlockGate({
   className,
 }: {
   sessionState: XChatBrowserSessionState;
+  recipientName?: string;
+  recipientUsername?: string;
+  senderUsername?: string;
   pin: string;
   errorMessage: string | null;
   isBusy: boolean;
@@ -51,10 +58,22 @@ export function XChatUnlockGate({
   onRetry: () => void;
   className?: string;
 }) {
+  const titleId = useId();
   const gateMode = getXChatUnlockGateMode(sessionState.status);
   const shouldRequestPin = gateMode === "pin";
   const isXChatAccessDenied = gateMode === "configuration_required";
+  const isDmRestricted = gateMode === "dm_restricted";
   const attemptsExhausted = gateMode === "attempts_exhausted";
+  const recipientLabel =
+    recipientName?.trim() ||
+    (recipientUsername ? `@${recipientUsername.replace(/^@/u, "")}` : null) ||
+    "this person";
+  const senderLabel = senderUsername
+    ? `@${senderUsername.replace(/^@/u, "")}`
+    : "your connected account";
+  const verificationRequired =
+    sessionState.status === "dm_restricted" &&
+    sessionState.reason === "subscription_required";
 
   if (gateMode === "loading") {
     return (
@@ -62,7 +81,7 @@ export function XChatUnlockGate({
         role="status"
         aria-label={
           sessionState.status === "unlocking"
-            ? "Unlocking XChat messages"
+            ? "Unlocking X/Twitter Chat messages"
             : "Loading X/Twitter conversation"
         }
         className={cn(
@@ -86,33 +105,45 @@ export function XChatUnlockGate({
         shouldRequestPin && "pb-20",
         className
       )}
-      aria-labelledby="xchat-unlock-title"
+      aria-labelledby={titleId}
     >
       <div className="flex w-full max-w-xs flex-col items-center text-center">
-        <XChatIcon className="mb-4 size-16" aria-hidden />
+        <XChatIcon
+          className={cn("mb-4", shouldRequestPin ? "size-16" : "size-12")}
+          aria-hidden
+        />
         <h2
-          id="xchat-unlock-title"
+          id={titleId}
           className={cn(
             shouldRequestPin
-              ? "text-foreground text-center text-xl font-medium text-pretty sm:text-2xl"
-              : "text-base font-medium"
+              ? "text-foreground text-center text-xl font-medium text-balance sm:text-2xl"
+              : "text-base font-medium text-balance"
           )}
         >
           {shouldRequestPin
-            ? "Enter your XChat PIN"
+            ? "Enter your X/Twitter Chat PIN"
             : isXChatAccessDenied
-              ? "XChat API access unavailable"
-              : attemptsExhausted
-                ? "No PIN attempts remain"
-                : "Couldn't check XChat messages"}
+              ? "Reconnect X/Twitter"
+              : isDmRestricted
+                ? verificationRequired
+                  ? "Verification required"
+                  : `Can't message ${recipientLabel}`
+                : attemptsExhausted
+                  ? "No PIN attempts left"
+                  : "Couldn't check X/Twitter Chat"}
         </h2>
-        {!shouldRequestPin ? (
-          <p className="text-muted-foreground mt-1.5 text-sm leading-5">
+        {!shouldRequestPin &&
+        (isXChatAccessDenied || isDmRestricted || attemptsExhausted) ? (
+          <p className="text-muted-foreground mt-1.5 max-w-64 text-sm leading-5 text-pretty">
             {isXChatAccessDenied
-              ? "X accepted the connected account but denied this app access to encrypted XChat endpoints. Reconnect X once; if this remains, contact X Developer support."
-              : attemptsExhausted
-                ? "Use X's XChat help to review the available recovery steps."
-                : "Retry the encrypted-message check."}
+              ? "Reconnect your X/Twitter account to restore Chat access."
+              : isDmRestricted
+                ? verificationRequired
+                  ? `${recipientLabel} only accepts DMs from verified accounts. Verify ${senderLabel} or use another account.`
+                  : `${recipientLabel} isn't accepting DMs from ${senderLabel}. Use another account or wait for a follow-back.`
+                : attemptsExhausted
+                  ? "Reset your PIN in X/Twitter Chat."
+                  : null}
           </p>
         ) : null}
 
@@ -126,7 +157,7 @@ export function XChatUnlockGate({
             }}
           >
             <label htmlFor={pinInputId} className="sr-only">
-              XChat PIN
+              X/Twitter Chat PIN
             </label>
             <div className="h-11 w-44">
               <InputOTP
@@ -172,18 +203,21 @@ export function XChatUnlockGate({
           <Button asChild type="button" size="sm" className="mt-5">
             <Link href="/settings/connected-accounts">Connected accounts</Link>
           </Button>
-        ) : attemptsExhausted ? (
+        ) : isDmRestricted ? null : attemptsExhausted ? (
           <Button asChild type="button" size="sm" className="mt-5">
             <a href={XCHAT_HELP_URL} target="_blank" rel="noreferrer">
-              View XChat help
+              View X/Twitter Chat help
             </a>
           </Button>
         ) : errorMessage ? (
           <div className="mt-5 flex flex-col items-center">
             {errorMessage ? (
-              <p className="text-muted-foreground text-sm" role="alert">
+              <p
+                className="text-muted-foreground max-w-64 text-sm text-pretty"
+                role="alert"
+              >
                 {sessionState.status === "rate_limited"
-                  ? "X is temporarily limiting requests. Try again when the cooldown ends."
+                  ? "X/Twitter is limiting requests. Try again shortly."
                   : errorMessage}
               </p>
             ) : null}

@@ -703,7 +703,11 @@ export const xChatBrowserDecryptBundleValidator = v.union(
   }),
   v.object({
     availability: v.literal("blocked"),
-    reason: v.literal("xchat_access_denied"),
+    reason: v.union(
+      v.literal("xchat_access_denied"),
+      v.literal("subscription_required"),
+      v.literal("not_allowed")
+    ),
   }),
   v.object({
     availability: v.literal("available"),

@@ -86,7 +86,7 @@ describe("outbound message presentation", () => {
     });
     expect(merged[2]).toMatchObject({
       deliveryStatus: "failed",
-      deliveryError: "X couldn't send this message. Try again.",
+      deliveryError: "X/Twitter couldn't send this message. Try again.",
     });
   });
 

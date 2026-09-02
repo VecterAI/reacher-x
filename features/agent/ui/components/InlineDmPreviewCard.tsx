@@ -100,7 +100,7 @@ export function InlineDmPreviewCard({
       return;
     }
     if (xChatState.status !== "unavailable") {
-      toast.error("Unlock XChat before sending", {
+      toast.error("Unlock X/Twitter Chat before sending", {
         description:
           "Open the conversation panel so the message can be encrypted in your browser.",
       });
@@ -179,7 +179,7 @@ export function InlineDmPreviewCard({
         : xChatState.status === "rate_limited"
           ? "Encrypted messages are temporarily rate limited"
           : xChatState.status === "configuration_required"
-            ? "XChat API access is unavailable"
+            ? "X/Twitter Chat API access is unavailable"
             : xChatState.status === "error"
               ? "Encrypted messages need attention"
               : "Encrypted conversation locked";

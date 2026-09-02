@@ -21,7 +21,7 @@ describe("getOutboundMessageFailure", () => {
     [
       "twitter",
       "429 Too Many Requests",
-      "X is temporarily limiting messages. Try again shortly.",
+      "X/Twitter is temporarily limiting messages. Try again shortly.",
     ],
     [
       "linkedin",
@@ -54,7 +54,21 @@ describe("getOutboundMessageFailure", () => {
 
     expect(failure).toEqual({
       code: "unknown",
-      message: "X couldn't send this message. Try again.",
+      message: "X/Twitter couldn't send this message. Try again.",
+    });
+  });
+
+  it("preserves X/Twitter's verified-account requirement", () => {
+    expect(
+      getOutboundMessageFailure({
+        platform: "twitter",
+        error:
+          "Get verified to message this user. Only verified users can send Direct Message requests to people that don't follow them.",
+      })
+    ).toEqual({
+      code: "message_unavailable",
+      message:
+        "X/Twitter requires a verified connected account for this message request.",
     });
   });
 });

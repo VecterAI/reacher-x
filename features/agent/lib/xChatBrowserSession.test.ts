@@ -263,7 +263,7 @@ describe("getXChatUnlockErrorMessage", () => {
   it("does not expose unknown provider diagnostics", () => {
     expect(
       getXChatUnlockErrorMessage(new Error("provider_internal_code=abc123"))
-    ).toBe("We couldn't unlock XChat. Try again.");
+    ).toBe("We couldn't unlock X/Twitter Chat. Try again.");
   });
 
   it("disables PIN entry when X reports no attempts remaining", () => {

@@ -34,6 +34,10 @@ import {
   linkedInDmBlockedMessage,
   type LinkedInRelationshipStatus,
 } from "../../../lib/linkedinOutreachPlanCore";
+import {
+  getBlockedXDmPlanMessage,
+  hasBlockedImmediateXDmTask,
+} from "../../../lib/xDmEligibilityCore";
 
 // ============================================================================
 // Schema
@@ -395,6 +399,40 @@ export const refinePlan = createTool({
           }
           const candidateTasks =
             constrainedTasks?.tasks ?? repairedCandidateTasks;
+          const xDmEligibilityTasks =
+            candidateTasks ??
+            existingPlanData?.tasks.filter(
+              (task: Doc<"outreachTasks">) =>
+                task.status !== "completed" && task.status !== "skipped"
+            );
+          if (
+            xDmEligibilityTasks &&
+            prospectPlatform === "twitter" &&
+            existingPlanData &&
+            xDmEligibilityTasks.some((task) => task.type === "dm")
+          ) {
+            const dmState = await measureStage(
+              "x_dm_eligibility",
+              async () =>
+                await ctx.runAction(internal.x.getProspectDmStateInternal, {
+                  userId,
+                  prospectId: existingPlanData.plan.prospectId,
+                })
+            );
+            if (
+              dmState &&
+              hasBlockedImmediateXDmTask(
+                xDmEligibilityTasks,
+                dmState.eligibility
+              )
+            ) {
+              return {
+                success: false,
+                message: getBlockedXDmPlanMessage(dmState.eligibility),
+                error: `X/Twitter DM blocked: ${dmState.eligibility.reasonCode}`,
+              };
+            }
+          }
           const canDeferCommentTarget = candidateTasks
             ? allowsDeferredNextPostTarget(candidateTasks)
             : false;

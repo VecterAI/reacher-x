@@ -31,6 +31,10 @@ import {
   type LinkedInRelationshipStatus,
 } from "../../../lib/linkedinOutreachPlanCore";
 import {
+  getBlockedXDmPlanMessage,
+  hasBlockedImmediateXDmTask,
+} from "../../../lib/xDmEligibilityCore";
+import {
   attachmentRefsSchema,
   resolveTaskAttachmentReferences,
 } from "./attachmentReferences";
@@ -353,6 +357,26 @@ export const generatePlan = createTool({
         }
       }
       const planTasks = constrainedTasks.tasks;
+
+      if (
+        prospectPlatform === "twitter" &&
+        planTasks.some((task) => task.type === "dm")
+      ) {
+        const dmState = await ctx.runAction(
+          internal.x.getProspectDmStateInternal,
+          { userId, prospectId }
+        );
+        if (
+          dmState &&
+          hasBlockedImmediateXDmTask(planTasks, dmState.eligibility)
+        ) {
+          return {
+            success: false,
+            message: getBlockedXDmPlanMessage(dmState.eligibility),
+            error: `X/Twitter DM blocked: ${dmState.eligibility.reasonCode}`,
+          };
+        }
+      }
 
       const canDeferCommentTarget = allowsDeferredNextPostTarget(planTasks);
       const invalidCommentTask = planTasks.find(

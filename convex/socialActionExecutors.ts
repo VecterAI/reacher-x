@@ -33,6 +33,7 @@ import {
   type ResolvedOutreachMedia,
 } from "./lib/mediaCapabilityCore";
 import { twitterMediaKindValidator } from "./validators";
+import type { XDmEligibility } from "../shared/lib/twitter/dm";
 
 const internalLinkedInApi = (internal as any).linkedin;
 const socialActionExecutorsLogger = logger.withScope("SocialActionExecutors");
@@ -57,6 +58,7 @@ type SubmitTwitterActionResult = {
   approvalMode?: string;
   riskLevel?: string;
   eligibilityReasonCode?: string;
+  dmEligibility?: XDmEligibility;
   targetTweetId?: string;
   sourcePostRef?: TwitterPostRef;
   sourcePostSummary?: TwitterPostSummary;
@@ -1141,11 +1143,12 @@ export const submitTwitterActionForThread = internalAction({
           pendingApproval: false,
           actionKey: args.actionKey,
           prospectId: String(threadContext.prospectId),
-          title: "DM unavailable",
+          title: dmState?.eligibility.reasonTitle ?? "DM unavailable",
           message: reason,
           approvalMode: metadata.approvalMode,
           riskLevel: metadata.riskLevel,
           eligibilityReasonCode: dmState?.eligibility.reasonCode,
+          dmEligibility: dmState?.eligibility,
           sourceContext: args.context,
           draftContent: args.text?.trim() || undefined,
           error: reason,
@@ -1170,12 +1173,12 @@ export const submitTwitterActionForThread = internalAction({
             prospectId: String(threadContext.prospectId),
             title: "DM unavailable",
             message:
-              "Could not resolve the prospect's X user id. Refresh enrichment or open the DM panel.",
+              "Could not resolve the prospect's X/Twitter user ID. Refresh enrichment or open the DM panel.",
             approvalMode: metadata.approvalMode,
             riskLevel: metadata.riskLevel,
             sourceContext: args.context,
             draftContent: args.text?.trim() || undefined,
-            error: "Missing X participant id for DM.",
+            error: "Missing X/Twitter participant ID for DM.",
           };
         }
       }

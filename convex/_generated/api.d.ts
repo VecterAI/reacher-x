@@ -274,6 +274,7 @@ import type * as lib_xChatSendCore from "../lib/xChatSendCore.js";
 import type * as lib_xConnectionStateCore from "../lib/xConnectionStateCore.js";
 import type * as lib_xConversationDiscoveryCore from "../lib/xConversationDiscoveryCore.js";
 import type * as lib_xDm from "../lib/xDm.js";
+import type * as lib_xDmEligibilityCore from "../lib/xDmEligibilityCore.js";
 import type * as lib_xPostLimits from "../lib/xPostLimits.js";
 import type * as lib_xScopes from "../lib/xScopes.js";
 import type * as lib_xdkAuth from "../lib/xdkAuth.js";
@@ -648,6 +649,7 @@ declare const fullApi: ApiFromModules<{
   "lib/xConnectionStateCore": typeof lib_xConnectionStateCore;
   "lib/xConversationDiscoveryCore": typeof lib_xConversationDiscoveryCore;
   "lib/xDm": typeof lib_xDm;
+  "lib/xDmEligibilityCore": typeof lib_xDmEligibilityCore;
   "lib/xPostLimits": typeof lib_xPostLimits;
   "lib/xScopes": typeof lib_xScopes;
   "lib/xdkAuth": typeof lib_xdkAuth;
