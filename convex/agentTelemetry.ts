@@ -6,7 +6,10 @@ import {
   sanitizeUsageSnapshotForConvex,
   sanitizeTelemetryPayload,
 } from "./lib/agentMetadata";
-import { OUTREACH_ROUTER_AGENT_NAME } from "./lib/outreachModelRoutingCore";
+
+// Historical usage rows retain this name after per-turn outreach routing was
+// removed. Exclude them so old threads still show the latest answering model.
+const LEGACY_OUTREACH_ROUTER_AGENT_NAME = "Outreach Turn Router";
 
 export const insertUsageEvent = internalMutation({
   args: {
@@ -46,7 +49,7 @@ export const getThreadModelName = query({
       .take(20);
     const event = events.find(
       (candidate) =>
-        candidate.agentName !== OUTREACH_ROUTER_AGENT_NAME &&
+        candidate.agentName !== LEGACY_OUTREACH_ROUTER_AGENT_NAME &&
         candidate.provider !== "openai.embedding" &&
         !candidate.model?.includes("embedding")
     );

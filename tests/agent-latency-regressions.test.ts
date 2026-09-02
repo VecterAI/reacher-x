@@ -68,16 +68,15 @@ test("setup agent uses the dedicated onboarding provider lane", () => {
   assert.match(contextSource, /maxRetries: OUTREACH_AGENT_MAX_RETRIES/);
 });
 
-test("prospect agent keeps Sol as its safe default behind semantic routing", () => {
-  assert.match(aiSource, /GPT_5_6_TERRA: "openai\/gpt-5\.6-terra"/);
+test("prospect agent keeps one fixed Sol text model", () => {
   assert.match(
     aiSource,
     /OUTREACH_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_MAIN_AGENT_MODEL",[\s\S]*?MODELS\.GPT_5_6_SOL/
   );
   assert.match(contextSource, /OUTREACH_AGENT_MODEL/);
   assert.match(contextSource, /OUTREACH_AGENT_PROVIDER_OPTIONS/);
-  assert.match(chatSource, /classifyOutreachTurn/);
-  assert.match(chatSource, /createOutreachTextLanguageModel\("terra"/);
+  assert.doesNotMatch(chatSource, /classifyOutreachTurn/);
+  assert.match(chatSource, /createOutreachThreadLanguageModel/);
 });
 
 test("short outreach threads skip history RAG and use compact limits", () => {
