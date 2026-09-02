@@ -55,6 +55,86 @@ test("both DM panels share the Agent Chat message-scroller behavior", () => {
   assert.doesNotMatch(xPanel, /const justUnlocked =/);
 });
 
+test("X/Twitter DM eligibility blocks every composer mode and uses recipient-specific copy", () => {
+  const panel = read("features/prospects/ui/components/XConversationPanel.tsx");
+  const unlock = read(
+    "features/prospects/ui/components/XChatConversationUnlock.tsx"
+  );
+  const gate = read("features/prospects/ui/components/XChatUnlockGate.tsx");
+  const eligibilityAlert = read(
+    "features/prospects/ui/components/XDmEligibilityAlert.tsx"
+  );
+
+  assert.match(
+    panel,
+    /const shouldDisableComposer =\s*!data \|\|\s*!data\.eligibility\.enabled \|\|/
+  );
+  assert.match(
+    panel,
+    /const shouldDisableTaskSubmit =\s*isTaskApprovalComposer &&\s*\(!data\?\.eligibility\.enabled/
+  );
+  assert.match(panel, /<XDmEligibilityAlert/);
+  assert.match(eligibilityAlert, /<Alert className="mt-2">/);
+  assert.match(eligibilityAlert, /<WarningIcon/);
+  assert.match(eligibilityAlert, /highlightTextMultiple/);
+  assert.match(
+    eligibilityAlert,
+    /<AlertTitle[\s\S]*?eligibility\.reasonTitle \?\? "DM unavailable"[\s\S]*?<\/AlertTitle>/
+  );
+  assert.doesNotMatch(
+    eligibilityAlert,
+    /<AlertDescription className="text-muted-foreground/
+  );
+  assert.match(
+    eligibilityAlert,
+    /bg-transparent font-mono text-muted-foreground font-normal/
+  );
+  assert.match(unlock, /status: "dm_restricted"/);
+  assert.match(unlock, /viewerUserId/);
+  assert.match(unlock, /targetGenerationRef/);
+  assert.match(unlock, /advanceXChatTargetGeneration/);
+  assert.match(unlock, /requestXChatDecryptBundleOnce\(\s*targetKey,/);
+  assert.match(unlock, /isCurrent: isCurrentRequest/);
+  assert.match(gate, /"Verification required"/);
+  assert.match(gate, /Can't message \$\{recipientLabel\}/);
+  assert.match(gate, /isDmRestricted \? null : attemptsExhausted/);
+});
+
+test("strategy-only plan edits recheck retained X/Twitter DM tasks", () => {
+  const refinePlan = read("convex/agents/outreach/tools/refinePlan.ts");
+
+  assert.match(
+    refinePlan,
+    /const xDmEligibilityTasks =\s*candidateTasks \?\?\s*existingPlanData\?\.tasks\.filter/
+  );
+  assert.match(
+    refinePlan,
+    /hasBlockedImmediateXDmTask\(\s*xDmEligibilityTasks,\s*dmState\.eligibility/
+  );
+});
+
+test("blocked Agent DMs render as a single compact status strip", () => {
+  const renderer = read(
+    "shared/ui/components/json-render/AgentArtifactRenderer.tsx"
+  );
+  const executor = read("convex/socialActionExecutors.ts");
+
+  assert.match(renderer, /const isBlockedDm =/);
+  assert.match(renderer, /liveStatus === "failed"/);
+  assert.match(
+    renderer,
+    /if \(isBlockedDm\) \{[\s\S]*?<InlineFeatureStrip[\s\S]*?<XChatIcon/
+  );
+  assert.doesNotMatch(
+    renderer.match(/if \(isBlockedDm\) \{[\s\S]*?\n  \}/)?.[0] ?? "",
+    /props\.message|riskLevel|Action preview/
+  );
+  assert.match(
+    executor,
+    /title: dmState\?\.eligibility\.reasonTitle \?\? "DM unavailable"/
+  );
+});
+
 test("XChat unlocks as soon as a complete PIN is entered", () => {
   const unlock = read(
     "features/prospects/ui/components/XChatConversationUnlock.tsx"
@@ -72,7 +152,7 @@ test("XChat unlocks as soon as a complete PIN is entered", () => {
   assert.match(gate, /onComplete=\{onPinComplete\}/);
   assert.match(gate, /autoFocus/);
   assert.doesNotMatch(gate, /type="submit"/);
-  assert.match(gate, /Enter your XChat PIN/);
+  assert.match(gate, /Enter your X\/Twitter Chat PIN/);
   assert.doesNotMatch(gate, /font-pixel-square/);
   assert.match(gate, /text-xl/);
   assert.match(gate, /sm:text-2xl/);
@@ -83,8 +163,13 @@ test("XChat unlocks as soon as a complete PIN is entered", () => {
   assert.match(gate, /variant="circle"/);
   assert.doesNotMatch(gate, /Unlocking…/);
   assert.doesNotMatch(gate, /rounded-full/);
-  assert.match(gate, /<XChatIcon className="mb-4 size-16" aria-hidden \/>/);
-  assert.match(gate, /<XChatIcon[\s\S]*?<h2[\s\S]*?id="xchat-unlock-title"/);
+  assert.match(
+    gate,
+    /<XChatIcon[\s\S]*?shouldRequestPin \? "size-16" : "size-12"/
+  );
+  assert.match(gate, /const titleId = useId\(\)/);
+  assert.match(gate, /aria-labelledby=\{titleId\}/);
+  assert.match(gate, /<XChatIcon[\s\S]*?<h2[\s\S]*?id=\{titleId\}/);
   assert.doesNotMatch(gate, /flex items-center justify-center gap-2/);
   assert.match(unlock, /unlockInFlightRef/);
   assert.match(unlock, /handleUnlock\(completedPin\)/);
@@ -115,7 +200,7 @@ test("XChat unlocks as soon as a complete PIN is entered", () => {
   assert.match(agentCard, /useState\(true\)/);
   assert.match(
     pinPreferences,
-    /aria-label="Remember XChat PIN on this device"/
+    /aria-label="Remember X\/Twitter Chat PIN on this device"/
   );
   assert.doesNotMatch(pinPreferences, /bg-muted\/50/);
   assert.match(unlock, /pinToUse && rememberOnDevice/);
@@ -124,7 +209,9 @@ test("XChat unlocks as soon as a complete PIN is entered", () => {
   assert.match(agentCard, /isPreparingUnlock/);
   assert.match(agentCard, /shouldRequestPin/);
   assert.match(agentCard, /if \(rememberOnDevice\)/);
-  assert.match(header, /Forget saved XChat PINs/);
+  assert.match(agentCard, /status: "dm_restricted"/);
+  assert.match(agentCard, /response\.reason === "xchat_access_denied"/);
+  assert.match(header, /Forget saved X\/Twitter Chat PINs/);
   assert.doesNotMatch(agentCard, /transition-opacity/);
   assert.doesNotMatch(agentCard, /type="submit"/);
   assert.doesNotMatch(agentCard, /It never leaves this browser/);
@@ -568,7 +655,7 @@ test("XChat access failures stay locked without becoming console errors", () => 
 
   assert.match(unlock, /response\.availability === "blocked"/);
   assert.match(unlock, /status: "configuration_required"/);
-  assert.match(gate, /XChat API access unavailable/);
+  assert.match(gate, /Reconnect X\/Twitter/);
   assert.match(gate, /\/settings\/connected-accounts/);
   assert.match(session, /reason: "xchat_access_denied"/);
 });

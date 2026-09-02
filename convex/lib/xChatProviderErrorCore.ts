@@ -3,7 +3,12 @@ import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 export type XChatProviderErrorDetails = {
   status: number;
-  code: "rate_limited" | "xchat_access_denied" | "provider_error";
+  code:
+    | "rate_limited"
+    | "xchat_access_denied"
+    | "subscription_required"
+    | "recipient_restricted"
+    | "provider_error";
   message: string;
   retryAt?: number;
   limit?: number;
@@ -20,7 +25,7 @@ function getProviderProblemMessage(rawBody: string): string | undefined {
   try {
     const payload: unknown = JSON.parse(rawBody);
     if (!isRecord(payload)) return undefined;
-    const direct = [payload.detail, payload.title].find(
+    const direct = [payload.detail, payload.title, payload.message].find(
       (value): value is string =>
         typeof value === "string" && value.trim().length > 0
     );
@@ -30,7 +35,7 @@ function getProviderProblemMessage(rawBody: string): string | undefined {
       : undefined;
     const nested =
       firstError &&
-      [firstError.detail, firstError.title].find(
+      [firstError.detail, firstError.title, firstError.message].find(
         (value): value is string =>
           typeof value === "string" && value.trim().length > 0
       );
@@ -70,6 +75,18 @@ export function parseXChatProviderError(args: {
     args.status === 403 &&
     typeof providerMessage === "string" &&
     /developer\s+app.+attached to a project/iu.test(providerMessage);
+  const subscriptionRequired =
+    args.status === 403 &&
+    typeof providerMessage === "string" &&
+    /get verified to message|only verified (?:users|accounts).+(?:direct message|dm|message request)|sign up for (?:twitter blue|x premium)|subscribe to (?:x )?premium.+(?:message|dm)/iu.test(
+      providerMessage
+    );
+  const recipientRestricted =
+    args.status === 403 &&
+    typeof providerMessage === "string" &&
+    /cannot (?:send|message).+(?:this user|recipient)|not accepting (?:new )?(?:direct messages|dm|message requests)|recipient.+does not follow|not allowed to (?:send|message)/iu.test(
+      providerMessage
+    );
   const retryLabel =
     rateLimited && typeof retryAt === "number"
       ? ` Retry after ${new Date(retryAt).toISOString()}.`
@@ -80,11 +97,15 @@ export function parseXChatProviderError(args: {
       ? "rate_limited"
       : xChatAccessDenied
         ? "xchat_access_denied"
-        : "provider_error",
+        : subscriptionRequired
+          ? "subscription_required"
+          : recipientRestricted
+            ? "recipient_restricted"
+            : "provider_error",
     message: rateLimited
-      ? `XChat is temporarily rate limited.${retryLabel}`
+      ? `X/Twitter Chat is temporarily rate limited.${retryLabel}`
       : (providerMessage ??
-        `XChat request failed (${args.status} ${args.statusText}).`),
+        `X/Twitter Chat request failed (${args.status} ${args.statusText}).`),
     ...(rateLimited && typeof retryAt === "number" ? { retryAt } : {}),
     ...(typeof limit === "number" ? { limit } : {}),
     ...(typeof remaining === "number" ? { remaining } : {}),

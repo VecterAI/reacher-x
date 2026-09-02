@@ -18,6 +18,7 @@ import {
   normalizeDmMessages,
   resolveDmMessageUrls,
 } from "./lib/xDm";
+import { buildXDmEligibility as buildDmEligibility } from "./lib/xDmEligibilityCore";
 import {
   executeCuratedTwitterAction,
   formatXWriteActionError,
@@ -329,59 +330,6 @@ async function createDirectXOutreachSentNotification(
   });
 }
 
-function buildDmEligibility(args: {
-  isConnected: boolean;
-  missingScopes?: string[];
-  receivesYourDm?: boolean;
-  conversationId?: string;
-}): XDmEligibility {
-  if (!args.isConnected) {
-    return {
-      enabled: false,
-      reasonCode: "missing_connection",
-      reasonLabel:
-        "Connect X/Twitter in Settings → Connected accounts to message this prospect.",
-    };
-  }
-
-  const missingScopes = new Set(args.missingScopes ?? []);
-  if (missingScopes.has("dm.read") || missingScopes.has("dm.write")) {
-    return {
-      enabled: false,
-      reasonCode: "missing_scopes",
-      reasonLabel:
-        "Reconnect X/Twitter in Settings → Connected accounts to message this prospect.",
-    };
-  }
-
-  if (args.receivesYourDm === true) {
-    return {
-      enabled: true,
-      reasonCode: "eligible",
-      reasonLabel: "DM available on X/Twitter.",
-      receivesYourDm: true,
-      conversationId: args.conversationId,
-    };
-  }
-
-  if (args.receivesYourDm === false) {
-    return {
-      enabled: false,
-      reasonCode: "not_allowed",
-      reasonLabel: "This user doesn’t currently accept your DMs on X/Twitter.",
-      receivesYourDm: false,
-      conversationId: args.conversationId,
-    };
-  }
-
-  return {
-    enabled: false,
-    reasonCode: "unknown",
-    reasonLabel: "DM eligibility unavailable right now.",
-    conversationId: args.conversationId,
-  };
-}
-
 function isMissingConversationError(error: unknown): boolean {
   const failure = getXExecutionFailure(error);
   return (
@@ -654,14 +602,48 @@ function buildBaseDmPanelContext(args: {
     missingScopes: args.connectionStatus.missingScopes,
     receivesYourDm: args.prospectIdentity.canDm,
     conversationId: args.cachedSnapshot?.conversation?.conversationId,
+    recipientDisplayName: args.prospectIdentity.displayName,
+    recipientUsername: args.prospectIdentity.username,
+    recipientVerified: args.prospectIdentity.verified,
+    senderUsername: args.connectionStatus.screenName,
+    senderVerified: args.connectionStatus.verified,
   });
   const canUseCachedEligibility =
     args.connectionStatus.isConnected &&
     !(args.connectionStatus.missingScopes ?? []).some(
       (scope) => scope === "dm.read" || scope === "dm.write"
-    );
+    ) &&
+    (args.cachedSnapshot?.conversation?.eligibilityReasonCode === "eligible" ||
+      args.cachedSnapshot?.conversation?.eligibilityReasonCode ===
+        "not_allowed" ||
+      args.cachedSnapshot?.conversation?.eligibilityReasonCode ===
+        "subscription_required");
+  const cachedReasonCode = normalizeCachedXDmEligibilityReason(
+    args.cachedSnapshot?.conversation?.eligibilityReasonCode
+  );
+  const cachedEligibility = buildDmEligibility({
+    isConnected: args.connectionStatus.isConnected,
+    missingScopes: args.connectionStatus.missingScopes,
+    receivesYourDm:
+      cachedReasonCode === "eligible"
+        ? true
+        : cachedReasonCode === "not_allowed"
+          ? false
+          : undefined,
+    restriction:
+      cachedReasonCode === "subscription_required"
+        ? "subscription_required"
+        : undefined,
+    conversationId: args.cachedSnapshot?.conversation?.conversationId,
+    recipientDisplayName: args.prospectIdentity.displayName,
+    recipientUsername: args.prospectIdentity.username,
+    recipientVerified: args.prospectIdentity.verified,
+    senderUsername: args.connectionStatus.screenName,
+    senderVerified: args.connectionStatus.verified,
+  });
   return {
     platform: "twitter",
+    viewerUserId: args.connectionStatus.xUserId,
     conversationId: args.cachedSnapshot?.conversation?.conversationId,
     participantUserId: args.cachedSnapshot?.conversation?.participantUserId,
     participantUsername: args.cachedSnapshot?.conversation?.participantUsername,
@@ -678,14 +660,7 @@ function buildBaseDmPanelContext(args: {
       canUseCachedEligibility &&
       args.cachedSnapshot?.conversation?.eligibilityReasonCode &&
       typeof args.cachedSnapshot?.conversation?.eligibilityEnabled === "boolean"
-        ? {
-            enabled: args.cachedSnapshot.conversation.eligibilityEnabled,
-            reasonCode: args.cachedSnapshot.conversation.eligibilityReasonCode,
-            reasonLabel:
-              args.cachedSnapshot.conversation.eligibilityReasonLabel ??
-              "DM eligibility unavailable right now.",
-            conversationId: args.cachedSnapshot.conversation.conversationId,
-          }
+        ? cachedEligibility
         : currentConnectionEligibility,
     messages: toCachedDmMessages(args.cachedSnapshot),
     history: {
@@ -715,6 +690,7 @@ function normalizeCachedXDmEligibilityReason(
     case "not_allowed":
     case "missing_connection":
     case "missing_scopes":
+    case "subscription_required":
     case "unknown":
       return reasonCode;
     default:
@@ -725,6 +701,13 @@ function normalizeCachedXDmEligibilityReason(
 function shouldPerformLiveDmSync(snapshot: any): boolean {
   const conversation = snapshot?.conversation;
   if (!conversation) {
+    return true;
+  }
+  if (
+    conversation.eligibilityReasonCode !== "eligible" &&
+    conversation.eligibilityReasonCode !== "not_allowed" &&
+    conversation.eligibilityReasonCode !== "subscription_required"
+  ) {
     return true;
   }
   if (
@@ -768,6 +751,11 @@ async function resolveLiveProspectDmEligibility(args: {
     missingScopes: args.connectionStatus.missingScopes,
     receivesYourDm: args.prospectIdentity.canDm,
     conversationId: args.cachedSnapshot?.conversation?.conversationId,
+    recipientDisplayName: args.prospectIdentity.displayName,
+    recipientUsername: args.prospectIdentity.username,
+    recipientVerified: args.prospectIdentity.verified,
+    senderUsername: args.connectionStatus.screenName,
+    senderVerified: args.connectionStatus.verified,
   });
 
   if (
@@ -805,8 +793,14 @@ async function resolveLiveProspectDmEligibility(args: {
     const eligibility = buildDmEligibility({
       isConnected: args.connectionStatus.isConnected,
       missingScopes: args.connectionStatus.missingScopes,
-      receivesYourDm: profile.can_dm,
+      receivesYourDm:
+        profile.can_dm_known === false ? undefined : profile.can_dm,
       conversationId,
+      recipientDisplayName: profile.name ?? args.prospectIdentity.displayName,
+      recipientUsername: profile.username ?? profile.screen_name,
+      recipientVerified: profile.verified,
+      senderUsername: args.connectionStatus.screenName,
+      senderVerified: args.connectionStatus.verified,
     });
     const messages = toCachedDmMessages(args.cachedSnapshot);
 
@@ -886,8 +880,13 @@ async function syncProspectDmConversationForUser(
   const eligibility = buildDmEligibility({
     isConnected: args.connectionStatus.isConnected,
     missingScopes: args.connectionStatus.missingScopes,
-    receivesYourDm: profile.can_dm,
+    receivesYourDm: profile.can_dm_known === false ? undefined : profile.can_dm,
     conversationId,
+    recipientDisplayName: profile.name ?? args.prospectIdentity.displayName,
+    recipientUsername: profile.username ?? profile.screen_name,
+    recipientVerified: profile.verified,
+    senderUsername: args.connectionStatus.screenName,
+    senderVerified: args.connectionStatus.verified,
   });
 
   let persistedMessages = args.baseContext.messages;
@@ -2466,21 +2465,38 @@ export const getXChatDecryptBundle = action({
       userId,
       requiredScopes: ["tweet.read", "users.read", "dm.read"],
     });
-    const { profileUserId } = await getHydratedProfileByUsername(
+    const { profileUserId, profile } = await getHydratedProfileByUsername(
       provider,
       identity.username
     );
+    if (profile.can_dm_known !== false && profile.can_dm === false) {
+      return {
+        availability: "blocked" as const,
+        reason: "not_allowed" as const,
+      };
+    }
     try {
       return await getXChatBrowserDecryptBundle(provider, profileUserId);
     } catch (error) {
-      if (
-        error instanceof XChatProviderRequestError &&
-        error.details.code === "xchat_access_denied"
-      ) {
-        return {
-          availability: "blocked" as const,
-          reason: "xchat_access_denied" as const,
-        };
+      if (error instanceof XChatProviderRequestError) {
+        if (error.details.code === "xchat_access_denied") {
+          return {
+            availability: "blocked" as const,
+            reason: "xchat_access_denied" as const,
+          };
+        }
+        if (error.details.code === "subscription_required") {
+          return {
+            availability: "blocked" as const,
+            reason: "subscription_required" as const,
+          };
+        }
+        if (error.details.code === "recipient_restricted") {
+          return {
+            availability: "blocked" as const,
+            reason: "not_allowed" as const,
+          };
+        }
       }
       throwXChatClientRequestError(error);
     }
@@ -2742,10 +2758,22 @@ export const submitXChatEncryptedMessage = action({
       userId,
       requiredScopes: ["tweet.read", "users.read", "dm.write"],
     });
-    const { profileUserId } = await getHydratedProfileByUsername(
+    const { profileUserId, profile } = await getHydratedProfileByUsername(
       provider,
       identity.username
     );
+    if (profile.can_dm_known !== false && profile.can_dm === false) {
+      throw new Error(
+        buildDmEligibility({
+          isConnected: true,
+          receivesYourDm: false,
+          recipientDisplayName: profile.name ?? identity.displayName,
+          recipientUsername: profile.username ?? profile.screen_name,
+          recipientVerified: profile.verified,
+          senderUsername: provider.username,
+        }).reasonLabel
+      );
+    }
     const expectedConversationId = computeOneToOneDmConversationId(
       provider.xUserId,
       profileUserId
@@ -3075,6 +3103,17 @@ async function sendDmMessageForUser(
   if (!prospect) {
     throw new Error("Prospect not found.");
   }
+  const dmState = await getProspectDmStateForUser(
+    ctx,
+    args.userId,
+    args.prospectId
+  );
+  if (!dmState) {
+    throw new Error("Prospect not found.");
+  }
+  if (!dmState.eligibility.enabled) {
+    throw new Error(dmState.eligibility.reasonLabel);
+  }
   const panelContext = await resolveProspectDmPanelContext(
     ctx,
     args.userId,
@@ -3083,16 +3122,17 @@ async function sendDmMessageForUser(
   if (!panelContext) {
     throw new Error("Prospect not found.");
   }
-  if (!panelContext.eligibility.enabled) {
-    throw new Error(panelContext.eligibility.reasonLabel);
-  }
-  const conversationId = args.conversationId ?? panelContext.conversationId;
+  const conversationId =
+    args.conversationId ??
+    dmState.conversationId ??
+    panelContext.conversationId;
   const hasExistingConversation =
     typeof conversationId === "string" && conversationId.trim().length > 0;
   const actionKey = hasExistingConversation
     ? "send_dm_in_existing_conversation"
     : "send_dm";
-  const targetUserId = panelContext.participantUserId;
+  const targetUserId =
+    dmState.participantUserId ?? panelContext.participantUserId;
   if (!hasExistingConversation && !targetUserId) {
     throw new Error(
       "DM target is unavailable right now. Refresh the profile and try again."
@@ -3188,7 +3228,7 @@ async function sendDmMessageForUser(
         participantAvatarUrl: panelContext.prospect.avatarUrl,
         participantVerified: panelContext.prospect.verified,
         eligibility: {
-          ...panelContext.eligibility,
+          ...dmState.eligibility,
           conversationId: effectiveConversationId,
         },
         messages,

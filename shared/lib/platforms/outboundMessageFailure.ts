@@ -31,7 +31,7 @@ export function getOutboundMessageFailure(args: {
   platform: OutboundMessagePlatform;
 }): OutboundMessageFailure {
   const normalized = getErrorText(args.error).trim().toLowerCase();
-  const platformName = args.platform === "linkedin" ? "LinkedIn" : "X";
+  const platformName = args.platform === "linkedin" ? "LinkedIn" : "X/Twitter";
 
   if (
     normalized.includes("voice note expired") ||
@@ -43,7 +43,7 @@ export function getOutboundMessageFailure(args: {
       message:
         args.platform === "linkedin"
           ? "This voice note expired. Record it again."
-          : "This retry expired. Check X before sending it again.",
+          : "This retry expired. Check X/Twitter before sending it again.",
     };
   }
 
@@ -94,6 +94,18 @@ export function getOutboundMessageFailure(args: {
     return {
       code: "account_disconnected",
       message: `Reconnect ${platformName} in Settings, then try again.`,
+    };
+  }
+
+  if (
+    normalized.includes("get verified to message") ||
+    normalized.includes("only verified users can send direct message") ||
+    normalized.includes("only verified accounts can send")
+  ) {
+    return {
+      code: "message_unavailable",
+      message:
+        "X/Twitter requires a verified connected account for this message request.",
     };
   }
 

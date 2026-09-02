@@ -11,6 +11,8 @@ type TwitterProfileUrlEntity = {
 
 export type HydratedTwitterProfile = User & {
   username?: string;
+  /** False when X/Twitter omitted the viewer-specific receives_your_dm field. */
+  can_dm_known?: boolean;
   banner_url?: string;
   entities?: {
     description?: {

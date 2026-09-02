@@ -63,7 +63,10 @@ export type XChatDecryptBundleResponse =
       availability: "unavailable";
       reason: "viewer_not_configured" | "participant_not_configured";
     }
-  | { availability: "blocked"; reason: "xchat_access_denied" }
+  | {
+      availability: "blocked";
+      reason: "xchat_access_denied" | "subscription_required" | "not_allowed";
+    }
   | ({ availability: "available" } & XChatDecryptBundle);
 
 const inFlightDecryptBundleRequests = new Map<
@@ -170,6 +173,10 @@ export type XChatBrowserSessionState =
   | { status: "unlocked" }
   | { status: "unavailable" }
   | { status: "configuration_required" }
+  | {
+      status: "dm_restricted";
+      reason: "subscription_required" | "not_allowed";
+    }
   | { status: "error"; message: string }
   | { status: "rate_limited"; message: string; retryAt?: number };
 
@@ -242,7 +249,7 @@ export function getXChatUnlockErrorMessage(error: unknown): string {
     return "That PIN isn't correct. Try again.";
   }
 
-  return "We couldn't unlock XChat. Try again.";
+  return "We couldn't unlock X/Twitter Chat. Try again.";
 }
 
 export async function decryptXChatWithRememberedPin(
@@ -2477,9 +2484,13 @@ export function decryptXChatInBrowser(args: {
   prospectId: string;
   bundle: XChatDecryptBundle;
   pin: string;
+  isCurrent?: () => boolean;
   getRealmAuthToken: (realmId: string) => Promise<string>;
   getEncryptedMedia?: XChatEncryptedMediaFetcher;
 }): Promise<XChatDecryptResult> {
+  if (args.isCurrent?.() === false) {
+    return Promise.reject(new Error("X/Twitter Chat target changed."));
+  }
   const operationKey = makeBrowserSessionKey({
     prospectId: args.prospectId,
     bundle: args.bundle,
@@ -2493,6 +2504,7 @@ async function decryptXChatInBrowserOnce(args: {
   prospectId: string;
   bundle: XChatDecryptBundle;
   pin: string;
+  isCurrent?: () => boolean;
   getRealmAuthToken: (realmId: string) => Promise<string>;
   getEncryptedMedia?: XChatEncryptedMediaFetcher;
 }): Promise<XChatDecryptResult> {
@@ -2513,11 +2525,19 @@ async function decryptXChatInBrowserOnce(args: {
         args.getRealmAuthToken
       ),
     });
+    if (args.isCurrent?.() === false) {
+      chat.free();
+      throw new Error("X/Twitter Chat target changed.");
+    }
     const pinBytes = new TextEncoder().encode(args.pin);
     try {
       await chat.unlock(pinBytes);
     } finally {
       pinBytes.fill(0);
+    }
+    if (args.isCurrent?.() === false) {
+      chat.free();
+      throw new Error("X/Twitter Chat target changed.");
     }
     activeSession = {
       chat,
@@ -2571,6 +2591,9 @@ async function decryptXChatInBrowserOnce(args: {
         isLoading: true,
       })
     : verifiedMessages;
+  if (args.isCurrent?.() === false) {
+    throw new Error("X/Twitter Chat target changed.");
+  }
   const session = cacheVerifiedXChatBrowserSession({
     prospectId: args.prospectId,
     bundle,
@@ -2593,10 +2616,13 @@ async function decryptXChatInBrowserOnce(args: {
       messages,
       getEncryptedMedia: args.getEncryptedMedia,
       isStillUnlocked: () =>
-        activeSession === browserSession && chat.isUnlocked(),
+        args.isCurrent?.() !== false &&
+        activeSession === browserSession &&
+        chat.isUnlocked(),
     })
       .then((hydratedMedia) => {
         if (
+          args.isCurrent?.() === false ||
           activeSession !== browserSession ||
           !chat.isUnlocked() ||
           !applyHydratedXChatMedia({

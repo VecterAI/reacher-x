@@ -60,4 +60,50 @@ describe("XChat provider error metadata", () => {
       remaining: 39999,
     });
   });
+
+  it("classifies X/Twitter's verification message from a top-level message field", () => {
+    expect(
+      parseXChatProviderError({
+        status: 403,
+        statusText: "Forbidden",
+        headers: new Headers(),
+        rawBody: JSON.stringify({
+          message:
+            "Get verified to message this user. Only verified users can send Direct Message requests to people that don't follow them.",
+        }),
+      })
+    ).toMatchObject({
+      status: 403,
+      code: "subscription_required",
+    });
+  });
+
+  it("classifies a nested recipient-setting restriction without inventing verification", () => {
+    expect(
+      parseXChatProviderError({
+        status: 403,
+        statusText: "Forbidden",
+        headers: new Headers(),
+        rawBody: JSON.stringify({
+          errors: [
+            { message: "This recipient is not accepting message requests." },
+          ],
+        }),
+      })
+    ).toMatchObject({
+      status: 403,
+      code: "recipient_restricted",
+    });
+  });
+
+  it("keeps an unrelated 403 as a provider error", () => {
+    expect(
+      parseXChatProviderError({
+        status: 403,
+        statusText: "Forbidden",
+        headers: new Headers(),
+        rawBody: JSON.stringify({ detail: "Policy denied the request." }),
+      }).code
+    ).toBe("provider_error");
+  });
 });

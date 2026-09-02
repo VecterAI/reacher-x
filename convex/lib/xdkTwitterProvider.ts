@@ -366,6 +366,7 @@ function mapXUserToLegacyProfile(
     asString(user.username) ??
     asString(user.screenName) ??
     asString(user.handle);
+  const receivesYourDm = getLegacyUserDmEligibility(user);
 
   return {
     id: toLegacyNumberId(user.id) ?? 0,
@@ -390,17 +391,22 @@ function mapXUserToLegacyProfile(
       asString(user.profileBannerUrl) ?? asString(user.profile_banner_url),
     profile_image_url_https:
       asString(user.profileImageUrl) ?? asString(user.profile_image_url) ?? "",
-    can_dm: Boolean(
-      user.receivesYourDm ?? user.receives_your_dm ?? user.canDm ?? user.can_dm
-    ),
+    can_dm: receivesYourDm === true,
+    can_dm_known: typeof receivesYourDm === "boolean",
     entities: mapUserEntities(user),
   };
 }
 
+export function getLegacyUserDmEligibility(
+  user: Record<string, unknown>
+): boolean | undefined {
+  const value =
+    user.receivesYourDm ?? user.receives_your_dm ?? user.canDm ?? user.can_dm;
+  return typeof value === "boolean" ? value : undefined;
+}
+
 export function getLegacyUserCanDm(user: Record<string, unknown>): boolean {
-  return Boolean(
-    user.receivesYourDm ?? user.receives_your_dm ?? user.canDm ?? user.can_dm
-  );
+  return getLegacyUserDmEligibility(user) === true;
 }
 
 function mapXUserToLegacyUser(
@@ -1265,6 +1271,15 @@ export function formatXWriteActionError(error: unknown): Error {
         detail ?? "X rate limited this action. Wait a moment and try again."
       );
     case "api_policy_forbidden":
+      if (
+        /get verified to message|only verified (?:users|accounts).+(?:direct message|dm|message request)|sign up for (?:twitter blue|x premium)/iu.test(
+          failure.message
+        )
+      ) {
+        return new Error(
+          "X/Twitter requires a verified connected account for this message request."
+        );
+      }
       if (
         normalizedMessage.includes(
           "reply to this conversation is not allowed because you have not been mentioned or otherwise engaged"

@@ -49,6 +49,7 @@ function buildUseCaseContextBlock(useCase: WorkspaceUseCaseDefinition): string {
 ## Vocabulary Rules
 - Use "${terms.entityPlural}" and "${terms.entitySingular}" in user-facing responses instead of default customer-prospecting terms.
 - Keep internal tool names and system identifiers unchanged even if they still say "prospect" or "ICP".
+- Always write "X/Twitter" in user-facing responses. Never shorten the platform name to "X" or "Twitter", including phrases such as "X/Twitter account", "X/Twitter DM", and "X/Twitter Chat".
 - When speaking to the user, make your wording match this workspace's terminology exactly.`;
 }
 
@@ -568,6 +569,9 @@ ${CONVERSATION_MEDIA_LIMITATIONS}
   - Medium-risk actions such as reposts, follows, or LinkedIn reactions create an approval request first.
   - High-risk actions such as replies, new posts, LinkedIn messages, LinkedIn comments, or LinkedIn invitations create a reviewable draft or approval item that must be approved before execution.
 - For X DMs (\`send_dm\` / \`send_dm_in_existing_conversation\`) and LinkedIn messages (\`linkedin_send_message\` / \`linkedin_send_message_existing_conversation\`): include message text and/or \`mediaUrls\` (media-only messages are valid). Do not ask the user for numeric ids when you are already in a prospect thread; the server resolves the recipient from prospect data whenever possible.
+- Treat the structured X/Twitter DM eligibility returned by \`socialAction\`, \`generatePlan\`, or \`refinePlan\` as current platform truth. If a DM is blocked, explain the known reason using the person's name or handle and adjust the approach instead of telling the user to retry.
+- For a blocked new X/Twitter DM, reasonable alternatives include public engagement, a follow request through \`socialAction\`, waiting for the person to follow the connected account back, or switching to an eligible verified account. Following the person does not itself unlock DMs; never promise that it does. Recheck eligibility before a later DM step.
+- These are platform facts, not a scripted workflow. Choose and explain the next step based on the user's goal, the person, and the returned eligibility context. Do not invent a verification requirement unless the reason code is \`subscription_required\`.
 - Only one pending DM draft should exist per person/thread at a time. If \`socialAction\` reports that a pending X or LinkedIn DM draft already exists, ask the user whether they want to replace it.
 - Only set \`replaceExistingPending=true\` on \`socialAction\` after the user explicitly confirms replacing the existing pending DM draft.
 - When a pending social action request already exists and the user explicitly confirms it, call \`approveSocialActionRequest\`.

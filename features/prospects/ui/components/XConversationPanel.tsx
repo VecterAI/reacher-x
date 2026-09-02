@@ -25,13 +25,9 @@ import { useProspectDmPanel } from "../../hooks/useProspectDmPanel";
 import { useTwitterConversationTyping } from "../../hooks/useTwitterConversationTyping";
 import { ConversationMessageViewport } from "./ConversationMessageViewport";
 import { XChatConversationUnlock } from "./XChatConversationUnlock";
+import { XDmEligibilityAlert } from "./XDmEligibilityAlert";
 import { XDmConversationMenu } from "./XDmConversationMenu";
 import { Button } from "@/shared/ui/components/Button";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@/shared/ui/components/Alert";
 import { Spinner } from "@/shared/ui/components/Spinner";
 import { MessageScrollerItem } from "@/shared/ui/components/MessageScroller";
 import {
@@ -162,6 +158,7 @@ export function XConversationPanel({
   });
   const xChatSession = useXChatBrowserSession({
     prospectId,
+    viewerUserId: data?.viewerUserId,
     participantUserId: data?.participantUserId,
   });
   const isParticipantTyping = useTwitterConversationTyping({
@@ -714,7 +711,8 @@ export function XConversationPanel({
   });
   const shouldDisableTaskSubmit =
     isTaskApprovalComposer &&
-    ((taskStatus !== "pending" && taskStatus !== "executing") ||
+    (!data?.eligibility.enabled ||
+      (taskStatus !== "pending" && taskStatus !== "executing") ||
       (taskApprovalUi.submitBlockedByPlan &&
         !taskApprovalUi.planCanBeApproved));
 
@@ -905,14 +903,16 @@ export function XConversationPanel({
                   new Uint8Array(uploadBuffer).fill(0);
                 }
                 if (!uploadResponse.ok) {
-                  throw new Error("Encrypted XChat media upload failed.");
+                  throw new Error(
+                    "Encrypted X/Twitter Chat media upload failed."
+                  );
                 }
                 const uploaded = (await uploadResponse.json()) as {
                   storageId?: string;
                 };
                 if (!uploaded.storageId) {
                   throw new Error(
-                    "Encrypted XChat media upload was incomplete."
+                    "Encrypted X/Twitter Chat media upload was incomplete."
                   );
                 }
                 const { mediaHashKey } = await uploadXChatEncryptedMedia({
@@ -1004,7 +1004,7 @@ export function XConversationPanel({
             await refreshNewestXChatPage();
           }
           if (isTaskApprovalComposer) {
-            toast.success("DM approved and sent through XChat.");
+            toast.success("DM approved and sent through X/Twitter Chat.");
           }
           setLocalDraftState({
             sourceKey: draftSourceKey,
@@ -1099,7 +1099,7 @@ export function XConversationPanel({
           remove,
         });
       } catch (reactionError) {
-        toast.error("Could not update XChat reaction", {
+        toast.error("Could not update X/Twitter Chat reaction", {
           description:
             reactionError instanceof Error
               ? reactionError.message
@@ -1121,7 +1121,7 @@ export function XConversationPanel({
           });
           if (!prepared) {
             throw new Error(
-              "This encrypted retry expired. Check X before sending it again."
+              "This encrypted retry expired. Check X/Twitter before sending it again."
             );
           }
           publishPendingXChatTextMessageInBrowser({
@@ -1175,8 +1175,7 @@ export function XConversationPanel({
   }, [cancel, isTaskBacked]);
 
   const shouldDisableComposer =
-    !isTaskApprovalComposer &&
-    (!data || !data.eligibility.enabled || isSendingActionRequest);
+    !data || !data.eligibility.enabled || isSendingActionRequest;
   const inlineDraftStatus =
     draftSync.status === "saving" ? (
       <span className="text-muted-foreground text-xs">Saving</span>
@@ -1245,7 +1244,11 @@ export function XConversationPanel({
         <div className="flex min-h-0 flex-1 flex-col">
           <XChatConversationUnlock
             prospectId={prospectId}
+            viewerUserId={data?.viewerUserId}
             participantUserId={data?.participantUserId}
+            recipientName={data?.prospect.displayName}
+            recipientUsername={resolvedTwitterUsername}
+            senderUsername={currentUser.screenName}
             className={cn(
               (!data || !shouldGateConversation || isInitialXChatCheck) &&
                 "hidden"
@@ -1385,29 +1388,12 @@ export function XConversationPanel({
                   ) : null}
                   {!data.eligibility.enabled ? (
                     <MessageScrollerItem messageId="conversation-unavailable">
-                      <Alert className="mt-2">
-                        <AlertTitle>DM unavailable</AlertTitle>
-                        <AlertDescription className="space-y-3">
-                          <p>{data.eligibility.reasonLabel}</p>
-                          {data.eligibility.reasonCode ===
-                            "missing_connection" ||
-                          data.eligibility.reasonCode === "missing_scopes" ? (
-                            <div>
-                              <Button
-                                size="xs"
-                                onClick={() =>
-                                  router.push("/settings/connected-accounts")
-                                }
-                              >
-                                {data.eligibility.reasonCode ===
-                                "missing_scopes"
-                                  ? "Reconnect account"
-                                  : "Connect account"}
-                              </Button>
-                            </div>
-                          ) : null}
-                        </AlertDescription>
-                      </Alert>
+                      <XDmEligibilityAlert
+                        eligibility={data.eligibility}
+                        onManageAccount={() =>
+                          router.push("/settings/connected-accounts")
+                        }
+                      />
                     </MessageScrollerItem>
                   ) : null}
                 </ConversationMessageViewport>

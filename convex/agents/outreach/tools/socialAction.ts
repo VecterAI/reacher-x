@@ -22,6 +22,7 @@ import {
   attachmentRefsSchema,
   resolveToolAttachmentMediaInput,
 } from "./attachmentReferences";
+import type { XDmEligibility } from "../../../../shared/lib/twitter/dm";
 
 const internalLinkedInApi = (internal as any).linkedin;
 
@@ -57,6 +58,7 @@ export interface SocialActionToolResult {
   approvalMode?: string;
   riskLevel?: string;
   eligibilityReasonCode?: string;
+  dmEligibility?: XDmEligibility;
   targetTweetId?: string;
   sourcePostRef?: unknown;
   sourcePostSummary?: unknown;

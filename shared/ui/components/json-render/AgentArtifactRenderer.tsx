@@ -37,6 +37,7 @@ import {
   ErrorIcon,
   OpenInNewIcon,
   RadioButtonUncheckedIcon,
+  XChatIcon,
 } from "@/shared/ui/components/icons";
 import {
   agentArtifactCatalog,
@@ -616,6 +617,14 @@ function TwitterActionArtifactCard({
     (props.eligibilityReasonCode === "missing_connection" ||
       props.message ===
         "Connect X/Twitter in Settings → Connected accounts to message this prospect.");
+  const isBlockedDm =
+    platform === "twitter" &&
+    (props.actionKey === "send_dm" ||
+      props.actionKey === "send_dm_in_existing_conversation") &&
+    liveStatus === "failed" &&
+    !!props.eligibilityReasonCode &&
+    props.eligibilityReasonCode !== "eligible" &&
+    props.eligibilityReasonCode !== "missing_connection";
 
   const reviewButtonLabel =
     liveStatus === "completed" ? "Open result" : "Review";
@@ -708,6 +717,21 @@ function TwitterActionArtifactCard({
           >
             Connect
           </Button>
+        }
+      />
+    );
+  }
+
+  if (isBlockedDm) {
+    return (
+      <InlineFeatureStrip
+        leading={
+          <>
+            <div className="border-border shrink-0 rounded-md border p-1">
+              <XChatIcon className="text-foreground size-4" aria-hidden />
+            </div>
+            <p className="truncate text-sm font-medium">{props.title}</p>
+          </>
         }
       />
     );

@@ -153,9 +153,12 @@ export function XChatUnlockCard({
       }
       if (response.availability === "blocked") {
         bundleRef.current = null;
-        setXChatBrowserSessionState(prospectId, {
-          status: "configuration_required",
-        });
+        setXChatBrowserSessionState(
+          prospectId,
+          response.reason === "xchat_access_denied"
+            ? { status: "configuration_required" }
+            : { status: "dm_restricted", reason: response.reason }
+        );
         return;
       }
       const nextBundle = response;
@@ -196,7 +199,7 @@ export function XChatUnlockCard({
         }
       }
     } catch (prepareError) {
-      const message = "We couldn't check XChat messages. Try again.";
+      const message = "We couldn't check X/Twitter Chat messages. Try again.";
       setXChatBrowserSessionState(
         prospectId,
         getXChatRateLimitState(prepareError) ?? { status: "error", message }
@@ -241,9 +244,12 @@ export function XChatUnlockCard({
       if (response.availability === "blocked") {
         bundleRef.current = null;
         setPin("");
-        setXChatBrowserSessionState(prospectId, {
-          status: "configuration_required",
-        });
+        setXChatBrowserSessionState(
+          prospectId,
+          response.reason === "xchat_access_denied"
+            ? { status: "configuration_required" }
+            : { status: "dm_restricted", reason: response.reason }
+        );
         return;
       }
       const nextBundle = response;
@@ -281,7 +287,7 @@ export function XChatUnlockCard({
       messages.length <= MAX_SHARED_XCHAT_MESSAGES &&
       decryptionErrorCount === 0;
     try {
-      const prompt = `Analyze the XChat conversation I unlocked with ${evidence.prospectName}. Summarize what happened and assess whether my responses were appropriate in context.`;
+      const prompt = `Analyze the X/Twitter Chat conversation I unlocked with ${evidence.prospectName}. Summarize what happened and assess whether my responses were appropriate in context.`;
       const saved = await initiateAnalysis({
         threadId,
         prospectId: prospectId as Id<"prospects">,
@@ -327,12 +333,16 @@ export function XChatUnlockCard({
   const shouldRequestPin =
     !browserSession && !isPreparingUnlock && gateMode === "pin";
   const isXChatAccessDenied = gateMode === "configuration_required";
+  const isDmRestricted = gateMode === "dm_restricted";
+  const verificationRequired =
+    sessionState.status === "dm_restricted" &&
+    sessionState.reason === "subscription_required";
   const attemptsExhausted = gateMode === "attempts_exhausted";
   const unlockFailed = !browserSession && gateMode === "error";
   const unlockErrorMessage =
     sessionState.status === "rate_limited"
-      ? "X is temporarily limiting requests. Try again shortly."
-      : error || "We couldn't check XChat messages. Try again.";
+      ? "X/Twitter is limiting requests. Try again shortly."
+      : error || "Try again.";
   const statusLabel = `Encrypted messages · ${evidence.eventCount} found · ${evidence.inboundEventCount} received · ${evidence.outboundEventCount} sent`;
 
   return (
@@ -344,7 +354,7 @@ export function XChatUnlockCard({
           variant="outline"
           onClick={() => void handleOpen()}
         >
-          Share XChat messages
+          Share X/Twitter Chat messages
         </Button>
       ) : (
         <InlineFeatureStrip
@@ -381,54 +391,66 @@ export function XChatUnlockCard({
           <DialogHeader>
             <DialogTitle>
               {isPreparingUnlock
-                ? "Unlocking XChat"
+                ? "Unlocking X/Twitter Chat"
                 : shouldRequestPin
-                  ? "Enter your XChat PIN"
-                  : hasReadableMessages
-                    ? "Share unlocked messages"
-                    : "XChat unlocked"}
+                  ? "Enter your X/Twitter Chat PIN"
+                  : isXChatAccessDenied
+                    ? "Reconnect X/Twitter"
+                    : isDmRestricted
+                      ? verificationRequired
+                        ? "Verification required"
+                        : `Can't message ${evidence.prospectName}`
+                      : hasReadableMessages
+                        ? "Share unlocked messages"
+                        : "X/Twitter Chat unlocked"}
             </DialogTitle>
             <DialogDescription
               id="xchat-pin-privacy"
               className={
-                isPreparingUnlock || shouldRequestPin ? "sr-only" : undefined
+                isPreparingUnlock || shouldRequestPin
+                  ? "sr-only"
+                  : "text-pretty"
               }
             >
               {isPreparingUnlock
-                ? "Recovering your encrypted XChat messages."
+                ? "Recovering your encrypted X/Twitter Chat messages."
                 : shouldRequestPin
-                  ? "Enter your four-digit XChat PIN."
-                  : hasReadableMessages
-                    ? `Share up to the latest ${MAX_SHARED_XCHAT_MESSAGES} messages with the Agent for this response.`
-                    : "The messages already visible in the thread remain available. This unlock did not add any additional XChat rows to share for this response."}
+                  ? "Enter your four-digit X/Twitter Chat PIN."
+                  : isXChatAccessDenied
+                    ? "Reconnect your account to restore Chat access."
+                    : isDmRestricted
+                      ? verificationRequired
+                        ? `${evidence.prospectName} only accepts DMs from verified accounts.`
+                        : `${evidence.prospectName} isn't accepting DMs from the connected account.`
+                      : hasReadableMessages
+                        ? `Share up to the latest ${MAX_SHARED_XCHAT_MESSAGES} messages with the Agent for this response.`
+                        : "The messages already visible in the thread remain available. This unlock did not add any additional X/Twitter Chat rows to share for this response."}
             </DialogDescription>
           </DialogHeader>
 
-          {isXChatAccessDenied ? (
-            <div className="space-y-3">
-              <p className="text-muted-foreground text-sm">
-                X accepted the connected account but denied this app access to
-                encrypted XChat endpoints. Reconnect X once; if this remains,
-                contact X Developer support.
-              </p>
-              <DialogFooter>
-                <Button asChild size="xs">
-                  <Link href="/settings/connected-accounts">
-                    Connected accounts
-                  </Link>
-                </Button>
-              </DialogFooter>
-            </div>
+          {isDmRestricted ? (
+            <p className="text-muted-foreground text-sm text-pretty">
+              {verificationRequired
+                ? "Verify the connected account or use another account."
+                : "Use another account or wait for a follow-back."}
+            </p>
+          ) : isXChatAccessDenied ? (
+            <DialogFooter>
+              <Button asChild size="xs">
+                <Link href="/settings/connected-accounts">
+                  Connected accounts
+                </Link>
+              </Button>
+            </DialogFooter>
           ) : attemptsExhausted ? (
             <div className="space-y-3">
               <p className="text-muted-foreground text-sm">
-                No PIN attempts remain. Use X&apos;s XChat help to review the
-                available recovery steps.
+                Reset your PIN in X/Twitter Chat.
               </p>
               <DialogFooter>
                 <Button asChild size="xs">
                   <a href={XCHAT_HELP_URL} target="_blank" rel="noreferrer">
-                    View XChat help
+                    View X/Twitter Chat help
                   </a>
                 </Button>
               </DialogFooter>
@@ -437,7 +459,7 @@ export function XChatUnlockCard({
             <div
               className="flex min-h-24 items-center justify-center"
               role="status"
-              aria-label="Unlocking XChat messages"
+              aria-label="Unlocking X/Twitter Chat messages"
             >
               <Spinner variant="circle" className="size-5" />
             </div>
@@ -475,7 +497,7 @@ export function XChatUnlockCard({
               }}
             >
               <label htmlFor="xchat-agent-pin" className="sr-only">
-                XChat PIN
+                X/Twitter Chat PIN
               </label>
               <div className="mx-auto h-11 w-44">
                 <InputOTP
@@ -515,7 +537,7 @@ export function XChatUnlockCard({
                 onClearSavedPins={() => {
                   setRememberOnDevice(false);
                   return forgetAllRememberedXChatPins().then(() => {
-                    toast.success("Saved XChat PINs removed");
+                    toast.success("Saved X/Twitter Chat PINs removed");
                   });
                 }}
               />
@@ -535,7 +557,7 @@ export function XChatUnlockCard({
             <div className="space-y-3">
               <p className="text-muted-foreground text-sm" role="status">
                 The conversation is already visible above. This unlock only adds
-                encrypted XChat rows when they are available.
+                encrypted X/Twitter Chat rows when they are available.
               </p>
               {error ? (
                 <p className="text-destructive text-sm" role="alert">
