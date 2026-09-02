@@ -82,9 +82,7 @@ export function createAIProvider() {
 
 /** Available models via OpenRouter. */
 export const MODELS = {
-  GPT_5_6_LUNA: "openai/gpt-5.6-luna",
   GPT_5_6_SOL: "openai/gpt-5.6-sol",
-  GPT_5_6_TERRA: "openai/gpt-5.6-terra",
   KIMI_K2_6: "moonshotai/kimi-k2.6",
   GPT_OSS: "openai/gpt-oss-120b",
 } as const;
@@ -154,21 +152,6 @@ function createOnlyProviderOptions(
     openrouter: {
       provider: {
         only,
-        require_parameters: true,
-      },
-    },
-  };
-}
-
-function createLatencySortedProviderOptions(
-  only: OpenRouterProviderSlug[]
-): OpenRouterProviderOptions {
-  return {
-    openrouter: {
-      provider: {
-        only,
-        sort: "latency",
-        allow_fallbacks: true,
         require_parameters: true,
       },
     },
@@ -395,54 +378,6 @@ export const OUTREACH_AGENT_MODEL = getConfiguredModel(
 export const OUTREACH_AGENT_PROVIDER_OPTIONS: OpenRouterProviderOptions =
   getConfiguredProviderOptions({
     model: OUTREACH_AGENT_MODEL,
-    defaultModel: MODELS.GPT_5_6_SOL,
-    defaultOptions: createGpt56ProviderOptions(),
-  });
-
-export const OUTREACH_ROUTER_MODEL = getConfiguredModel(
-  "AI_OUTREACH_ROUTER_MODEL",
-  MODELS.GPT_5_6_LUNA
-);
-export const OUTREACH_ROUTER_PROVIDER_OPTIONS: OpenRouterProviderOptions =
-  getConfiguredProviderOptions({
-    model: OUTREACH_ROUTER_MODEL,
-    defaultModel: MODELS.GPT_5_6_LUNA,
-    defaultOptions: createGpt56ProviderOptions({ requireParameters: false }),
-    requireParameters: false,
-  });
-
-export const OUTREACH_FAST_MODEL = getConfiguredModel(
-  "AI_OUTREACH_FAST_MODEL",
-  MODELS.GPT_OSS
-);
-export const OUTREACH_FAST_PROVIDER_OPTIONS = getConfiguredProviderOptions({
-  model: OUTREACH_FAST_MODEL,
-  defaultModel: MODELS.GPT_OSS,
-  defaultOptions: createLatencySortedProviderOptions([
-    OPENROUTER_PROVIDERS.CEREBRAS,
-    OPENROUTER_PROVIDERS.GROQ,
-    OPENROUTER_PROVIDERS.BASETEN,
-  ]),
-});
-
-export const OUTREACH_TERRA_MODEL = getConfiguredModel(
-  "AI_OUTREACH_STANDARD_MODEL",
-  MODELS.GPT_5_6_TERRA
-);
-export const OUTREACH_TERRA_PROVIDER_OPTIONS: OpenRouterProviderOptions =
-  getConfiguredProviderOptions({
-    model: OUTREACH_TERRA_MODEL,
-    defaultModel: MODELS.GPT_5_6_TERRA,
-    defaultOptions: createGpt56ProviderOptions(),
-  });
-
-export const OUTREACH_SOL_MODEL = getConfiguredModel(
-  "AI_OUTREACH_RECOVERY_MODEL",
-  MODELS.GPT_5_6_SOL
-);
-export const OUTREACH_SOL_PROVIDER_OPTIONS: OpenRouterProviderOptions =
-  getConfiguredProviderOptions({
-    model: OUTREACH_SOL_MODEL,
     defaultModel: MODELS.GPT_5_6_SOL,
     defaultOptions: createGpt56ProviderOptions(),
   });

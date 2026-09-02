@@ -124,7 +124,7 @@ These are Convex deployment variables. LinkdAPI is the LinkedIn read plane; Unip
 
 `CONVEX_SITE_URL` is automatically available inside Convex functions and is used for webhook URLs. Override it only when intentionally configuring custom deployment domains.
 
-## AI Model Routing
+## AI Model Configuration
 
 Model variable names represent stable workloads, not permanent model families. Change their values when models evolve; application code should continue referring to the workload role.
 
@@ -138,11 +138,7 @@ Values are OpenRouter model IDs unless otherwise noted.
 | `AI_ONBOARDING_MODEL`         | `openai/gpt-5.6-sol`              | High-judgment onboarding, setup classification, targeting profiles, revisions, and setup preview qualification |
 | `INLINE_AUTOCOMPLETE_ENABLED` | Production: `1`; development: `0` | Inline composer autocomplete. Accepts `1/0`, `true/false`, `yes/no`, or `on/off`.                              |
 | `AI_SETUP_AGENT_MODEL`        | Value of `AI_ONBOARDING_MODEL`    | Workspace setup chat agent                                                                                     |
-| `AI_MAIN_AGENT_MODEL`         | `openai/gpt-5.6-sol`              | Main and prospect-scoped Agent conversations, planning, and outreach                                           |
-| `AI_OUTREACH_ROUTER_MODEL`    | `openai/gpt-5.6-luna`             | Routes outreach work to the appropriate generation lane                                                        |
-| `AI_OUTREACH_FAST_MODEL`      | `openai/gpt-oss-120b`             | Fast outreach generation lane                                                                                  |
-| `AI_OUTREACH_STANDARD_MODEL`  | `openai/gpt-5.6-terra`            | Standard outreach generation lane                                                                              |
-| `AI_OUTREACH_RECOVERY_MODEL`  | `openai/gpt-5.6-sol`              | High-judgment outreach generation, planning, copy, and recovery lane                                           |
+| `AI_MAIN_AGENT_MODEL`         | `openai/gpt-5.6-sol`              | Fixed model for stateful main and prospect-scoped conversations, planning, and outreach                        |
 | `AI_VISION_MODEL`             | `moonshotai/kimi-k2.6`            | Image/GIF understanding for multimodal turns                                                                   |
 | `AI_TEXT_EMBEDDING_MODEL`     | `openai/text-embedding-3-small`   | Agent-memory and RAG embeddings                                                                                |
 
@@ -152,6 +148,21 @@ Values are OpenRouter model IDs unless otherwise noted.
 - `cost_optimized`: uses the cost-optimized fast/reasoning strategy and is the code default.
 
 Role-specific model variables take precedence over the preset. A newly selected model uses generic OpenRouter provider fallback unless the code has a model-specific optimized route.
+
+### Stateful Agent Model Continuity
+
+Main and prospect outreach threads use `AI_MAIN_AGENT_MODEL` for every text
+turn. Do not introduce per-turn model routing inside these persisted threads:
+provider reasoning metadata can be bound to the model or endpoint that created
+it. Cheaper models remain appropriate for isolated stateless workloads such as
+autocomplete, extraction, and classification when their outputs are not saved
+as assistant reasoning in the conversation.
+
+Completed historical turns are normalized before generation so portable text
+and tool history remains available without replaying encrypted provider
+reasoning. Reasoning produced during an active tool sequence remains intact
+until that sequence finishes. `AI_VISION_MODEL` is an explicit capability
+exception for image and GIF inputs, rather than semantic per-turn routing.
 
 ### Embedding Compatibility
 

@@ -35,8 +35,7 @@ import {
   workspaceVisionLanguageModel,
 } from "./agents";
 import {
-  classifyOutreachTurn,
-  createOutreachTextLanguageModel,
+  createOutreachThreadLanguageModel,
   outreachAgent,
   outreachAgentBaseTools,
   outreachVisionLanguageModel,
@@ -115,12 +114,6 @@ import {
   OUTREACH_MIN_MESSAGES_FOR_HISTORY_SEARCH,
   OUTREACH_RECENT_MESSAGE_LIMIT,
 } from "./lib/agentContextHelpers";
-import {
-  OUTREACH_ROUTER_AGENT_NAME,
-  compactOutreachRouterMessages,
-  summarizeOutreachOperationState,
-  type OutreachModelLane,
-} from "./lib/outreachModelRoutingCore";
 import { buildPlanBatchReferenceCatalogContext } from "./lib/planBatchCore";
 import { buildAgentAttachmentReferenceContext } from "./lib/agentAttachmentReferenceCore";
 import { OUTREACH_AGENT_MODEL, PINNED_AGENT_MODEL } from "./lib/ai";
@@ -167,16 +160,6 @@ type OutreachStreamAttemptTiming = {
 type OutreachStreamTiming = {
   attempts: OutreachStreamAttemptTiming[];
 };
-type OutreachRoutingTelemetry = {
-  classifierConfidence: number | null;
-  classifierLane: string | null;
-  classifierModel: string | null;
-  classifierProvider: string | null;
-  reason: string;
-  selectedLane: OutreachModelLane;
-  usedConfidenceFallback: boolean;
-};
-
 function summarizeOutreachStreamTiming(timing: OutreachStreamTiming) {
   return timing.attempts.map((attempt) => ({
     attempt_number: attempt.attempt_number,
@@ -1093,117 +1076,10 @@ async function getOutreachHistorySignals(
     searchableMessageCount += 1;
   }
 
-  const recentRouterMessages = compactOutreachRouterMessages(
-    [...messages.page].reverse().map((message) => ({
-      id: message._id,
-      role: message.message?.role,
-      text: typeof message.text === "string" ? message.text : undefined,
-    })),
-    args.excludeMessageId
-  );
-
   return {
     hasSearchableHistory:
       searchableMessageCount >= OUTREACH_MIN_MESSAGES_FOR_HISTORY_SEARCH,
-    recentRouterMessages,
   };
-}
-
-async function resolveOutreachTurnModel(
-  ctx: ActionCtx,
-  args: {
-    threadId: string;
-    currentPrompt: string;
-    hasVisionInput: boolean;
-    recentMessages: Array<{
-      role: "user" | "assistant";
-      text: string;
-    }>;
-    operationState: ReturnType<typeof summarizeOutreachOperationState>;
-  }
-): Promise<{
-  model: LanguageModel;
-  telemetry: OutreachRoutingTelemetry;
-}> {
-  if (args.hasVisionInput) {
-    return {
-      model: outreachVisionLanguageModel,
-      telemetry: {
-        classifierConfidence: null,
-        classifierLane: null,
-        classifierModel: null,
-        classifierProvider: null,
-        reason: "vision_input",
-        selectedLane: "vision",
-        usedConfidenceFallback: false,
-      },
-    };
-  }
-
-  try {
-    const classification = await classifyOutreachTurn({
-      currentPrompt: args.currentPrompt,
-      recentMessages: args.recentMessages,
-      operationState: args.operationState,
-    });
-
-    try {
-      await ctx.runMutation(internal.agentTelemetry.insertUsageEvent, {
-        threadId: args.threadId,
-        agentName: OUTREACH_ROUTER_AGENT_NAME,
-        model: classification.model,
-        ...(classification.provider
-          ? { provider: classification.provider }
-          : {}),
-        usage: classification.usage,
-        ...(classification.providerMetadata === undefined
-          ? {}
-          : { providerMetadata: classification.providerMetadata }),
-      });
-    } catch (error) {
-      chatLogger.warn("Could not persist outreach-router usage telemetry", {
-        threadId: args.threadId,
-        errorMessage: stringifyUnknownError(error),
-      });
-    }
-
-    return {
-      model: createOutreachTextLanguageModel(
-        classification.selection.selectedLane,
-        args.threadId
-      ),
-      telemetry: {
-        classifierConfidence: classification.selection.confidence,
-        classifierLane: classification.selection.lane,
-        classifierModel: classification.model,
-        classifierProvider: classification.provider ?? null,
-        reason: classification.selection.reason,
-        selectedLane: classification.selection.selectedLane,
-        usedConfidenceFallback: classification.selection.usedConfidenceFallback,
-      },
-    };
-  } catch (error) {
-    chatLogger.warn(
-      "Semantic outreach routing failed; using Terra as the safe default",
-      {
-        threadId: args.threadId,
-        errorMessage: stringifyUnknownError(error),
-      }
-    );
-
-    return {
-      model: createOutreachTextLanguageModel("terra", args.threadId),
-      telemetry: {
-        classifierConfidence: null,
-        classifierLane: null,
-        classifierModel: null,
-        classifierProvider: null,
-        reason: "router_failure",
-        selectedLane: "terra",
-        usedConfidenceFallback: true,
-      },
-    };
-  }
 }
 
 function buildDisabledHistorySearchContextOptions() {
@@ -1527,7 +1403,7 @@ async function streamOutreachTextWithFallback(
     }
 
     chatLogger.warn(
-      "Outreach stream aborted before any tool result was saved; retrying once on the pinned safe provider",
+      "Outreach stream aborted before any tool result was saved; retrying once with the fixed outreach model",
       {
         threadId: args.threadId,
         promptMessageId: args.promptMessageId,
@@ -2692,7 +2568,6 @@ async function runStreamOutreachResponse(
   const logEvent = getWideEventLogger(ctx);
   const streamTiming: OutreachStreamTiming = { attempts: [] };
   const responseTiming: Record<string, number | undefined> = {};
-  let routingTelemetry: OutreachRoutingTelemetry | undefined;
 
   try {
     const prospectLoadStartedAt = getCurrentUTCTimestamp();
@@ -2719,7 +2594,6 @@ async function runStreamOutreachResponse(
       hiddenContext,
       historySignals,
       backgroundRefreshScheduled,
-      activePlanData,
     ] = await Promise.all([
       resolveOutreachUseCaseForThread(ctx, args.threadId, prospect),
       getThreadMessageById(ctx, args.promptMessageId),
@@ -2742,11 +2616,6 @@ async function runStreamOutreachResponse(
             .then(() => true)
             .catch(() => false)
         : Promise.resolve(false),
-      prospect
-        ? ctx.runQuery(internal.outreach.getProspectActivePlanInternal, {
-            prospectId: prospect._id,
-          })
-        : Promise.resolve(null),
     ]);
     responseTiming.pre_model_parallel_ms =
       getCurrentUTCTimestamp() - preModelStartedAt;
@@ -2760,21 +2629,6 @@ async function runStreamOutreachResponse(
     const hasSearchablePrompt = promptText.trim().length > 0;
     const shouldUseHistorySearch =
       hasSearchablePrompt && historySignals.hasSearchableHistory;
-    const routingStartedAt = getCurrentUTCTimestamp();
-    const resolvedRoute = await resolveOutreachTurnModel(ctx, {
-      threadId: args.threadId,
-      currentPrompt: promptText,
-      hasVisionInput: hiddenContext.hasVisionInput,
-      recentMessages: historySignals.recentRouterMessages,
-      operationState: summarizeOutreachOperationState({
-        prospectStatus: prospect?.status,
-        planStatus: activePlanData?.plan.status,
-        taskStatuses: activePlanData?.tasks.map((task) => task.status),
-      }),
-    });
-    routingTelemetry = resolvedRoute.telemetry;
-    responseTiming.model_routing_ms =
-      getCurrentUTCTimestamp() - routingStartedAt;
     const streamStartedAt = getCurrentUTCTimestamp();
     const result = await streamOutreachTextWithFallback(ctx, {
       threadId: args.threadId,
@@ -2787,7 +2641,9 @@ async function runStreamOutreachResponse(
             { role: "system" as const, content: args.transientXChatContext },
           ]
         : hiddenContext.messages,
-      model: resolvedRoute.model,
+      model: hiddenContext.hasVisionInput
+        ? outreachVisionLanguageModel
+        : createOutreachThreadLanguageModel(args.threadId),
       preferHistorySearch: shouldUseHistorySearch,
       timing: streamTiming,
     });
@@ -2848,7 +2704,7 @@ async function runStreamOutreachResponse(
       agent_response: {
         background_x_refresh_scheduled: backgroundRefreshScheduled,
         history_search_enabled: shouldUseHistorySearch,
-        routing: routingTelemetry,
+        model_mode: hiddenContext.hasVisionInput ? "vision" : "fixed",
         stream_delta_throttle_ms: DEFAULT_AGENT_STREAM_DELTAS.throttleMs,
         timing: responseTiming,
         attempts: summarizeOutreachStreamTiming(streamTiming),
@@ -2866,7 +2722,6 @@ async function runStreamOutreachResponse(
       agent_response: {
         timing: responseTiming,
         attempts: summarizeOutreachStreamTiming(streamTiming),
-        routing: routingTelemetry,
       },
     });
     const normalizedError = normalizeUnknownError(error);
@@ -4446,7 +4301,7 @@ export const respondToAskHuman = internalAction({
       threadId: args.threadId,
       system: buildOutreachAgentPrompt(useCase),
       tools,
-      model: createOutreachTextLanguageModel("terra", args.threadId),
+      model: createOutreachThreadLanguageModel(args.threadId),
       preferHistorySearch: true,
     });
 

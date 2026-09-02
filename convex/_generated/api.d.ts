@@ -148,7 +148,6 @@ import type * as lib_onboardingNavigation from "../lib/onboardingNavigation.js";
 import type * as lib_outreachApprovalCore from "../lib/outreachApprovalCore.js";
 import type * as lib_outreachCore from "../lib/outreachCore.js";
 import type * as lib_outreachExecutionCore from "../lib/outreachExecutionCore.js";
-import type * as lib_outreachModelRoutingCore from "../lib/outreachModelRoutingCore.js";
 import type * as lib_outreachPlanPool from "../lib/outreachPlanPool.js";
 import type * as lib_outreachPlanRevisionCore from "../lib/outreachPlanRevisionCore.js";
 import type * as lib_outreachProgressHelpers from "../lib/outreachProgressHelpers.js";
@@ -523,7 +522,6 @@ declare const fullApi: ApiFromModules<{
   "lib/outreachApprovalCore": typeof lib_outreachApprovalCore;
   "lib/outreachCore": typeof lib_outreachCore;
   "lib/outreachExecutionCore": typeof lib_outreachExecutionCore;
-  "lib/outreachModelRoutingCore": typeof lib_outreachModelRoutingCore;
   "lib/outreachPlanPool": typeof lib_outreachPlanPool;
   "lib/outreachPlanRevisionCore": typeof lib_outreachPlanRevisionCore;
   "lib/outreachProgressHelpers": typeof lib_outreachProgressHelpers;
