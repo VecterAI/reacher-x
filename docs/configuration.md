@@ -208,7 +208,7 @@ After direct post discovery, the workflow expands up to three promising authors 
 
 `PROSPECTING_TWITTER_SEARCH_BATCH` is a query-selection limit, not a total HTTP-request limit. Cursor pages, exact-query fallbacks, graph-seed searches, similar-profile evidence checks, and retries can add requests. All of them reserve capacity through the shared SocialAPI budget described below. Search telemetry records each workspace, query, page count, HTTP outcome, raw-result count, unique new-user count, and checkpoint state.
 
-Existing deployments that explicitly set `PROSPECTING_TWITTER_SEARCH_BATCH=5` keep using `5`. For production rollout, change that explicit override in place to `9` rather than relying on the code fallback, and explicitly set the page and lookback variables to `3` and `90`.
+The hosted production deployment uses `9` primary queries, up to `3` total pages per query, and a `90`-day initial lookback, matching the code fallbacks above.
 
 See the bundled [SocialAPI search reference](./socialapi/search.md), [search operators](./socialapi/monitor-and-operators.md#twitter-search-operators), and [similar-profile reference](./socialapi/similar-profiles.md) for provider behavior.
 
