@@ -57,3 +57,76 @@ test("the fallback reset restores protection when no unload occurs", () => {
 
   assert.equal(controller.shouldWarnBeforeUnload(true), true);
 });
+
+test("intentional form submission bypasses one unload warning", () => {
+  const controller = createIntentionalDocumentNavigationController();
+  let submissions = 0;
+
+  controller.submit(
+    {
+      checkValidity: () => true,
+      noValidate: false,
+      requestSubmit: () => submissions++,
+    },
+    () => undefined
+  );
+
+  assert.equal(submissions, 1);
+  assert.equal(controller.shouldWarnBeforeUnload(true), false);
+  assert.equal(controller.shouldWarnBeforeUnload(true), true);
+});
+
+test("failed form submission preserves the genuine unload warning", () => {
+  const controller = createIntentionalDocumentNavigationController();
+
+  assert.throws(
+    () =>
+      controller.submit(
+        {
+          checkValidity: () => true,
+          noValidate: false,
+          requestSubmit: () => {
+            throw new Error("submission failed");
+          },
+        },
+        () => undefined
+      ),
+    /submission failed/
+  );
+
+  assert.equal(controller.shouldWarnBeforeUnload(true), true);
+});
+
+test("invalid form submission preserves the genuine unload warning", () => {
+  const controller = createIntentionalDocumentNavigationController();
+  let submissions = 0;
+
+  controller.submit(
+    {
+      checkValidity: () => false,
+      noValidate: false,
+      requestSubmit: () => submissions++,
+    },
+    () => undefined
+  );
+
+  assert.equal(submissions, 0);
+  assert.equal(controller.shouldWarnBeforeUnload(true), true);
+});
+
+test("noValidate forms may submit without constraint validation", () => {
+  const controller = createIntentionalDocumentNavigationController();
+  let submissions = 0;
+
+  controller.submit(
+    {
+      checkValidity: () => false,
+      noValidate: true,
+      requestSubmit: () => submissions++,
+    },
+    () => undefined
+  );
+
+  assert.equal(submissions, 1);
+  assert.equal(controller.shouldWarnBeforeUnload(true), false);
+});

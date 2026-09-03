@@ -252,11 +252,17 @@ export async function forgetRememberedXChatPin(
 
 /** Clears both encrypted PIN records and their non-extractable device key. */
 export async function forgetAllRememberedXChatPins(): Promise<void> {
-  if (typeof indexedDB === "undefined") return;
-  await new Promise<void>((resolve) => {
-    const request = indexedDB.deleteDatabase(DATABASE_NAME);
-    request.addEventListener("success", () => resolve(), { once: true });
-    request.addEventListener("error", () => resolve(), { once: true });
-    request.addEventListener("blocked", () => resolve(), { once: true });
-  });
+  const database = await openCredentialDatabase();
+  if (!database) return;
+  try {
+    const transaction = database.transaction(
+      [DEVICE_KEYS_STORE, CREDENTIALS_STORE],
+      "readwrite"
+    );
+    transaction.objectStore(DEVICE_KEYS_STORE).clear();
+    transaction.objectStore(CREDENTIALS_STORE).clear();
+    await transactionComplete(transaction);
+  } finally {
+    database.close();
+  }
 }

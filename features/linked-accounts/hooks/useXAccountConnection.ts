@@ -7,8 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { showStyleSyncIssueToast } from "@/features/linked-accounts/lib/styleSyncIssueToast";
 import { logger } from "@/shared/lib/logger";
 import { toast } from "sonner";
-import { lockXChatInBrowser } from "@/features/agent/lib/xChatBrowserSession";
-import { forgetAllRememberedXChatPins } from "@/features/agent/lib/xChatDeviceCredentialStorage";
+import { clearXChatBrowserData } from "@/features/agent/lib/xChatBrowserSession";
 
 export type TwitterConnectionStatus = {
   isConnected: boolean;
@@ -216,8 +215,14 @@ export function useXAccountConnection({
           state: oauthState,
         });
         if (connectedAccountIdRef.current !== nextStatus.connectedAccountId) {
-          lockXChatInBrowser();
-          await forgetAllRememberedXChatPins();
+          try {
+            await clearXChatBrowserData();
+          } catch (cleanupError) {
+            logger.warn(
+              "Failed to clear XChat browser data after X account change:",
+              cleanupError
+            );
+          }
         }
         setXStatus(nextStatus);
         setStatusError(null);
@@ -286,8 +291,14 @@ export function useXAccountConnection({
     try {
       setIsMutating(true);
       await disconnectTwitter({});
-      lockXChatInBrowser();
-      await forgetAllRememberedXChatPins();
+      try {
+        await clearXChatBrowserData();
+      } catch (cleanupError) {
+        logger.warn(
+          "Failed to clear XChat browser data after X account disconnect:",
+          cleanupError
+        );
+      }
       toast.success("Disconnected X/Twitter account");
       await refreshStatus();
     } catch (err) {

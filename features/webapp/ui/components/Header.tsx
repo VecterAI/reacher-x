@@ -82,8 +82,6 @@ import {
   usePreferredShellContext,
 } from "@/shared/stores/preferredShellContext";
 import { logger } from "@/shared/lib/logger";
-import { lockXChatInBrowser } from "@/features/agent/lib/xChatBrowserSession";
-import { forgetAllRememberedXChatPins } from "@/features/agent/lib/xChatDeviceCredentialStorage";
 
 const headerLogger = logger.withScope("Header");
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
@@ -987,24 +985,10 @@ export function Header({
                   </Link>
                 </DropdownMenuItem>
 
-                <DropdownMenuItem
-                  onClick={() => {
-                    void forgetAllRememberedXChatPins().then(() =>
-                      toast.success("Saved X/Twitter Chat PINs removed")
-                    );
-                  }}
-                >
-                  <LockIcon className="fill-current" aria-hidden="true" />
-                  Forget saved X/Twitter Chat PINs
-                </DropdownMenuItem>
-
                 {/* Log out */}
                 <DropdownMenuItem
                   onClick={() => {
-                    lockXChatInBrowser();
-                    void forgetAllRememberedXChatPins().finally(() =>
-                      router.push("/logout")
-                    );
+                    router.push("/logout");
                   }}
                 >
                   <LogoutIcon className="fill-current" aria-hidden="true" />

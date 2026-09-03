@@ -32,6 +32,7 @@ import {
   writeStoredXChatPendingSend,
 } from "./xChatPendingSendStorage";
 import {
+  forgetAllRememberedXChatPins,
   forgetRememberedXChatPin,
   readRememberedXChatPin,
   rememberXChatPinOnDevice,
@@ -1746,6 +1747,12 @@ export function lockXChatInBrowser(): void {
     sessionStatesByProspectId.set(prospectId, { status: "locked" });
   }
   emitChange();
+}
+
+/** Removes decrypted XChat state and every PIN remembered by this browser. */
+export async function clearXChatBrowserData(): Promise<void> {
+  lockXChatInBrowser();
+  await forgetAllRememberedXChatPins();
 }
 
 type XChatMediaDecryptor = Pick<ChatWithJuicebox, "decryptStream">;

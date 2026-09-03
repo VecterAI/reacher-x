@@ -29,9 +29,9 @@ export function XChatRememberPinOption({
         onCheckedChange={(checked) =>
           onRememberOnDeviceChange(checked === true)
         }
-        aria-label="Remember X/Twitter Chat PIN on this device"
+        aria-label="Remember X/Twitter Chat PIN until logout"
       />
-      <span>Remember this device</span>
+      <span>Remember until I log out</span>
     </label>
   );
 }
