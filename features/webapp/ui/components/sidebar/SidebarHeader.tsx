@@ -3,7 +3,7 @@
  * SidebarHeader Component
  *
  * Displays tier-based content in the sidebar header:
- * - Top button: Upgrade plan / New workspace / Request custom limit
+ * - Top button: Upgrade plan / New workspace / Get a custom plan
  * - Select switcher: Always visible, all tiers, with footer CTA
  */
 
@@ -25,8 +25,8 @@ import {
 import {
   AddIcon,
   FolderIcon,
+  ForumIcon,
   LockIcon,
-  MailIcon,
   UpgradeIcon,
 } from "@/shared/ui/components/icons";
 import {
@@ -356,7 +356,7 @@ export function SidebarHeader() {
               window.location.href = `mailto:${CUSTOM_LIMIT_EMAIL}?subject=${encodeURIComponent("Request custom workspace limit")}`;
             }}
           >
-            <MailIcon className="fill-current" />
+            <ForumIcon className="fill-current" />
           </Button>
         </SidebarHeaderBase>
       );
@@ -395,7 +395,7 @@ export function SidebarHeader() {
       </Button>
     );
   } else if (isHighestTier && !canCreateWorkspace) {
-    // Pro at limit → Request custom limit
+    // Pro at limit → Get a custom plan
     topButton = (
       <Button
         variant="secondary"
@@ -406,8 +406,8 @@ export function SidebarHeader() {
           window.location.href = `mailto:${CUSTOM_LIMIT_EMAIL}?subject=${encodeURIComponent("Request custom workspace limit")}`;
         }}
       >
-        <MailIcon className="fill-current" />
-        Request custom limit
+        <ForumIcon className="fill-current" />
+        Get a custom plan
       </Button>
     );
   } else {
