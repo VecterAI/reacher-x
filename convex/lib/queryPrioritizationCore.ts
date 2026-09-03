@@ -30,7 +30,8 @@ const MINIMUM_PROSPECTS_FOR_QUALITY_DECISION = 20;
 const MINIMUM_SEARCHES_FOR_LEARNING = 3;
 
 function classifyCandidate<TId>(
-  candidate: QueryPrioritizationCandidate<TId>
+  candidate: QueryPrioritizationCandidate<TId>,
+  retireAfterUnqualifiedSearches?: number
 ): PrioritizedQuery<TId> {
   const performance = candidate.performance ?? {
     impressions: 0,
@@ -46,6 +47,18 @@ function classifyCandidate<TId>(
   let priority: QueryPriority;
   if (typeof candidate.lastSearchedAt !== "number") {
     priority = "new";
+  } else if (retireAfterUnqualifiedSearches !== undefined) {
+    if (
+      performance.qualifiedCount > 0 ||
+      performance.convertedCount > 0 ||
+      performance.replyCount > 0
+    ) {
+      priority = "proven";
+    } else if (performance.impressions < retireAfterUnqualifiedSearches) {
+      priority = "learning";
+    } else {
+      priority = "cold";
+    }
   } else if (
     performance.prospectsFound >= MINIMUM_PROSPECTS_FOR_QUALITY_DECISION &&
     performance.qualifiedCount === 0 &&
@@ -90,6 +103,7 @@ export function prioritizeQueries<TId>(args: {
   limit: number;
   now: number;
   coldCooldownMs?: number;
+  retireAfterUnqualifiedSearches?: number;
 }): Array<PrioritizedQuery<TId>> {
   const limit = Math.max(0, Math.floor(args.limit));
   if (limit === 0 || args.candidates.length === 0) {
@@ -97,7 +111,13 @@ export function prioritizeQueries<TId>(args: {
   }
 
   const coldCooldownMs = args.coldCooldownMs ?? DEFAULT_COLD_COOLDOWN_MS;
-  const classified = args.candidates.map(classifyCandidate);
+  const retireAfterUnqualifiedSearches =
+    args.retireAfterUnqualifiedSearches === undefined
+      ? undefined
+      : Math.max(1, Math.floor(args.retireAfterUnqualifiedSearches));
+  const classified = args.candidates.map((candidate) =>
+    classifyCandidate(candidate, retireAfterUnqualifiedSearches)
+  );
   const proven = classified
     .filter((candidate) => candidate.priority === "proven")
     .sort(

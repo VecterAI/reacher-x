@@ -132,7 +132,9 @@ describe("prospect persistence reliability", () => {
     });
 
     expect(created).toMatchObject({ created: 1, updated: 0 });
+    expect(created.createdTwitterUserIds).toEqual(["provider-user-1"]);
     expect(repeated).toMatchObject({ created: 0, updated: 1 });
+    expect(repeated.createdTwitterUserIds).toEqual([]);
     expect(repeated.prospectIds).toEqual(created.prospectIds);
     const stored = await t.run((ctx) => ctx.db.query("prospects").collect());
     expect(stored).toHaveLength(1);

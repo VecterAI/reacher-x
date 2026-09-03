@@ -2417,6 +2417,17 @@ export const twitterProspectingSearchModeValidator = v.union(
   v.literal("raw")
 );
 
+export const twitterProspectingQueryPlanValidator = v.object({
+  query: v.string(),
+  searchMode: twitterProspectingSearchModeValidator,
+  sinceId: v.optional(v.string()),
+});
+
+export const twitterSearchCheckpointValidator = v.object({
+  query: v.string(),
+  postId: v.string(),
+});
+
 // User timeline mode (used in socialapi.ts)
 export const userTimelineModeValidator = v.union(
   v.literal("posts"),

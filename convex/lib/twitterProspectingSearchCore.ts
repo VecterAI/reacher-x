@@ -6,11 +6,15 @@ export type TwitterProspectingSearchMode =
 export type TwitterProspectingQueryPlan = {
   query: string;
   searchMode: TwitterProspectingSearchMode;
+  sinceId?: string;
 };
 
 export type TwitterQueryStat = {
   query: string;
   postsFound: number;
+  newProspectsFound?: number;
+  pagesFetched?: number;
+  newestPostId?: string;
   success: boolean;
   error?: string;
 };
@@ -21,8 +25,32 @@ export type UnsavedTwitterSearchResult<TPost extends { id_str: string }> = {
   matchedQueriesByPostId: Record<string, string[]>;
 };
 
+export function getTwitterProspectingPageLimit(args: {
+  processingMode?: "normal" | "preview";
+  configuredPagesPerQuery: number;
+}) {
+  // Setup preview only needs a small representative sample. Persisting several
+  // full pages per query can make the synchronous approval mutation exceed
+  // Convex's per-function read budget when it promotes the preview candidates.
+  return args.processingMode === "preview"
+    ? 1
+    : Math.max(1, Math.floor(args.configuredPagesPerQuery));
+}
+
+export function limitTwitterProspectingPostsForPersistence<T>(args: {
+  posts: T[];
+  processingMode?: "normal" | "preview";
+  previewLimit: number;
+}) {
+  return args.processingMode === "preview"
+    ? args.posts.slice(0, Math.max(0, Math.floor(args.previewLimit)))
+    : args.posts;
+}
+
 const EXACT_PHRASE_MIN_WORDS = 2;
 const EXACT_PHRASE_MAX_WORDS = 5;
+const TWITTER_SEARCH_BOUNDARY_OPERATOR =
+  /(^|\s)(?:since|until|since_time|until_time|since_id|max_id):/i;
 const TRAILING_CONNECTORS = new Set([
   "a",
   "an",
@@ -45,6 +73,15 @@ function normalizeQuery(query: string) {
   return query.replace(/\s+/g, " ").trim();
 }
 
+function normalizeTwitterPostId(value: string | undefined) {
+  const normalized = value?.trim();
+  return normalized && /^\d+$/.test(normalized) ? normalized : undefined;
+}
+
+function compareDecimalIds(left: string, right: string) {
+  return left.length - right.length || left.localeCompare(right);
+}
+
 function hasSearchOperatorSyntax(query: string) {
   return (
     /[()]/.test(query) ||
@@ -63,6 +100,96 @@ export function stripTwitterExactPhraseQuotes(query: string) {
     return normalized.slice(1, -1).trim();
   }
   return normalized;
+}
+
+export function buildTwitterProspectingProviderQuery(args: {
+  query: string;
+  searchMode: TwitterProspectingSearchMode;
+  sinceTimestampSeconds: number;
+  sinceId?: string;
+}) {
+  const normalized = normalizeQuery(args.query);
+  const query =
+    args.searchMode === "exact"
+      ? `"${stripTwitterExactPhraseQuotes(normalized)}"`
+      : normalized;
+
+  if (!query || TWITTER_SEARCH_BOUNDARY_OPERATOR.test(query)) {
+    return query;
+  }
+
+  const sinceId = normalizeTwitterPostId(args.sinceId);
+  if (sinceId) {
+    return `${query} since_id:${sinceId}`;
+  }
+
+  return `${query} since_time:${Math.max(0, Math.floor(args.sinceTimestampSeconds))}`;
+}
+
+export function getNewestTwitterPostId(
+  posts: Array<{ id_str: string }>
+): string | undefined {
+  let newest: string | undefined;
+
+  for (const post of posts) {
+    const postId = normalizeTwitterPostId(post.id_str);
+    if (!postId || (newest && compareDecimalIds(postId, newest) <= 0)) {
+      continue;
+    }
+    newest = postId;
+  }
+
+  return newest;
+}
+
+export function getNextTwitterSearchCursor(args: {
+  hasMore: boolean;
+  nextCursor?: string;
+  pagePostCount: number;
+  seenCursors: ReadonlySet<string>;
+}): string | undefined {
+  const nextCursor = args.nextCursor?.trim();
+  if (
+    !args.hasMore ||
+    !nextCursor ||
+    args.pagePostCount <= 0 ||
+    args.seenCursors.has(nextCursor)
+  ) {
+    return undefined;
+  }
+  return nextCursor;
+}
+
+export function attributeNewTwitterProspectsToQueries(args: {
+  createdTwitterUserIds: string[];
+  matches: Array<{ twitterUserId?: string; queries: string[] }>;
+}): Record<string, number> {
+  const createdUserIds = new Set(
+    args.createdTwitterUserIds.map((userId) => userId.trim()).filter(Boolean)
+  );
+  const usersByQuery = new Map<string, Set<string>>();
+
+  for (const match of args.matches) {
+    const twitterUserId = match.twitterUserId?.trim();
+    if (!twitterUserId || !createdUserIds.has(twitterUserId)) {
+      continue;
+    }
+
+    for (const rawQuery of match.queries) {
+      const query = normalizeQuery(rawQuery);
+      if (!query) continue;
+      const users = usersByQuery.get(query) ?? new Set<string>();
+      users.add(twitterUserId);
+      usersByQuery.set(query, users);
+    }
+  }
+
+  return Object.fromEntries(
+    Array.from(usersByQuery.entries()).map(([query, users]) => [
+      query,
+      users.size,
+    ])
+  );
 }
 
 export function resolveTwitterProspectingSearchMode(args: {

@@ -1,11 +1,156 @@
 import { describe, expect, test } from "vitest";
 import {
+  attributeNewTwitterProspectsToQueries,
+  buildTwitterProspectingProviderQuery,
+  getNewestTwitterPostId,
+  getNextTwitterSearchCursor,
+  getTwitterProspectingPageLimit,
+  limitTwitterProspectingPostsForPersistence,
   getTwitterExactFallbackQueries,
   mergeTwitterProspectingSearchResults,
   partitionTwitterProspectingQueries,
   resolveTwitterProspectingSearchMode,
   stripTwitterExactPhraseQuotes,
 } from "./twitterProspectingSearchCore";
+
+describe("Twitter prospecting page limits", () => {
+  test("keeps setup previews bounded while real workflows use configured pagination", () => {
+    expect(
+      getTwitterProspectingPageLimit({
+        processingMode: "preview",
+        configuredPagesPerQuery: 3,
+      })
+    ).toBe(1);
+    expect(
+      getTwitterProspectingPageLimit({
+        processingMode: "normal",
+        configuredPagesPerQuery: 3,
+      })
+    ).toBe(3);
+    expect(getTwitterProspectingPageLimit({ configuredPagesPerQuery: 0 })).toBe(
+      1
+    );
+  });
+
+  test("caps persisted preview posts without truncating real workflow results", () => {
+    const posts = Array.from({ length: 25 }, (_, index) => index);
+    expect(
+      limitTwitterProspectingPostsForPersistence({
+        posts,
+        processingMode: "preview",
+        previewLimit: 20,
+      })
+    ).toEqual(posts.slice(0, 20));
+    expect(
+      limitTwitterProspectingPostsForPersistence({
+        posts,
+        processingMode: "normal",
+        previewLimit: 20,
+      })
+    ).toBe(posts);
+  });
+});
+
+describe("Twitter prospecting provider queries", () => {
+  test("applies a freshness boundary to raw and exact searches", () => {
+    expect(
+      buildTwitterProspectingProviderQuery({
+        query: "screen recorder mac",
+        searchMode: "raw",
+        sinceTimestampSeconds: 1_700_000_000,
+      })
+    ).toBe("screen recorder mac since_time:1700000000");
+    expect(
+      buildTwitterProspectingProviderQuery({
+        query: "looking for screen recorder",
+        searchMode: "exact",
+        sinceTimestampSeconds: 1_700_000_000,
+      })
+    ).toBe('"looking for screen recorder" since_time:1700000000');
+  });
+
+  test("uses a valid checkpoint on later searches", () => {
+    expect(
+      buildTwitterProspectingProviderQuery({
+        query: "screen recorder mac",
+        searchMode: "raw",
+        sinceTimestampSeconds: 1_700_000_000,
+        sinceId: " 1900000000000000001 ",
+      })
+    ).toBe("screen recorder mac since_id:1900000000000000001");
+  });
+
+  test("preserves explicit provider boundaries and ignores malformed checkpoints", () => {
+    expect(
+      buildTwitterProspectingProviderQuery({
+        query: "screen recorder since_time:1600000000",
+        searchMode: "raw",
+        sinceTimestampSeconds: 1_700_000_000,
+        sinceId: "not-a-post-id",
+      })
+    ).toBe("screen recorder since_time:1600000000");
+    expect(
+      buildTwitterProspectingProviderQuery({
+        query: "screen recorder",
+        searchMode: "raw",
+        sinceTimestampSeconds: 1_700_000_000.9,
+        sinceId: "not-a-post-id",
+      })
+    ).toBe("screen recorder since_time:1700000000");
+  });
+
+  test("selects the newest numeric post id without unsafe number conversion", () => {
+    expect(
+      getNewestTwitterPostId([
+        { id_str: "999999999999999999" },
+        { id_str: "1900000000000000001" },
+        { id_str: "1900000000000000000" },
+        { id_str: "invalid" },
+      ])
+    ).toBe("1900000000000000001");
+  });
+
+  test("continues only when SocialAPI returns a new cursor with posts", () => {
+    expect(
+      getNextTwitterSearchCursor({
+        hasMore: true,
+        nextCursor: " next-page ",
+        pagePostCount: 20,
+        seenCursors: new Set(),
+      })
+    ).toBe("next-page");
+    expect(
+      getNextTwitterSearchCursor({
+        hasMore: true,
+        nextCursor: "repeated",
+        pagePostCount: 20,
+        seenCursors: new Set(["repeated"]),
+      })
+    ).toBeUndefined();
+    expect(
+      getNextTwitterSearchCursor({
+        hasMore: true,
+        nextCursor: "empty-page",
+        pagePostCount: 0,
+        seenCursors: new Set(),
+      })
+    ).toBeUndefined();
+  });
+
+  test("attributes each newly-created person once per matching query", () => {
+    expect(
+      attributeNewTwitterProspectsToQueries({
+        createdTwitterUserIds: ["user-1", "user-2"],
+        matches: [
+          { twitterUserId: "user-1", queries: ["query a", "query b"] },
+          { twitterUserId: "user-1", queries: ["query a"] },
+          { twitterUserId: "user-2", queries: ["query a"] },
+          { twitterUserId: "existing-user", queries: ["query a"] },
+        ],
+      })
+    ).toEqual({ "query a": 2, "query b": 1 });
+  });
+});
 
 describe("twitter prospecting search mode", () => {
   test("keeps a short coherent LLM-selected phrase exact", () => {

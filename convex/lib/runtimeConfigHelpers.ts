@@ -274,9 +274,23 @@ export function getSystemRuntimeConfig(
         }),
         twitterSearchBatch: readClampedNumber({
           value: source.PROSPECTING_TWITTER_SEARCH_BATCH,
-          fallback: 5,
+          fallback: 9,
           min: 1,
           max: 50,
+          integer: true,
+        }),
+        twitterSearchPagesPerQuery: readClampedNumber({
+          value: source.PROSPECTING_TWITTER_SEARCH_PAGES_PER_QUERY,
+          fallback: 3,
+          min: 1,
+          max: 3,
+          integer: true,
+        }),
+        twitterSearchLookbackDays: readClampedNumber({
+          value: source.PROSPECTING_TWITTER_SEARCH_LOOKBACK_DAYS,
+          fallback: 90,
+          min: 1,
+          max: 365,
           integer: true,
         }),
         linkedinPostSearchBatch: readClampedNumber({

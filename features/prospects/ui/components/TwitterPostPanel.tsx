@@ -44,7 +44,7 @@ export function TwitterPostPanel({
         className
       )}
     >
-      <PageLayout className="flex h-full flex-col md:w-full md:border-r-0 md:border-l">
+      <PageLayout className="flex h-full flex-col md:w-full md:border-r-0">
         <PageHeader title="Post" onBack={onBack ?? popPanel} />
         <ScrollArea
           className="min-h-0 flex-1 overscroll-contain"
