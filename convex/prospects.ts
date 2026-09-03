@@ -68,6 +68,7 @@ import {
   getQualificationFailureRetryDelayMs,
 } from "./lib/qualificationFailureCore";
 import { PROSPECT_WRITE_TRANSACTION_BATCH_SIZE } from "./lib/prospectPersistenceHelpers";
+import { PREVIEW_BATCH_LIMITS } from "./lib/previewBatchLimits";
 import {
   buildProspectAnalyticsBackfillPatch,
   buildProspectAnalyticsTransitionPatch,
@@ -1073,6 +1074,7 @@ export const createProspectsBatch = internalMutation({
     created: v.number(),
     updated: v.number(),
     prospectIds: v.array(v.id("prospects")),
+    createdTwitterUserIds: v.array(v.string()),
   }),
   handler: async (ctx, args) => {
     // Project logging policy requires console.log for canonical success-path events.
@@ -1093,6 +1095,7 @@ export const createProspectsBatch = internalMutation({
     let updated = 0;
     let shouldReconcileWorkspaceCapacity = false;
     const prospectIds: Id<"prospects">[] = [];
+    const createdTwitterUserIds: string[] = [];
     const workspace = await ctx.db.get("workspaces", args.workspaceId);
     let isValidatedSetupPreviewBatch = false;
 
@@ -1406,6 +1409,9 @@ export const createProspectsBatch = internalMutation({
           updatedAt: now,
         });
         created++;
+        if (p.platform === "twitter" && twitterActor.twitterUserId) {
+          createdTwitterUserIds.push(twitterActor.twitterUserId);
+        }
         if (
           initialQualificationStatus === "qualified" &&
           (await isActiveSetupPreviewProspect(ctx, {
@@ -1479,7 +1485,7 @@ export const createProspectsBatch = internalMutation({
 
     // Qualification workflows are started immediately for each new prospect
 
-    return { created, updated, prospectIds };
+    return { created, updated, prospectIds, createdTwitterUserIds };
   },
 });
 
@@ -3081,25 +3087,30 @@ export const deletePreviewProspectsForSessionRevisionInternal =
       sessionId: v.id("workspaceSetupSessions"),
       previewRevision: v.optional(v.number()),
       deleteOlderRevisions: v.optional(v.boolean()),
+      cursor: v.optional(v.union(v.string(), v.null())),
     },
     handler: async (ctx, args) => {
-      const prospects =
-        args.previewRevision === undefined
-          ? await ctx.db
+      const query =
+        args.previewRevision !== undefined && !args.deleteOlderRevisions
+          ? ctx.db
+              .query("prospects")
+              .withIndex("by_setup_session_revision", (q) =>
+                q
+                  .eq("setupSessionId", args.sessionId)
+                  .eq("setupRevision", args.previewRevision)
+              )
+          : ctx.db
               .query("prospects")
               .withIndex("by_setup_session", (q) =>
                 q.eq("setupSessionId", args.sessionId)
-              )
-              .collect()
-          : await ctx.db
-              .query("prospects")
-              .withIndex("by_setup_session", (q) =>
-                q.eq("setupSessionId", args.sessionId)
-              )
-              .collect();
+              );
+      const page = await query.paginate({
+        cursor: args.cursor ?? null,
+        numItems: PREVIEW_BATCH_LIMITS.cleanupMutationBatchSize,
+      });
 
       let deleted = 0;
-      for (const prospect of prospects) {
+      for (const prospect of page.page) {
         if (prospect.origin !== "setup_preview") {
           continue;
         }
@@ -3131,7 +3142,20 @@ export const deletePreviewProspectsForSessionRevisionInternal =
         }
       }
 
-      return { deleted };
+      if (!page.isDone) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.prospects.deletePreviewProspectsForSessionRevisionInternal,
+          {
+            sessionId: args.sessionId,
+            previewRevision: args.previewRevision,
+            deleteOlderRevisions: args.deleteOlderRevisions,
+            cursor: page.continueCursor,
+          }
+        );
+      }
+
+      return { deleted, done: page.isDone };
     },
   });
 

@@ -3,7 +3,7 @@
 import { convexTest } from "convex-test";
 import agentTest from "@convex-dev/agent/test";
 import type { WorkflowId } from "@convex-dev/workflow";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { api, components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
@@ -132,6 +132,60 @@ async function seedSetupSession(
 }
 
 describe("setup session and workspace lifecycle", () => {
+  test("deletes large preview sets through bounded scheduled batches", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = convexTest(schema, modules);
+      const { userId } = await seedUser(t, "bounded-preview-cleanup");
+      const workspaceId = await seedProvisionalWorkspace(t, {
+        userId,
+        entitlementSlot: 2,
+      });
+      const sessionId = await seedSetupSession(t, {
+        userId,
+        targetWorkspaceId: workspaceId,
+        suffix: "bounded-preview-cleanup",
+      });
+
+      await t.run(async (ctx) => {
+        for (let index = 0; index < 9; index += 1) {
+          await ctx.db.insert("prospects", {
+            userId,
+            workspaceId,
+            platform: "twitter",
+            externalId: `preview-post-${index}`,
+            data: { payload: "x".repeat(10_000) },
+            status: "new",
+            qualificationStatus: "pending",
+            origin: "setup_preview",
+            setupSessionId: sessionId,
+            setupRevision: 1,
+            updatedAt: index + 1,
+          });
+        }
+      });
+
+      const firstBatch = await t.mutation(
+        internal.prospects.deletePreviewProspectsForSessionRevisionInternal,
+        { sessionId }
+      );
+      expect(firstBatch).toEqual({ deleted: 4, done: false });
+
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      const remaining = await t.run((ctx) =>
+        ctx.db
+          .query("prospects")
+          .withIndex("by_setup_session", (q) =>
+            q.eq("setupSessionId", sessionId)
+          )
+          .collect()
+      );
+      expect(remaining).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("recovers a stale setup workflow and exposes a bounded retry failure", async () => {
     const t = convexTest(schema, modules);
     await registerWorkflowComponent(t);

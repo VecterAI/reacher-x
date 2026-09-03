@@ -138,6 +138,7 @@ async function getPrioritizedSocialQueries(
     id: Id<"keywords">;
     value: string;
     lastSearchedAt?: number;
+    lastSeenPostId?: string;
     priority: QueryPriority;
     searchMode?: TwitterProspectingSearchMode;
   }>
@@ -166,6 +167,12 @@ async function getPrioritizedSocialQueries(
         query: keyword.originalValue ?? keyword.value,
         requestedMode: keyword.twitterSearchMode,
       }),
+    ])
+  );
+  const twitterLastSeenPostIdByQueryId = new Map(
+    keywords.map((keyword) => [
+      String(keyword._id),
+      keyword.twitterLastSeenPostId,
     ])
   );
   const candidates = keywords
@@ -204,10 +211,15 @@ async function getPrioritizedSocialQueries(
     candidates,
     limit: args.limit,
     now: getCurrentUTCTimestamp(),
+    retireAfterUnqualifiedSearches: args.platform === "twitter" ? 3 : undefined,
   }).map((candidate) => ({
     id: candidate.id,
     value: candidate.value,
     lastSearchedAt: candidate.lastSearchedAt,
+    lastSeenPostId:
+      args.platform === "twitter"
+        ? twitterLastSeenPostIdByQueryId.get(String(candidate.id))
+        : undefined,
     priority: candidate.priority,
     searchMode:
       args.platform === "twitter"
@@ -503,6 +515,9 @@ export const markQueriesAsSearched = internalMutation({
         v.object({
           query: v.string(),
           postsFound: v.number(),
+          newProspectsFound: v.optional(v.number()),
+          pagesFetched: v.optional(v.number()),
+          newestPostId: v.optional(v.string()),
           success: v.boolean(),
           error: v.optional(v.string()),
         })
@@ -540,6 +555,8 @@ export const markQueriesAsSearched = internalMutation({
               perQueryStats?.postsFound ??
               args.resultsCount ??
               keyword.twitterResultsCount,
+            twitterLastSeenPostId:
+              perQueryStats?.newestPostId ?? keyword.twitterLastSeenPostId,
             lastUsedAt: now,
           });
         } else {
@@ -566,6 +583,7 @@ export const markQueriesAsSearched = internalMutation({
           activatedQueryCandidateId: keyword.activatedQueryCandidateId,
           impressionsDelta: 1,
           prospectsFoundDelta:
+            perQueryStats?.newProspectsFound ??
             perQueryStats?.postsFound ??
             (args.queryIds.length === 1 ? (args.resultsCount ?? 0) : 0),
           lastUsedAt: now,
@@ -585,6 +603,10 @@ export const markQueriesAsSearched = internalMutation({
                 : undefined),
             searchSuccess: perQueryStats?.success,
             searchError: perQueryStats?.error,
+            rawPostsFound: perQueryStats?.postsFound,
+            newProspectsFound: perQueryStats?.newProspectsFound,
+            pagesFetched: perQueryStats?.pagesFetched,
+            newestPostId: perQueryStats?.newestPostId,
           },
           occurredAt: now,
         });

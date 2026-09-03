@@ -226,4 +226,73 @@ describe("Twitter prospecting search mode", () => {
     expect(modes.get("need an integrated screen recorder for")).toBe("raw");
     expect(modes.get("screen recording workflow")).toBe("raw");
   });
+
+  test("checkpoints newest posts and learns from new people instead of raw tweets", async () => {
+    const t = convexTest(schema, modules);
+    const { workspaceId } = await seedWorkspace(t);
+
+    await t.mutation(internal.keywords.saveKeywordsBatch, {
+      workspaceId,
+      keywords: [
+        {
+          type: "social_query",
+          value: "looking for screen recorder",
+          source: "agent",
+          platformTargets: ["twitter"],
+          queryStyle: "natural_phrase",
+          twitterSearchMode: "exact",
+        },
+      ],
+    });
+    const [query] = await t.query(
+      internal.keywords.getPrioritizedTwitterQueries,
+      { workspaceId, limit: 9 }
+    );
+
+    await t.mutation(internal.keywords.markQueriesAsSearched, {
+      queryIds: [query.id],
+      platform: "twitter",
+      queryStats: [
+        {
+          query: query.value,
+          postsFound: 57,
+          newProspectsFound: 4,
+          pagesFetched: 3,
+          newestPostId: "1900000000000000001",
+          success: true,
+        },
+      ],
+    });
+
+    const [nextQuery] = await t.query(
+      internal.keywords.getPrioritizedTwitterQueries,
+      { workspaceId, limit: 9 }
+    );
+    const state = await t.run(async (ctx) => ({
+      keyword: await ctx.db.get("keywords", query.id),
+      performance: await ctx.db
+        .query("queryPerformance")
+        .withIndex("by_workspace_query_id", (q) =>
+          q.eq("workspaceId", workspaceId).eq("queryId", query.id)
+        )
+        .unique(),
+      event: await ctx.db
+        .query("memoryWorkflowEvents")
+        .withIndex("by_workspace_query_occurred_at", (q) =>
+          q.eq("workspaceId", workspaceId).eq("queryId", query.id)
+        )
+        .order("desc")
+        .first(),
+    }));
+
+    expect(nextQuery.lastSeenPostId).toBe("1900000000000000001");
+    expect(state.keyword?.twitterResultsCount).toBe(57);
+    expect(state.performance?.prospectsFound).toBe(4);
+    expect(state.event?.payload).toMatchObject({
+      rawPostsFound: 57,
+      newProspectsFound: 4,
+      pagesFetched: 3,
+      newestPostId: "1900000000000000001",
+    });
+  });
 });

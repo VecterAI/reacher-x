@@ -1,10 +1,12 @@
 "use node";
 
-import { action } from "../../lib/functionBuilders";
+import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { fetchSocialApi } from "../../lib/socialApiFetch";
 import type { TwitterUser } from "./searchPosts";
+import type { Id } from "../../_generated/dataModel";
+import type { ActionCtx } from "../../_generated/server";
 
 interface SimilarProfilesApiResponse {
   users?: TwitterUser[];
@@ -78,137 +80,154 @@ function normalizeTwitterUsers(users: TwitterUser[]): TwitterUser[] {
   return normalized;
 }
 
-export const getSimilarProfiles = action({
+async function getSimilarProfilesForContext(
+  ctx: ActionCtx,
   args: {
-    userId: v.string(),
-    cursor: v.optional(v.string()),
-  },
-  handler: async (ctx, args): Promise<SimilarProfilesResult> => {
-    const startTime = getCurrentUTCTimestamp();
-    const apiKey = getApiKey();
-    const userId = args.userId.trim();
+    userId: string;
+    cursor?: string;
+    workspaceId?: Id<"workspaces">;
+  }
+): Promise<SimilarProfilesResult> {
+  const startTime = getCurrentUTCTimestamp();
+  const apiKey = getApiKey();
+  const userId = args.userId.trim();
 
-    if (!apiKey) {
-      return {
-        success: false,
-        users: [],
-        error: "SOCIALAPI_API_KEY environment variable not set",
-        stats: {
-          userId,
-          usersFound: 0,
-          durationMs: getCurrentUTCTimestamp() - startTime,
-        },
-      };
-    }
-
-    if (!userId) {
-      return {
-        success: false,
-        users: [],
-        error: "Twitter user ID is required",
-        stats: {
-          userId,
-          usersFound: 0,
-          durationMs: getCurrentUTCTimestamp() - startTime,
-        },
-      };
-    }
-
-    for (
-      let attempt = 0;
-      attempt < SIMILAR_PROFILES_MAX_ATTEMPTS;
-      attempt += 1
-    ) {
-      const params = new URLSearchParams();
-      if (args.cursor) {
-        params.set("cursor", args.cursor);
-      }
-      const queryString = params.toString();
-      const url = `https://api.socialapi.me/twitter/user/${encodeURIComponent(
-        userId
-      )}/similar${queryString ? `?${queryString}` : ""}`;
-
-      try {
-        const response = await fetchSocialApi(
-          ctx,
-          "twitter.similarProfiles",
-          url,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!response.ok) {
-          const error = formatSocialApiError(
-            response.status,
-            await response.text()
-          );
-          if (
-            !isRetryableStatus(response.status) ||
-            attempt === SIMILAR_PROFILES_MAX_ATTEMPTS - 1
-          ) {
-            return {
-              success: false,
-              users: [],
-              error,
-              stats: {
-                userId,
-                usersFound: 0,
-                durationMs: getCurrentUTCTimestamp() - startTime,
-              },
-            };
-          }
-
-          await delay(getRetryDelayMs(attempt));
-          continue;
-        }
-
-        const data = (await response.json()) as SimilarProfilesApiResponse;
-        const users = normalizeTwitterUsers(data.users ?? []);
-        return {
-          success: true,
-          users,
-          nextCursor: data.next_cursor,
-          stats: {
-            userId,
-            usersFound: users.length,
-            durationMs: getCurrentUTCTimestamp() - startTime,
-          },
-        };
-      } catch (error) {
-        if (attempt < SIMILAR_PROFILES_MAX_ATTEMPTS - 1) {
-          await delay(getRetryDelayMs(attempt));
-          continue;
-        }
-
-        const message =
-          error instanceof Error ? error.message : "Unknown network error";
-        return {
-          success: false,
-          users: [],
-          error: `SocialAPI similar profiles failed: ${message}`,
-          stats: {
-            userId,
-            usersFound: 0,
-            durationMs: getCurrentUTCTimestamp() - startTime,
-          },
-        };
-      }
-    }
-
+  if (!apiKey) {
     return {
       success: false,
       users: [],
-      error: "SocialAPI similar profiles failed after all retry attempts",
+      error: "SOCIALAPI_API_KEY environment variable not set",
       stats: {
         userId,
         usersFound: 0,
         durationMs: getCurrentUTCTimestamp() - startTime,
       },
     };
+  }
+
+  if (!userId) {
+    return {
+      success: false,
+      users: [],
+      error: "Twitter user ID is required",
+      stats: {
+        userId,
+        usersFound: 0,
+        durationMs: getCurrentUTCTimestamp() - startTime,
+      },
+    };
+  }
+
+  for (let attempt = 0; attempt < SIMILAR_PROFILES_MAX_ATTEMPTS; attempt += 1) {
+    const params = new URLSearchParams();
+    if (args.cursor) {
+      params.set("cursor", args.cursor);
+    }
+    const queryString = params.toString();
+    const url = `https://api.socialapi.me/twitter/user/${encodeURIComponent(
+      userId
+    )}/similar${queryString ? `?${queryString}` : ""}`;
+
+    try {
+      const response = await fetchSocialApi(
+        ctx,
+        "twitter.similarProfiles",
+        url,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/json",
+          },
+        },
+        args.workspaceId ? { workspaceId: args.workspaceId } : undefined
+      );
+
+      if (!response.ok) {
+        const error = formatSocialApiError(
+          response.status,
+          await response.text()
+        );
+        if (
+          !isRetryableStatus(response.status) ||
+          attempt === SIMILAR_PROFILES_MAX_ATTEMPTS - 1
+        ) {
+          return {
+            success: false,
+            users: [],
+            error,
+            stats: {
+              userId,
+              usersFound: 0,
+              durationMs: getCurrentUTCTimestamp() - startTime,
+            },
+          };
+        }
+
+        await delay(getRetryDelayMs(attempt));
+        continue;
+      }
+
+      const data = (await response.json()) as SimilarProfilesApiResponse;
+      const users = normalizeTwitterUsers(data.users ?? []);
+      return {
+        success: true,
+        users,
+        nextCursor: data.next_cursor,
+        stats: {
+          userId,
+          usersFound: users.length,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+      };
+    } catch (error) {
+      if (attempt < SIMILAR_PROFILES_MAX_ATTEMPTS - 1) {
+        await delay(getRetryDelayMs(attempt));
+        continue;
+      }
+
+      const message =
+        error instanceof Error ? error.message : "Unknown network error";
+      return {
+        success: false,
+        users: [],
+        error: `SocialAPI similar profiles failed: ${message}`,
+        stats: {
+          userId,
+          usersFound: 0,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+      };
+    }
+  }
+
+  return {
+    success: false,
+    users: [],
+    error: "SocialAPI similar profiles failed after all retry attempts",
+    stats: {
+      userId,
+      usersFound: 0,
+      durationMs: getCurrentUTCTimestamp() - startTime,
+    },
+  };
+}
+
+export const getSimilarProfiles = action({
+  args: {
+    userId: v.string(),
+    cursor: v.optional(v.string()),
   },
+  handler: async (ctx, args): Promise<SimilarProfilesResult> =>
+    await getSimilarProfilesForContext(ctx, args),
+});
+
+export const getSimilarProfilesForWorkspace = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.string(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<SimilarProfilesResult> =>
+    await getSimilarProfilesForContext(ctx, args),
 });

@@ -38,6 +38,8 @@ const app = defineApp({
     PROSPECTING_SEED_KEYWORDS_PER_CYCLE: v.optional(v.string()),
     PROSPECTING_SOCIAL_QUERIES_PER_CYCLE: v.optional(v.string()),
     PROSPECTING_TWITTER_SEARCH_BATCH: v.optional(v.string()),
+    PROSPECTING_TWITTER_SEARCH_PAGES_PER_QUERY: v.optional(v.string()),
+    PROSPECTING_TWITTER_SEARCH_LOOKBACK_DAYS: v.optional(v.string()),
     PROSPECTING_LINKEDIN_POST_SEARCH_BATCH: v.optional(v.string()),
     PROSPECTING_LINKEDIN_PEOPLE_SEARCH_BATCH: v.optional(v.string()),
     PROSPECTING_RECOVERY_BASE_DELAY_MINUTES: v.optional(v.string()),

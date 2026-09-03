@@ -11,13 +11,25 @@ import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import type { RunId } from "@convex-dev/action-retrier";
 import { fetchSocialApi } from "../../lib/socialApiFetch";
-import { twitterSearchTypeValidator } from "../../validators";
+import {
+  twitterProspectingQueryPlanValidator,
+  twitterSearchTypeValidator,
+} from "../../validators";
 import {
   compactTwitterSearchPost,
   compactTwitterSearchResults,
   normalizeTwitterSearchCursor,
   type TwitterPost,
 } from "../../lib/twitterSearchResultCore";
+import {
+  buildTwitterProspectingProviderQuery,
+  getNextTwitterSearchCursor,
+  getNewestTwitterPostId,
+  type TwitterProspectingQueryPlan,
+  type TwitterQueryStat,
+} from "../../lib/twitterProspectingSearchCore";
+import type { Id } from "../../_generated/dataModel";
+import type { ActionCtx } from "../../_generated/server";
 export type {
   TwitterPost,
   TwitterUser,
@@ -76,6 +88,10 @@ export interface BatchSearchResult {
     uniquePosts: number;
     durationMs: number;
   };
+}
+
+export interface ProspectingBatchSearchResult extends BatchSearchResult {
+  exactFallbackQueries: string[];
 }
 
 /** Internal search result from fetch action */
@@ -183,6 +199,7 @@ export const searchInternal = internalAction({
     query: v.string(),
     type: v.optional(twitterSearchTypeValidator),
     cursor: v.optional(v.string()),
+    workspaceId: v.optional(v.id("workspaces")),
   },
   handler: async (ctx, args): Promise<InternalSearchResult> => {
     const apiKey = getApiKey();
@@ -216,7 +233,8 @@ export const searchInternal = internalAction({
           Authorization: `Bearer ${apiKey}`,
           Accept: "application/json",
         },
-      }
+      },
+      args.workspaceId ? { workspaceId: args.workspaceId } : undefined
     );
 
     if (!response.ok) {
@@ -977,6 +995,276 @@ export const searchRawBatch = action({
         queriesFailed: errors.length,
         totalPostsFound,
         uniquePosts: uniquePosts.length,
+        durationMs: getCurrentUTCTimestamp() - startTime,
+      },
+    };
+  },
+});
+
+type ProspectingQueryPageResult = {
+  success: boolean;
+  posts: TwitterPost[];
+  pagesFetched: number;
+  error?: string;
+};
+
+async function runProspectingSearchPage(
+  ctx: ActionCtx,
+  args: {
+    workspaceId: Id<"workspaces">;
+    query: string;
+    type: "Latest" | "Top";
+    cursor?: string;
+  }
+): Promise<InternalSearchResult> {
+  const runId = await runRetriedAction(
+    ctx,
+    internal.integrations.twitter.searchPosts.searchInternal,
+    args
+  );
+
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const status = await getRetriedActionStatus(ctx, runId);
+    if (status.type === "inProgress") {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      continue;
+    }
+
+    if (status.type === "completed") {
+      if (status.result.type === "success") {
+        return status.result.returnValue as InternalSearchResult;
+      }
+      if (status.result.type === "failed") {
+        return {
+          success: false,
+          posts: [],
+          hasMore: false,
+          error: status.result.error,
+        };
+      }
+      return {
+        success: false,
+        posts: [],
+        hasMore: false,
+        error: "Request was canceled",
+      };
+    }
+  }
+
+  return {
+    success: false,
+    posts: [],
+    hasMore: false,
+    error: "Timeout waiting for result",
+  };
+}
+
+async function collectProspectingQueryPages(
+  ctx: ActionCtx,
+  args: {
+    workspaceId: Id<"workspaces">;
+    query: string;
+    type: "Latest" | "Top";
+    maxPages: number;
+  }
+): Promise<ProspectingQueryPageResult> {
+  const postsById = new Map<string, TwitterPost>();
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  let pagesFetched = 0;
+  let error: string | undefined;
+
+  for (let page = 0; page < args.maxPages; page += 1) {
+    const result = await runProspectingSearchPage(ctx, {
+      workspaceId: args.workspaceId,
+      query: args.query,
+      type: args.type,
+      cursor,
+    });
+
+    if (!result.success) {
+      error = result.error ?? "Unknown SocialAPI search error";
+      break;
+    }
+
+    pagesFetched += 1;
+    for (const post of result.posts) {
+      postsById.set(post.id_str, post);
+    }
+
+    const nextCursor = getNextTwitterSearchCursor({
+      hasMore: result.hasMore,
+      nextCursor: result.nextCursor,
+      pagePostCount: result.posts.length,
+      seenCursors,
+    });
+    if (!nextCursor) {
+      break;
+    }
+
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+
+  return {
+    success: pagesFetched > 0,
+    posts: Array.from(postsById.values()),
+    pagesFetched,
+    error,
+  };
+}
+
+/**
+ * Durable-workflow search path. It applies freshness/checkpoint constraints,
+ * follows a bounded number of SocialAPI cursors, and attributes every request
+ * to the originating workspace.
+ */
+export const searchProspectingBatch = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    queries: v.array(twitterProspectingQueryPlanValidator),
+    type: v.optional(twitterSearchTypeValidator),
+    maxQueriesPerBatch: v.optional(v.number()),
+    maxPagesPerQuery: v.optional(v.number()),
+    sinceTimestampSeconds: v.number(),
+  },
+  handler: async (ctx, args): Promise<ProspectingBatchSearchResult> => {
+    const startTime = getCurrentUTCTimestamp();
+    const maxQueries = Math.max(
+      1,
+      Math.min(10, Math.floor(args.maxQueriesPerBatch ?? 10))
+    );
+    const maxPages = Math.max(
+      1,
+      Math.min(3, Math.floor(args.maxPagesPerQuery ?? 3))
+    );
+    const plansByQuery = new Map<string, TwitterProspectingQueryPlan>();
+    for (const plan of args.queries) {
+      const query = plan.query.trim();
+      if (!query || plansByQuery.has(query.toLowerCase())) continue;
+      plansByQuery.set(query.toLowerCase(), { ...plan, query });
+      if (plansByQuery.size >= maxQueries) break;
+    }
+    const plans = Array.from(plansByQuery.values());
+
+    if (plans.length === 0) {
+      return {
+        success: false,
+        posts: [],
+        matchedQueriesByPostId: {},
+        errors: [{ query: "*", error: "No valid queries provided" }],
+        queryStats: [],
+        exactFallbackQueries: [],
+        stats: {
+          queriesExecuted: 0,
+          queriesSucceeded: 0,
+          queriesFailed: 0,
+          totalPostsFound: 0,
+          uniquePosts: 0,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+      };
+    }
+
+    const results = await Promise.all(
+      plans.map(async (plan) => {
+        const run = async (searchMode: "exact" | "raw") =>
+          await collectProspectingQueryPages(ctx, {
+            workspaceId: args.workspaceId,
+            query: buildTwitterProspectingProviderQuery({
+              query: plan.query,
+              searchMode,
+              sinceTimestampSeconds: args.sinceTimestampSeconds,
+              sinceId: plan.sinceId,
+            }),
+            type: args.type ?? "Latest",
+            maxPages,
+          });
+
+        try {
+          const initial = await run(plan.searchMode);
+          const shouldFallback =
+            plan.searchMode === "exact" &&
+            initial.success &&
+            initial.posts.length === 0;
+          const fallback = shouldFallback ? await run("raw") : undefined;
+          const posts = deduplicatePosts([
+            ...initial.posts,
+            ...(fallback?.posts ?? []),
+          ]);
+          const success = fallback?.success ?? initial.success;
+          const error = fallback?.error ?? initial.error;
+          return {
+            plan,
+            posts,
+            success,
+            error,
+            pagesFetched: initial.pagesFetched + (fallback?.pagesFetched ?? 0),
+            exactFallback: shouldFallback,
+          };
+        } catch (error) {
+          return {
+            plan,
+            posts: [] as TwitterPost[],
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+            pagesFetched: 0,
+            exactFallback: false,
+          };
+        }
+      })
+    );
+
+    const postsById = new Map<string, TwitterPost>();
+    const matchedQueriesByPostId = new Map<string, Set<string>>();
+    const errors: Array<{ query: string; error: string }> = [];
+    const queryStats: TwitterQueryStat[] = [];
+
+    for (const result of results) {
+      if (result.error) {
+        errors.push({ query: result.plan.query, error: result.error });
+      }
+      queryStats.push({
+        query: result.plan.query,
+        postsFound: result.posts.length,
+        pagesFetched: result.pagesFetched,
+        newestPostId: getNewestTwitterPostId(result.posts),
+        success: result.success,
+        error: result.error,
+      });
+      for (const post of result.posts) {
+        postsById.set(post.id_str, post);
+        const queries =
+          matchedQueriesByPostId.get(post.id_str) ?? new Set<string>();
+        queries.add(result.plan.query);
+        matchedQueriesByPostId.set(post.id_str, queries);
+      }
+    }
+
+    const posts = Array.from(postsById.values());
+    const successfulResults = results.filter((result) => result.success);
+    return {
+      success: successfulResults.length > 0,
+      posts,
+      matchedQueriesByPostId: Object.fromEntries(
+        Array.from(matchedQueriesByPostId.entries()).map(
+          ([postId, queries]) => [postId, Array.from(queries)]
+        )
+      ),
+      errors,
+      queryStats,
+      exactFallbackQueries: results
+        .filter((result) => result.exactFallback)
+        .map((result) => result.plan.query),
+      stats: {
+        queriesExecuted: plans.length,
+        queriesSucceeded: successfulResults.length,
+        queriesFailed: results.length - successfulResults.length,
+        totalPostsFound: results.reduce(
+          (total, result) => total + result.posts.length,
+          0
+        ),
+        uniquePosts: posts.length,
         durationMs: getCurrentUTCTimestamp() - startTime,
       },
     };

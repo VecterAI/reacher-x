@@ -55,7 +55,7 @@ export const BATCH_LIMITS = {
   /** Number of social queries to generate per cycle */
   socialQueriesPerCycle: 15,
   /** Number of queries to search on Twitter per cycle */
-  twitterSearchBatch: 5,
+  twitterSearchBatch: 9,
   /** Number of LinkedIn post queries to search per cycle */
   linkedinPostSearchBatch: 5,
   /** Number of LinkedIn people queries to search per cycle */

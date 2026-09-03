@@ -77,6 +77,8 @@ type Env = {
   readonly PROSPECTING_SEED_KEYWORDS_PER_CYCLE: string | undefined;
   readonly PROSPECTING_SOCIAL_QUERIES_PER_CYCLE: string | undefined;
   readonly PROSPECTING_TWITTER_SEARCH_BATCH: string | undefined;
+  readonly PROSPECTING_TWITTER_SEARCH_LOOKBACK_DAYS: string | undefined;
+  readonly PROSPECTING_TWITTER_SEARCH_PAGES_PER_QUERY: string | undefined;
   readonly PROVIDER_CIRCUIT_PROBE_INTERVAL_SECONDS: string | undefined;
   readonly PROVIDER_CIRCUIT_PROBE_LEASE_SECONDS: string | undefined;
   readonly PROVIDER_RATE_LIMIT_RETRY_SECONDS: string | undefined;

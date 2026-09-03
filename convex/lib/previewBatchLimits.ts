@@ -20,6 +20,7 @@ export const PREVIEW_BATCH_LIMITS = {
   socialQueriesPerCycle: 15,
   twitterSearchBatch: 10,
   twitterGraphSeedSearchBatch: 5,
+  twitterProspectsToPersist: 20,
   maxCyclesPerPreviewRun: 3,
   interCycleDelayMs: 1500,
   // Keep searching shortly after the UI moves into the "check back later" state.
@@ -29,4 +30,8 @@ export const PREVIEW_BATCH_LIMITS = {
   similarProfilesPerSeed: 8,
   similarProfileEvidenceProfiles: 6,
   similarProfileEvidencePostsPerProfile: 4,
+  // Prospect payloads can contain large provider responses. Keep cleanup
+  // mutations well below Convex's per-function read budget and continue them
+  // through the scheduler.
+  cleanupMutationBatchSize: 4,
 } as const;

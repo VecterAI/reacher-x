@@ -647,6 +647,8 @@ export default defineSchema({
     // Twitter search tracking
     lastSearchedTwitterAt: v.optional(v.number()),
     twitterResultsCount: v.optional(v.number()),
+    // Newest post observed for incremental SocialAPI searches.
+    twitterLastSeenPostId: v.optional(v.string()),
     // LinkedIn search tracking
     lastSearchedLinkedInAt: v.optional(v.number()),
     linkedinResultsCount: v.optional(v.number()),
