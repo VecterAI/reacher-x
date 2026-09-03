@@ -178,7 +178,7 @@ test("XChat unlocks as soon as a complete PIN is entered", () => {
   assert.match(gate, /<XChatPinRecoveryActions/);
   assert.match(agentCard, /<XChatRememberPinOption/);
   assert.match(agentCard, /<XChatPinRecoveryActions/);
-  assert.match(pinPreferences, /Remember this device/);
+  assert.match(pinPreferences, /Remember until I log out/);
   assert.match(pinPreferences, /Clear saved PINs/);
   assert.match(pinPreferences, /Forgot PIN\?/);
   assert.match(pinPreferences, /variant="link"/);
@@ -200,7 +200,7 @@ test("XChat unlocks as soon as a complete PIN is entered", () => {
   assert.match(agentCard, /useState\(true\)/);
   assert.match(
     pinPreferences,
-    /aria-label="Remember X\/Twitter Chat PIN on this device"/
+    /aria-label="Remember X\/Twitter Chat PIN until logout"/
   );
   assert.doesNotMatch(pinPreferences, /bg-muted\/50/);
   assert.match(unlock, /pinToUse && rememberOnDevice/);
@@ -211,7 +211,7 @@ test("XChat unlocks as soon as a complete PIN is entered", () => {
   assert.match(agentCard, /if \(rememberOnDevice\)/);
   assert.match(agentCard, /status: "dm_restricted"/);
   assert.match(agentCard, /response\.reason === "xchat_access_denied"/);
-  assert.match(header, /Forget saved X\/Twitter Chat PINs/);
+  assert.doesNotMatch(header, /Forget saved X\/Twitter Chat PINs/);
   assert.doesNotMatch(agentCard, /transition-opacity/);
   assert.doesNotMatch(agentCard, /type="submit"/);
   assert.doesNotMatch(agentCard, /It never leaves this browser/);

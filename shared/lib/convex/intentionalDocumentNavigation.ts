@@ -8,6 +8,12 @@ type DocumentLocation = {
   assign: (href: string) => void;
 };
 
+type DocumentForm = {
+  checkValidity: () => boolean;
+  noValidate: boolean;
+  requestSubmit: () => void;
+};
+
 type ScheduleReset = (reset: () => void) => void;
 
 type BeforeUnloadTarget = {
@@ -42,6 +48,24 @@ export function createIntentionalDocumentNavigationController() {
         intentionalNavigationPending = false;
       });
     },
+    submit(form: DocumentForm, scheduleReset: ScheduleReset) {
+      if (!form.noValidate && !form.checkValidity()) {
+        return;
+      }
+
+      intentionalNavigationPending = true;
+
+      try {
+        form.requestSubmit();
+      } catch (error) {
+        intentionalNavigationPending = false;
+        throw error;
+      }
+
+      scheduleReset(() => {
+        intentionalNavigationPending = false;
+      });
+    },
     shouldWarnBeforeUnload(hasInflightRequests: boolean): boolean {
       if (intentionalNavigationPending) {
         intentionalNavigationPending = false;
@@ -58,6 +82,12 @@ const intentionalNavigationController =
 
 export function navigateDocumentIntentionally(href: string): void {
   intentionalNavigationController.navigate(href, window.location, (reset) => {
+    window.setTimeout(reset, INTENTIONAL_NAVIGATION_RESET_MS);
+  });
+}
+
+export function submitDocumentFormIntentionally(form: HTMLFormElement): void {
+  intentionalNavigationController.submit(form, (reset) => {
     window.setTimeout(reset, INTENTIONAL_NAVIGATION_RESET_MS);
   });
 }

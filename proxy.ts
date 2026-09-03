@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 const PUBLIC_PATH_PATTERNS = [
   /^\/login$/,
   /^\/signup$/,
-  /^\/logout$/,
+  /^\/logout(?:\/complete)?$/,
   /^\/callback$/,
   /^\/home(?:\/.*)?$/,
   /^\/threads(?:\/.*)?$/,
