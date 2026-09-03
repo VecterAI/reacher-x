@@ -188,15 +188,29 @@ Before another discovery cycle starts, the scheduler projects whether ready pros
 
 ## Discovery Volume
 
-| Variable                                   | Code fallback | Meaning                                   |
-| ------------------------------------------ | ------------: | ----------------------------------------- |
-| `PROSPECTING_SEED_KEYWORDS_PER_CYCLE`      |          `10` | Seed keywords generated per cycle         |
-| `PROSPECTING_SOCIAL_QUERIES_PER_CYCLE`     |          `15` | Social search queries generated per cycle |
-| `PROSPECTING_TWITTER_SEARCH_BATCH`         |           `5` | X search batch size                       |
-| `PROSPECTING_LINKEDIN_POST_SEARCH_BATCH`   |           `5` | LinkedIn post-search batch size           |
-| `PROSPECTING_LINKEDIN_PEOPLE_SEARCH_BATCH` |           `4` | LinkedIn people-search batch size         |
+| Variable                                     | Code fallback | Meaning                                                       |
+| -------------------------------------------- | ------------: | ------------------------------------------------------------- |
+| `PROSPECTING_SEED_KEYWORDS_PER_CYCLE`        |          `10` | Seed keywords generated per cycle                             |
+| `PROSPECTING_SOCIAL_QUERIES_PER_CYCLE`       |          `15` | Social search queries generated per cycle                     |
+| `PROSPECTING_TWITTER_SEARCH_BATCH`           |           `9` | Primary X queries selected per real prospecting cycle         |
+| `PROSPECTING_TWITTER_SEARCH_PAGES_PER_QUERY` |           `3` | Maximum SocialAPI pages per X query, including the first page |
+| `PROSPECTING_TWITTER_SEARCH_LOOKBACK_DAYS`   |          `90` | Initial X search window when a query has no saved checkpoint  |
+| `PROSPECTING_LINKEDIN_POST_SEARCH_BATCH`     |           `5` | LinkedIn post-search queries selected per cycle               |
+| `PROSPECTING_LINKEDIN_PEOPLE_SEARCH_BATCH`   |           `4` | LinkedIn people-search queries selected per cycle             |
 
 Higher values can improve discovery volume but increase provider usage, cost, workflow duration, and downstream qualification/enrichment load.
+
+### X Search Behavior
+
+Real X discovery uses SocialAPI's `GET /twitter/search` endpoint with `type=Latest`. The initial request counts as page 1; the workflow follows `next_cursor` until the total reaches `PROSPECTING_TWITTER_SEARCH_PAGES_PER_QUERY`. A query without a checkpoint receives a `since_time` operator based on `PROSPECTING_TWITTER_SEARCH_LOOKBACK_DAYS`; later cycles use `since_id` with the newest previously observed post so old results are not fetched and saved repeatedly. When an exact-phrase query returns no posts, the workflow retries that query without the exact-phrase wrapper.
+
+After direct post discovery, the workflow expands up to three promising authors through SocialAPI's `GET /twitter/user/{user_id}/similar` endpoint, considering up to five profiles per author. A similar profile is persisted only when its profile text or recent-post evidence matches the workspace targeting signals.
+
+`PROSPECTING_TWITTER_SEARCH_BATCH` is a query-selection limit, not a total HTTP-request limit. Cursor pages, exact-query fallbacks, graph-seed searches, similar-profile evidence checks, and retries can add requests. All of them reserve capacity through the shared SocialAPI budget described below. Search telemetry records each workspace, query, page count, HTTP outcome, raw-result count, unique new-user count, and checkpoint state.
+
+Existing deployments that explicitly set `PROSPECTING_TWITTER_SEARCH_BATCH=5` keep using `5`. For production rollout, change that explicit override in place to `9` rather than relying on the code fallback, and explicitly set the page and lookback variables to `3` and `90`.
+
+See the bundled [SocialAPI search reference](./socialapi/search.md), [search operators](./socialapi/monitor-and-operators.md#twitter-search-operators), and [similar-profile reference](./socialapi/similar-profiles.md) for provider behavior.
 
 ## Prospecting Recovery And Retries
 
