@@ -5,6 +5,7 @@ import {
   chunkProspectsForPersistence,
   PROSPECT_WRITE_TRANSACTION_BATCH_SIZE,
 } from "./prospectPersistenceHelpers";
+import { getNumberProperty, getStringProperty, isRecord } from "./typeGuards";
 
 export const LINKEDIN_PEOPLE_DEFAULT_COUNT = 50;
 export const LINKEDIN_PEOPLE_MAX_PAGES_PER_QUERY = 3;
@@ -13,6 +14,70 @@ export const LINKEDIN_POSTS_DEFAULT_PAGE_SIZE = 10;
 export const LINKEDIN_POSTS_MAX_PAGES_PER_QUERY = 3;
 export const LINKEDIN_PROSPECT_SAVE_BATCH_SIZE =
   PROSPECT_WRITE_TRANSACTION_BATCH_SIZE;
+
+export type LinkedInPeopleSearchAttempt = {
+  searchMode: "title" | "keyword";
+  geoUrn?: string;
+  profileLanguage?: string;
+};
+
+/**
+ * LinkdAPI documents authorJobTitle as one title value, not a Boolean query.
+ * Keep Boolean role expressions in the keyword query instead of sending an
+ * unsupported value through the provider filter.
+ */
+export function normalizeLinkedInPostAuthorJobTitle(
+  value?: string
+): string | undefined {
+  const normalized = value?.trim();
+  if (!normalized || /\bAND\b/.test(normalized) || /\bor\b/i.test(normalized)) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
+export function extractLinkedInGeoId(data: unknown): string | undefined {
+  const candidates = Array.isArray(data)
+    ? data
+    : isRecord(data) && Array.isArray(data.results)
+      ? data.results
+      : [];
+
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+    const id =
+      getStringProperty(candidate, "id") ??
+      getNumberProperty(candidate, "id")?.toString();
+    if (id?.trim()) return id.trim();
+
+    const urn = getStringProperty(candidate, "urn")?.trim();
+    if (urn) {
+      const urnParts = urn.split(":");
+      return urnParts[urnParts.length - 1] || urn;
+    }
+  }
+
+  return undefined;
+}
+
+export function buildLinkedInPeopleSearchAttempts(args: {
+  searchModes: readonly ("title" | "keyword")[];
+  geoUrn?: string;
+  profileLanguage?: string;
+}): LinkedInPeopleSearchAttempt[] {
+  const filtered = Boolean(args.geoUrn || args.profileLanguage);
+  return [
+    ...(filtered
+      ? args.searchModes.map((searchMode) => ({
+          searchMode,
+          geoUrn: args.geoUrn,
+          profileLanguage: args.profileLanguage,
+        }))
+      : []),
+    ...args.searchModes.map((searchMode) => ({ searchMode })),
+  ];
+}
 
 function normalizePositiveInteger(value: number, fallback: number) {
   if (!Number.isFinite(value)) {

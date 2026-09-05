@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { query } from "./lib/functionBuilders";
 import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import { getWorkspaceReportingRollout } from "./lib/workspaceReportingRollout";
-import { WORKSPACE_REPORTING_AGGREGATE_VERSION } from "./lib/workspaceReportingAggregate";
+import { isSupportedWorkspaceReportingVersion } from "./lib/workspaceReportingAggregate";
 import { getUserByIdentity } from "./lib/accessHelpers";
 import { filterReportableWorkspaces } from "./lib/workspaceSetup";
 
@@ -21,7 +21,7 @@ export const getWorkspaceReportingStatus = query({
     );
     const ready =
       rollout?.status === "verified" &&
-      rollout.aggregateVersion === WORKSPACE_REPORTING_AGGREGATE_VERSION;
+      isSupportedWorkspaceReportingVersion(rollout.aggregateVersion);
 
     return {
       ready,
@@ -54,7 +54,7 @@ export const getUserWorkspaceReportingStatus = query({
       ready: rollouts.every(
         (rollout) =>
           rollout?.status === "verified" &&
-          rollout.aggregateVersion === WORKSPACE_REPORTING_AGGREGATE_VERSION
+          isSupportedWorkspaceReportingVersion(rollout.aggregateVersion)
       ),
       workspaceCount: workspaces.length,
     };

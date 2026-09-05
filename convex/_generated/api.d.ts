@@ -127,6 +127,7 @@ import type * as lib_errorHelpers from "../lib/errorHelpers.js";
 import type * as lib_exaApiBudget from "../lib/exaApiBudget.js";
 import type * as lib_functionBuilders from "../lib/functionBuilders.js";
 import type * as lib_learningCore from "../lib/learningCore.js";
+import type * as lib_learningTargetingHelpers from "../lib/learningTargetingHelpers.js";
 import type * as lib_linkdApiProfilePostsCore from "../lib/linkdApiProfilePostsCore.js";
 import type * as lib_linkdapiBudget from "../lib/linkdapiBudget.js";
 import type * as lib_linkedinConversationNormalizationCore from "../lib/linkedinConversationNormalizationCore.js";
@@ -219,6 +220,7 @@ import type * as lib_socialApiTwitterMap from "../lib/socialApiTwitterMap.js";
 import type * as lib_structuredOutputCore from "../lib/structuredOutputCore.js";
 import type * as lib_styleDistillation from "../lib/styleDistillation.js";
 import type * as lib_styleSourceCore from "../lib/styleSourceCore.js";
+import type * as lib_targetingSpecCore from "../lib/targetingSpecCore.js";
 import type * as lib_tenantExecutionPool from "../lib/tenantExecutionPool.js";
 import type * as lib_tenantSchedulerCore from "../lib/tenantSchedulerCore.js";
 import type * as lib_tenantSchedulerEnqueue from "../lib/tenantSchedulerEnqueue.js";
@@ -256,6 +258,7 @@ import type * as lib_workspacePlanStartCore from "../lib/workspacePlanStartCore.
 import type * as lib_workspaceProfileChangeCore from "../lib/workspaceProfileChangeCore.js";
 import type * as lib_workspaceReportingAggregate from "../lib/workspaceReportingAggregate.js";
 import type * as lib_workspaceReportingRollout from "../lib/workspaceReportingRollout.js";
+import type * as lib_workspaceRequalificationCore from "../lib/workspaceRequalificationCore.js";
 import type * as lib_workspaceSettingsCore from "../lib/workspaceSettingsCore.js";
 import type * as lib_workspaceSetup from "../lib/workspaceSetup.js";
 import type * as lib_workspaceStyleProfileCore from "../lib/workspaceStyleProfileCore.js";
@@ -352,6 +355,7 @@ import type * as workflows_qualificationAuditApplication from "../workflows/qual
 import type * as workflows_qualificationRecovery from "../workflows/qualificationRecovery.js";
 import type * as workflows_readModels from "../workflows/readModels.js";
 import type * as workflows_setup from "../workflows/setup.js";
+import type * as workflows_workspaceRequalification from "../workflows/workspaceRequalification.js";
 import type * as workspaceAgentOpsDaily from "../workspaceAgentOpsDaily.js";
 import type * as workspaceAnalyticsDaily from "../workspaceAnalyticsDaily.js";
 import type * as workspaceAttachments from "../workspaceAttachments.js";
@@ -502,6 +506,7 @@ declare const fullApi: ApiFromModules<{
   "lib/exaApiBudget": typeof lib_exaApiBudget;
   "lib/functionBuilders": typeof lib_functionBuilders;
   "lib/learningCore": typeof lib_learningCore;
+  "lib/learningTargetingHelpers": typeof lib_learningTargetingHelpers;
   "lib/linkdApiProfilePostsCore": typeof lib_linkdApiProfilePostsCore;
   "lib/linkdapiBudget": typeof lib_linkdapiBudget;
   "lib/linkedinConversationNormalizationCore": typeof lib_linkedinConversationNormalizationCore;
@@ -594,6 +599,7 @@ declare const fullApi: ApiFromModules<{
   "lib/structuredOutputCore": typeof lib_structuredOutputCore;
   "lib/styleDistillation": typeof lib_styleDistillation;
   "lib/styleSourceCore": typeof lib_styleSourceCore;
+  "lib/targetingSpecCore": typeof lib_targetingSpecCore;
   "lib/tenantExecutionPool": typeof lib_tenantExecutionPool;
   "lib/tenantSchedulerCore": typeof lib_tenantSchedulerCore;
   "lib/tenantSchedulerEnqueue": typeof lib_tenantSchedulerEnqueue;
@@ -631,6 +637,7 @@ declare const fullApi: ApiFromModules<{
   "lib/workspaceProfileChangeCore": typeof lib_workspaceProfileChangeCore;
   "lib/workspaceReportingAggregate": typeof lib_workspaceReportingAggregate;
   "lib/workspaceReportingRollout": typeof lib_workspaceReportingRollout;
+  "lib/workspaceRequalificationCore": typeof lib_workspaceRequalificationCore;
   "lib/workspaceSettingsCore": typeof lib_workspaceSettingsCore;
   "lib/workspaceSetup": typeof lib_workspaceSetup;
   "lib/workspaceStyleProfileCore": typeof lib_workspaceStyleProfileCore;
@@ -727,6 +734,7 @@ declare const fullApi: ApiFromModules<{
   "workflows/qualificationRecovery": typeof workflows_qualificationRecovery;
   "workflows/readModels": typeof workflows_readModels;
   "workflows/setup": typeof workflows_setup;
+  "workflows/workspaceRequalification": typeof workflows_workspaceRequalification;
   workspaceAgentOpsDaily: typeof workspaceAgentOpsDaily;
   workspaceAnalyticsDaily: typeof workspaceAnalyticsDaily;
   workspaceAttachments: typeof workspaceAttachments;

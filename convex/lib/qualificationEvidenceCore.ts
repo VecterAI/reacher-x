@@ -8,9 +8,66 @@ import {
   getWorkflowEvidencePostId,
   getWorkflowEvidencePostText,
   getWorkflowEvidencePostUrl,
+  sanitizeWorkflowString,
+  sanitizeProspectEvidencePostsForWorkflow,
 } from "./workflowSafeProspect";
 
+/** Hydrate only selected source IDs; never add unrelated posts to an evaluation. */
+export function hydrateQualificationEvidence(args: {
+  selectedPosts: Array<Record<string, unknown>>;
+  storedPosts: Array<Record<string, unknown>>;
+}): Array<Record<string, unknown>> {
+  const storedById = new Map(
+    args.storedPosts.flatMap((post) => {
+      const id = getWorkflowEvidencePostId(post);
+      return id ? [[id, post] as const] : [];
+    })
+  );
+  return args.selectedPosts.map((post) => {
+    // Already-full snapshots (including audit inputs) remain authoritative.
+    if (typeof post.full_text === "string" || typeof post.text === "string")
+      return post;
+    const id = getWorkflowEvidencePostId(post);
+    const stored = id ? storedById.get(id) : undefined;
+    const fullText = stored ? getWorkflowEvidencePostText(stored) : "";
+    return fullText
+      ? { ...post, full_text: sanitizeWorkflowString(fullText) }
+      : post;
+  });
+}
+
 export type QualificationSource = Infer<typeof qualificationSourceValidator>;
+
+/**
+ * Full X text is evaluated in the action, not carried repeatedly in its journal.
+ * Keep ordinary sources intact. For oversized source bundles, retain verified
+ * quotes and native post references; the profile UI resolves the original full
+ * post from the prospect's evidencePosts by sourceId. This does not truncate
+ * anything before model evaluation or remove the original persisted evidence.
+ */
+export function compactQualificationSourcesForWorkflow(
+  sources: QualificationSource[]
+): QualificationSource[] {
+  const serializedBytes = new TextEncoder().encode(
+    JSON.stringify(sources)
+  ).length;
+  if (serializedBytes <= 128 * 1024) return sources;
+  return sources.map((source) =>
+    source.platform === "twitter"
+      ? {
+          ...source,
+          text: source.supportingQuote,
+          sourcePost: sanitizeProspectEvidencePostsForWorkflow(
+            [source.sourcePost],
+            "twitter"
+          )[0] ?? {
+            id_str: source.sourceId,
+            full_text: source.supportingQuote,
+          },
+        }
+      : source
+  );
+}
 export type QualificationVerification = Infer<
   typeof qualificationVerificationValidator
 >;
@@ -42,6 +99,27 @@ export type QualificationCandidate = {
   discoveryQueries: string[];
   sourcePost: Record<string, unknown>;
 };
+
+/** A model-interpreted conflict is actionable only when grounded in a real source. */
+export function hasVerifiedGoalConflict(
+  candidates: QualificationCandidate[],
+  assessment: {
+    verdict: "compatible" | "unknown" | "contradicted";
+    candidateId: string;
+    conflictingQuote: string;
+  }
+): boolean {
+  if (
+    assessment.verdict !== "contradicted" ||
+    !assessment.conflictingQuote.trim()
+  )
+    return false;
+  return candidates.some(
+    (candidate) =>
+      candidate.candidateId === assessment.candidateId &&
+      candidate.text.includes(assessment.conflictingQuote.trim())
+  );
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

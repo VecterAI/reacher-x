@@ -1,3 +1,4 @@
+import { getLearningTargetingFingerprint } from "./lib/learningTargetingHelpers";
 import { v } from "convex/values";
 import type { WorkflowId } from "@convex-dev/workflow";
 import {
@@ -6,6 +7,7 @@ import {
   getWorkspaceArgsValidator,
   setDefaultWorkspaceArgsValidator,
   workspaceUseCaseKeyValidator,
+  workspaceTargetingSpecValidator,
   workspaceOnboardingIssueSourceValidator,
   workspaceOnboardingIssueStatusCodeValidator,
   workspaceAgentAutonomyModeValidator,
@@ -658,6 +660,7 @@ export const updateWorkspaceSettings = mutation({
 
 export const applyRegeneratedWorkspaceTargetingInternal = internalMutation({
   args: {
+    expectedTargetingFingerprint: v.optional(v.string()),
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
     name: v.string(),
@@ -665,6 +668,7 @@ export const applyRegeneratedWorkspaceTargetingInternal = internalMutation({
     rawUserDescription: v.string(),
     improvedDescription: v.string(),
     icps: v.array(icpValidator),
+    targetingSpec: workspaceTargetingSpecValidator,
     useCaseKey: workspaceUseCaseKeyValidator,
   },
   returns: v.id("workspaces"),
@@ -674,6 +678,14 @@ export const applyRegeneratedWorkspaceTargetingInternal = internalMutation({
       throw new Error("Workspace not found");
     }
 
+    if (
+      args.expectedTargetingFingerprint !== undefined &&
+      args.expectedTargetingFingerprint !==
+        getLearningTargetingFingerprint(workspace)
+    )
+      throw new Error(
+        "Workspace targeting changed while regeneration was running; retry with current settings"
+      );
     validateWorkspaceProfiles(args.icps);
     const now = getCurrentUTCTimestamp();
     await ctx.db.patch(args.workspaceId, {
@@ -681,6 +693,7 @@ export const applyRegeneratedWorkspaceTargetingInternal = internalMutation({
         rawUserDescription: args.rawUserDescription,
         improvedDescription: args.improvedDescription,
         profiles: args.icps,
+        targetingSpec: args.targetingSpec,
         useCaseKey: args.useCaseKey,
         updatedAt: now,
       }),
@@ -1634,6 +1647,7 @@ export const createWorkspaceInternal = internalMutation({
     seedDescription: v.string(),
     improvedDescription: v.string(),
     icps: v.array(icpValidator),
+    targetingSpec: v.optional(workspaceTargetingSpecValidator),
     sourceUrl: v.optional(v.string()),
     descriptionSource: v.union(v.literal("url"), v.literal("manual")),
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
@@ -1688,6 +1702,7 @@ export const createWorkspaceInternal = internalMutation({
       seedDescription: args.seedDescription,
       improvedDescription: args.improvedDescription,
       icps: args.icps,
+      targetingSpec: args.targetingSpec,
       descriptionSource: args.descriptionSource,
       sourceUrl: args.sourceUrl,
       useCaseKey: args.useCaseKey,
@@ -1734,6 +1749,7 @@ export const updateWorkspaceInternal = internalMutation({
     improvedDescription: v.string(),
     description: v.string(),
     icps: v.array(icpValidator),
+    targetingSpec: v.optional(workspaceTargetingSpecValidator),
     sourceUrl: v.optional(v.string()),
     descriptionSource: v.optional(
       v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
@@ -1754,6 +1770,10 @@ export const updateWorkspaceInternal = internalMutation({
       lastGeneratedAt: now,
       updatedAt: now,
     };
+
+    if (args.targetingSpec !== undefined) {
+      updateData.targetingSpec = args.targetingSpec;
+    }
 
     if (args.seedDescription !== undefined) {
       updateData.seedDescription = args.seedDescription;

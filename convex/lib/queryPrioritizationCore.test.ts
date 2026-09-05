@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { prioritizeQueries } from "./queryPrioritizationCore";
+import {
+  prioritizeQueries,
+  resolveQueryMetadata,
+} from "./queryPrioritizationCore";
 
 const emptyPerformance = {
   impressions: 0,
@@ -12,6 +15,19 @@ const emptyPerformance = {
 };
 
 describe("query prioritization", () => {
+  test("preserves legacy social queries when structured metadata is empty", () => {
+    expect(resolveQueryMetadata(["legacy query"], [])).toEqual([
+      {
+        query: "legacy query",
+        platformTargets: ["twitter"],
+        queryStyle: "natural_phrase",
+        legacyCompatibilitySource: true,
+        discoveryStage: "balanced",
+        targetingCriterionIds: [],
+      },
+    ]);
+  });
+
   test("keeps an unproven query in learning for three searches", () => {
     const [result] = prioritizeQueries({
       candidates: [
@@ -102,5 +118,41 @@ describe("query prioritization", () => {
     });
 
     expect(result.priority).toBe("proven");
+  });
+
+  test("does not starve relaxed queries once their stage is allowed", () => {
+    const results = prioritizeQueries({
+      candidates: [
+        {
+          id: "broad",
+          value: "Origami.chat",
+          discoveryStage: "broad",
+          createdAt: 1,
+          performance: emptyPerformance,
+        },
+        {
+          id: "balanced",
+          value: "Origami.chat alternative",
+          discoveryStage: "balanced",
+          createdAt: 2,
+          performance: emptyPerformance,
+        },
+        {
+          id: "strict",
+          value: 'Origami.chat "I use"',
+          discoveryStage: "strict",
+          createdAt: 3,
+          performance: emptyPerformance,
+        },
+      ],
+      limit: 3,
+      now: 4,
+    });
+
+    expect(results.map((item) => item.id)).toEqual([
+      "broad",
+      "balanced",
+      "strict",
+    ]);
   });
 });

@@ -1,13 +1,56 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   chunkProspectsForPersistence,
   getProspectPersistenceRetryDelayMs,
   isProspectPersistenceOccError,
   persistProspectWithRetry,
   PROSPECT_WRITE_TRANSACTION_BATCH_SIZE,
+  PROSPECT_PERSISTENCE_MAX_ATTEMPTS,
 } from "./prospectPersistenceHelpers";
 
 describe("prospect persistence batching", () => {
+  afterEach(() => vi.useRealTimers());
+
+  test("recognizes structured OCC errors without retrying other error codes", () => {
+    expect(
+      isProspectPersistenceOccError(
+        new Error(
+          JSON.stringify({
+            code: "OptimisticConcurrencyControlFailure",
+            message:
+              "Data read or written in this mutation changed while it was being run.",
+          })
+        )
+      )
+    ).toBe(true);
+    expect(
+      isProspectPersistenceOccError(
+        new Error(
+          JSON.stringify({
+            code: "ValidationError",
+            message: "Invalid argument",
+          })
+        )
+      )
+    ).toBe(false);
+    expect(
+      isProspectPersistenceOccError(new Error("network disconnected"))
+    ).toBe(false);
+  });
+
+  test("stops after the bounded retry budget", async () => {
+    vi.useFakeTimers();
+    const error = new Error(
+      JSON.stringify({ code: "OptimisticConcurrencyControlFailure" })
+    );
+    const persist = vi.fn().mockRejectedValue(error);
+    const assertion = expect(persistProspectWithRetry(persist)).rejects.toBe(
+      error
+    );
+    await vi.runAllTimersAsync();
+    await assertion;
+    expect(persist).toHaveBeenCalledTimes(PROSPECT_PERSISTENCE_MAX_ATTEMPTS);
+  });
   test("keeps every prospect while bounding each transaction", () => {
     const prospects = Array.from({ length: 66 }, (_, index) => ({ index }));
     const batches = chunkProspectsForPersistence(prospects);
@@ -57,8 +100,10 @@ describe("prospect persistence batching", () => {
   });
 
   test("bounds retry delay deterministically", () => {
-    expect(getProspectPersistenceRetryDelayMs(1, 0)).toBe(100);
-    expect(getProspectPersistenceRetryDelayMs(3, 1)).toBe(500);
+    expect(getProspectPersistenceRetryDelayMs(1, 0)).toBe(50);
+    expect(getProspectPersistenceRetryDelayMs(3, 1)).toBe(400);
+    expect(getProspectPersistenceRetryDelayMs(7, 0)).toBe(3200);
+    expect(getProspectPersistenceRetryDelayMs(7, 1)).toBe(6400);
     expect(
       isProspectPersistenceOccError(
         new Error(

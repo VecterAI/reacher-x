@@ -219,6 +219,13 @@ function extractSameOriginContactLinks(page: WebsitePage): string[] {
 
       if (
         resolved.origin !== baseUrl.origin ||
+        // A path-scoped profile on a shared host does not own that host's
+        // support/legal/contact pages. Crawl only within its linked subtree.
+        (baseUrl.pathname !== "/" &&
+          resolved.pathname !== baseUrl.pathname &&
+          !resolved.pathname.startsWith(
+            `${baseUrl.pathname.replace(/\/$/, "")}/`
+          )) ||
         !isPublicHttpUrl(resolved.toString())
       ) {
         continue;
@@ -250,6 +257,7 @@ function addTextCandidatesFromSource(args: {
   sourceUrl?: string;
   sourceLabel: string;
   text: string;
+  includePhone?: boolean;
   confidence: {
     email: number;
     phone: number;
@@ -274,7 +282,9 @@ function addTextCandidatesFromSource(args: {
     });
   }
 
-  for (const phone of extractPhoneNumbersFromText(args.text)) {
+  for (const phone of args.includePhone === false
+    ? []
+    : extractPhoneNumbersFromText(args.text)) {
     args.candidates.push({
       kind: "phone",
       value: phone.value,
@@ -527,6 +537,9 @@ export async function discoverPublicContactInfo(
       sourceUrl: page.url,
       sourceLabel: buildWebsiteSourceLabel(page.url),
       text: page.text,
+      // Raw website numbers may be registration IDs, prices or analytics—not
+      // contact information. Only explicit tel links supply website phones.
+      includePhone: false,
       confidence: {
         email:
           getWebsiteSourceType(page.url) === "website_contact_page"

@@ -4,6 +4,7 @@
 // Agent tool for prospect qualification
 // Thin wrapper - delegates to qualificationCore.ts
 
+import { getLearningTargetingFingerprint } from "../../lib/learningTargetingHelpers";
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { api, internal } from "../../_generated/api";
@@ -16,6 +17,7 @@ import {
 import type { Id } from "../../_generated/dataModel";
 import { runLoggedAgentTool } from "./logging";
 import { sanitizeProspectEvidencePostsForWorkflow } from "../../lib/workflowSafeProspect";
+import { buildLegacyWorkspaceTargetingSpec } from "../../lib/targetingSpecCore";
 
 // ============================================================================
 // Types
@@ -359,6 +361,14 @@ export const qualifyProspect = createTool({
             discoveryQueries: matchedKeywords,
             totalKeywords: keywords.length,
             profileData: profileData as Record<string, unknown>,
+            targetingSpec:
+              workspace.targetingSpec ??
+              buildLegacyWorkspaceTargetingSpec({
+                description: workspace.description,
+                profiles: workspace.icps ?? [],
+              }),
+            icpDescription: workspace.description,
+            icpPainPoints: keywords,
             useCaseKey: workspace.useCaseKey,
             relevantMemories: learningContext.relevantMemories,
             workspaceMemoryPolicy: learningContext.policyPrompt,
@@ -369,13 +379,17 @@ export const qualifyProspect = createTool({
           });
 
           // 5. Update prospect in database
-          await ctx.runMutation(
+          const update = await ctx.runMutation(
             internal.prospects.updateProspectQualification,
             {
+              expectedTargetingFingerprint:
+                getLearningTargetingFingerprint(workspace),
               prospectId: args.prospectId as Id<"prospects">,
               qualificationStatus: result.status,
               qualificationScore: result.score,
               qualificationScoreBreakdown: result.scoreBreakdown,
+              qualificationCriteriaVersion: 1,
+              qualificationCriterionResults: result.criterionResults,
               qualifiedAt: result.qualifiedAt,
               evidencePosts: evidencePosts.slice(0, MAX_EVIDENCE_POSTS),
               qualificationKeywords: result.matchedKeywords,
@@ -384,6 +398,19 @@ export const qualifyProspect = createTool({
               authenticity: result.authenticity,
             }
           );
+
+          if (update.skipped)
+            return {
+              success: false,
+              prospectId: args.prospectId,
+              qualified: false,
+              score: 0,
+              status: "pending",
+              evidenceCount: 0,
+              matchedKeywords: [],
+              error:
+                "Workspace targeting or prospect changed during qualification; retry with current context.",
+            };
 
           logEvent.set({
             prospect: {

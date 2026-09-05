@@ -9,6 +9,11 @@ export type TwitterProspectingQueryPlan = {
   sinceId?: string;
 };
 
+export type TwitterProviderSearchFilters = {
+  language?: string;
+  location?: string;
+};
+
 export type TwitterQueryStat = {
   query: string;
   postsFound: number;
@@ -73,6 +78,155 @@ function normalizeQuery(query: string) {
   return query.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * SocialAPI follows X search syntax, where the boolean disjunction operator is
+ * uppercase `OR`. Models sometimes emit lowercase `or`; normalize only tokens
+ * outside quoted phrases so literal source text remains untouched.
+ */
+export function normalizeTwitterBooleanOperators(query: string) {
+  return query
+    .split(/("(?:[^"\\]|\\.)*")/g)
+    .map((segment, index) =>
+      index % 2 === 0 ? segment.replace(/\bor\b/gi, "OR") : segment
+    )
+    .join("");
+}
+
+function getTwitterSyntaxSafePrefix(
+  query: string,
+  maxLength: number
+): string | undefined {
+  if (query.length <= maxLength) return query;
+
+  let escaped = false;
+  let inQuote = false;
+  let parenthesisDepth = 0;
+  let safeCut = 0;
+  const scanLength = Math.min(query.length, Math.max(0, maxLength));
+
+  for (let index = 0; index < scanLength; index += 1) {
+    const character = query[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\" && inQuote) {
+      escaped = true;
+      continue;
+    }
+    if (character === '"') {
+      inQuote = !inQuote;
+      if (!inQuote && parenthesisDepth === 0) safeCut = index + 1;
+      continue;
+    }
+    if (inQuote) continue;
+
+    if (character === "(") {
+      parenthesisDepth += 1;
+      continue;
+    }
+    if (character === ")") {
+      parenthesisDepth = Math.max(0, parenthesisDepth - 1);
+      if (parenthesisDepth === 0) safeCut = index + 1;
+      continue;
+    }
+    if (parenthesisDepth === 0 && /\s/.test(character)) {
+      safeCut = index;
+    }
+  }
+
+  let prefix = query.slice(0, safeCut).trim();
+  prefix = prefix.replace(/(?:^|\s)(?:AND|OR)$/i, "").trim();
+  return prefix || undefined;
+}
+
+function escapeTwitterOperatorValue(value: string) {
+  return value.replace(/["\\]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/** Provider syntax only, not semantic qualification. Preserve quoted literals. */
+function omitManagedTwitterFilters(query: string): string {
+  const tokens =
+    query.match(/(?:[^\s"()]+)?"(?:\\.|[^"\\])*"|[()]|[^\s()]+/g) ?? [];
+  const kept = tokens.filter((token) => !/^(?:near|within|lang):/i.test(token));
+  // Removing a filter operand can leave an empty group or boolean connector.
+  // Prune those grammar tokens, never topic words or user-defined exclusions.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let index = 0; index < kept.length; index += 1) {
+      const token = kept[index];
+      if (token === "(" && kept[index + 1] === ")") {
+        kept.splice(index, 2);
+        changed = true;
+        break;
+      }
+      if (
+        /^(AND|OR)$/i.test(token) &&
+        (index === 0 ||
+          index === kept.length - 1 ||
+          kept[index - 1] === "(" ||
+          kept[index + 1] === ")" ||
+          /^(AND|OR)$/i.test(kept[index + 1] ?? ""))
+      ) {
+        kept.splice(index, 1);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return kept.reduce(
+    (result, token, index) =>
+      result +
+      (index === 0 || token === ")" || kept[index - 1] === "(" ? "" : " ") +
+      token,
+    ""
+  );
+}
+
+/**
+ * Compiles only SocialAPI-supported filters into strict discovery queries.
+ * Filter values come from the workspace targeting specification; broader
+ * stages intentionally omit them so discovery can relax safely.
+ */
+export function applyTwitterProviderSearchFilters(args: {
+  query: string;
+  stage: "strict" | "balanced" | "broad";
+  filters?: TwitterProviderSearchFilters;
+  maxLength?: number;
+}): string {
+  const query = normalizeQuery(normalizeTwitterBooleanOperators(args.query));
+  if (!query) return query;
+  if (args.stage !== "strict") return omitManagedTwitterFilters(query);
+  if (!args.filters) return query;
+
+  const operators: string[] = [];
+  const language = args.filters.language?.trim().toLowerCase();
+  if (
+    language &&
+    /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i.test(language) &&
+    !/(^|\s)lang:/i.test(query)
+  ) {
+    operators.push(`lang:${language}`);
+  }
+
+  const location = args.filters.location
+    ? escapeTwitterOperatorValue(args.filters.location)
+    : "";
+  if (location && !/(^|\s)near:/i.test(query)) {
+    operators.push(`near:"${location}"`);
+  }
+
+  if (operators.length === 0) return query;
+  const suffix = ` ${operators.join(" ")}`;
+  const maxLength = Math.max(suffix.length + 1, args.maxLength ?? 220);
+  if (query.length + suffix.length <= maxLength) return `${query}${suffix}`;
+
+  const availableQueryLength = maxLength - suffix.length;
+  const safeQuery = getTwitterSyntaxSafePrefix(query, availableQueryLength);
+  return safeQuery ? `${safeQuery}${suffix}` : query;
+}
+
 function normalizeTwitterPostId(value: string | undefined) {
   const normalized = value?.trim();
   return normalized && /^\d+$/.test(normalized) ? normalized : undefined;
@@ -108,7 +262,11 @@ export function buildTwitterProspectingProviderQuery(args: {
   sinceTimestampSeconds: number;
   sinceId?: string;
 }) {
-  const normalized = normalizeQuery(args.query);
+  const normalized = normalizeQuery(
+    args.searchMode === "raw"
+      ? normalizeTwitterBooleanOperators(args.query)
+      : args.query
+  );
   const query =
     args.searchMode === "exact"
       ? `"${stripTwitterExactPhraseQuotes(normalized)}"`

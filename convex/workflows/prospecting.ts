@@ -1,3 +1,4 @@
+import { getLearningTargetingFingerprint } from "../lib/learningTargetingHelpers";
 // convex/workflows/prospecting.ts
 // Continuous 24/7 prospecting workflow using Convex Workflow component
 //
@@ -22,6 +23,7 @@ import {
   internalMutation,
   internalAction,
 } from "../lib/functionBuilders";
+import { discoveryStageValidator } from "../validators";
 import {
   BATCH_LIMITS,
   buildDiscoveryBusinessContext,
@@ -87,21 +89,16 @@ import {
 } from "../lib/prospectingCycleCore";
 import { stringifyUnknownError } from "../lib/errorHelpers";
 import { getWorkspaceStatsSnapshot } from "../workspaceStats";
-
-type QueryMetadataRecord = {
-  query: string;
-  sourceKeyword?: string;
-  platformTargets: Array<"twitter" | "linkedin">;
-  linkedinSurface?: "posts" | "people";
-  linkedinSurfaceTargets?: Array<"posts" | "people">;
-  queryStyle: "natural_phrase" | "professional_keyword" | "role_title";
-  twitterSearchMode?: TwitterProspectingSearchMode;
-  legacyCompatibilitySource: boolean;
-};
+import {
+  resolveQueryMetadata,
+  type QueryMetadataRecord,
+} from "../lib/queryPrioritizationCore";
+import { getAllowedDiscoveryStages } from "../lib/targetingSpecCore";
 
 type LinkedInQueueItem = {
   id: Id<"keywords">;
   value: string;
+  discoveryStage?: "strict" | "balanced" | "broad";
 };
 
 type TwitterQueueItem = {
@@ -385,6 +382,7 @@ export const prospectingWorkflow = workflow.define({
         keywords: prospectingKeywords,
         platforms: ["twitter", "linkedin"],
         businessContext: buildDiscoveryBusinessContext(workspace),
+        targetingSpec: workspace.targetingSpec,
         useCaseKey: workspace.useCaseKey,
       },
       { retry: runtimeConfig.retries.ai }
@@ -402,10 +400,10 @@ export const prospectingWorkflow = workflow.define({
       0,
       runtimeConfig.batch.socialQueriesPerCycle
     );
-    const queryMetadata: QueryMetadataRecord[] =
-      socialQueriesResult.queryMetadata?.filter((item: QueryMetadataRecord) =>
-        socialQueries.includes(item.query)
-      ) ?? [];
+    const queryMetadata = resolveQueryMetadata(
+      socialQueries,
+      socialQueriesResult.queryMetadata
+    );
     const candidateInputs: Array<{ rawValue: string; sourceTheme?: string }> =
       queryMetadata
         .slice(0, runtimeConfig.batch.socialQueriesPerCycle)
@@ -417,6 +415,8 @@ export const prospectingWorkflow = workflow.define({
       internal.memory.screenDiscoveryQueryCandidatesInternal,
       {
         workspaceId: args.workspaceId,
+        expectedTargetingFingerprint:
+          getLearningTargetingFingerprint(workspace),
         candidates: candidateInputs,
       }
     );
@@ -424,12 +424,18 @@ export const prospectingWorkflow = workflow.define({
       (candidate: { rawValue: string }) => candidate.rawValue
     );
     const acceptedQuerySet = new Set(acceptedSocialQueries);
+    const allowedDiscoveryStages = getAllowedDiscoveryStages({
+      bootstrapCycleCount: workspace.prospectingBootstrapCycleCount,
+      bootstrapCompletedAt: workspace.prospectingBootstrapCompletedAt,
+    });
 
     // Step 6: Save keywords to database FIRST (so we can track them)
     await step.runMutation(
       internal.workflows.prospecting.saveKeywordsInternal,
       {
         workspaceId: args.workspaceId,
+        expectedTargetingFingerprint:
+          getLearningTargetingFingerprint(workspace),
         seedKeywords: prospectingKeywords,
         discoveredKeywords: [], // Bishopi disabled
         socialQueries: acceptedSocialQueries,
@@ -454,6 +460,7 @@ export const prospectingWorkflow = workflow.define({
             internal.keywords.getPrioritizedTwitterQueries,
             {
               workspaceId: args.workspaceId,
+              allowedDiscoveryStages,
               limit: runtimeConfig.batch.twitterSearchBatch,
             }
           );
@@ -490,6 +497,8 @@ export const prospectingWorkflow = workflow.define({
 
             // Mark queries as searched
             await step.runMutation(internal.keywords.markQueriesAsSearched, {
+              expectedTargetingFingerprint:
+                getLearningTargetingFingerprint(workspace),
               queryIds: typedTwitterQueue.map((query) => query.id),
               platform: "twitter",
               resultsCount: result.saved,
@@ -551,11 +560,13 @@ export const prospectingWorkflow = workflow.define({
             step.runQuery(internal.keywords.getPrioritizedLinkedInQueries, {
               workspaceId: args.workspaceId,
               surface: "posts",
+              allowedDiscoveryStages,
               limit: runtimeConfig.batch.linkedinPostSearchBatch,
             }),
             step.runQuery(internal.keywords.getPrioritizedLinkedInQueries, {
               workspaceId: args.workspaceId,
               surface: "people",
+              allowedDiscoveryStages,
               limit: runtimeConfig.batch.linkedinPeopleSearchBatch,
             }),
           ]);
@@ -571,12 +582,20 @@ export const prospectingWorkflow = workflow.define({
                 peopleQueries: linkedInPeopleQueue.map(
                   (q: LinkedInQueueItem) => q.value
                 ),
+                relaxedQueries: [...linkedInPostQueue, ...linkedInPeopleQueue]
+                  .filter(
+                    (q: LinkedInQueueItem) =>
+                      q.discoveryStage && q.discoveryStage !== "strict"
+                  )
+                  .map((q: LinkedInQueueItem) => q.value),
               },
               { retry: runtimeConfig.retries.provider }
             );
 
             if (linkedInPostQueue.length > 0) {
               await step.runMutation(internal.keywords.markQueriesAsSearched, {
+                expectedTargetingFingerprint:
+                  getLearningTargetingFingerprint(workspace),
                 queryIds: linkedInPostQueue.map(
                   (q: LinkedInQueueItem) => q.id as Id<"keywords">
                 ),
@@ -588,6 +607,8 @@ export const prospectingWorkflow = workflow.define({
 
             if (linkedInPeopleQueue.length > 0) {
               await step.runMutation(internal.keywords.markQueriesAsSearched, {
+                expectedTargetingFingerprint:
+                  getLearningTargetingFingerprint(workspace),
                 queryIds: linkedInPeopleQueue.map(
                   (q: LinkedInQueueItem) => q.id as Id<"keywords">
                 ),
@@ -899,6 +920,7 @@ export const updateWorkflowStatus = internalMutation({
 export const saveKeywordsInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
+    expectedTargetingFingerprint: v.optional(v.string()),
     seedKeywords: v.array(v.string()),
     discoveredKeywords: v.array(v.string()),
     socialQueries: v.array(v.string()),
@@ -922,12 +944,22 @@ export const saveKeywordsInternal = internalMutation({
             v.literal("role_title")
           ),
           twitterSearchMode: v.optional(twitterProspectingSearchModeValidator),
+          discoveryStage: discoveryStageValidator,
+          targetingCriterionIds: v.array(v.string()),
           legacyCompatibilitySource: v.boolean(),
         })
       )
     ),
   },
   handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (
+      !workspace ||
+      (args.expectedTargetingFingerprint !== undefined &&
+        args.expectedTargetingFingerprint !==
+          getLearningTargetingFingerprint(workspace))
+    )
+      throw new Error("Workspace targeting changed during query generation");
     const keywordsToSave: Array<{
       type: "seed" | "discovered" | "social_query";
       value: string;
@@ -937,6 +969,8 @@ export const saveKeywordsInternal = internalMutation({
       linkedinSurfaceTargets?: Array<"posts" | "people">;
       queryStyle?: "natural_phrase" | "professional_keyword" | "role_title";
       twitterSearchMode?: TwitterProspectingSearchMode;
+      discoveryStage?: "strict" | "balanced" | "broad";
+      targetingCriterionIds?: string[];
     }> = [];
     const metadataByQuery = new Map(
       (args.queryMetadata ?? []).map((item) => [item.query, item])
@@ -961,6 +995,8 @@ export const saveKeywordsInternal = internalMutation({
         linkedinSurfaceTargets: metadata?.linkedinSurfaceTargets,
         queryStyle: metadata?.queryStyle,
         twitterSearchMode: metadata?.twitterSearchMode,
+        discoveryStage: metadata?.discoveryStage,
+        targetingCriterionIds: metadata?.targetingCriterionIds,
       });
     }
 
@@ -1218,6 +1254,8 @@ export const searchLinkedInInternal = internalAction({
     workspaceId: v.id("workspaces"),
     postQueries: v.array(v.string()),
     peopleQueries: v.array(v.string()),
+    relaxedQueries: v.optional(v.array(v.string())),
+    applyProviderFilters: v.optional(v.boolean()),
     processingMode: v.optional(
       v.union(v.literal("normal"), v.literal("preview"))
     ),
@@ -1251,6 +1289,47 @@ export const searchLinkedInInternal = internalAction({
       error?: string;
     }>;
   }> => {
+    if (
+      args.relaxedQueries?.length &&
+      args.applyProviderFilters === undefined
+    ) {
+      const relaxed = new Set(args.relaxedQueries);
+      const results = await Promise.all(
+        [true, false].map(async (applyProviderFilters) => {
+          const postQueries = args.postQueries.filter(
+            (query) => relaxed.has(query) !== applyProviderFilters
+          );
+          const peopleQueries = args.peopleQueries.filter(
+            (query) => relaxed.has(query) !== applyProviderFilters
+          );
+          if (!postQueries.length && !peopleQueries.length) return null;
+          return await ctx.runAction(
+            internal.workflows.prospecting.searchLinkedInInternal,
+            {
+              ...args,
+              postQueries,
+              peopleQueries,
+              relaxedQueries: undefined,
+              applyProviderFilters,
+            }
+          );
+        })
+      );
+      const completed = results.filter((result) => result !== null);
+      return {
+        success: completed.every((result) => result.success),
+        saved: completed.reduce((sum, result) => sum + result.saved, 0),
+        postQueryStats: completed.flatMap((result) => result.postQueryStats),
+        peopleQueryStats: completed.flatMap(
+          (result) => result.peopleQueryStats
+        ),
+        error:
+          completed
+            .map((result) => result.error)
+            .filter(Boolean)
+            .join("; ") || undefined,
+      };
+    }
     // Get workspace for userId
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
       workspaceId: args.workspaceId,
@@ -1260,11 +1339,18 @@ export const searchLinkedInInternal = internalAction({
       throw new Error("Workspace not found");
     }
 
+    const filters =
+      args.applyProviderFilters === false
+        ? undefined
+        : workspace.targetingSpec?.searchFilters;
+
     const [postSettlement, peopleSettlement] = await Promise.allSettled([
       args.postQueries.length > 0
         ? ctx.runAction(api.integrations.linkedin.searchPosts.searchBatch, {
             queries: args.postQueries,
             sortBy: "relevance",
+            authorJobTitle: filters?.linkedinPosts.authorJobTitle,
+            datePosted: filters?.linkedinPosts.datePosted,
             maxQueriesPerBatch: 10,
           })
         : Promise.resolve(null),
@@ -1272,6 +1358,8 @@ export const searchLinkedInInternal = internalAction({
         ? ctx.runAction(api.integrations.linkedin.searchPeople.searchBatch, {
             queries: args.peopleQueries,
             count: LINKEDIN_PEOPLE_DEFAULT_COUNT,
+            location: filters?.linkedinPeople.location,
+            profileLanguage: filters?.linkedinPeople.profileLanguage,
             maxQueriesPerBatch: 10,
           })
         : Promise.resolve(null),
@@ -1321,7 +1409,6 @@ export const searchLinkedInInternal = internalAction({
       if (!evidencePost || !externalId) {
         return [];
       }
-
       const matchedQueries = (
         postResult?.matchedQueriesByPostId[post.postID] ?? []
       )
@@ -1981,16 +2068,10 @@ export const runPreviewDiscoveryBurstInternal = internalAction({
       0,
       BATCH_LIMITS.socialQueriesPerCycle
     );
-    const queryMetadata: QueryMetadataRecord[] =
-      socialQueriesResult.queryMetadata?.filter((item: QueryMetadataRecord) =>
-        socialQueries.includes(item.query)
-      ) ??
-      socialQueries.map((query: string) => ({
-        query,
-        platformTargets: ["twitter"] as Array<"twitter" | "linkedin">,
-        queryStyle: "natural_phrase" as const,
-        legacyCompatibilitySource: true,
-      }));
+    const queryMetadata = resolveQueryMetadata(
+      socialQueries,
+      socialQueriesResult.queryMetadata
+    );
 
     const noveltyScreening =
       queryMetadata.length > 0
@@ -1998,6 +2079,8 @@ export const runPreviewDiscoveryBurstInternal = internalAction({
             internal.memory.screenDiscoveryQueryCandidatesInternal,
             {
               workspaceId: args.workspaceId,
+              expectedTargetingFingerprint:
+                getLearningTargetingFingerprint(workspace),
               candidates: queryMetadata.map((item: QueryMetadataRecord) => ({
                 rawValue: item.query,
                 sourceTheme: item.sourceKeyword,

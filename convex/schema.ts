@@ -3,7 +3,9 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
   agentComponentThreadStatusValidator,
+  requalificationResultValidator,
   icpValidator,
+  discoveryStageValidator,
   planTierValidator,
   prospectListSortValidator,
   prospectPlatformValidator,
@@ -17,6 +19,7 @@ import {
   qualificationAuthenticityValidator,
   qualificationScoreBreakdownValidator,
   qualificationFailureValidator,
+  qualificationCriterionResultValidator,
   prospectStatusValidator,
   outreachPlanStatusValidator,
   outreachInteractionChannelValidator,
@@ -84,6 +87,7 @@ import {
   memoryWorkflowEventStatusValidator,
   memoryWorkflowEventTypeValidator,
   workspaceUseCaseKeyValidator,
+  workspaceTargetingSpecValidator,
   entitlementSlotValidator,
   refineRollbackSnapshotValidator,
   queryCandidateDuplicateReasonValidator,
@@ -372,6 +376,17 @@ export default defineSchema({
     // v4 NEW: AI-enhanced description
     improvedDescription: v.optional(v.string()),
 
+    // Versioned machine-readable interpretation of the user's targeting
+    // intent. Optional while existing workspaces are lazily backfilled.
+    targetingSpec: v.optional(workspaceTargetingSpecValidator),
+    targetingLearningResetAt: v.optional(v.number()),
+    requalificationWorkflowId: v.optional(v.string()),
+    lastRequalificationResult: v.optional(requalificationResultValidator),
+    lastRequalificationTargetingFingerprint: v.optional(v.string()),
+    lastRequalificationStartCursor: v.optional(v.string()),
+    lastRequalificationError: v.optional(v.string()),
+    lastRequalificationCompletedAt: v.optional(v.number()),
+
     // v4 NEW: Structured Ideal Customer Profiles
     icps: v.optional(
       v.array(
@@ -541,6 +556,7 @@ export default defineSchema({
     generationFeedback: v.optional(v.string()),
     improvedDescription: v.optional(v.string()),
     generatedProfiles: v.optional(v.array(icpValidator)),
+    targetingSpec: v.optional(workspaceTargetingSpecValidator),
     connectionsCompletedAt: v.optional(v.number()),
     planChoice: v.optional(planTierValidator),
     preferenceChoice: v.optional(setupSessionPreferenceValidator),
@@ -594,6 +610,7 @@ export default defineSchema({
     useCaseKey: workspaceUseCaseKeyValidator,
     improvedDescription: v.string(),
     generatedProfiles: v.array(icpValidator),
+    targetingSpec: v.optional(workspaceTargetingSpecValidator),
     createdAt: v.number(),
   })
     .index("by_setup_thread", ["setupThreadId"])
@@ -605,6 +622,7 @@ export default defineSchema({
    */
   keywords: defineTable({
     workspaceId: v.id("workspaces"),
+    targetingFingerprint: v.optional(v.string()),
     // Keyword type: seed (from ICP), discovered (from Bishopi), social_query (for Twitter/LinkedIn)
     type: keywordTypeValidator,
     // Normalized value for uniqueness (lowercase, trimmed)
@@ -640,6 +658,8 @@ export default defineSchema({
     linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
     queryStyle: v.optional(socialQueryStyleValidator),
     twitterSearchMode: v.optional(twitterProspectingSearchModeValidator),
+    discoveryStage: v.optional(discoveryStageValidator),
+    targetingCriterionIds: v.optional(v.array(v.string())),
 
     // =========================================================================
     // Platform-specific search tracking (for social_query type)
@@ -718,6 +738,11 @@ export default defineSchema({
     qualificationScore: v.optional(v.number()),
     qualificationScoreBreakdown: v.optional(
       qualificationScoreBreakdownValidator
+    ),
+    qualificationTargetingFingerprint: v.optional(v.string()),
+    qualificationCriteriaVersion: v.optional(v.literal(1)),
+    qualificationCriterionResults: v.optional(
+      v.array(qualificationCriterionResultValidator)
     ),
     qualificationLastFailure: v.optional(qualificationFailureValidator),
     // When the prospect was qualified
@@ -883,6 +908,7 @@ export default defineSchema({
    * separately tracked application workflow may later apply a completed run.
    */
   qualificationAuditRuns: defineTable({
+    targetingFingerprint: v.optional(v.string()),
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
     mode: v.literal("dry_run"),
@@ -946,6 +972,10 @@ export default defineSchema({
     qualificationVerification: v.optional(qualificationVerificationValidator),
     authenticity: v.optional(qualificationAuthenticityValidator),
     scoreBreakdown: v.optional(qualificationScoreBreakdownValidator),
+    qualificationCriteriaVersion: v.optional(v.literal(1)),
+    qualificationCriterionResults: v.optional(
+      v.array(qualificationCriterionResultValidator)
+    ),
     applicationOutcome: v.optional(
       qualificationAuditItemApplicationOutcomeValidator
     ),
@@ -2519,6 +2549,8 @@ export default defineSchema({
    * models until the additive backfill has been verified.
    */
   workspaceMemories: defineTable({
+    sourceProspectId: v.optional(v.id("prospects")),
+    targetingFingerprint: v.optional(v.string()),
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
     identityKey: v.string(),
@@ -2711,6 +2743,7 @@ export default defineSchema({
    * canonical identity for novelty gates and future evaluator loops.
    */
   queryCandidates: defineTable({
+    targetingFingerprint: v.optional(v.string()),
     workspaceId: v.id("workspaces"),
     type: queryCandidateTypeValidator,
     rawValue: v.string(),
@@ -2745,6 +2778,7 @@ export default defineSchema({
    * Longitudinal performance metrics for active queries.
    */
   queryPerformance: defineTable({
+    targetingFingerprint: v.optional(v.string()),
     workspaceId: v.id("workspaces"),
     queryId: v.id("keywords"),
     canonicalValue: v.string(),
@@ -2806,6 +2840,7 @@ export default defineSchema({
    * Durable evaluator input queue and audit log for pipeline outcome events.
    */
   memoryWorkflowEvents: defineTable({
+    targetingFingerprint: v.optional(v.string()),
     workspaceId: v.id("workspaces"),
     eventType: memoryWorkflowEventTypeValidator,
     status: memoryWorkflowEventStatusValidator,

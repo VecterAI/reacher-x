@@ -61,6 +61,111 @@ export const icpValidator = v.object({
   qualificationKeywords: v.optional(v.array(v.string())),
 });
 
+// ============================================================================
+// Dynamic workspace targeting - shared source of truth
+// ============================================================================
+
+export const targetingCriterionKindValidator = v.union(
+  v.literal("required"),
+  v.literal("preferred"),
+  v.literal("exclusion")
+);
+
+export const targetingCriterionCategoryValidator = v.union(
+  v.literal("profile_fit"),
+  v.literal("intent"),
+  v.literal("timing")
+);
+
+export const targetingCriterionEvidenceValidator = v.union(
+  v.literal("profile"),
+  v.literal("activity"),
+  v.literal("either")
+);
+
+export const targetingCriterionValidator = v.object({
+  id: v.string(),
+  label: v.string(),
+  description: v.string(),
+  sourceQuote: v.optional(v.string()),
+  importanceReason: v.optional(v.string()),
+  kind: targetingCriterionKindValidator,
+  category: targetingCriterionCategoryValidator,
+  evidence: targetingCriterionEvidenceValidator,
+  weight: v.number(),
+  terms: v.array(v.string()),
+});
+
+export const targetingSearchHintsValidator = v.object({
+  entities: v.array(v.string()),
+  activityPhrases: v.optional(v.array(v.string())),
+  // Deprecated compatibility fields for targeting specs produced before the
+  // generic activityPhrases shape. New setup generations never write them.
+  positivePhrases: v.optional(v.array(v.string())),
+  frustrationPhrases: v.optional(v.array(v.string())),
+  roleTitles: v.array(v.string()),
+  locations: v.array(v.string()),
+  industries: v.array(v.string()),
+  companyNames: v.array(v.string()),
+  languageCodes: v.optional(v.array(v.string())),
+  exclusionTerms: v.array(v.string()),
+});
+
+// LinkedIn time filter (used by targeting and searchPosts)
+export const linkedinTimeFilterValidator = v.union(
+  v.literal("past-24h"),
+  v.literal("past-week"),
+  v.literal("past-month"),
+  v.literal("past-year")
+);
+
+export const targetingSearchFiltersValidator = v.object({
+  twitter: v.object({
+    language: v.optional(v.string()),
+    location: v.optional(v.string()),
+  }),
+  linkedinPeople: v.object({
+    location: v.optional(v.string()),
+    profileLanguage: v.optional(v.string()),
+  }),
+  linkedinPosts: v.object({
+    authorJobTitle: v.optional(v.string()),
+    datePosted: v.optional(linkedinTimeFilterValidator),
+  }),
+});
+
+export const workspaceTargetingSpecValidator = v.object({
+  version: v.literal(1),
+  // Deprecated compatibility field. New setup generations use only summary
+  // and atomic criteria, without a fixed use-case taxonomy.
+  intent: v.optional(v.string()),
+  summary: v.string(),
+  criteria: v.array(targetingCriterionValidator),
+  searchHints: targetingSearchHintsValidator,
+  searchFilters: v.optional(targetingSearchFiltersValidator),
+});
+
+export const targetingCriterionVerdictValidator = v.union(
+  v.literal("matched"),
+  v.literal("partial"),
+  v.literal("not_matched"),
+  v.literal("unknown")
+);
+
+export const qualificationCriterionResultValidator = v.object({
+  criterionId: v.string(),
+  verdict: targetingCriterionVerdictValidator,
+  confidence: v.number(),
+  rationale: v.string(),
+  sourceIds: v.array(v.string()),
+});
+
+export const discoveryStageValidator = v.union(
+  v.literal("strict"),
+  v.literal("balanced"),
+  v.literal("broad")
+);
+
 export const workspaceProfileChangeStatusValidator = v.union(
   v.literal("pending_approval"),
   v.literal("applied"),
@@ -1371,6 +1476,10 @@ export const qualificationAuditItemResultValidator = v.object({
   qualificationVerification: v.optional(qualificationVerificationValidator),
   authenticity: v.optional(qualificationAuthenticityValidator),
   scoreBreakdown: v.optional(qualificationScoreBreakdownValidator),
+  qualificationCriteriaVersion: v.optional(v.literal(1)),
+  qualificationCriterionResults: v.optional(
+    v.array(qualificationCriterionResultValidator)
+  ),
 });
 
 export const prospectStatusValidator = v.union(
@@ -2393,14 +2502,6 @@ export const linkedinSortOrderValidator = v.union(
   v.literal("date_posted")
 );
 
-// LinkedIn time filter (used in searchPosts)
-export const linkedinTimeFilterValidator = v.union(
-  v.literal("past-24h"),
-  v.literal("past-week"),
-  v.literal("past-month"),
-  v.literal("past-year")
-);
-
 export const linkedinSearchSurfaceValidator = v.union(
   v.literal("posts"),
   v.literal("people")
@@ -2889,3 +2990,38 @@ export const memoryEvaluatorRunStatusValidator = v.union(
   v.literal("ignored"),
   v.literal("failed")
 );
+
+export const learningEntryReferenceValidator = v.object({
+  entryId: v.string(),
+  targetingFingerprint: v.optional(v.string()),
+  sourceId: v.optional(v.string()),
+});
+
+export const requalificationPageValidator = v.object({
+  items: v.array(
+    v.object({
+      prospectId: v.id("prospects"),
+      skipReason: v.union(v.string(), v.null()),
+    })
+  ),
+  isDone: v.boolean(),
+  continueCursor: v.string(),
+});
+export const requalificationResultValidator = v.object({
+  isDone: v.optional(v.boolean()),
+  continueCursor: v.optional(v.union(v.string(), v.null())),
+  scanned: v.number(),
+  eligible: v.number(),
+  completed: v.number(),
+  skipped: v.number(),
+  failed: v.number(),
+  dryRun: v.boolean(),
+});
+
+export const requalificationReadinessValidator = v.object({
+  targetingFingerprint: v.string(),
+  prospectingStatus: v.optional(v.string()),
+  activeWorkflowId: v.optional(v.string()),
+  lastResult: v.optional(requalificationResultValidator),
+  lastError: v.optional(v.string()),
+});

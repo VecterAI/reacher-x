@@ -4,6 +4,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
+import { buildLegacyWorkspaceTargetingSpec } from "./lib/targetingSpecCore";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -118,6 +119,11 @@ describe("workspace targeting persistence", () => {
         improvedDescription:
           "Find doctors who publicly offer free consultations for new patients.",
         icps: profiles,
+        targetingSpec: buildLegacyWorkspaceTargetingSpec({
+          description:
+            "Find doctors who publicly offer free consultations for new patients.",
+          profiles,
+        }),
         useCaseKey: "general_outreach",
       }
     );

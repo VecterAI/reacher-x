@@ -1,3 +1,7 @@
+import {
+  getLearningTargetingFingerprint,
+  isCurrentTargetingLearning,
+} from "./lib/learningTargetingHelpers";
 // convex/keywords.ts
 // Keyword management for prospect discovery (row-per-keyword design)
 
@@ -16,6 +20,7 @@ import {
   linkedinSearchSurfaceValidator,
   socialQueryStyleValidator,
   twitterProspectingSearchModeValidator,
+  discoveryStageValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
@@ -38,6 +43,7 @@ import {
   prioritizeQueries,
   type QueryPriority,
 } from "./lib/queryPrioritizationCore";
+import { getStricterDiscoveryStage } from "./lib/targetingSpecCore";
 import {
   resolveTwitterProspectingSearchMode,
   type TwitterProspectingSearchMode,
@@ -131,6 +137,7 @@ async function getPrioritizedSocialQueries(
     workspaceId: Id<"workspaces">;
     platform: "twitter" | "linkedin";
     surface?: "posts" | "people";
+    allowedDiscoveryStages?: Array<"strict" | "balanced" | "broad">;
     limit: number;
   }
 ): Promise<
@@ -141,8 +148,11 @@ async function getPrioritizedSocialQueries(
     lastSeenPostId?: string;
     priority: QueryPriority;
     searchMode?: TwitterProspectingSearchMode;
+    discoveryStage?: "strict" | "balanced" | "broad";
   }>
 > {
+  const workspace = await ctx.db.get(args.workspaceId);
+  if (!workspace) return [];
   const [keywords, performanceRows] = await Promise.all([
     ctx.db
       .query("keywords")
@@ -158,7 +168,9 @@ async function getPrioritizedSocialQueries(
       .collect(),
   ]);
   const performanceByQueryId = new Map(
-    performanceRows.map((row) => [String(row.queryId), row])
+    performanceRows
+      .filter((row) => isCurrentTargetingLearning(row, workspace))
+      .map((row) => [String(row.queryId), row])
   );
   const twitterSearchModeByQueryId = new Map(
     keywords.map((keyword) => [
@@ -176,7 +188,14 @@ async function getPrioritizedSocialQueries(
     ])
   );
   const candidates = keywords
+    .filter((keyword) => isCurrentTargetingLearning(keyword, workspace))
     .filter((keyword) => keyword.status !== "deprecated")
+    .filter(
+      (keyword) =>
+        !keyword.discoveryStage ||
+        !args.allowedDiscoveryStages ||
+        args.allowedDiscoveryStages.includes(keyword.discoveryStage)
+    )
     .filter((keyword) => keywordTargetsPlatform(keyword, args.platform))
     .filter((keyword) =>
       args.platform === "linkedin" && args.surface
@@ -204,6 +223,7 @@ async function getPrioritizedSocialQueries(
               qualificationRate: performance.qualificationRate,
             }
           : undefined,
+        discoveryStage: keyword.discoveryStage,
       };
     });
 
@@ -225,6 +245,7 @@ async function getPrioritizedSocialQueries(
       args.platform === "twitter"
         ? twitterSearchModeByQueryId.get(String(candidate.id))
         : undefined,
+    discoveryStage: candidate.discoveryStage,
   }));
 }
 
@@ -255,6 +276,8 @@ async function syncKeywordMemoryState(
     linkedinSurfaceTargets?: Array<"posts" | "people">;
     queryStyle?: "natural_phrase" | "professional_keyword" | "role_title";
     twitterSearchMode?: TwitterProspectingSearchMode;
+    discoveryStage?: "strict" | "balanced" | "broad";
+    targetingCriterionIds?: string[];
   }
 ) {
   const queryCandidate = await upsertQueryCandidateRecord(ctx.db, {
@@ -320,10 +343,16 @@ async function syncKeywordMemoryState(
 export const getWorkspaceKeywordsInternal = internalQuery({
   args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
-    const keywords = await ctx.db
+    const workspace = await ctx.db.get(args.workspaceId);
+    const storedKeywords = await ctx.db
       .query("keywords")
       .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
       .collect();
+    const keywords = workspace
+      ? storedKeywords.filter((row) =>
+          isCurrentTargetingLearning(row, workspace)
+        )
+      : [];
 
     // Group by type for backwards compatibility
     const seedKeywords: string[] = [];
@@ -375,12 +404,18 @@ export const getWorkspaceKeywordsInternal = internalQuery({
 export const getSocialQueriesInternal = internalQuery({
   args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
-    const keywords = await ctx.db
+    const workspace = await ctx.db.get(args.workspaceId);
+    const storedKeywords = await ctx.db
       .query("keywords")
       .withIndex("by_workspace_type", (q) =>
         q.eq("workspaceId", args.workspaceId).eq("type", "social_query")
       )
       .collect();
+    const keywords = workspace
+      ? storedKeywords.filter((row) =>
+          isCurrentTargetingLearning(row, workspace)
+        )
+      : [];
 
     return keywords.map((kw) => ({
       value: kw.originalValue ?? kw.value,
@@ -399,7 +434,8 @@ export const getKeywordByCanonicalHashInternal = internalQuery({
     canonicalHash: v.string(),
   },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const workspace = await ctx.db.get(args.workspaceId);
+    const keyword = await ctx.db
       .query("keywords")
       .withIndex("by_workspace_canonical_hash", (q) =>
         q
@@ -407,6 +443,11 @@ export const getKeywordByCanonicalHashInternal = internalQuery({
           .eq("canonicalHash", args.canonicalHash)
       )
       .first();
+    return workspace &&
+      keyword &&
+      isCurrentTargetingLearning(keyword, workspace)
+      ? keyword
+      : null;
   },
 });
 
@@ -429,6 +470,8 @@ export const getUnsearchedQueries = internalQuery({
     ctx,
     args
   ): Promise<Array<{ id: Id<"keywords">; value: string }>> => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) return [];
     const batchLimit = args.limit ?? 10;
 
     const rawQueries =
@@ -453,6 +496,7 @@ export const getUnsearchedQueries = internalQuery({
             .collect();
 
     const queries = rawQueries
+      .filter((keyword) => isCurrentTargetingLearning(keyword, workspace))
       .filter((keyword) => keywordTargetsPlatform(keyword, args.platform))
       .filter((keyword) =>
         args.platform === "linkedin" && args.surface
@@ -471,12 +515,14 @@ export const getUnsearchedQueries = internalQuery({
 export const getPrioritizedTwitterQueries = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
+    allowedDiscoveryStages: v.optional(v.array(discoveryStageValidator)),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) =>
     await getPrioritizedSocialQueries(ctx, {
       workspaceId: args.workspaceId,
       platform: "twitter",
+      allowedDiscoveryStages: args.allowedDiscoveryStages,
       limit: args.limit ?? 5,
     }),
 });
@@ -489,6 +535,7 @@ export const getPrioritizedLinkedInQueries = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
     surface: linkedinSearchSurfaceValidator,
+    allowedDiscoveryStages: v.optional(v.array(discoveryStageValidator)),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) =>
@@ -496,6 +543,7 @@ export const getPrioritizedLinkedInQueries = internalQuery({
       workspaceId: args.workspaceId,
       platform: "linkedin",
       surface: args.surface,
+      allowedDiscoveryStages: args.allowedDiscoveryStages,
       limit: args.limit ?? 8,
     }),
 });
@@ -506,6 +554,7 @@ export const getPrioritizedLinkedInQueries = internalQuery({
  */
 export const markQueriesAsSearched = internalMutation({
   args: {
+    expectedTargetingFingerprint: v.optional(v.string()),
     queryIds: v.array(v.id("keywords")),
     platform: prospectPlatformValidator,
     surface: v.optional(linkedinSearchSurfaceValidator),
@@ -537,6 +586,15 @@ export const markQueriesAsSearched = internalMutation({
     for (const queryId of args.queryIds) {
       const keyword = await ctx.db.get(queryId);
       if (keyword && keyword.type === "social_query") {
+        const workspace = await ctx.db.get(keyword.workspaceId);
+        if (
+          !workspace ||
+          !isCurrentTargetingLearning(keyword, workspace) ||
+          (args.expectedTargetingFingerprint !== undefined &&
+            args.expectedTargetingFingerprint !==
+              getLearningTargetingFingerprint(workspace))
+        )
+          continue;
         const canonical =
           keyword.canonicalValue && keyword.canonicalHash
             ? {
@@ -652,8 +710,13 @@ export const saveKeywordInternal = internalMutation({
     linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
     queryStyle: v.optional(socialQueryStyleValidator),
     twitterSearchMode: v.optional(twitterProspectingSearchModeValidator),
+    discoveryStage: v.optional(discoveryStageValidator),
+    targetingCriterionIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+    const targetingFingerprint = getLearningTargetingFingerprint(workspace);
     const normalized = normalizeKeyword(args.value);
     const canonical = buildKeywordCanonicalRecord({
       type: args.type,
@@ -674,35 +737,65 @@ export const saveKeywordInternal = internalMutation({
       .first();
 
     if (existing) {
+      const previous = isCurrentTargetingLearning(existing, workspace)
+        ? existing
+        : undefined;
       // The compound index guarantees this, but keep the guard defensive.
       if (existing.type === args.type) {
         await ctx.db.patch(existing._id, {
+          targetingFingerprint,
+          ...(!previous
+            ? {
+                status: "active" as const,
+                lastSearchedTwitterAt: undefined,
+                lastSearchedLinkedInAt: undefined,
+                twitterLastSeenPostId: undefined,
+                twitterResultsCount: undefined,
+                linkedinResultsCount: undefined,
+                resultsCount: undefined,
+                lastUsedAt: undefined,
+              }
+            : {}),
           canonicalValue: canonical.canonicalValue,
           canonicalHash: canonical.canonicalHash,
           canonicalKey: canonical.canonicalKey,
-          source: args.source ?? existing.source,
-          searchVolume: args.searchVolume ?? existing.searchVolume,
-          competition: args.competition ?? existing.competition,
-          competitionLevel: args.competitionLevel ?? existing.competitionLevel,
-          cpc: args.cpc ?? existing.cpc,
+          source: args.source ?? previous?.source,
+          searchVolume: args.searchVolume ?? previous?.searchVolume,
+          competition: args.competition ?? previous?.competition,
+          competitionLevel: args.competitionLevel ?? previous?.competitionLevel,
+          cpc: args.cpc ?? previous?.cpc,
           keywordDifficulty:
-            args.keywordDifficulty ?? existing.keywordDifficulty,
-          searchIntent: args.searchIntent ?? existing.searchIntent,
-          trend: args.trend ?? existing.trend,
-          monitorId: args.monitorId ?? existing.monitorId,
+            args.keywordDifficulty ?? previous?.keywordDifficulty,
+          searchIntent: args.searchIntent ?? previous?.searchIntent,
+          trend: args.trend ?? previous?.trend,
+          monitorId: args.monitorId ?? previous?.monitorId,
           platformTargets:
-            mergeUniqueValues(existing.platformTargets, args.platformTargets) ??
-            existing.platformTargets,
-          linkedinSurface: existing.linkedinSurface ?? args.linkedinSurface,
+            mergeUniqueValues(
+              previous?.platformTargets,
+              args.platformTargets
+            ) ?? previous?.platformTargets,
+          linkedinSurface: previous?.linkedinSurface ?? args.linkedinSurface,
           linkedinSurfaceTargets:
             mergeUniqueValues(
-              existing.linkedinSurfaceTargets,
+              previous?.linkedinSurfaceTargets,
               args.linkedinSurfaceTargets,
               args.linkedinSurface ? [args.linkedinSurface] : undefined
-            ) ?? existing.linkedinSurfaceTargets,
-          queryStyle: args.queryStyle ?? existing.queryStyle,
+            ) ?? previous?.linkedinSurfaceTargets,
+          queryStyle: args.queryStyle ?? previous?.queryStyle,
           twitterSearchMode:
-            args.twitterSearchMode ?? existing.twitterSearchMode,
+            args.twitterSearchMode ?? previous?.twitterSearchMode,
+          discoveryStage:
+            args.discoveryStage && previous?.discoveryStage
+              ? getStricterDiscoveryStage(
+                  previous?.discoveryStage,
+                  args.discoveryStage
+                )
+              : (args.discoveryStage ?? previous?.discoveryStage),
+          targetingCriterionIds:
+            mergeUniqueValues(
+              previous?.targetingCriterionIds,
+              args.targetingCriterionIds
+            ) ?? previous?.targetingCriterionIds,
         });
 
         await syncKeywordMemoryState(ctx, {
@@ -710,20 +803,22 @@ export const saveKeywordInternal = internalMutation({
           keywordId: existing._id,
           type: args.type,
           rawValue: args.value.trim(),
-          lastUsedAt: existing.lastUsedAt,
+          lastUsedAt: previous?.lastUsedAt,
           platformTargets:
-            mergeUniqueValues(existing.platformTargets, args.platformTargets) ??
-            existing.platformTargets,
-          linkedinSurface: existing.linkedinSurface ?? args.linkedinSurface,
+            mergeUniqueValues(
+              previous?.platformTargets,
+              args.platformTargets
+            ) ?? previous?.platformTargets,
+          linkedinSurface: previous?.linkedinSurface ?? args.linkedinSurface,
           linkedinSurfaceTargets:
             mergeUniqueValues(
-              existing.linkedinSurfaceTargets,
+              previous?.linkedinSurfaceTargets,
               args.linkedinSurfaceTargets,
               args.linkedinSurface ? [args.linkedinSurface] : undefined
-            ) ?? existing.linkedinSurfaceTargets,
-          queryStyle: args.queryStyle ?? existing.queryStyle,
+            ) ?? previous?.linkedinSurfaceTargets,
+          queryStyle: args.queryStyle ?? previous?.queryStyle,
           twitterSearchMode:
-            args.twitterSearchMode ?? existing.twitterSearchMode,
+            args.twitterSearchMode ?? previous?.twitterSearchMode,
         });
       }
       return existing._id;
@@ -732,6 +827,7 @@ export const saveKeywordInternal = internalMutation({
     // Insert new keyword
     const keywordId = await ctx.db.insert("keywords", {
       workspaceId: args.workspaceId,
+      targetingFingerprint,
       type: args.type,
       value: normalized,
       canonicalValue: canonical.canonicalValue,
@@ -758,6 +854,8 @@ export const saveKeywordInternal = internalMutation({
         ) ?? undefined,
       queryStyle: args.queryStyle,
       twitterSearchMode: args.twitterSearchMode,
+      discoveryStage: args.discoveryStage,
+      targetingCriterionIds: args.targetingCriterionIds,
     });
 
     await syncKeywordMemoryState(ctx, {
@@ -813,10 +911,15 @@ export const saveKeywordsBatch = internalMutation({
         ),
         queryStyle: v.optional(socialQueryStyleValidator),
         twitterSearchMode: v.optional(twitterProspectingSearchModeValidator),
+        discoveryStage: v.optional(discoveryStageValidator),
+        targetingCriterionIds: v.optional(v.array(v.string())),
       })
     ),
   },
   handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+    const targetingFingerprint = getLearningTargetingFingerprint(workspace);
     const now = getCurrentUTCTimestamp();
     let inserted = 0;
     let updated = 0;
@@ -846,62 +949,94 @@ export const saveKeywordsBatch = internalMutation({
       const existing = existingMap.get(canonical.canonicalKey);
 
       if (existing) {
+        const previous = isCurrentTargetingLearning(existing, workspace)
+          ? existing
+          : undefined;
         if (existing.type === keyword.type) {
           await ctx.db.patch(existing._id, {
+            targetingFingerprint,
+            ...(!previous
+              ? {
+                  status: "active" as const,
+                  lastSearchedTwitterAt: undefined,
+                  lastSearchedLinkedInAt: undefined,
+                  twitterLastSeenPostId: undefined,
+                  twitterResultsCount: undefined,
+                  linkedinResultsCount: undefined,
+                  resultsCount: undefined,
+                  lastUsedAt: undefined,
+                }
+              : {}),
             canonicalValue: canonical.canonicalValue,
             canonicalHash: canonical.canonicalHash,
             canonicalKey: canonical.canonicalKey,
-            source: keyword.source ?? existing.source,
-            searchVolume: keyword.searchVolume ?? existing.searchVolume,
-            competition: keyword.competition ?? existing.competition,
+            source: keyword.source ?? previous?.source,
+            searchVolume: keyword.searchVolume ?? previous?.searchVolume,
+            competition: keyword.competition ?? previous?.competition,
             competitionLevel:
-              keyword.competitionLevel ?? existing.competitionLevel,
-            cpc: keyword.cpc ?? existing.cpc,
+              keyword.competitionLevel ?? previous?.competitionLevel,
+            cpc: keyword.cpc ?? previous?.cpc,
             keywordDifficulty:
-              keyword.keywordDifficulty ?? existing.keywordDifficulty,
-            searchIntent: keyword.searchIntent ?? existing.searchIntent,
-            trend: keyword.trend ?? existing.trend,
-            monitorId: keyword.monitorId ?? existing.monitorId,
+              keyword.keywordDifficulty ?? previous?.keywordDifficulty,
+            searchIntent: keyword.searchIntent ?? previous?.searchIntent,
+            trend: keyword.trend ?? previous?.trend,
+            monitorId: keyword.monitorId ?? previous?.monitorId,
             platformTargets:
               mergeUniqueValues(
-                existing.platformTargets,
+                previous?.platformTargets,
                 keyword.platformTargets
-              ) ?? existing.platformTargets,
+              ) ?? previous?.platformTargets,
             linkedinSurface:
-              existing.linkedinSurface ?? keyword.linkedinSurface,
+              previous?.linkedinSurface ?? keyword.linkedinSurface,
             linkedinSurfaceTargets:
               mergeUniqueValues(
-                existing.linkedinSurfaceTargets,
+                previous?.linkedinSurfaceTargets,
                 keyword.linkedinSurfaceTargets,
                 keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
-              ) ?? existing.linkedinSurfaceTargets,
-            queryStyle: keyword.queryStyle ?? existing.queryStyle,
+              ) ?? previous?.linkedinSurfaceTargets,
+            queryStyle: keyword.queryStyle ?? previous?.queryStyle,
             twitterSearchMode:
-              keyword.twitterSearchMode ?? existing.twitterSearchMode,
+              keyword.twitterSearchMode ?? previous?.twitterSearchMode,
+            discoveryStage:
+              keyword.discoveryStage && previous?.discoveryStage
+                ? getStricterDiscoveryStage(
+                    previous?.discoveryStage,
+                    keyword.discoveryStage
+                  )
+                : (keyword.discoveryStage ?? previous?.discoveryStage),
+            targetingCriterionIds:
+              mergeUniqueValues(
+                previous?.targetingCriterionIds,
+                keyword.targetingCriterionIds
+              ) ?? previous?.targetingCriterionIds,
           });
           await syncKeywordMemoryState(ctx, {
             workspaceId: args.workspaceId,
             keywordId: existing._id,
             type: keyword.type,
             rawValue: keyword.value.trim(),
-            lastUsedAt: existing.lastUsedAt,
+            lastUsedAt: previous?.lastUsedAt,
             platformTargets:
               mergeUniqueValues(
-                existing.platformTargets,
+                previous?.platformTargets,
                 keyword.platformTargets
-              ) ?? existing.platformTargets,
+              ) ?? previous?.platformTargets,
             linkedinSurface:
-              existing.linkedinSurface ?? keyword.linkedinSurface,
+              previous?.linkedinSurface ?? keyword.linkedinSurface,
             linkedinSurfaceTargets:
               mergeUniqueValues(
-                existing.linkedinSurfaceTargets,
+                previous?.linkedinSurfaceTargets,
                 keyword.linkedinSurfaceTargets,
                 keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
-              ) ?? existing.linkedinSurfaceTargets,
-            queryStyle: keyword.queryStyle ?? existing.queryStyle,
+              ) ?? previous?.linkedinSurfaceTargets,
+            queryStyle: keyword.queryStyle ?? previous?.queryStyle,
             twitterSearchMode:
-              keyword.twitterSearchMode ?? existing.twitterSearchMode,
+              keyword.twitterSearchMode ?? previous?.twitterSearchMode,
           });
+          const refreshedKeyword = await ctx.db.get(existing._id);
+          if (refreshedKeyword) {
+            existingMap.set(canonical.canonicalKey, refreshedKeyword);
+          }
           updated++;
         } else {
           skipped++;
@@ -910,6 +1045,7 @@ export const saveKeywordsBatch = internalMutation({
         // Insert new
         const newId = await ctx.db.insert("keywords", {
           workspaceId: args.workspaceId,
+          targetingFingerprint,
           type: keyword.type,
           value: normalized,
           canonicalValue: canonical.canonicalValue,
@@ -938,6 +1074,8 @@ export const saveKeywordsBatch = internalMutation({
             ) ?? undefined,
           queryStyle: keyword.queryStyle,
           twitterSearchMode: keyword.twitterSearchMode,
+          discoveryStage: keyword.discoveryStage,
+          targetingCriterionIds: keyword.targetingCriterionIds,
         });
         await syncKeywordMemoryState(ctx, {
           workspaceId: args.workspaceId,
@@ -953,9 +1091,12 @@ export const saveKeywordsBatch = internalMutation({
             ) ?? undefined,
           queryStyle: keyword.queryStyle,
           twitterSearchMode: keyword.twitterSearchMode,
+          discoveryStage: keyword.discoveryStage,
+          targetingCriterionIds: keyword.targetingCriterionIds,
         });
         // Add to map to prevent duplicates within batch
         existingMap.set(canonical.canonicalKey, {
+          targetingFingerprint,
           _id: newId,
           _creationTime: now,
           workspaceId: args.workspaceId,
@@ -975,6 +1116,8 @@ export const saveKeywordsBatch = internalMutation({
             ) ?? undefined,
           queryStyle: keyword.queryStyle,
           twitterSearchMode: keyword.twitterSearchMode,
+          discoveryStage: keyword.discoveryStage,
+          targetingCriterionIds: keyword.targetingCriterionIds,
         });
         inserted++;
       }

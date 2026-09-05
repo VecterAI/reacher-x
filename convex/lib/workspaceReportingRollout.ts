@@ -1,6 +1,6 @@
 import type { GenericDatabaseReader } from "convex/server";
 import type { DataModel, Id } from "../_generated/dataModel";
-import { WORKSPACE_REPORTING_AGGREGATE_VERSION } from "./workspaceReportingAggregate";
+import { isSupportedWorkspaceReportingVersion } from "./workspaceReportingAggregate";
 
 export async function getWorkspaceReportingRollout(
   db: GenericDatabaseReader<DataModel>,
@@ -19,6 +19,6 @@ export async function isWorkspaceReportingAggregateReady(
   const rollout = await getWorkspaceReportingRollout(db, workspaceId);
   return (
     rollout?.status === "verified" &&
-    rollout.aggregateVersion === WORKSPACE_REPORTING_AGGREGATE_VERSION
+    isSupportedWorkspaceReportingVersion(rollout.aggregateVersion)
   );
 }

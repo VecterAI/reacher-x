@@ -15,6 +15,7 @@ import {
   getNextLinkedInPostsSearchStart,
   LINKEDIN_POSTS_DEFAULT_PAGE_SIZE,
   LINKEDIN_POSTS_MAX_PAGES_PER_QUERY,
+  normalizeLinkedInPostAuthorJobTitle,
 } from "../../lib/linkedinSearchHelpers";
 import {
   linkedinSortOrderValidator,
@@ -122,6 +123,7 @@ export interface BatchSearchResult {
     error?: string;
   }>;
   queryResults: Array<{
+    authorJobTitle?: string;
     query: string;
     postsFound: number;
     searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
@@ -329,6 +331,9 @@ export const searchInternal = internalAction({
     authorJobTitle: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<InternalSearchResult> => {
+    const authorJobTitle = normalizeLinkedInPostAuthorJobTitle(
+      args.authorJobTitle
+    );
     const data = await requestLinkdApiData<ApiResponse["data"]>(ctx, {
       path: "/api/v1/search/posts",
       query: {
@@ -336,7 +341,7 @@ export const searchInternal = internalAction({
         start: args.start,
         sortBy: args.sortBy,
         datePosted: args.datePosted,
-        authorJobTitle: args.authorJobTitle,
+        authorJobTitle,
       },
       consumer: `linkedin.searchPosts:${args.searchMode ?? "plain_relevance"}:${args.query}`,
     });
@@ -556,6 +561,9 @@ export const searchBatch = action({
     const startTime = getCurrentUTCTimestamp();
 
     const uniqueQueries = normalizeQueryList(args.queries);
+    const authorJobTitle = normalizeLinkedInPostAuthorJobTitle(
+      args.authorJobTitle
+    );
 
     const maxQueries = args.maxQueriesPerBatch ?? 20;
     const queriesToExecute = uniqueQueries.slice(0, maxQueries);
@@ -589,13 +597,14 @@ export const searchBatch = action({
         searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
         sortBy: "relevance" | "date_posted";
         datePosted?: "past-24h" | "past-week" | "past-month" | "past-year";
+        authorJobTitle?: string;
       }>;
       runIdPromise: Promise<RunId>;
     }> = [];
 
     for (let i = 0; i < queriesToExecute.length; i++) {
       const query = queriesToExecute[i];
-      const attempts: Array<{
+      const baseAttempts: Array<{
         query: string;
         searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
         sortBy: "relevance" | "date_posted";
@@ -610,7 +619,7 @@ export const searchBatch = action({
       ];
 
       if (args.datePosted === undefined) {
-        attempts.push({
+        baseAttempts.push({
           query,
           searchMode: "plain_date",
           sortBy: "date_posted",
@@ -618,13 +627,29 @@ export const searchBatch = action({
       }
 
       if (shouldUseExactPhraseFallback(query)) {
-        attempts.push({
+        baseAttempts.push({
           query: buildExactPhraseQuery(query),
           searchMode: "exact_phrase",
           sortBy: args.sortBy ?? "relevance",
           datePosted: args.datePosted,
         });
       }
+
+      const attempts: Array<{
+        query: string;
+        searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
+        sortBy: "relevance" | "date_posted";
+        datePosted?: "past-24h" | "past-week" | "past-month" | "past-year";
+        authorJobTitle?: string;
+      }> = authorJobTitle
+        ? [
+            ...baseAttempts.map((attempt) => ({
+              ...attempt,
+              authorJobTitle,
+            })),
+            ...baseAttempts,
+          ]
+        : baseAttempts;
 
       const runIdPromise = new Promise<RunId>((resolve, reject) => {
         void (async () => {
@@ -637,7 +662,7 @@ export const searchBatch = action({
                 searchMode: attempts[0].searchMode,
                 sortBy: attempts[0].sortBy,
                 datePosted: attempts[0].datePosted,
-                authorJobTitle: args.authorJobTitle,
+                authorJobTitle: attempts[0].authorJobTitle,
               }
             );
             resolve(runId);
@@ -658,6 +683,7 @@ export const searchBatch = action({
         searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
         sortBy: "relevance" | "date_posted";
         datePosted?: "past-24h" | "past-week" | "past-month" | "past-year";
+        authorJobTitle?: string;
       }>;
       runId: RunId | null;
       error?: string;
@@ -687,11 +713,7 @@ export const searchBatch = action({
       searchMode?: "plain_relevance" | "plain_date" | "exact_phrase";
       error?: string;
     }> = [];
-    const queryResults: Array<{
-      query: string;
-      postsFound: number;
-      searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
-    }> = [];
+    const queryResults: BatchSearchResult["queryResults"] = [];
     let queriesSucceeded = 0;
     let totalPostsFound = 0;
 
@@ -731,7 +753,7 @@ export const searchBatch = action({
               searchMode: attempt.searchMode,
               sortBy: attempt.sortBy,
               datePosted: attempt.datePosted,
-              authorJobTitle: args.authorJobTitle,
+              authorJobTitle: attempt.authorJobTitle,
               initialResult,
             });
           } catch (error) {
@@ -751,6 +773,7 @@ export const searchBatch = action({
               searchMode: attempt.searchMode,
             });
             queryResults.push({
+              authorJobTitle: attempt.authorJobTitle,
               query,
               postsFound: result.posts.length,
               searchMode: attempt.searchMode,
@@ -782,7 +805,7 @@ export const searchBatch = action({
               searchMode: nextAttempt.searchMode,
               sortBy: nextAttempt.sortBy,
               datePosted: nextAttempt.datePosted,
-              authorJobTitle: args.authorJobTitle,
+              authorJobTitle: nextAttempt.authorJobTitle,
             }
           );
         }

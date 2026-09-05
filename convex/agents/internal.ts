@@ -16,15 +16,23 @@ import {
 import { isRecord } from "../lib/typeGuards";
 import {
   prospectPlatformValidator,
+  workspaceTargetingSpecValidator,
   workspaceUseCaseKeyValidator,
 } from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { getWorkspaceUseCase } from "../../shared/lib/workspaceUseCases";
 import { getWideEventLogger } from "../lib/wideEventLogger";
 import {
+  applyTwitterProviderSearchFilters,
   resolveTwitterProspectingSearchMode,
   type TwitterProspectingSearchMode,
 } from "../lib/twitterProspectingSearchCore";
+import {
+  getStricterDiscoveryStage,
+  shouldUseLinkedInPeopleDiscovery,
+  type DiscoveryStage,
+  type WorkspaceTargetingSpec,
+} from "../lib/targetingSpecCore";
 
 // ============================================================================
 // Schemas
@@ -35,12 +43,18 @@ const prospectingKeywordsSchema = z.object({
   reasoning: z.string(),
 });
 
-const socialQueryItemSchema = z.object({
-  query: z.string().max(40),
+const socialQueryMetadataSchema = z.object({
+  stage: z.enum(["strict", "balanced", "broad"]),
+  criterionIds: z.array(z.string().max(48)).max(6),
   sourceKeyword: z.string().optional(),
 });
 
-const twitterSocialQueryItemSchema = socialQueryItemSchema.extend({
+const socialQueryItemSchema = socialQueryMetadataSchema.extend({
+  query: z.string().max(120),
+});
+
+const twitterSocialQueryItemSchema = socialQueryMetadataSchema.extend({
+  query: z.string().max(220),
   searchMode: z.enum(["exact", "raw"]),
 });
 
@@ -69,10 +83,13 @@ type SocialQueryMetadata = {
   linkedinSurfaceTargets?: Array<"posts" | "people">;
   queryStyle: "natural_phrase" | "professional_keyword" | "role_title";
   twitterSearchMode?: TwitterProspectingSearchMode;
+  discoveryStage: DiscoveryStage;
+  targetingCriterionIds: string[];
   legacyCompatibilitySource: boolean;
 };
 
-const MAX_SOCIAL_QUERY_CHARS = 40;
+const MAX_TWITTER_QUERY_CHARS = 220;
+const MAX_LINKEDIN_QUERY_CHARS = 120;
 const MAX_SOCIAL_QUERY_ITEMS_PER_GROUP = 15;
 const PEOPLE_QUERY_HINTS = [
   "architect",
@@ -98,23 +115,31 @@ function normalizeSearchText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function normalizeSocialQueryText(value: string) {
+function normalizeSocialQueryText(
+  value: string,
+  platform: "twitter" | "linkedin"
+) {
   const normalized = normalizeSearchText(value);
-  if (normalized.length <= MAX_SOCIAL_QUERY_CHARS) {
+  const limit =
+    platform === "twitter" ? MAX_TWITTER_QUERY_CHARS : MAX_LINKEDIN_QUERY_CHARS;
+  if (normalized.length <= limit) {
     return normalized;
   }
 
-  const clipped = normalized.slice(0, MAX_SOCIAL_QUERY_CHARS).trimEnd();
+  const clipped = normalized.slice(0, limit).trimEnd();
   const lastSpace = clipped.lastIndexOf(" ");
   return (lastSpace >= 16 ? clipped.slice(0, lastSpace) : clipped).trimEnd();
 }
 
-function dedupeQueryItems(items: GeneratedSocialQuery[]) {
+function dedupeQueryItems(
+  items: GeneratedSocialQuery[],
+  platform: "twitter" | "linkedin"
+) {
   const seen = new Set<string>();
   const deduped: GeneratedSocialQuery[] = [];
 
   for (const item of items) {
-    const query = normalizeSocialQueryText(item.query);
+    const query = normalizeSocialQueryText(item.query, platform);
     if (!query) continue;
     const key = query.toLowerCase();
     if (seen.has(key)) continue;
@@ -124,6 +149,8 @@ function dedupeQueryItems(items: GeneratedSocialQuery[]) {
       sourceKeyword: item.sourceKeyword
         ? normalizeSearchText(item.sourceKeyword) || undefined
         : undefined,
+      stage: item.stage ?? "balanced",
+      criterionIds: Array.from(new Set(item.criterionIds ?? [])).slice(0, 6),
       ...(item.searchMode
         ? {
             searchMode: resolveTwitterProspectingSearchMode({
@@ -138,13 +165,29 @@ function dedupeQueryItems(items: GeneratedSocialQuery[]) {
   return deduped;
 }
 
+function interleaveQueryGroups(
+  groups: readonly (readonly string[])[]
+): string[] {
+  const result: string[] = [];
+  const maxLength = Math.max(0, ...groups.map((group) => group.length));
+  for (let index = 0; index < maxLength; index += 1) {
+    for (const group of groups) {
+      const query = group[index];
+      if (query) result.push(query);
+    }
+  }
+  return result;
+}
+
 function normalizeSocialQueryItemPayload(
   value: unknown,
   platform: "twitter" | "linkedin"
 ): unknown {
   if (typeof value === "string") {
-    const query = normalizeSocialQueryText(value);
-    return platform === "twitter" ? { query, searchMode: "raw" } : { query };
+    const query = normalizeSocialQueryText(value, platform);
+    return platform === "twitter"
+      ? { query, searchMode: "raw", stage: "balanced", criterionIds: [] }
+      : { query, stage: "balanced", criterionIds: [] };
   }
 
   if (!isRecord(value)) {
@@ -153,7 +196,7 @@ function normalizeSocialQueryItemPayload(
 
   const query =
     typeof value.query === "string"
-      ? normalizeSocialQueryText(value.query)
+      ? normalizeSocialQueryText(value.query, platform)
       : value.query;
 
   return {
@@ -163,6 +206,17 @@ function normalizeSocialQueryItemPayload(
       typeof value.sourceKeyword === "string"
         ? normalizeSearchText(value.sourceKeyword)
         : value.sourceKeyword,
+    stage:
+      value.stage === "strict" ||
+      value.stage === "balanced" ||
+      value.stage === "broad"
+        ? value.stage
+        : "balanced",
+    criterionIds: Array.isArray(value.criterionIds)
+      ? value.criterionIds
+          .filter((item): item is string => typeof item === "string")
+          .slice(0, 6)
+      : [],
     ...(platform === "twitter"
       ? {
           searchMode:
@@ -230,22 +284,33 @@ function buildKeywordFallbackSocialQueries(args: {
   includeTwitter: boolean;
   includeLinkedIn: boolean;
 }): SocialQueriesObject {
-  const baseQueries = dedupeQueryItems(
-    args.keywords.map((keyword) => ({
-      query: keyword,
-      sourceKeyword: keyword,
-    }))
-  ).slice(0, MAX_SOCIAL_QUERY_ITEMS_PER_GROUP);
-  const peopleQueries = baseQueries.filter((item) =>
+  const rawItems = args.keywords.map((keyword) => ({
+    query: keyword,
+    sourceKeyword: keyword,
+    stage: "balanced" as const,
+    criterionIds: [],
+  }));
+  const twitterQueries = dedupeQueryItems(rawItems, "twitter").slice(
+    0,
+    MAX_SOCIAL_QUERY_ITEMS_PER_GROUP
+  );
+  const linkedinQueries = dedupeQueryItems(rawItems, "linkedin").slice(
+    0,
+    MAX_SOCIAL_QUERY_ITEMS_PER_GROUP
+  );
+  const peopleQueries = linkedinQueries.filter((item) =>
     isLikelyPeopleQuery(item.query)
   );
 
   return {
     twitterQueries: args.includeTwitter
-      ? baseQueries.map((item) => ({ ...item, searchMode: "raw" as const }))
+      ? twitterQueries.map((item) => ({
+          ...item,
+          searchMode: "raw" as const,
+        }))
       : [],
     linkedinPostQueries: args.includeLinkedIn
-      ? copyQueryItems(baseQueries)
+      ? copyQueryItems(linkedinQueries)
       : [],
     linkedinPeopleQueries: args.includeLinkedIn
       ? copyQueryItems(peopleQueries)
@@ -259,6 +324,8 @@ function buildSocialQueryActionResult(args: {
   object: SocialQueriesObject;
   includeTwitter: boolean;
   includeLinkedIn: boolean;
+  includeLinkedInPeople: boolean;
+  targetingSpec?: WorkspaceTargetingSpec;
 }): {
   success: true;
   socialQueries: string[];
@@ -272,25 +339,50 @@ function buildSocialQueryActionResult(args: {
   queryMetadata: SocialQueryMetadata[];
   reasoning: string;
 } {
+  const validCriterionIds = new Set(
+    args.targetingSpec?.criteria.map((criterion) => criterion.id) ?? []
+  );
+  const getValidCriterionIds = (criterionIds: string[] | undefined) =>
+    Array.from(new Set(criterionIds ?? []))
+      .filter((criterionId) => validCriterionIds.has(criterionId))
+      .slice(0, 6);
+  const twitterInputs = args.object.twitterQueries.map((item) => ({
+    ...item,
+    query: applyTwitterProviderSearchFilters({
+      query: item.query,
+      stage: item.stage,
+      filters: args.targetingSpec?.searchFilters?.twitter,
+      maxLength: MAX_TWITTER_QUERY_CHARS,
+    }),
+  }));
   const twitterQueries = args.includeTwitter
-    ? dedupeQueryItems(args.object.twitterQueries)
+    ? dedupeQueryItems(twitterInputs, "twitter")
     : [];
   const linkedinPostQueries = args.includeLinkedIn
-    ? dedupeQueryItems(args.object.linkedinPostQueries)
+    ? dedupeQueryItems(args.object.linkedinPostQueries, "linkedin")
     : [];
-  const linkedinPeopleQueries = args.includeLinkedIn
-    ? dedupeQueryItems(args.object.linkedinPeopleQueries)
+  const linkedinPeopleQueries = args.includeLinkedInPeople
+    ? dedupeQueryItems(args.object.linkedinPeopleQueries, "linkedin")
     : [];
 
   const metadataMap = new Map<string, SocialQueryMetadata>();
   const appendMetadata = (
     items: GeneratedSocialQuery[],
-    metadata: Omit<SocialQueryMetadata, "query" | "sourceKeyword">
+    metadata: Omit<
+      SocialQueryMetadata,
+      | "query"
+      | "sourceKeyword"
+      | "twitterSearchMode"
+      | "discoveryStage"
+      | "targetingCriterionIds"
+    >
   ) => {
     for (const item of items) {
       const key = item.query.toLowerCase();
+      const incomingCriterionIds = getValidCriterionIds(item.criterionIds);
       const existing = metadataMap.get(key);
       if (existing) {
+        const incomingStage = item.stage ?? "balanced";
         const platformTargets = Array.from(
           new Set<"twitter" | "linkedin">([
             ...existing.platformTargets,
@@ -306,6 +398,16 @@ function buildSocialQueryActionResult(args: {
         const mergedMetadata: SocialQueryMetadata = {
           ...existing,
           platformTargets,
+          discoveryStage: getStricterDiscoveryStage(
+            existing.discoveryStage,
+            incomingStage
+          ),
+          targetingCriterionIds: Array.from(
+            new Set([
+              ...existing.targetingCriterionIds,
+              ...incomingCriterionIds,
+            ])
+          ).slice(0, 6),
         };
 
         if (linkedinSurfaceTargets.length > 0) {
@@ -326,6 +428,8 @@ function buildSocialQueryActionResult(args: {
         sourceKeyword: item.sourceKeyword,
         ...metadata,
         twitterSearchMode: item.searchMode,
+        discoveryStage: item.stage ?? "balanced",
+        targetingCriterionIds: incomingCriterionIds,
       });
     }
   };
@@ -333,29 +437,31 @@ function buildSocialQueryActionResult(args: {
   appendMetadata(twitterQueries, {
     platformTargets: ["twitter"],
     queryStyle: "natural_phrase",
-    legacyCompatibilitySource: true,
+    legacyCompatibilitySource: false,
   });
   appendMetadata(linkedinPostQueries, {
     platformTargets: ["linkedin"],
     linkedinSurface: "posts",
     linkedinSurfaceTargets: ["posts"],
     queryStyle: "professional_keyword",
-    legacyCompatibilitySource: true,
+    legacyCompatibilitySource: false,
   });
   appendMetadata(linkedinPeopleQueries, {
     platformTargets: ["linkedin"],
     linkedinSurface: "people",
     linkedinSurfaceTargets: ["people"],
     queryStyle: "role_title",
-    legacyCompatibilitySource: true,
+    legacyCompatibilitySource: false,
   });
 
   // LEGACY COMPAT: keep a flattened socialQueries array until all
   // consumers read queriesByPlatform/queryMetadata and historical
   // social_query rows without per-platform metadata have been aged out.
-  const socialQueries = Array.from(metadataMap.values()).map(
-    (item) => item.query
-  );
+  const socialQueries = interleaveQueryGroups([
+    twitterQueries.map((item) => item.query),
+    linkedinPostQueries.map((item) => item.query),
+    linkedinPeopleQueries.map((item) => item.query),
+  ]);
 
   return {
     success: true,
@@ -400,6 +506,7 @@ type DiscoveryGenerationContext = {
     sourceTheme?: string;
     retiredAt: number | null;
   }>;
+  operatorInstructions?: string[];
   promotedDiscoveryMemories: Array<{
     type: string;
     title: string;
@@ -424,6 +531,11 @@ function formatDiscoveryContextBlock(
   }
 
   const sections: string[] = [];
+  if (context.operatorInstructions?.length) {
+    sections.push(
+      `Applicable operator instructions (verbatim JSON):\n${context.operatorInstructions.map((instruction) => JSON.stringify(instruction)).join("\n")}`
+    );
+  }
 
   if (context.topPerformers.length > 0) {
     sections.push(
@@ -441,7 +553,7 @@ function formatDiscoveryContextBlock(
       `Promoted discovery lessons:\n${context.promotedDiscoveryMemories
         .map(
           (item) =>
-            `- ${item.title}: ${item.summary} (confidence ${item.confidence.toFixed(2)})`
+            `- ${JSON.stringify({ title: item.title, lesson: item.summary, confidence: item.confidence })}`
         )
         .join("\n")}`
     );
@@ -520,7 +632,7 @@ Focus on:
 - Signals aligned with this workspace's qualification lens: ${useCase.promptContext.qualificationLens}
 
 You may receive operational memory about what is already working, duplicated, exhausted, or recently retired.
-Treat that memory as a hard constraint:
+Treat prior outcomes and learned observations as advisory evidence. Current user intent and the authoritative targeting specification take precedence over every historical pattern. Never turn an old preference into a mandatory condition. In particular:
 - prefer uncovered themes over already-saturated phrases
 - do not regenerate obvious variants of queries that already exist
 - avoid broad filler wording when memory shows it underperforms
@@ -670,9 +782,9 @@ Your task is to convert search keywords into platform-specific discovery queries
 Use this search framing: ${useCase.promptContext.searchIntent}
 
 **CRITICAL: CHARACTER LIMIT**
-Every query MUST be 40 characters or less. Count the characters before including each query.
-Queries are normalized to this operational limit before they are saved.
-Prefer 2-5 meaningful words. Shorter is better for search matching.
+- Twitter queries must be at most 220 characters so named entities and useful operators are preserved.
+- LinkedIn queries must be at most 120 characters.
+- Prefer the shortest query that retains the intended evidence signal.
 
 Return three separate groups:
 1. twitterQueries
@@ -682,7 +794,9 @@ Return three separate groups:
 - For every Twitter query, return searchMode as either "exact" or "raw"
 - Use "exact" only for a coherent 2-5 word phrase that people plausibly write verbatim
 - Use "raw" for keyword combinations, broader intent, hashtags, operators, or sentence fragments
-- Never include quotation marks in query; the backend applies them only for validated exact searches
+- For exact mode, do not include quotation marks; the backend adds them
+- For raw mode, use SocialAPI-supported Twitter operators when the targeting specification explicitly provides the matching constraint. Operators belong inside the query string. Supported examples include quoted phrases, parentheses, OR, exclusions with -, from:, to:, lang:, near:, within:, since_time:, until_time:, min_faves:, min_retweets:, min_replies:, and filter:replies
+- Never invent an operator value. Strict queries should apply supported constraints; balanced and broad queries may progressively omit preferences while preserving the requested relationship and any explicit exclusion
 
 2. linkedinPostQueries
 - Short professional or topical phrases
@@ -693,12 +807,15 @@ Return three separate groups:
 - Short role/title style phrases
 - Hiring-oriented terms such as job titles, specialties, or seniority variants
 - Examples: "frontend developer", "staff frontend engineer", "react native developer"
+- Do not stuff locations or languages into the people query text. The provider adapter applies those documented filters directly when the targeting specification contains them
 
 Each query should:
-- Be MAXIMUM 40 characters
 - Be short and high-signal
 - Avoid duplicates across all groups
 - Stay specific to this workspace's qualification lens
+- Include stage as strict, balanced, or broad
+- Keep lang:, near:, and within: out of generated query text: the provider adapter owns these structured filters and applies them only in strict discovery. Balanced and broad queries omit these filters; final qualification still evaluates every original criterion.
+- Include criterionIds for the targeting criteria it is intended to discover
 
 Generate a tiered mix in every requested group:
 - strict queries preserve several distinctive target and intent signals
@@ -718,6 +835,7 @@ export const convertToSocialQueriesAction = internalAction({
     keywords: v.array(v.string()),
     platforms: v.array(prospectPlatformValidator),
     businessContext: v.optional(v.string()),
+    targetingSpec: v.optional(workspaceTargetingSpecValidator),
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
   },
   handler: async (
@@ -752,6 +870,8 @@ export const convertToSocialQueriesAction = internalAction({
 
     const includeTwitter = args.platforms.includes("twitter");
     const includeLinkedIn = args.platforms.includes("linkedin");
+    const includeLinkedInPeople =
+      includeLinkedIn && shouldUseLinkedInPeopleDiscovery(args.targetingSpec);
     const platformContext =
       includeTwitter && includeLinkedIn
         ? "Twitter and LinkedIn"
@@ -773,6 +893,7 @@ export const convertToSocialQueriesAction = internalAction({
 **Keywords to convert:**
 ${args.keywords.map((kw, i) => `${i + 1}. ${kw}`).join("\n")}
 ${args.businessContext ? `\n**Business context:**\n${args.businessContext}` : ""}
+${args.targetingSpec ? `\n**Authoritative targeting specification:**\n${JSON.stringify(args.targetingSpec, null, 2)}` : ""}
 ${formatDiscoveryContextBlock(discoveryContext)}
 
 Return grouped queries that are net-new relative to the operational memory above.
@@ -786,9 +907,13 @@ When Twitter is requested:
 
 When LinkedIn is requested:
 - generate linkedinPostQueries as short professional/topic phrases
-- generate linkedinPeopleQueries as short role/title phrases
+- ${
+      includeLinkedInPeople
+        ? "generate linkedinPeopleQueries as short role/title phrases"
+        : "return an empty linkedinPeopleQueries array because this targeting specification contains a required activity-only criterion that people search results cannot prove"
+    }
 
-For every query, include the source keyword it came from.
+For every query, include the source keyword, strict/balanced/broad stage, and only real criterion IDs from the targeting specification. Strict queries preserve named entities and required intent. Balanced queries may omit one preference. Broad queries may omit preferences but never reverse core intent or include an exclusion.
 If a platform is not requested, return an empty array for that group.`;
     const routing = "fast" as const;
     const routingTelemetry = getRoutingTelemetry(routing);
@@ -827,6 +952,8 @@ If a platform is not requested, return an empty array for that group.`;
         object,
         includeTwitter,
         includeLinkedIn,
+        includeLinkedInPeople,
+        targetingSpec: args.targetingSpec,
       });
     } catch (error) {
       const errorMessage =
@@ -851,6 +978,8 @@ If a platform is not requested, return an empty array for that group.`;
         }),
         includeTwitter,
         includeLinkedIn,
+        includeLinkedInPeople,
+        targetingSpec: args.targetingSpec,
       });
     }
   },

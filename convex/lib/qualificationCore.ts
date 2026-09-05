@@ -24,50 +24,82 @@ import {
   buildVerifiedQualificationSources,
   prepareQualificationCandidates,
   passesQualificationGate,
+  hasVerifiedGoalConflict,
+  compactQualificationSourcesForWorkflow,
   type QualificationSource,
   type QualificationExternalArticle,
   type QualificationVerification,
 } from "./qualificationEvidenceCore";
 import { buildQualificationPrompt } from "../agents/prompts";
 import {
-  calculateQualificationScore,
+  calculateTargetingQualificationScore,
   createEmptyQualificationScoreBreakdown,
-  QUALIFICATION_SCORE_MAXIMUMS,
+  reconcileQualificationCriterionResults,
+  type QualificationCriterionResult,
   type QualificationScoreBreakdown,
 } from "./qualificationScoringCore";
 import { formatQualificationModelFailure } from "./qualificationFailureCore";
-
-const qualificationLogger = logger.withScope("QualificationCore");
+import type { WorkspaceTargetingSpec } from "./targetingSpecCore";
 
 export const QUALIFICATION_THRESHOLD = SHARED_QUALIFICATION_THRESHOLD;
 export const MAX_EVIDENCE_POSTS = 20;
 export const MAX_KEYWORDS_TO_SEARCH = 10;
+
+const qualificationLogger = logger.withScope("QualificationCore");
+
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 const llmQualificationSchema = z.object({
-  scoreBreakdown: z.object({
-    profileFit: z.number().min(0).max(QUALIFICATION_SCORE_MAXIMUMS.profileFit),
-    signalQuality: z
-      .number()
-      .min(0)
-      .max(QUALIFICATION_SCORE_MAXIMUMS.signalQuality),
-    intentStrength: z
-      .number()
-      .min(0)
-      .max(QUALIFICATION_SCORE_MAXIMUMS.intentStrength),
-    recency: z.number().min(0).max(QUALIFICATION_SCORE_MAXIMUMS.recency),
+  goalAssessment: z.object({
+    objective: z
+      .string()
+      .max(500)
+      .describe(
+        "The user's actual reason for contacting these people, taken from their description."
+      ),
+    rationale: z
+      .string()
+      .max(1000)
+      .describe(
+        "Consider explicit counterevidence anywhere in the complete source, including stylized Unicode and non-English text. Do not confuse missing preferences with refusal of the user's objective."
+      ),
+    verdict: z.enum(["compatible", "unknown", "contradicted"]),
+    candidateId: z
+      .string()
+      .max(120)
+      .describe(
+        "Exact candidate ID containing a direct contradiction of the user's objective, otherwise empty."
+      ),
+    conflictingQuote: z
+      .string()
+      .max(1000)
+      .describe(
+        "Exact verbatim quote that contradicts the user's objective, otherwise empty. Preserve original Unicode."
+      ),
   }),
-  qualified: z.boolean(),
-  reasoning: z.string(),
+  criterionResults: z
+    .array(
+      z.object({
+        criterionId: z.string().max(48),
+        verdict: z.enum(["matched", "partial", "not_matched", "unknown"]),
+        confidence: z.number().min(0).max(1),
+        rationale: z.string().max(1_000),
+        candidateIds: z.array(z.string().max(120)).max(MAX_EVIDENCE_POSTS),
+      })
+    )
+    .max(12),
+  reasoning: z.string().max(2_000),
   isLikelyBot: z.boolean(),
-  botFlags: z.array(z.string()),
-  evidenceDecisions: z.array(
-    z.object({
-      candidateId: z.string(),
-      supportsQualification: z.boolean(),
-      supportingQuote: z.string(),
-    })
-  ),
+  botFlags: z.array(z.string().max(240)).max(20),
+  evidenceDecisions: z
+    .array(
+      z.object({
+        candidateId: z.string().max(120),
+        supportsQualification: z.boolean(),
+        supportingQuote: z.string().max(1_000),
+      })
+    )
+    .max(MAX_EVIDENCE_POSTS),
 });
 
 export interface AuthenticityResult {
@@ -83,6 +115,7 @@ export interface QualificationResult {
   qualified: boolean;
   score: number;
   scoreBreakdown: QualificationScoreBreakdown;
+  criterionResults: QualificationCriterionResult[];
   status: "qualified" | "disqualified";
   /** Discovery queries attached only to sources that became verified proof. */
   matchedKeywords: string[];
@@ -163,6 +196,19 @@ function getVerifiedDiscoveryQueries(sources: QualificationSource[]): string[] {
   ].filter(Boolean);
 }
 
+function getNewestEvidenceAgeDays(args: {
+  sources: QualificationSource[];
+  now: number;
+}): number | undefined {
+  const ages = args.sources.flatMap((source) => {
+    if (!source.publishedAt) return [];
+    const timestamp = Date.parse(source.publishedAt);
+    if (!Number.isFinite(timestamp)) return [];
+    return [Math.max(0, Math.floor((args.now - timestamp) / MS_PER_DAY))];
+  });
+  return ages.length > 0 ? Math.min(...ages) : undefined;
+}
+
 function buildAuthenticityResult(args: {
   profileData: Record<string, unknown>;
   isLikelyBot: boolean;
@@ -197,6 +243,7 @@ export interface QualificationCoreParams {
   discoveryQueries: string[];
   totalKeywords: number;
   profileData: Record<string, unknown>;
+  targetingSpec: WorkspaceTargetingSpec;
   icpDescription?: string;
   icpPainPoints?: string[];
   useCaseKey?: WorkspaceUseCaseKey;
@@ -217,6 +264,7 @@ export async function qualifyProspectCore(
     externalArticles,
     discoveryQueries,
     profileData,
+    targetingSpec,
     icpDescription,
     icpPainPoints,
     useCaseKey,
@@ -241,6 +289,10 @@ export async function qualifyProspectCore(
       qualified: false,
       score: 0,
       scoreBreakdown: createEmptyQualificationScoreBreakdown(),
+      criterionResults: reconcileQualificationCriterionResults({
+        spec: targetingSpec,
+        results: [],
+      }),
       status: "disqualified",
       matchedKeywords: [],
       evidenceCount: 0,
@@ -283,6 +335,11 @@ export async function qualifyProspectCore(
   const prompt = `## ICP (Ideal Customer Profile)
 ${icpDescription || "No description provided - use general B2B prospect criteria"}
 
+## Authoritative Workspace Targeting Specification
+\`\`\`json
+${JSON.stringify(targetingSpec, null, 2)}
+\`\`\`
+
 ## Target Pain Points
 ${(icpPainPoints || []).join(", ") || "None specified"}
 
@@ -301,6 +358,24 @@ For every candidate source, return one evidenceDecisions entry using its exact C
 Set supportsQualification=true only when that source's own persisted text supports ICP fit.
 When true, supportingQuote must be an exact verbatim substring of Persisted text.
 When false, supportingQuote must be an empty string.
+
+First complete goalAssessment: separate factual audience matches from usefulness for the user's intended contact. Explicit refusal of the offered service can contradict that goal even if the author matches every audience attribute. Evaluate the whole text, including stylized Unicode and non-English text. Record the exact conflicting quote and candidate ID. Missing proof that someone wants the service is merely unknown, NOT a contradiction. Missing preferred geography or format is NOT a goal contradiction. Do not invent universal exclusions for professions, employers, or satisfied product users.
+
+Return exactly one criterionResults entry for every targeting criterion ID.
+- matched means the available profile or prospect-authored evidence directly satisfies the criterion.
+- partial means there is genuine but incomplete support.
+- For a required role, authority, affiliation, or relationship, evidence of participation alone is partial unless it establishes the specific requested relationship. First-person company language is evidence of involvement, not by itself proof of an unmentioned title or final decision authority. A preferred relationship can remain partial and still be useful. Apply this distinction consistently without assuming a title from an announcement.
+- not_matched means the available evidence directly contradicts or fails the criterion.
+- unknown means the available data cannot determine it.
+- For an exclusion criterion, matched means the prospect exhibits the excluded trait and must be rejected. not_matched means the prospect does not exhibit that trait. Never mark an exclusion matched merely because the prospect correctly passes the exclusion.
+- candidateIds must contain only exact Candidate IDs above that support the criterion. Profile-only criteria may have an empty candidateIds array.
+- Interpret every criterion from the workspace specification and original description. Do not apply a fixed use-case rubric or keyword list.
+- When a criterion requires a relationship or behavior, require evidence of that specific relationship or behavior; a generic entity mention alone is not proof.
+- Read the ENTIRE source before deciding. Resolve negation, hypothetical/future plans, quoted third parties, and explicit counterevidence in any language. A request to join a future talent pool is not an active opening; a question addressed to product users is not the author's own usage. Explain conflicting evidence rather than selecting a convenient fragment.
+- Judge whether the author has the relationship requested by this workspace, not merely whether the topic occurs. An intermediary discussing someone else's need is not automatically the company-side decision-maker, but intermediaries are valid when the user's goal includes them.
+- supportsQualification must reflect usefulness for the stated goal, not just a topic match. An explicit refusal of the very service the user wants to offer is counterevidence of that fit. This is contextual, never a universal ban on any profession or account type.
+- Prior lessons and generated ICPs are context, not authority to invent mandatory criteria. Keep criterion verdicts factual and identical for the same evidence even when the criterion changes from preferred to required; importance changes scoring, not facts.
+- Do not convert preferences into requirements and do not ignore explicit exclusions.
 
 ## Current Date Context
 Today (UTC): ${formatUtcDate(now)}
@@ -334,8 +409,9 @@ Evaluate this prospect against the ICP.`;
           ? `${prompt}\n\nThe previous candidate violated workspace policy. Regenerate the complete object with this repair: ${repairInstruction}`
           : prompt,
         routing,
-        fallbackRouting: routing === "onboarding" ? undefined : "onboarding",
-        nativeStructuredOutput: true,
+        // The onboarding route uses the established JSON + schema validation
+        // path: its configured endpoints do not accept native structured output.
+        nativeStructuredOutput: routing !== "onboarding",
       });
     const generation = await runWithWorkspaceMemoryCompliance<
       Awaited<ReturnType<typeof generateQualificationCandidate>>
@@ -352,23 +428,90 @@ Evaluate this prospect against the ICP.`;
       decisions: object.evidenceDecisions,
       verifiedAt: now,
     });
-    const scoreBreakdown = calculateQualificationScore(object.scoreBreakdown);
+    const verifiedSourceIds = new Set(
+      qualificationSources.map((source) => source.sourceId)
+    );
+    const candidateSourceIdById = new Map(
+      candidates.map((candidate) => [candidate.candidateId, candidate.sourceId])
+    );
+    const criterionResults = reconcileQualificationCriterionResults({
+      spec: targetingSpec,
+      results: object.criterionResults.map((result) => ({
+        criterionId: result.criterionId,
+        verdict: result.verdict,
+        confidence: result.confidence,
+        rationale: result.rationale,
+        sourceIds: Array.from(
+          new Set(
+            result.candidateIds
+              .map((candidateId) => candidateSourceIdById.get(candidateId))
+              .filter(
+                (sourceId): sourceId is string =>
+                  sourceId !== undefined && verifiedSourceIds.has(sourceId)
+              )
+          )
+        ),
+      })),
+    });
+    const targetingScore = calculateTargetingQualificationScore({
+      spec: targetingSpec,
+      results: criterionResults,
+      supportedSourceCount: qualificationSources.length,
+      newestEvidenceAgeDays: getNewestEvidenceAgeDays({
+        sources: qualificationSources,
+        now,
+      }),
+      isLikelyBot: object.isLikelyBot,
+      threshold: QUALIFICATION_THRESHOLD,
+    });
+    const scoreBreakdown = targetingScore.breakdown;
+    const goalConflict = hasVerifiedGoalConflict(
+      candidates,
+      object.goalAssessment
+    );
     const finalQualified = passesQualificationGate({
-      modelQualified: object.qualified,
+      modelQualified: targetingScore.qualified && !goalConflict,
       isLikelyBot: object.isLikelyBot,
       score: scoreBreakdown.total,
       threshold: QUALIFICATION_THRESHOLD,
       verifiedSourceCount: qualificationSources.length,
     });
 
+    // A first-pass source-reference mistake must not hide a potential essential
+    // activity match from verification. This is only a routing signal: the strong
+    // evaluation must still independently produce valid evidence and pass gates.
+    const claimsRequiredActivityMatch = targetingSpec.criteria.some(
+      (criterion) =>
+        criterion.kind === "required" &&
+        criterion.category !== "profile_fit" &&
+        criterion.evidence !== "profile" &&
+        object.criterionResults.some(
+          (result) =>
+            result.criterionId === criterion.id &&
+            (result.verdict === "matched" || result.verdict === "partial")
+        )
+    );
+    // Review evidence-backed candidates, including first-pass false negatives.
+    // Use the same full evidence and rubric without anchoring on the first verdict.
+    // Preview qualification already uses this route, so it needs no extra pass.
+    if (
+      routing !== "onboarding" &&
+      (qualificationSources.length > 0 ||
+        (candidates.length > 0 && claimsRequiredActivityMatch))
+    ) {
+      return await qualifyProspectCore({ ...params, routing: "onboarding" });
+    }
+
     return {
       qualified: finalQualified,
       score: scoreBreakdown.total,
       scoreBreakdown,
+      criterionResults,
       status: finalQualified ? "qualified" : "disqualified",
       matchedKeywords: getVerifiedDiscoveryQueries(qualificationSources),
       evidenceCount: qualificationSources.length,
-      qualificationSources,
+      qualificationSources:
+        compactQualificationSourcesForWorkflow(qualificationSources),
       qualificationVerification: buildQualificationVerification({
         status: "validated",
         candidates,
@@ -382,10 +525,22 @@ Evaluate this prospect against the ICP.`;
         flags: object.botFlags,
         now,
       }),
-      reasoning: object.reasoning,
+      reasoning: goalConflict
+        ? `${object.reasoning} Evidence contradicts the user's contact goal: ${object.goalAssessment.rationale} Quote: ${object.goalAssessment.conflictingQuote}`
+        : targetingScore.hardFailureCriterionIds.length > 0
+          ? `${object.reasoning} Hard qualification gates not satisfied: ${targetingScore.hardFailureCriterionIds.join(", ")}.`
+          : object.reasoning,
       qualifiedAt: finalQualified ? now : undefined,
     };
   } catch (error) {
+    // Preserve the verifier's actual model/provider and retry classification.
+    if (error instanceof QualificationEvaluationError) throw error;
+    // Rebuild route-specific request options instead of forwarding native
+    // structured-output parameters to an endpoint that cannot accept them.
+    // The strong route never falls back to the first-pass model.
+    if (routing !== "onboarding") {
+      return await qualifyProspectCore({ ...params, routing: "onboarding" });
+    }
     const structuredFailure =
       error instanceof StructuredGenerationError ? error : undefined;
     const routingTelemetry = getRoutingTelemetry(routing);

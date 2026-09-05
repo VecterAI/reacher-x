@@ -8,9 +8,12 @@ import { internal } from "../../_generated/api";
 import { getRetriedActionStatus, runRetriedAction } from "../../lib/retrier";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import {
+  buildLinkedInPeopleSearchAttempts,
+  extractLinkedInGeoId,
   getNextLinkedInPeopleSearchStart,
   LINKEDIN_PEOPLE_DEFAULT_COUNT,
   LINKEDIN_PEOPLE_MAX_PAGES_PER_QUERY,
+  type LinkedInPeopleSearchAttempt,
 } from "../../lib/linkedinSearchHelpers";
 import { requestLinkdApiData } from "./linkdapiClient";
 
@@ -69,6 +72,9 @@ export interface LinkedInPeopleBatchSearchResult {
     query: string;
     searchMode: "title" | "keyword";
     peopleFound: number;
+    requestedLocation?: string;
+    geoUrn?: string;
+    profileLanguage?: string;
   }>;
   stats: {
     queriesExecuted: number;
@@ -180,6 +186,8 @@ async function collectPaginatedPeopleResults(
   args: {
     query: string;
     searchMode: "title" | "keyword";
+    geoUrn?: string;
+    profileLanguage?: string;
     count: number;
     initialResult: InternalSearchPeopleResult;
   }
@@ -210,6 +218,8 @@ async function collectPaginatedPeopleResults(
         {
           query: args.query,
           searchMode: args.searchMode,
+          geoUrn: args.geoUrn,
+          profileLanguage: args.profileLanguage,
           start: nextStart,
           count: args.count,
         }
@@ -234,18 +244,45 @@ async function collectPaginatedPeopleResults(
   };
 }
 
+async function resolveGeoUrn(
+  ctx: ActionCtx,
+  location: string | undefined
+): Promise<string | undefined> {
+  const normalized = location?.trim();
+  if (!normalized) return undefined;
+
+  try {
+    const data = await requestLinkdApiData<unknown>(ctx, {
+      path: "/api/v1/geos/name-lookup",
+      query: { query: normalized },
+      consumer: `linkedin.searchPeople.geoLookup:${normalized}`,
+    });
+    return extractLinkedInGeoId(data);
+  } catch (error) {
+    console.warn(
+      "[LinkedInSearchPeople] Location lookup failed; continuing without geoUrn",
+      error
+    );
+    return undefined;
+  }
+}
+
 export const searchInternal = internalAction({
   args: {
     query: v.string(),
     searchMode: v.union(v.literal("title"), v.literal("keyword")),
     start: v.optional(v.number()),
     count: v.optional(v.number()),
+    geoUrn: v.optional(v.string()),
+    profileLanguage: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<InternalSearchPeopleResult> => {
     const data = await requestLinkdApiData<ApiResponse["data"]>(ctx, {
       path: "/api/v1/search/people",
       query: {
         [args.searchMode === "title" ? "title" : "keyword"]: args.query,
+        geoUrn: args.geoUrn,
+        profileLanguage: args.profileLanguage,
         count: args.count ?? LINKEDIN_PEOPLE_DEFAULT_COUNT,
         start: args.start,
       },
@@ -268,10 +305,13 @@ export const searchBatch = action({
     queries: v.array(v.string()),
     count: v.optional(v.number()),
     maxQueriesPerBatch: v.optional(v.number()),
+    location: v.optional(v.string()),
+    profileLanguage: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<LinkedInPeopleBatchSearchResult> => {
     const startTime = getCurrentUTCTimestamp();
     const requestedCount = args.count ?? LINKEDIN_PEOPLE_DEFAULT_COUNT;
+    const geoUrn = await resolveGeoUrn(ctx, args.location);
     const queriesToExecute = normalizeQueryList(args.queries).slice(
       0,
       args.maxQueriesPerBatch ?? 20
@@ -298,15 +338,19 @@ export const searchBatch = action({
 
     const runPromises: Array<{
       query: string;
-      attempts: Array<"title" | "keyword">;
+      attempts: LinkedInPeopleSearchAttempt[];
       runIdPromise: Promise<RunId>;
     }> = [];
 
     for (let index = 0; index < queriesToExecute.length; index += 1) {
       const query = queriesToExecute[index];
-      const attempts = looksLikeRoleTitleQuery(query)
-        ? (["title", "keyword"] as Array<"title" | "keyword">)
-        : (["keyword"] as Array<"title" | "keyword">);
+      const attempts = buildLinkedInPeopleSearchAttempts({
+        searchModes: looksLikeRoleTitleQuery(query)
+          ? ["title", "keyword"]
+          : ["keyword"],
+        geoUrn,
+        profileLanguage: args.profileLanguage,
+      });
       const runIdPromise = new Promise<RunId>((resolve, reject) => {
         void (async () => {
           try {
@@ -315,7 +359,9 @@ export const searchBatch = action({
               internal.integrations.linkedin.searchPeople.searchInternal,
               {
                 query,
-                searchMode: attempts[0],
+                searchMode: attempts[0].searchMode,
+                geoUrn: attempts[0].geoUrn,
+                profileLanguage: attempts[0].profileLanguage,
                 count: requestedCount,
               }
             );
@@ -331,7 +377,7 @@ export const searchBatch = action({
 
     const runIds: Array<{
       query: string;
-      attempts: Array<"title" | "keyword">;
+      attempts: LinkedInPeopleSearchAttempt[];
       runId: RunId | null;
       error?: string;
     }> = [];
@@ -354,11 +400,7 @@ export const searchBatch = action({
     const matchedQueriesByPersonUrn = new Map<string, Set<string>>();
     const errors: Array<{ query: string; error: string }> = [];
     const queryStats: LinkedInPeopleQueryStat[] = [];
-    const queryResults: Array<{
-      query: string;
-      searchMode: "title" | "keyword";
-      peopleFound: number;
-    }> = [];
+    const queryResults: LinkedInPeopleBatchSearchResult["queryResults"] = [];
     let queriesSucceeded = 0;
     let totalPeopleFound = 0;
 
@@ -369,7 +411,7 @@ export const searchBatch = action({
           query,
           peopleFound: 0,
           success: false,
-          searchMode: attempts[0],
+          searchMode: attempts[0].searchMode,
           error: startError ?? "Failed to start",
         });
         continue;
@@ -377,7 +419,8 @@ export const searchBatch = action({
 
       try {
         let activeRunId: RunId | null = runId;
-        let finalMode: "title" | "keyword" = attempts[0];
+        let finalMode: "title" | "keyword" = attempts[0].searchMode;
+        let finalAttempt = attempts[0];
         let matched = false;
         let finalError: string | undefined;
 
@@ -386,7 +429,9 @@ export const searchBatch = action({
           attemptIndex < attempts.length;
           attemptIndex += 1
         ) {
-          const searchMode = attempts[attemptIndex];
+          const attempt = attempts[attemptIndex];
+          finalAttempt = attempt;
+          const searchMode = attempt.searchMode;
           let result: InternalSearchPeopleResult | null = null;
           try {
             const initialResult = await waitForPeopleSearchResult(
@@ -396,6 +441,8 @@ export const searchBatch = action({
             result = await collectPaginatedPeopleResults(ctx, {
               query,
               searchMode,
+              geoUrn: attempt.geoUrn,
+              profileLanguage: attempt.profileLanguage,
               count: requestedCount,
               initialResult,
             });
@@ -416,6 +463,9 @@ export const searchBatch = action({
               searchMode: result.searchMode,
             });
             queryResults.push({
+              requestedLocation: args.location,
+              geoUrn: finalAttempt.geoUrn,
+              profileLanguage: finalAttempt.profileLanguage,
               query,
               searchMode: result.searchMode,
               peopleFound: result.people.length,
@@ -440,13 +490,15 @@ export const searchBatch = action({
             break;
           }
 
-          const nextMode = attempts[attemptIndex + 1];
+          const nextAttempt = attempts[attemptIndex + 1];
           activeRunId = await runRetriedAction(
             ctx,
             internal.integrations.linkedin.searchPeople.searchInternal,
             {
               query,
-              searchMode: nextMode,
+              searchMode: nextAttempt.searchMode,
+              geoUrn: nextAttempt.geoUrn,
+              profileLanguage: nextAttempt.profileLanguage,
               count: requestedCount,
             }
           );
@@ -465,6 +517,9 @@ export const searchBatch = action({
             errors.push({ query, error: finalError });
           } else {
             queryResults.push({
+              requestedLocation: args.location,
+              geoUrn: finalAttempt.geoUrn,
+              profileLanguage: finalAttempt.profileLanguage,
               query,
               searchMode: finalMode,
               peopleFound: 0,
@@ -479,7 +534,7 @@ export const searchBatch = action({
           query,
           peopleFound: 0,
           success: false,
-          searchMode: attempts[0],
+          searchMode: attempts[0].searchMode,
           error: errorMessage,
         });
       }

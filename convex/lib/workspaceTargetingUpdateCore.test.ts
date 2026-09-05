@@ -6,6 +6,7 @@ import {
   resolveManualProfilesForTargetingUpdate,
   runPostSaveProspectingMaintenance,
 } from "./workspaceTargetingUpdateCore";
+import { buildLegacyWorkspaceTargetingSpec } from "./targetingSpecCore";
 
 function profile(
   title: string,
@@ -116,6 +117,11 @@ describe("workspace targeting updates", () => {
       improvedDescription:
         "Find doctors who publicly offer free consultations to new patients.",
       profiles: [profile("Community doctors", "ai_generated")],
+      targetingSpec: buildLegacyWorkspaceTargetingSpec({
+        description:
+          "Find doctors who publicly offer free consultations to new patients.",
+        profiles: [profile("Community doctors", "ai_generated")],
+      }),
       useCaseKey: "general_outreach",
       updatedAt: 123,
     });

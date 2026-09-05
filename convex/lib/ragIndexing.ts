@@ -36,6 +36,7 @@ export interface PainPointForRag {
 }
 
 export interface QueryCandidateForRag {
+  targetingFingerprint?: string;
   queryCandidateId: string;
   workspaceId: string;
   embeddingDocKey: string;
@@ -62,6 +63,7 @@ export interface WorkspaceMemoryDocumentForRag {
 }
 
 export interface WorkspaceProspectSummaryForRag {
+  targetingFingerprint?: string;
   workspaceId: string;
   namespace: Parameters<typeof getWorkspaceNamespace>[1];
   prospectId: string;
@@ -293,11 +295,14 @@ export async function indexWorkspaceQueryCandidate(
       key: candidate.embeddingDocKey,
       title: candidate.rawValue,
       text,
-      contentHash: buildContentHashFromText(text),
+      contentHash: buildContentHashFromText(
+        `${candidate.targetingFingerprint ?? "legacy"}:${text}`
+      ),
       importance: clampUnitInterval(candidate.importance, 0.5),
       metadata: {
         workspaceId: candidate.workspaceId,
         queryCandidateId: candidate.queryCandidateId,
+        targetingFingerprint: candidate.targetingFingerprint,
         canonicalKey: candidate.canonicalKey,
         type: candidate.type,
       },
@@ -371,11 +376,14 @@ export async function indexWorkspaceProspectSummary(
       key: `workspace-prospect:${document.workspaceId}:${document.namespace}:${document.prospectId}`,
       title: document.title,
       text: document.text,
-      contentHash: buildContentHashFromText(document.text),
+      contentHash: buildContentHashFromText(
+        `${document.targetingFingerprint ?? "legacy"}:${document.text}`
+      ),
       importance: clampUnitInterval(document.importance, 0.65),
       metadata: {
         workspaceId: document.workspaceId,
         prospectId: document.prospectId,
+        targetingFingerprint: document.targetingFingerprint,
         namespace: document.namespace,
         summaryType: "prospect_summary",
       },
