@@ -111,7 +111,10 @@ type OpenRouterRoutingPreset =
 
 const FAST_MODEL_TIMEOUT_MS = 10_000;
 const REASONING_MODEL_TIMEOUT_MS = 45_000;
-const ONBOARDING_MODEL_TIMEOUT_MS = 45_000;
+// Targeting generation returns a description, criteria, profiles, and search
+// signals in one response. Production refreshes can exceed the shorter
+// qualification budget; two bounded attempts still fit within an action.
+const ONBOARDING_MODEL_TIMEOUT_MS = 120_000;
 
 type RoutingPreset = "fast" | "reasoning";
 
