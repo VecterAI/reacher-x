@@ -4,7 +4,8 @@
   "git": {
     "deploymentEnabled": {
       "codex/discovery-learning-completion": false,
-      "codex/instrumentation-runtime-fix": false
+      "codex/instrumentation-runtime-fix": false,
+      "codex/workspace-refresh-timeout": false
     }
   }
 }
