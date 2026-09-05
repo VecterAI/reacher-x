@@ -1,5 +1,6 @@
 "use node";
 
+import { getLearningTargetingFingerprint } from "./lib/learningTargetingHelpers";
 import type { WorkflowId } from "@convex-dev/workflow";
 import type { ProviderMetadata } from "ai";
 import { v } from "convex/values";
@@ -17,7 +18,11 @@ import {
   runPostSaveProspectingMaintenance,
 } from "./lib/workspaceTargetingUpdateCore";
 import { validateDescription } from "../shared/lib/utils/validation/validation";
-import { icpValidator, workspaceUseCaseKeyValidator } from "./validators";
+import {
+  icpValidator,
+  workspaceTargetingSpecValidator,
+  workspaceUseCaseKeyValidator,
+} from "./validators";
 
 type WorkspaceProfile = NonNullable<Doc<"workspaces">["icps"]>[number];
 type WorkspaceTargetingResult = {
@@ -27,6 +32,7 @@ type WorkspaceTargetingResult = {
   generatedProfileCount: number;
   preservedManualProfileCount: number;
   profiles: WorkspaceProfile[];
+  targetingSpec: NonNullable<Doc<"workspaces">["targetingSpec"]>;
   deletedKeywordCount: number;
   prospectingRestarted: boolean;
 };
@@ -88,6 +94,7 @@ async function clearWorkspaceKeywords(
 
 export const regenerateWorkspaceTargeting = action({
   args: {
+    resumeProspecting: v.optional(v.boolean()),
     workspaceId: v.id("workspaces"),
     name: v.string(),
     sourceUrl: v.optional(v.string()),
@@ -101,6 +108,7 @@ export const regenerateWorkspaceTargeting = action({
     generatedProfileCount: v.number(),
     preservedManualProfileCount: v.number(),
     profiles: v.array(icpValidator),
+    targetingSpec: workspaceTargetingSpecValidator,
     deletedKeywordCount: v.number(),
     prospectingRestarted: v.boolean(),
   }),
@@ -192,12 +200,15 @@ export const regenerateWorkspaceTargeting = action({
       internal.workspaces.applyRegeneratedWorkspaceTargetingInternal,
       {
         workspaceId: workspace._id,
+        expectedTargetingFingerprint:
+          getLearningTargetingFingerprint(workspace),
         userId: user._id,
         name: args.name,
         sourceUrl: args.sourceUrl?.trim() || undefined,
         rawUserDescription,
         improvedDescription: generation.improvedDescription,
         icps: profiles,
+        targetingSpec: generation.targetingSpec,
         useCaseKey: classification.useCaseKey,
       }
     );
@@ -227,6 +238,7 @@ export const regenerateWorkspaceTargeting = action({
           : undefined,
       clearKeywords: () => clearWorkspaceKeywords(ctx, workspace._id),
       restartProspecting: async () => {
+        if (args.resumeProspecting === false) return false;
         const restartResult: { success: boolean } = await ctx.runAction(
           internal.workspaces.startProspectingWorkflowInternal,
           { workspaceId: workspace._id }
@@ -248,6 +260,7 @@ export const regenerateWorkspaceTargeting = action({
       generatedProfileCount: profiles.length - refreshedManualProfiles.length,
       preservedManualProfileCount: refreshedManualProfiles.length,
       profiles,
+      targetingSpec: generation.targetingSpec,
       deletedKeywordCount: maintenance.deletedKeywordCount,
       prospectingRestarted: maintenance.prospectingRestarted,
     };

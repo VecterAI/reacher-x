@@ -1,3 +1,8 @@
+import { getStringProperty, isRecord } from "./typeGuards";
+import {
+  getLearningTargetingFingerprint,
+  isCurrentTargetingLearning,
+} from "./learningTargetingHelpers";
 import type { GenericDatabaseWriter } from "convex/server";
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
@@ -82,6 +87,7 @@ export async function upsertQueryCandidateRecord(
   db: MemoryDbWriter,
   args: {
     workspaceId: Id<"workspaces">;
+    expectedTargetingFingerprint?: string;
     type: Doc<"queryCandidates">["type"];
     rawValue: string;
     sourceTheme?: string;
@@ -99,6 +105,14 @@ export async function upsertQueryCandidateRecord(
     embeddingDocKey?: string;
   }
 ) {
+  const workspace = await db.get(args.workspaceId);
+  if (!workspace) throw new Error("Workspace not found");
+  const targetingFingerprint = getLearningTargetingFingerprint(workspace);
+  if (
+    args.expectedTargetingFingerprint !== undefined &&
+    args.expectedTargetingFingerprint !== targetingFingerprint
+  )
+    throw new Error("Workspace targeting changed during query screening");
   const now = getCurrentUTCTimestamp();
   const canonical = buildQueryCandidateCanonicalRecord({
     type: args.type,
@@ -120,34 +134,38 @@ export async function upsertQueryCandidateRecord(
     .first();
 
   if (existing) {
+    const previous = isCurrentTargetingLearning(existing, workspace)
+      ? existing
+      : undefined;
     const nextStatus = resolveQueryCandidateStatus(
-      existing.status,
-      args.status ?? existing.status
+      previous?.status ?? null,
+      args.status ?? previous?.status ?? "generated"
     );
 
     await db.patch(existing._id, {
+      targetingFingerprint,
       rawValue: args.rawValue,
-      sourceTheme: args.sourceTheme ?? existing.sourceTheme,
-      sourceRunId: args.sourceRunId ?? existing.sourceRunId,
-      platformTargets: args.platformTargets ?? existing.platformTargets,
-      linkedinSurface: args.linkedinSurface ?? existing.linkedinSurface,
+      sourceTheme: args.sourceTheme ?? previous?.sourceTheme,
+      sourceRunId: args.sourceRunId ?? previous?.sourceRunId,
+      platformTargets: args.platformTargets ?? previous?.platformTargets,
+      linkedinSurface: args.linkedinSurface ?? previous?.linkedinSurface,
       linkedinSurfaceTargets:
-        args.linkedinSurfaceTargets ?? existing.linkedinSurfaceTargets,
-      queryStyle: args.queryStyle ?? existing.queryStyle,
-      twitterSearchMode: args.twitterSearchMode ?? existing.twitterSearchMode,
-      noveltyScore: args.noveltyScore ?? existing.noveltyScore,
+        args.linkedinSurfaceTargets ?? previous?.linkedinSurfaceTargets,
+      queryStyle: args.queryStyle ?? previous?.queryStyle,
+      twitterSearchMode: args.twitterSearchMode ?? previous?.twitterSearchMode,
+      noveltyScore: args.noveltyScore ?? previous?.noveltyScore,
       status: nextStatus,
-      duplicateReason: args.duplicateReason ?? existing.duplicateReason,
-      performanceScore: args.performanceScore ?? existing.performanceScore,
+      duplicateReason: args.duplicateReason ?? previous?.duplicateReason,
+      performanceScore: args.performanceScore ?? previous?.performanceScore,
       activatedKeywordId:
-        args.activatedKeywordId ?? existing.activatedKeywordId,
+        args.activatedKeywordId ?? previous?.activatedKeywordId,
       embeddingDocKey,
       reviewedAt:
         nextStatus === "activated" || nextStatus.startsWith("rejected_")
           ? now
-          : existing.reviewedAt,
+          : previous?.reviewedAt,
       lastEvaluatedAt: now,
-      retiredAt: nextStatus === "retired" ? now : existing.retiredAt,
+      retiredAt: nextStatus === "retired" ? now : previous?.retiredAt,
       updatedAt: now,
     });
 
@@ -162,6 +180,7 @@ export async function upsertQueryCandidateRecord(
   const status = args.status ?? "generated";
   const queryCandidateId = await db.insert("queryCandidates", {
     workspaceId: args.workspaceId,
+    targetingFingerprint,
     type: args.type,
     rawValue: args.rawValue,
     canonicalValue: canonical.canonicalValue,
@@ -211,6 +230,9 @@ export async function upsertQueryPerformanceRecord(
     retiredAt?: number;
   }
 ) {
+  const workspace = await db.get(args.workspaceId);
+  if (!workspace) throw new Error("Workspace not found");
+  const targetingFingerprint = getLearningTargetingFingerprint(workspace);
   const now = getCurrentUTCTimestamp();
   const metricTimestamp = args.lastUsedAt ?? now;
   const existing = await db
@@ -220,34 +242,39 @@ export async function upsertQueryPerformanceRecord(
     )
     .first();
 
+  const previous =
+    existing && isCurrentTargetingLearning(existing, workspace)
+      ? existing
+      : undefined;
   const impressions = Math.max(
     0,
-    (existing?.impressions ?? 0) + (args.impressionsDelta ?? 0)
+    (previous?.impressions ?? 0) + (args.impressionsDelta ?? 0)
   );
   const prospectsFound = Math.max(
     0,
-    (existing?.prospectsFound ?? 0) + (args.prospectsFoundDelta ?? 0)
+    (previous?.prospectsFound ?? 0) + (args.prospectsFoundDelta ?? 0)
   );
   const qualifiedCount = Math.max(
     0,
-    (existing?.qualifiedCount ?? 0) + (args.qualifiedCountDelta ?? 0)
+    (previous?.qualifiedCount ?? 0) + (args.qualifiedCountDelta ?? 0)
   );
   const convertedCount = Math.max(
     0,
-    (existing?.convertedCount ?? 0) + (args.convertedCountDelta ?? 0)
+    (previous?.convertedCount ?? 0) + (args.convertedCountDelta ?? 0)
   );
   const replyCount = Math.max(
     0,
-    (existing?.replyCount ?? 0) + (args.replyCountDelta ?? 0)
+    (previous?.replyCount ?? 0) + (args.replyCountDelta ?? 0)
   );
 
   const payload = {
+    targetingFingerprint,
     canonicalValue: args.canonicalValue,
     canonicalHash: args.canonicalHash,
-    platform: args.platform ?? existing?.platform,
-    surface: args.surface ?? existing?.surface,
+    platform: args.platform ?? previous?.platform,
+    surface: args.surface ?? previous?.surface,
     activatedQueryCandidateId:
-      args.activatedQueryCandidateId ?? existing?.activatedQueryCandidateId,
+      args.activatedQueryCandidateId ?? previous?.activatedQueryCandidateId,
     impressions,
     prospectsFound,
     qualifiedCount,
@@ -255,13 +282,13 @@ export async function upsertQueryPerformanceRecord(
     replyCount,
     replyRate: calculateRate(replyCount, prospectsFound),
     qualificationRate: calculateRate(qualifiedCount, prospectsFound),
-    lastUsedAt: args.lastUsedAt ?? existing?.lastUsedAt ?? now,
-    retiredAt: args.retiredAt ?? existing?.retiredAt,
+    lastUsedAt: args.lastUsedAt ?? previous?.lastUsedAt ?? now,
+    retiredAt: args.retiredAt ?? previous?.retiredAt,
     updatedAt: now,
   };
   const performanceScore = calculateQueryPerformanceScore(payload);
   const queryCandidateId =
-    args.activatedQueryCandidateId ?? existing?.activatedQueryCandidateId;
+    args.activatedQueryCandidateId ?? previous?.activatedQueryCandidateId;
 
   if (existing) {
     await db.patch(existing._id, payload);
@@ -373,6 +400,8 @@ export async function recordMemoryWorkflowEventRecord(
     occurredAt?: number;
   }
 ) {
+  const workspace = await db.get(args.workspaceId);
+  if (!workspace) throw new Error("Workspace not found");
   const occurredAt = args.occurredAt ?? getCurrentUTCTimestamp();
   const nextStatus = resolveDefaultMemoryWorkflowEventStatus({
     eventType: args.eventType,
@@ -416,8 +445,31 @@ export async function recordMemoryWorkflowEventRecord(
     };
   }
 
+  const sourceProspect = args.prospectId ? await db.get(args.prospectId) : null;
+  const sourceQuery = args.queryId ? await db.get(args.queryId) : null;
+  if (sourceProspect && sourceProspect.workspaceId !== args.workspaceId)
+    throw new Error("Memory event prospect workspace mismatch");
+  if (sourceQuery && sourceQuery.workspaceId !== args.workspaceId)
+    throw new Error("Memory event query workspace mismatch");
+  const explicitFingerprint = getStringProperty(
+    isRecord(args.payload) ? args.payload : undefined,
+    "targetingFingerprint"
+  );
+  // Delayed enrichment/outreach feedback belongs to the decision that selected
+  // its source prospect, not whichever audience happens to be current today.
+  const targetingFingerprint =
+    explicitFingerprint ??
+    (sourceProspect
+      ? (sourceProspect.qualificationTargetingFingerprint ??
+        (workspace.targetingLearningResetAt === undefined
+          ? getLearningTargetingFingerprint(workspace)
+          : undefined))
+      : sourceQuery
+        ? sourceQuery.targetingFingerprint
+        : getLearningTargetingFingerprint(workspace));
   const eventId = await db.insert("memoryWorkflowEvents", {
     workspaceId: args.workspaceId,
+    targetingFingerprint,
     eventType: args.eventType,
     status: nextStatus,
     sourceType: args.sourceType,

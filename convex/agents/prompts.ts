@@ -389,6 +389,7 @@ ${buildUseCaseContextBlock(useCase)}
 Your task is to take a user-authored business description and produce:
 1. A lightly improved version of that same description
 2. 3-4 distinct ${profileLabelPlural}
+3. A versioned targeting specification used by discovery and qualification
 
 Each generated profile must still use the existing internal ICP shape, but the user-facing meaning should match this workspace's use case.
 
@@ -406,7 +407,9 @@ ${buildProfileGenerationRules({
   entityPlural,
   profileLabelPlural,
   useCase,
-})}`;
+})}
+
+${buildTargetingSpecRules()}`;
 }
 
 /**
@@ -425,10 +428,10 @@ export function buildProfileRevisionPrompt(
 
 ${buildUseCaseContextBlock(useCase)}
 
-Your task is to revise only the requested ${profileLabelPlural}. The business description is supplied solely as grounding context.
+Your task is to revise only the requested ${profileLabelPlural} and regenerate the machine-readable targeting specification. The business description is supplied solely as grounding context.
 
 ## Scope Boundary (NON-NEGOTIABLE)
-- Return profiles only. Do not write, summarize, improve, replace, or comment on the workspace description.
+- Return profiles and targetingSpec only. Do not write, summarize, improve, replace, or comment on the workspace description.
 - Preserve the product identity, user intent, target audience, facts, constraints, and business stage expressed in the supplied context.
 - Apply the user's feedback to the profiles and leave every unrelated profile detail unchanged when possible.
 - Never invent product features, capabilities, or factual claims while revising profiles.
@@ -438,7 +441,40 @@ ${buildProfileGenerationRules({
   entityPlural,
   profileLabelPlural,
   useCase,
-})}`;
+})}
+
+${buildTargetingSpecRules()}`;
+}
+
+function buildTargetingSpecRules(): string {
+  return `## Targeting Specification Rules
+The targetingSpec is the durable contract between what the user asked for, provider searches, and final qualification.
+
+- version must be 1.
+- summary must state exactly who should be found and why, without adding assumptions.
+- Create 1-12 atomic criteria. Each criterion must test one fact only; do not invent extra criteria just to fill a quota.
+- First identify the core reason a person is useful for the user's goal, separately from attributes of their ideal audience.
+- For each criterion, copy a sourceQuote from the original user input or latest feedback, then write importanceReason before choosing kind. Never use your improved description, generated profiles, or synthetic posts as authority for making a condition mandatory.
+- Use kind=required for the essential underlying intent or for restrictions the user explicitly makes non-negotiable. Do not classify all words in a "Find ..." sentence as mandatory.
+- Use kind=exclusion only for exclusions explicitly stated by the user.
+- Everything else is preferred. Do not silently turn a preference, example, geography, company size, role, or inferred trait into a hard gate.
+- Counterfactual check: if this attribute were missing, could the person still serve the stated goal? If yes and the user has not refused such people, classify it as preferred. A strong preference can have weight=5 without becoming required.
+- For example, "Find U.S.-based founders hiring remote engineers so I can offer recruiting services" has a core hiring need; U.S. location, exact title, and remote format are preferences. "They must be U.S.-based; exclude onsite-only openings" makes those restrictions non-negotiable. These are interpretation examples, not application-wide hiring rules.
+- The same distinction applies to every audience: "find customers using Product A, preferably frustrated" requires actual product use, not frustration. Do not add employee, agency, or promoter exclusions unless this user asks for them.
+- category=profile_fit covers identity, role, organization, geography, and audience fit.
+- category=intent covers product usage, pain, need, dissatisfaction, buying, switching, hiring, or another requested behavior.
+- category=timing covers recency or active-now requirements.
+- evidence=profile when profile/company data can prove it, activity when prospect-authored activity is needed, and either when both are valid.
+- weight is 1-5 and reflects importance within its kind. More satisfied criteria must produce a better result.
+- IDs must be stable lowercase snake_case labels. Terms must be short literal aliases useful for search or evidence matching.
+- searchHints.entities must contain exact named products, companies, technologies, communities, or other entities from the user description.
+- searchHints.activityPhrases must contain short phrases that express the requested behavior, situation, need, or signal. Derive them from the user's language; do not use a fixed phrase list.
+- Search hints must preserve the user's language. Do not invent competitors, locations, industries, roles, or exclusions.
+- languageCodes must contain only language restrictions explicitly requested by the user, expressed as short provider-compatible language codes such as en or es. Otherwise return an empty array.
+- searchFilters contains only filters supported directly by the current provider APIs. Populate a field only when the user explicitly constrains the prospect or author by that value; do not infer filters from incidental facts about the user's own company or a mentioned product.
+- Twitter supports language and location operators. LinkedIn people supports location and profileLanguage. LinkedIn posts supports authorJobTitle and datePosted values past-24h, past-week, past-month, or past-year.
+- If a requested constraint has no searchFilters field, leave it to qualification. Never force it into an unrelated provider parameter.
+- Explicit exclusions remain hard during every broadening stage. Broad discovery may omit soft filters, but it may never reverse the user's intent.`;
 }
 
 function buildProfileGenerationRules(args: {
@@ -749,26 +785,20 @@ Analyze the ${entitySingular} and determine their fit against the generated work
 
 Use this qualification lens: ${useCase.promptContext.qualificationLens}
 
-## Scoring Guide
-- **80-100**: Strong fit, active, genuine, and clearly worth pursuing immediately.
-- **70-79**: Good fit with minor concerns. Worth pursuing.
-- **50-69**: Moderate fit or some concerns. Maybe, needs review.
-- **0-49**: Poor fit, inactive, or suspicious. Skip.
-
-Return the score as these bounded components; the application calculates the
-final total in code:
-- **profileFit (0-30)**: Role, audience, organization, and workspace-profile fit.
-- **signalQuality (0-30)**: How directly verified sources support the workspace goal.
-- **intentStrength (0-25)**: Current pain, urgency, active need, or likelihood to act.
-- **recency (0-15)**: Freshness of the verified qualifying evidence.
+## Evaluation Contract
+- Evaluate every atomic criterion in the supplied targeting specification.
+- Return evidence decisions and criterion verdicts only. The application calculates the score and final qualification deterministically.
+- More genuinely matched criteria increase the score; missing preferences lower it without becoming hard gates.
+- Explicit required criteria and exclusions are hard gates.
 
 ## Decision Rules
-- Set qualified=true ONLY if the component total is >= ${QUALIFICATION_THRESHOLD} AND not a bot
+- The application qualifies only at ${QUALIFICATION_THRESHOLD}+ after applying required criteria, exclusions, evidence verification, and bot gates
 - Discovery queries are routing metadata, never proof of fit
-- The workspace description and profile constraints are authoritative. Enforce every explicit requirement and exclusion during qualification even when the discovery query or synthetic post omitted it for broader recall.
-- Set qualified=true only when at least one persisted prospect-authored source directly supports the decision
+- The original workspace goal and targeting specification are authoritative. Generated profiles and synthetic posts are retrieval context, never extra mandatory conditions. Enforce required criteria and exclusions during qualification even when discovery omitted them for broader recall.
+- Mark criteria as supported only when at least one persisted prospect-authored source directly supports them, except criteria explicitly defined as profile-only
+- Attribute first-person language to the author from the surrounding context. A phrase inside a quotation, example, template, hypothetical, question, negation, or statement attributed to other people is not the author's own evidence. For example, an author saying that candidates answer "I use Product X" does not prove that the author uses Product X.
 - Never invent a source, URL, post ID, author, or quote
-- Bot indicators should result in isLikelyBot=true and score < 50
+- isLikelyBot is a hard rejection, so require affirmative evidence that this is an inauthentic automated identity or deceptive spam account. Regular scheduling, repeated formats, AI-assisted writing, low engagement, or selling the author's own products alone do not establish this: genuine people and businesses use publishing automation. Record uncertain indicators in botFlags without converting uncertainty into isLikelyBot=true. Consider coherent identity and first-person activity as counterevidence.
 - Treat recency relative to the provided current date. Between two otherwise similar prospects, give the higher score to the one with more recent matched pain-point evidence.
 - A single high-engagement post is never enough by itself. Cross-check profile consistency, recent posting mix, role/company fit, linked site, and recurring intent signals before trusting the post.
 

@@ -1,3 +1,4 @@
+import { getLearningTargetingFingerprint } from "../lib/learningTargetingHelpers";
 import { v } from "convex/values";
 import { vWorkflowId, type WorkflowId } from "@convex-dev/workflow";
 import { vResultValidator } from "@convex-dev/workpool";
@@ -11,6 +12,7 @@ import { evaluateQualificationWithExternalArticles } from "../lib/qualificationE
 import { indexEvidencePosts, type EvidencePost } from "../lib/ragIndexing";
 import {
   prospectPlatformValidator,
+  workspaceTargetingSpecValidator,
   workspaceUseCaseKeyValidator,
 } from "../validators";
 import { isRecord, getNestedRecord } from "../lib/typeGuards";
@@ -30,6 +32,7 @@ import {
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
 import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
+import { buildLegacyWorkspaceTargetingSpec } from "../lib/targetingSpecCore";
 const qualificationWorkflowLogger = logger.withScope("QualificationWorkflow");
 
 async function hasValidatedSetupPreviewContext(
@@ -77,6 +80,7 @@ export const runQualificationCore = internalAction({
     discoveryQueries: v.array(v.string()),
     totalKeywords: v.number(),
     profileData: v.any(),
+    targetingSpec: workspaceTargetingSpecValidator,
     workspaceId: v.id("workspaces"),
     prospectId: v.id("prospects"),
     icpDescription: v.optional(v.string()),
@@ -102,6 +106,7 @@ export const runQualificationCore = internalAction({
       discoveryQueries: args.discoveryQueries,
       totalKeywords: args.totalKeywords,
       profileData: args.profileData as Record<string, unknown>,
+      targetingSpec: args.targetingSpec,
       workspaceId: args.workspaceId,
       prospectId: args.prospectId,
       icpDescription: args.icpDescription,
@@ -157,6 +162,7 @@ export const indexQualificationEvidence = internalAction({
  */
 export const qualificationWorkflow = workflow.define({
   args: {
+    expectedTargetingFingerprint: v.optional(v.string()),
     prospectId: v.id("prospects"),
     workspaceId: v.id("workspaces"),
   },
@@ -183,10 +189,10 @@ export const qualificationWorkflow = workflow.define({
       { prospectId: args.prospectId }
     );
 
-    if (!prospect) {
+    if (!prospect || prospect.workspaceId !== args.workspaceId) {
       return {
         success: false,
-        error: "Prospect not found",
+        error: "Prospect not found in this workspace",
       };
     }
 
@@ -199,8 +205,11 @@ export const qualificationWorkflow = workflow.define({
     if (isSetupPreview) {
       if (!prospect.setupSessionId) {
         await step.runMutation(
-          internal.prospects.clearQualificationWorkflowId,
-          { prospectId: args.prospectId }
+          internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+          {
+            prospectId: args.prospectId,
+            workflowId: String(step.workflowId),
+          }
         );
         return {
           success: true,
@@ -217,8 +226,11 @@ export const qualificationWorkflow = workflow.define({
       );
       if (!setupSession || setupSession.status === "discarded") {
         await step.runMutation(
-          internal.prospects.clearQualificationWorkflowId,
-          { prospectId: args.prospectId }
+          internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+          {
+            prospectId: args.prospectId,
+            workflowId: String(step.workflowId),
+          }
         );
         return {
           success: true,
@@ -233,9 +245,13 @@ export const qualificationWorkflow = workflow.define({
       prospect.qualificationStatus === "qualified" ||
       prospect.qualificationStatus === "disqualified"
     ) {
-      await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
-        prospectId: args.prospectId,
-      });
+      await step.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        {
+          prospectId: args.prospectId,
+          workflowId: String(step.workflowId),
+        }
+      );
       return {
         success: true,
         qualified: prospect.qualificationStatus === "qualified",
@@ -244,9 +260,13 @@ export const qualificationWorkflow = workflow.define({
     }
 
     if (prospect.status === "archived") {
-      await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
-        prospectId: args.prospectId,
-      });
+      await step.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        {
+          prospectId: args.prospectId,
+          workflowId: String(step.workflowId),
+        }
+      );
       return {
         success: true,
         skipped: true,
@@ -261,13 +281,28 @@ export const qualificationWorkflow = workflow.define({
     });
 
     if (!workspace) {
-      await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
-        prospectId: args.prospectId,
-      });
+      await step.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        {
+          prospectId: args.prospectId,
+          workflowId: String(step.workflowId),
+        }
+      );
       return {
         success: false,
         error: "Workspace not found",
       };
+    }
+    if (
+      args.expectedTargetingFingerprint !== undefined &&
+      args.expectedTargetingFingerprint !==
+        getLearningTargetingFingerprint(workspace)
+    ) {
+      await step.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        { prospectId: args.prospectId, workflowId: String(step.workflowId) }
+      );
+      return { success: true, skipped: true, qualified: false };
     }
     // Build keywords from ICPs
     const allKeywords: string[] = [];
@@ -313,6 +348,12 @@ export const qualificationWorkflow = workflow.define({
           .slice(0, 5),
       }
     );
+    const targetingSpec =
+      workspace.targetingSpec ??
+      buildLegacyWorkspaceTargetingSpec({
+        description: workspace.description,
+        profiles: workspace.icps ?? [],
+      });
 
     // Step 4: Run qualification via action (AI calls require Node.js runtime)
     const result = await step.runAction(
@@ -323,6 +364,7 @@ export const qualificationWorkflow = workflow.define({
         discoveryQueries,
         totalKeywords: allKeywords.length || 1, // Avoid division by zero
         profileData,
+        targetingSpec,
         workspaceId: args.workspaceId,
         prospectId: args.prospectId,
         icpDescription: workspace.description,
@@ -342,9 +384,13 @@ export const qualificationWorkflow = workflow.define({
       internal.prospects.updateProspectQualification,
       {
         prospectId: args.prospectId,
+        expectedTargetingFingerprint:
+          getLearningTargetingFingerprint(workspace),
         qualificationStatus: result.status,
         qualificationScore: result.score,
         qualificationScoreBreakdown: result.scoreBreakdown,
+        qualificationCriteriaVersion: 1,
+        qualificationCriterionResults: result.criterionResults,
         qualifiedAt: result.qualifiedAt,
         qualificationKeywords: result.matchedKeywords,
         qualificationSources: result.qualificationSources,
@@ -354,9 +400,13 @@ export const qualificationWorkflow = workflow.define({
     );
 
     if (qualificationUpdate.skipped) {
-      await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
-        prospectId: args.prospectId,
-      });
+      await step.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        {
+          prospectId: args.prospectId,
+          workflowId: String(step.workflowId),
+        }
+      );
       return {
         success: true,
         qualified: false,
@@ -371,9 +421,13 @@ export const qualificationWorkflow = workflow.define({
     );
 
     if (!currentProspect) {
-      await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
-        prospectId: args.prospectId,
-      });
+      await step.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        {
+          prospectId: args.prospectId,
+          workflowId: String(step.workflowId),
+        }
+      );
       return {
         success: true,
         qualified: result.qualified,
@@ -404,6 +458,7 @@ export const qualificationWorkflow = workflow.define({
       workflowName: "qualificationWorkflow",
       prospectId: args.prospectId,
       payload: {
+        targetingFingerprint: getLearningTargetingFingerprint(workspace),
         qualified: result.qualified,
         status: result.status,
         score: result.score,
@@ -424,6 +479,7 @@ export const qualificationWorkflow = workflow.define({
     if (!isStillSetupPreview && evidenceValidationCompleted) {
       await step
         .runAction(internal.memory.indexWorkspaceProspectSummaryInternal, {
+          targetingFingerprint: getLearningTargetingFingerprint(workspace),
           workspaceId: String(args.workspaceId),
           prospectId: String(args.prospectId),
           namespace: result.qualified ? "verified_wins" : "verified_losses",
@@ -524,9 +580,13 @@ export const qualificationWorkflow = workflow.define({
       }
     }
 
-    await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
-      prospectId: args.prospectId,
-    });
+    await step.runMutation(
+      internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+      {
+        prospectId: args.prospectId,
+        workflowId: String(step.workflowId),
+      }
+    );
 
     if (isStillSetupPreview && currentProspect.setupSessionId) {
       await step.runAction(

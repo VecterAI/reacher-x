@@ -1,3 +1,9 @@
+import { getStringProperty, isRecord } from "./lib/typeGuards";
+import { learningEntryReferenceValidator } from "./validators";
+import {
+  isCurrentTargetingLearning,
+  isReusablePipelineLesson,
+} from "./lib/learningTargetingHelpers";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -274,12 +280,18 @@ export const getQueryCandidateByCanonicalKeyInternal = internalQuery({
     canonicalKey: v.string(),
   },
   handler: async (ctx, { workspaceId, canonicalKey }) => {
-    return await ctx.db
+    const workspace = await ctx.db.get(workspaceId);
+    const candidate = await ctx.db
       .query("queryCandidates")
       .withIndex("by_workspace_canonical_key", (q) =>
         q.eq("workspaceId", workspaceId).eq("canonicalKey", canonicalKey)
       )
       .first();
+    return candidate &&
+      workspace &&
+      isCurrentTargetingLearning(candidate, workspace)
+      ? candidate
+      : null;
   },
 });
 
@@ -288,6 +300,25 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, { workspaceId }) => {
+    const workspace = await ctx.db.get(workspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+    const memoryContext = buildCanonicalWorkspaceMemoryContext({
+      request: {
+        workspaceId: String(workspaceId),
+        userId: String(workspace.userId),
+        query: workspace.description,
+        surface: "discovery",
+      },
+      memories: (
+        await listCanonicalWorkspaceMemoryCandidates(ctx.db, {
+          workspaceId,
+          userId: workspace.userId,
+        })
+      ).filter(
+        (memory) =>
+          memory.authority === "operator" || isReusablePipelineLesson(memory)
+      ),
+    });
     const [
       topPerformers,
       activeCandidates,
@@ -309,7 +340,8 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
         .withIndex("by_workspace_status", (q) =>
           q.eq("workspaceId", workspaceId).eq("status", "activated")
         )
-        .collect(),
+        .order("desc")
+        .take(MAX_LIST_LIMIT),
       ctx.db
         .query("queryCandidates")
         .withIndex("by_workspace_status", (q) =>
@@ -317,7 +349,8 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
             .eq("workspaceId", workspaceId)
             .eq("status", "rejected_exact_duplicate")
         )
-        .collect(),
+        .order("desc")
+        .take(MAX_LIST_LIMIT),
       ctx.db
         .query("queryCandidates")
         .withIndex("by_workspace_status", (q) =>
@@ -325,19 +358,22 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
             .eq("workspaceId", workspaceId)
             .eq("status", "rejected_semantic_duplicate")
         )
-        .collect(),
+        .order("desc")
+        .take(MAX_LIST_LIMIT),
       ctx.db
         .query("queryCandidates")
         .withIndex("by_workspace_status", (q) =>
           q.eq("workspaceId", workspaceId).eq("status", "rejected_low_novelty")
         )
-        .collect(),
+        .order("desc")
+        .take(MAX_LIST_LIMIT),
       ctx.db
         .query("queryCandidates")
         .withIndex("by_workspace_status", (q) =>
           q.eq("workspaceId", workspaceId).eq("status", "retired")
         )
-        .collect(),
+        .order("desc")
+        .take(MAX_LIST_LIMIT),
       ctx.db
         .query("prospectSummaries")
         .withIndex("by_workspace_ready_score", (q) =>
@@ -346,8 +382,24 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
         .take(DISCOVERY_CONTEXT_LIMIT),
     ]);
 
+    const currentWinners = await Promise.all(
+      prospectSummaries.map(async (summary) => {
+        const prospect = await ctx.db.get(summary.prospectId);
+        return prospect &&
+          isCurrentTargetingLearning(
+            {
+              targetingFingerprint: prospect.qualificationTargetingFingerprint,
+            },
+            workspace
+          )
+          ? summary
+          : null;
+      })
+    );
     return {
-      topPerformers: [...topPerformers]
+      operatorInstructions: memoryContext.complianceInstructions,
+      topPerformers: topPerformers
+        .filter((row) => isCurrentTargetingLearning(row, workspace))
         .sort(
           (a, b) =>
             calculateQueryPerformanceRank(b) - calculateQueryPerformanceRank(a)
@@ -362,17 +414,26 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
           replyRate: row.replyRate,
           qualificationRate: row.qualificationRate,
         })),
-      activeQueryCount: activeCandidates.length,
+      activeQueryCount: activeCandidates.filter((row) =>
+        isCurrentTargetingLearning(row, workspace)
+      ).length,
       rejectionSummary: {
-        exactDuplicates: exactRejected.length,
-        semanticDuplicates: semanticRejected.length,
-        lowNovelty: lowNoveltyRejected.length,
+        exactDuplicates: exactRejected.filter((row) =>
+          isCurrentTargetingLearning(row, workspace)
+        ).length,
+        semanticDuplicates: semanticRejected.filter((row) =>
+          isCurrentTargetingLearning(row, workspace)
+        ).length,
+        lowNovelty: lowNoveltyRejected.filter((row) =>
+          isCurrentTargetingLearning(row, workspace)
+        ).length,
       },
       recentRejected: [
         ...exactRejected,
         ...semanticRejected,
         ...lowNoveltyRejected,
       ]
+        .filter((row) => isCurrentTargetingLearning(row, workspace))
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, DISCOVERY_CONTEXT_LIMIT)
         .map((candidate) => ({
@@ -383,6 +444,7 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
           noveltyScore: candidate.noveltyScore ?? null,
         })),
       retired: retiredCandidates
+        .filter((row) => isCurrentTargetingLearning(row, workspace))
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, DISCOVERY_CONTEXT_LIMIT)
         .map((candidate) => ({
@@ -390,20 +452,31 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
           sourceTheme: candidate.sourceTheme,
           retiredAt: candidate.retiredAt ?? null,
         })),
-      promotedDiscoveryMemories: [],
-      recentWinningProspects: prospectSummaries.map((summary) => ({
-        displayName: summary.displayName,
-        title: summary.title ?? null,
-        briefIntro: summary.briefIntro ?? null,
-        matchedKeywords: summary.matchedKeywords ?? [],
-        qualificationScore: summary.qualificationScore ?? null,
-      })),
+      promotedDiscoveryMemories: memoryContext.learnedMemories
+        .slice(0, DISCOVERY_CONTEXT_LIMIT)
+        .map((memory) => ({
+          type: memory.category ?? memory.kind,
+          title: memory.title,
+          summary: memory.canonicalContent,
+          confidence: memory.confidence,
+          impactScore: memory.impactScore,
+        })),
+      recentWinningProspects: currentWinners
+        .filter((summary) => summary !== null)
+        .map((summary) => ({
+          displayName: summary.displayName,
+          title: summary.title ?? null,
+          briefIntro: summary.briefIntro ?? null,
+          matchedKeywords: summary.matchedKeywords ?? [],
+          qualificationScore: summary.qualificationScore ?? null,
+        })),
     };
   },
 });
 
 export const upsertQueryCandidateInternal = internalMutation({
   args: {
+    expectedTargetingFingerprint: v.optional(v.string()),
     workspaceId: v.id("workspaces"),
     type: queryCandidateTypeValidator,
     rawValue: v.string(),
@@ -973,6 +1046,56 @@ export const listPinnedWorkspaceMemoriesInternal = internalQuery({
   },
 });
 
+export const filterCurrentLearningEntriesInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    namespace: v.string(),
+    entries: v.array(learningEntryReferenceValidator),
+  },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) return [];
+    const allowed = await Promise.all(
+      args.entries.slice(0, 64).map(async (entry) => {
+        if (!entry.sourceId || !isCurrentTargetingLearning(entry, workspace))
+          return null;
+        if (args.namespace === "queries") {
+          const id = ctx.db.normalizeId("queryCandidates", entry.sourceId);
+          const candidate = id ? await ctx.db.get(id) : null;
+          return candidate &&
+            candidate.workspaceId === workspace._id &&
+            isCurrentTargetingLearning(candidate, workspace)
+            ? entry.entryId
+            : null;
+        }
+        const id = ctx.db.normalizeId("prospects", entry.sourceId);
+        const prospect = id ? await ctx.db.get(id) : null;
+        const expected =
+          args.namespace === "verified_wins"
+            ? "qualified"
+            : args.namespace === "verified_losses"
+              ? "disqualified"
+              : undefined;
+        return prospect &&
+          prospect.workspaceId === workspace._id &&
+          prospect.origin !== "setup_preview" &&
+          expected &&
+          prospect.qualificationStatus === expected &&
+          isCurrentTargetingLearning(
+            {
+              targetingFingerprint: prospect.qualificationTargetingFingerprint,
+            },
+            workspace
+          )
+          ? entry.entryId
+          : null;
+      })
+    );
+    return allowed.filter((id): id is string => id !== null);
+  },
+});
+
 export const searchWorkspaceMemoryNamespaceInternal = internalAction({
   args: {
     workspaceId: v.string(),
@@ -1000,8 +1123,32 @@ export const searchWorkspaceMemoryNamespaceInternal = internalAction({
         limit: limit ?? 3,
       });
 
+      const allowedIds =
+        namespace === "verified_wins" || namespace === "verified_losses"
+          ? new Set(
+              await ctx.runQuery(
+                internal.memory.filterCurrentLearningEntriesInternal,
+                {
+                  workspaceId: workspaceId as Id<"workspaces">,
+                  namespace,
+                  entries: result.entries.map((entry) => ({
+                    entryId: entry.entryId,
+                    targetingFingerprint: getStringProperty(
+                      isRecord(entry.metadata) ? entry.metadata : undefined,
+                      "targetingFingerprint"
+                    ),
+                    sourceId: getStringProperty(
+                      isRecord(entry.metadata) ? entry.metadata : undefined,
+                      "prospectId"
+                    ),
+                  })),
+                }
+              )
+            )
+          : null;
       return {
         matches: result.results
+          .filter((entry) => !allowedIds || allowedIds.has(entry.entryId))
           .slice(0, limit ?? 3)
           .map((entry): WorkspaceSemanticMatch => {
             const text = entry.content.map((chunk) => chunk.text).join("\n");
@@ -1635,6 +1782,7 @@ export const promoteOutreachLearningInternal = internalAction({
 
 export const indexWorkspaceProspectSummaryInternal = internalAction({
   args: {
+    targetingFingerprint: v.optional(v.string()),
     workspaceId: v.string(),
     prospectId: v.string(),
     namespace: v.string(),
@@ -1663,6 +1811,7 @@ export const indexWorkspaceProspectSummaryInternal = internalAction({
     });
 
     return await indexWorkspaceProspectSummary(ctx, {
+      targetingFingerprint: args.targetingFingerprint,
       workspaceId: args.workspaceId,
       namespace: args.namespace as Parameters<typeof getWorkspaceNamespace>[1],
       prospectId: args.prospectId,
@@ -1707,6 +1856,7 @@ export const indexQueryCandidateInternal = internalAction({
     }
 
     return await indexWorkspaceQueryCandidate(ctx, {
+      targetingFingerprint: candidate.targetingFingerprint,
       queryCandidateId: String(candidate._id),
       workspaceId: String(candidate.workspaceId),
       embeddingDocKey: candidate.embeddingDocKey,
@@ -1746,12 +1896,35 @@ export const searchDiscoverySemanticDuplicatesInternal = internalAction({
         vectorScoreThreshold: DISCOVERY_SEMANTIC_DUPLICATE_THRESHOLD,
       });
 
+      const allowedIds = new Set(
+        await ctx.runQuery(
+          internal.memory.filterCurrentLearningEntriesInternal,
+          {
+            workspaceId,
+            namespace: "queries",
+            entries: result.entries.map((entry) => ({
+              entryId: entry.entryId,
+              targetingFingerprint: getStringProperty(
+                isRecord(entry.metadata) ? entry.metadata : undefined,
+                "targetingFingerprint"
+              ),
+              sourceId: getStringProperty(
+                isRecord(entry.metadata) ? entry.metadata : undefined,
+                "queryCandidateId"
+              ),
+            })),
+          }
+        )
+      );
       return {
-        matches: result.results.slice(0, limit ?? 3).map((entry) => ({
-          score: entry.score,
-          text: entry.content.map((chunk) => chunk.text).join("\n"),
-          title: null,
-        })),
+        matches: result.results
+          .filter((entry) => allowedIds.has(entry.entryId))
+          .slice(0, limit ?? 3)
+          .map((entry) => ({
+            score: entry.score,
+            text: entry.content.map((chunk) => chunk.text).join("\n"),
+            title: null,
+          })),
       };
     } catch {
       return { matches: [] };
@@ -1761,6 +1934,7 @@ export const searchDiscoverySemanticDuplicatesInternal = internalAction({
 
 export const screenDiscoveryQueryCandidatesInternal = internalAction({
   args: {
+    expectedTargetingFingerprint: v.optional(v.string()),
     workspaceId: v.id("workspaces"),
     candidates: v.array(
       v.object({
@@ -1771,7 +1945,7 @@ export const screenDiscoveryQueryCandidatesInternal = internalAction({
   },
   handler: async (
     ctx,
-    { workspaceId, candidates }
+    { workspaceId, candidates, expectedTargetingFingerprint }
   ): Promise<{
     accepted: Array<{
       rawValue: string;
@@ -1854,6 +2028,7 @@ export const screenDiscoveryQueryCandidatesInternal = internalAction({
           internal.memory.upsertQueryCandidateInternal,
           {
             workspaceId,
+            expectedTargetingFingerprint,
             type: "social_query",
             rawValue: candidate.rawValue,
             sourceTheme: candidate.sourceTheme,
@@ -1888,6 +2063,7 @@ export const screenDiscoveryQueryCandidatesInternal = internalAction({
           internal.memory.upsertQueryCandidateInternal,
           {
             workspaceId,
+            expectedTargetingFingerprint,
             type: "social_query",
             rawValue: candidate.rawValue,
             sourceTheme: candidate.sourceTheme,
@@ -1911,6 +2087,7 @@ export const screenDiscoveryQueryCandidatesInternal = internalAction({
         internal.memory.upsertQueryCandidateInternal,
         {
           workspaceId,
+          expectedTargetingFingerprint,
           type: "social_query",
           rawValue: candidate.rawValue,
           sourceTheme: candidate.sourceTheme,

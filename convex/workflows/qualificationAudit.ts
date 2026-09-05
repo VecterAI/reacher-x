@@ -1,3 +1,7 @@
+import {
+  getLearningTargetingFingerprint,
+  isCurrentTargetingLearning,
+} from "../lib/learningTargetingHelpers";
 import { paginationOptsValidator } from "convex/server";
 import { Infer, v } from "convex/values";
 import { vWorkflowId } from "@convex-dev/workflow";
@@ -33,6 +37,7 @@ import {
   qualificationAuditOutcomeValidator,
   qualificationFailureValidator,
 } from "../validators";
+import { buildLegacyWorkspaceTargetingSpec } from "../lib/targetingSpecCore";
 
 const AUDIT_PAGE_SIZE = 30;
 const AUDIT_BATCH_SIZE = 3;
@@ -113,6 +118,10 @@ export const getAuditBatchContextInternal = internalQuery({
     const run = await ctx.db.get(args.runId);
     if (!run) return null;
     const workspace = await ctx.db.get(run.workspaceId);
+    if (!workspace || !isCurrentTargetingLearning(run, workspace))
+      throw new Error(
+        "Workspace targeting changed; run a new qualification audit"
+      );
     const prospects = await Promise.all(
       args.prospectIds.map((prospectId) => ctx.db.get(prospectId))
     );
@@ -171,6 +180,7 @@ export const createRunInternal = internalMutation({
     }
 
     return await ctx.db.insert("qualificationAuditRuns", {
+      targetingFingerprint: getLearningTargetingFingerprint(workspace),
       workspaceId: args.workspaceId,
       userId: workspace.userId,
       mode: "dry_run",
@@ -451,6 +461,12 @@ async function auditProspect(
       discoveryQueries,
       totalKeywords: keywordContext.evaluationKeywords.length || 1,
       profileData: context.profileData,
+      targetingSpec:
+        workspace.targetingSpec ??
+        buildLegacyWorkspaceTargetingSpec({
+          description: workspace.description,
+          profiles: workspace.icps ?? [],
+        }),
       workspaceId: workspace._id,
       prospectId: prospect._id,
       icpDescription: workspace.description,
@@ -512,6 +528,8 @@ async function auditProspect(
     previousScore: prospect.qualificationScore,
     proposedScore: result.score,
     scoreBreakdown: result.scoreBreakdown,
+    qualificationCriteriaVersion: 1,
+    qualificationCriterionResults: result.criterionResults,
     proposedStatus: result.status,
     outcome: result.qualified ? "kept_qualified" : "would_disqualify",
     evidenceOrigin: evidence.origin,

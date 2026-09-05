@@ -136,6 +136,12 @@ export async function applyWorkspaceSettingsUpdateCore(
     );
   }
 
+  if (targetingContextChanged || regenerationIndices.length > 0) {
+    updateData.targetingLearningResetAt = now;
+    updateData.targetingSpec = undefined;
+    updateData.prospectingBootstrapCycleCount = 0;
+    updateData.prospectingBootstrapCompletedAt = undefined;
+  }
   await ctx.db.patch("workspaces", workspace._id, updateData);
 
   if (stopWorkflowForRefresh) {

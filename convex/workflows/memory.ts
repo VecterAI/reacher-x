@@ -5,6 +5,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "../_generated/server";
 import { internalAction, internalMutation } from "../lib/functionBuilders";
 import { memoryEvaluationPool } from "../lib/memoryEvaluationPool";
+import { retryOccMutation } from "../lib/prospectPersistenceHelpers";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
 import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
@@ -348,9 +349,8 @@ async function processMemoryWorkflowEvent(
       throw new Error("Memory evaluation plan is missing workspace context");
     }
 
-    const applied = await ctx.runMutation(
-      internal.evaluator.applyMemoryEvaluationPlanInternal,
-      {
+    const applied = await retryOccMutation(() =>
+      ctx.runMutation(internal.evaluator.applyMemoryEvaluationPlanInternal, {
         runId,
         eventId: args.eventId,
         workspaceId: plan.workspaceId as Id<"workspaces">,
@@ -365,15 +365,17 @@ async function processMemoryWorkflowEvent(
         telemetryProviderMetadata: plan.telemetry?.providerMetadata,
         telemetryUsage: plan.telemetry?.usage,
         styleMetadata: plan.styleMetadata,
-      }
+      })
     );
 
-    await ctx.runMutation(
-      internal.evaluator.finalizeMemoryEvaluatorRunInternal,
-      {
+    await retryOccMutation(() =>
+      ctx.runMutation(internal.evaluator.finalizeMemoryEvaluatorRunInternal, {
         runId,
         eventId: args.eventId,
-        status: "completed",
+        status: applied.skipped ? "ignored" : "completed",
+        ignoredReason: applied.skipped
+          ? "Source prospect was removed during evaluation."
+          : undefined,
         promptVersion: plan.promptVersion,
         model: plan.model,
         summary: plan.summary,
@@ -383,11 +385,11 @@ async function processMemoryWorkflowEvent(
         suggestedMemoryCount: applied.suggestedMemoryCount,
         queryPerformanceUpdateCount: applied.queryPerformanceUpdateCount,
         retrievalStats: plan.retrievalStats,
-      }
+      })
     );
 
     return {
-      status: "completed" as const,
+      status: applied.skipped ? ("ignored" as const) : ("completed" as const),
       runId,
     };
   } catch (error) {

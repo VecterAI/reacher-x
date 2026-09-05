@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  applyTwitterProviderSearchFilters,
   attributeNewTwitterProspectsToQueries,
   buildTwitterProspectingProviderQuery,
   getNewestTwitterPostId,
@@ -8,6 +9,7 @@ import {
   limitTwitterProspectingPostsForPersistence,
   getTwitterExactFallbackQueries,
   mergeTwitterProspectingSearchResults,
+  normalizeTwitterBooleanOperators,
   partitionTwitterProspectingQueries,
   resolveTwitterProspectingSearchMode,
   stripTwitterExactPhraseQuotes,
@@ -52,6 +54,101 @@ describe("Twitter prospecting page limits", () => {
 });
 
 describe("Twitter prospecting provider queries", () => {
+  test("normalizes SocialAPI boolean syntax without changing quoted text", () => {
+    expect(
+      normalizeTwitterBooleanOperators(
+        '("using origami or gojiberry" or "need an alternative") or pricing'
+      )
+    ).toBe(
+      '("using origami or gojiberry" OR "need an alternative") OR pricing'
+    );
+  });
+
+  test("adds documented SocialAPI filters only to strict queries", () => {
+    const filters = { language: "en", location: "United States" };
+
+    expect(
+      applyTwitterProviderSearchFilters({
+        query: "seeking event sponsors",
+        stage: "strict",
+        filters,
+      })
+    ).toBe('seeking event sponsors lang:en near:"United States"');
+    expect(
+      applyTwitterProviderSearchFilters({
+        query: "seeking event sponsors",
+        stage: "balanced",
+        filters,
+      })
+    ).toBe("seeking event sponsors");
+  });
+
+  test("does not duplicate existing operators or apply invalid language codes", () => {
+    expect(
+      applyTwitterProviderSearchFilters({
+        query: 'event sponsors lang:en near:"Boston"',
+        stage: "strict",
+        filters: { language: "english", location: "Boston" },
+      })
+    ).toBe('event sponsors lang:en near:"Boston"');
+  });
+
+  test.each(["balanced", "broad"] as const)(
+    "%s removes embedded provider filters without losing topic syntax",
+    (stage) => {
+      expect(
+        applyTwitterProviderSearchFilters({
+          query:
+            '("engineer" OR "developer") near:"United States" lang:en within:10km',
+          stage,
+        })
+      ).toBe(
+        '( "engineer" OR "developer" )'.replace("( ", "(").replace(" )", ")")
+      );
+      expect(
+        applyTwitterProviderSearchFilters({
+          query: 'hiring AND (near:"United States")',
+          stage,
+        })
+      ).toBe("hiring");
+      expect(
+        applyTwitterProviderSearchFilters({
+          query: '"near:Boston" -from:company hiring',
+          stage,
+        })
+      ).toBe('"near:Boston" -from:company hiring');
+    }
+  );
+
+  test("never cuts a quoted phrase or Boolean group to append filters", () => {
+    const query =
+      '("first complete phrase" OR "second complete phrase") ("third complete phrase" OR "fourth complete phrase")';
+    const filtered = applyTwitterProviderSearchFilters({
+      query,
+      stage: "strict",
+      filters: { language: "en" },
+      maxLength: 65,
+    });
+
+    expect(filtered).toBe(
+      '("first complete phrase" OR "second complete phrase") lang:en'
+    );
+    expect(filtered.length).toBeLessThanOrEqual(65);
+  });
+
+  test("keeps the original query when no complete fragment leaves room for a filter", () => {
+    const query = `"${"x".repeat(70)}"`;
+
+    expect(
+      applyTwitterProviderSearchFilters({
+        query,
+        stage: "strict",
+        filters: { language: "en" },
+        maxLength: 65,
+      })
+    ).toBe(query);
+  });
+
   test("applies a freshness boundary to raw and exact searches", () => {
     expect(
       buildTwitterProspectingProviderQuery({
@@ -67,6 +164,16 @@ describe("Twitter prospecting provider queries", () => {
         sinceTimestampSeconds: 1_700_000_000,
       })
     ).toBe('"looking for screen recorder" since_time:1700000000');
+  });
+
+  test("normalizes Boolean syntax again at the provider boundary", () => {
+    expect(
+      buildTwitterProspectingProviderQuery({
+        query: '("origami" or "gojiberry") founder',
+        searchMode: "raw",
+        sinceTimestampSeconds: 1_700_000_000,
+      })
+    ).toBe('("origami" OR "gojiberry") founder since_time:1700000000');
   });
 
   test("uses a valid checkpoint on later searches", () => {

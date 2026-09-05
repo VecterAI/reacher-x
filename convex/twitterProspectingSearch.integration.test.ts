@@ -25,6 +25,72 @@ async function seedWorkspace(t: ReturnType<typeof convexTest>) {
 }
 
 describe("Twitter prospecting search mode", () => {
+  test("keeps the strictest stage and all criterion IDs for same-batch duplicates", async () => {
+    const t = convexTest(schema, modules);
+    const { workspaceId } = await seedWorkspace(t);
+
+    await t.mutation(internal.keywords.saveKeywordsBatch, {
+      workspaceId,
+      keywords: [
+        {
+          type: "social_query",
+          value: "we use Origami.chat",
+          source: "agent",
+          platformTargets: ["twitter"],
+          discoveryStage: "broad",
+          targetingCriterionIds: ["first_person_public_evidence"],
+        },
+      ],
+    });
+
+    await t.mutation(internal.keywords.saveKeywordsBatch, {
+      workspaceId,
+      keywords: [
+        {
+          type: "social_query",
+          value: "we use Origami.chat",
+          source: "agent",
+          platformTargets: ["linkedin"],
+          linkedinSurface: "posts",
+          discoveryStage: "strict",
+          targetingCriterionIds: ["current_named_product_user"],
+        },
+        {
+          type: "social_query",
+          value: "  WE USE ORIGAMI.CHAT  ",
+          source: "agent",
+          platformTargets: ["twitter"],
+          discoveryStage: "broad",
+          targetingCriterionIds: ["dissatisfaction_signal"],
+        },
+      ],
+    });
+
+    const rows = await t.run(async (ctx) =>
+      ctx.db
+        .query("keywords")
+        .withIndex("by_workspace_type", (q) =>
+          q.eq("workspaceId", workspaceId).eq("type", "social_query")
+        )
+        .collect()
+    );
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expect(row.discoveryStage).toBe("strict");
+    expect(row.platformTargets).toEqual(["twitter", "linkedin"]);
+    expect(row.targetingCriterionIds).toEqual([
+      "first_person_public_evidence",
+      "current_named_product_user",
+      "dissatisfaction_signal",
+    ]);
+
+    const [query] = await t.query(
+      internal.keywords.getPrioritizedTwitterQueries,
+      { workspaceId, allowedDiscoveryStages: ["strict"], limit: 10 }
+    );
+    expect(query.discoveryStage).toBe("strict");
+  });
+
   test("the workflow save bridge keeps fallback queries that match their seeds", async () => {
     const t = convexTest(schema, modules);
     const { workspaceId } = await seedWorkspace(t);

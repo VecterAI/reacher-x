@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSetupAgentPrompt } from "./prompts";
+import { buildQualificationPrompt, buildSetupAgentPrompt } from "./prompts";
 
 describe("chat-driven setup agent prompt", () => {
   const prompt = buildSetupAgentPrompt("general_outreach");
@@ -34,6 +34,29 @@ describe("chat-driven setup agent prompt", () => {
     expect(prompt).not.toContain("refineFromWorkspace");
     expect(prompt).not.toContain(
       "current audience profiles are already loaded"
+    );
+  });
+});
+
+describe("qualification prompt", () => {
+  it("does not equate publishing automation with an inauthentic identity", () => {
+    const prompt = buildQualificationPrompt("customer_prospecting");
+    expect(prompt).toContain(
+      "genuine people and businesses use publishing automation"
+    );
+    expect(prompt).toContain(
+      "without converting uncertainty into isLikelyBot=true"
+    );
+    expect(prompt).not.toContain(
+      "Bot indicators must result in isLikelyBot=true"
+    );
+  });
+  it("requires first-person evidence to belong to the author", () => {
+    const prompt = buildQualificationPrompt("customer_prospecting");
+
+    expect(prompt).toContain("Attribute first-person language to the author");
+    expect(prompt).toContain(
+      'candidates answer "I use Product X" does not prove that the author uses Product X'
     );
   });
 });

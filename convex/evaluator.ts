@@ -1,3 +1,4 @@
+import { isCurrentTargetingLearning } from "./lib/learningTargetingHelpers";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
@@ -593,7 +594,11 @@ export const buildMemoryEvaluationPlanInternal = internalAction({
         })
       : null;
 
-    if (!prospect || !workspace) {
+    if (
+      !prospect ||
+      !workspace ||
+      !isCurrentTargetingLearning(event, workspace)
+    ) {
       return {
         status: "ignored",
         ignoredReason: "missing_workspace_or_prospect",
@@ -1090,6 +1095,38 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
       throw new Error("Workspace not found");
     }
 
+    if (event.workspaceId !== args.workspaceId) {
+      throw new Error("Memory evaluation event workspace mismatch");
+    }
+    if (!args.styleMetadata && !isCurrentTargetingLearning(event, workspace)) {
+      return {
+        skipped: true,
+        promotedMemoryIds: [],
+        suggestionIds: [],
+        promotedMemoryCount: 0,
+        suggestedMemoryCount: 0,
+        queryPerformanceUpdateCount: 0,
+      };
+    }
+    // A preview can be removed while model evaluation is in flight. Validate
+    // and apply atomically so deleted sources never promote stale lessons.
+    if (event.prospectId) {
+      const prospect = await ctx.db.get(event.prospectId);
+      if (!prospect) {
+        return {
+          skipped: true,
+          promotedMemoryIds: [],
+          suggestionIds: [],
+          promotedMemoryCount: 0,
+          suggestedMemoryCount: 0,
+          queryPerformanceUpdateCount: 0,
+        };
+      }
+      if (prospect.workspaceId !== args.workspaceId) {
+        throw new Error("Memory evaluation prospect workspace mismatch");
+      }
+    }
+
     const promotedMemoryIds: string[] = [];
     const suggestionIds: string[] = [];
     let promotedStyleMemoryId: string | null = null;
@@ -1294,6 +1331,7 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
     return {
       promotedMemoryIds,
       suggestionIds,
+      skipped: false,
       promotedMemoryCount: promotedMemoryIds.length,
       suggestedMemoryCount: suggestionIds.length,
       queryPerformanceUpdateCount: args.queryPerformanceUpdates.length,

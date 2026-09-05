@@ -7,6 +7,7 @@ import {
   type WorkspaceProfile,
 } from "./workspaceProfileChangeCore";
 import { reconcileWorkspaceIcpUpdate } from "./workspaceIcpSignalsCore";
+import type { WorkspaceTargetingSpec } from "./targetingSpecCore";
 
 type Workspace = Doc<"workspaces">;
 
@@ -63,6 +64,7 @@ export function mergeRegeneratedWorkspaceProfiles(args: {
 export function buildRegeneratedWorkspaceTargetingPatch(args: {
   improvedDescription: string;
   profiles: WorkspaceProfile[];
+  targetingSpec: WorkspaceTargetingSpec;
   rawUserDescription: string;
   useCaseKey: NonNullable<Workspace["useCaseKey"]>;
   updatedAt: number;
@@ -75,7 +77,11 @@ export function buildRegeneratedWorkspaceTargetingPatch(args: {
     descriptionSource: "manual" as const,
     useCaseKey: args.useCaseKey,
     icps: args.profiles,
+    targetingSpec: args.targetingSpec,
     lastGeneratedAt: args.updatedAt,
+    targetingLearningResetAt: args.updatedAt,
+    prospectingBootstrapCycleCount: 0,
+    prospectingBootstrapCompletedAt: undefined,
     updatedAt: args.updatedAt,
     onboardingIssueStatusCode: undefined,
     onboardingIssueSource: undefined,

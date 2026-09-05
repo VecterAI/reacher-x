@@ -2,6 +2,9 @@
 
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { internal } from "../_generated/api";
+import { isRecord } from "./typeGuards";
+import { hydrateQualificationEvidence } from "./qualificationEvidenceCore";
 import {
   qualifyProspectCore,
   type QualificationCoreParams,
@@ -24,8 +27,32 @@ export async function evaluateQualificationWithExternalArticles(
   ctx: ActionCtx,
   args: EvaluationArgs
 ): Promise<QualificationResult> {
+  // Workflow steps carry Unicode-safe previews. Read full persisted text here,
+  // outside the workflow journal, and only for the selected source identities.
+  let evidencePosts = args.evidencePosts;
+  if (args.platform === "twitter") {
+    const prospect = await ctx.runQuery(
+      internal.prospects.getProspectInternal,
+      {
+        prospectId: args.prospectId,
+      }
+    );
+    if (
+      prospect &&
+      (prospect.workspaceId !== args.workspaceId ||
+        prospect.platform !== args.platform)
+    ) {
+      throw new Error("Qualification evidence prospect scope mismatch");
+    }
+    if (prospect) {
+      evidencePosts = hydrateQualificationEvidence({
+        selectedPosts: evidencePosts,
+        storedPosts: (prospect.evidencePosts ?? []).filter(isRecord),
+      });
+    }
+  }
   const articleSourcePostIdsByUrl = new Map<string, string[]>();
-  for (const post of args.evidencePosts) {
+  for (const post of evidencePosts) {
     const sourcePostId = getWorkflowEvidencePostId(post);
     const externalUrls = Array.isArray(post.externalUrls)
       ? post.externalUrls.filter(
@@ -66,6 +93,7 @@ export async function evaluateQualificationWithExternalArticles(
 
   return await qualifyProspectCore({
     ...args,
+    evidencePosts,
     externalArticles,
   });
 }

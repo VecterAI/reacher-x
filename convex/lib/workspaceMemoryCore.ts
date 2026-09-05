@@ -1,3 +1,8 @@
+import {
+  getLearningTargetingFingerprint,
+  isCurrentTargetingLearning,
+  isReusablePipelineLesson,
+} from "./learningTargetingHelpers";
 import type {
   GenericDatabaseReader,
   GenericDatabaseWriter,
@@ -44,6 +49,8 @@ export type WorkspaceMemoryProvenanceKind =
   | "legacy_backfill";
 
 export type CanonicalWorkspaceMemory = {
+  sourceProspectId?: string;
+  targetingFingerprint?: string;
   memoryId: string;
   workspaceId: string;
   userId: string;
@@ -107,6 +114,7 @@ export type CanonicalWorkspaceMemoryWriteArgs = {
   confidence: number;
   impactScore: number;
   prospectId?: Id<"prospects">;
+  sourceProspectId?: Id<"prospects">;
   surfaces?: string[];
   channels?: string[];
   attachmentUploadIds?: Id<"mediaUploads">[];
@@ -384,6 +392,12 @@ export function buildWorkspaceMemoryContext(args: {
 export function toCanonicalWorkspaceMemory(row: any): CanonicalWorkspaceMemory {
   return {
     memoryId: String(row._id),
+    targetingFingerprint: row.targetingFingerprint,
+    sourceProspectId: row.sourceProspectId
+      ? String(row.sourceProspectId)
+      : isReusablePipelineLesson(row) && row.prospectId
+        ? String(row.prospectId)
+        : undefined,
     workspaceId: String(row.workspaceId),
     userId: String(row.userId),
     identityKey: row.identityKey,
@@ -405,7 +419,10 @@ export function toCanonicalWorkspaceMemory(row: any): CanonicalWorkspaceMemory {
     precedence: row.precedence,
     confidence: row.confidence,
     impactScore: row.impactScore,
-    prospectId: row.prospectId ? String(row.prospectId) : undefined,
+    prospectId:
+      !isReusablePipelineLesson(row) && row.prospectId
+        ? String(row.prospectId)
+        : undefined,
     surfaces: row.surfaces,
     channels: row.channels,
     attachmentUploadIds: row.attachmentUploadIds?.map(String),
@@ -448,6 +465,13 @@ export async function upsertCanonicalWorkspaceMemory(
     }
   }
 
+  if (args.sourceProspectId) {
+    const source = await db.get("prospects", args.sourceProspectId);
+    if (!source || source.workspaceId !== args.workspaceId)
+      throw new Error(
+        "Workspace memory source prospect scope validation failed"
+      );
+  }
   const authority = getWorkspaceMemoryAuthority(args.source);
   const kind = args.kind?.trim() || args.category || "instruction";
   const requestedConflictKey =
@@ -518,6 +542,11 @@ export async function upsertCanonicalWorkspaceMemory(
     .unique();
   const now = getCurrentUTCTimestamp();
   const shared = {
+    targetingFingerprint:
+      authority === "learned" && args.source !== "style_analysis"
+        ? getLearningTargetingFingerprint(workspace)
+        : undefined,
+    sourceProspectId: args.sourceProspectId,
     topicKey,
     conflictKey,
     legacyMemoryId: args.legacyMemoryId,
@@ -668,7 +697,14 @@ export async function searchCanonicalWorkspaceMemories(
       return search;
     })
     .take(Math.min(50, Math.max(1, args.limit ?? 24)));
-  return rows.map(toCanonicalWorkspaceMemory);
+  return rows
+    .filter(
+      (row) =>
+        row.authority === "operator" ||
+        row.source === "style_analysis" ||
+        isCurrentTargetingLearning(row, workspace)
+    )
+    .map(toCanonicalWorkspaceMemory);
 }
 
 export async function listCanonicalWorkspaceMemoryCandidates(
@@ -705,7 +741,14 @@ export async function listCanonicalWorkspaceMemoryCandidates(
       .order("desc")
       .take(MAX_LEARNED_MEMORY_CANDIDATES),
   ]);
-  return [...operatorRows, ...learnedRows].map(toCanonicalWorkspaceMemory);
+  return [
+    ...operatorRows,
+    ...learnedRows.filter(
+      (row) =>
+        row.source === "style_analysis" ||
+        isCurrentTargetingLearning(row, workspace)
+    ),
+  ].map(toCanonicalWorkspaceMemory);
 }
 
 export async function listCanonicalLegacyMemoryIds(
@@ -788,6 +831,9 @@ export async function listCanonicalWorkspaceMemoriesByStoredIds(
         !row ||
         row.workspaceId !== args.workspaceId ||
         row.userId !== args.userId ||
+        (row.authority !== "operator" &&
+          row.source !== "style_analysis" &&
+          !isCurrentTargetingLearning(row, workspace)) ||
         seen.has(String(row._id))
       ) {
         return false;

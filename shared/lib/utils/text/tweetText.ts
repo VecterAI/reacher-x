@@ -1,6 +1,6 @@
 import type { Tweet } from "@/features/threads/types";
 
-function escapeRegExp(s: string): string {
+export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

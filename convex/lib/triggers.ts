@@ -1,3 +1,4 @@
+import { getLearningTargetingFingerprint } from "./learningTargetingHelpers";
 import { Triggers } from "convex-helpers/server/triggers";
 import type { GenericDatabaseWriter } from "convex/server";
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
@@ -34,6 +35,7 @@ import { buildChangedPatchWithUpdatedAt } from "./patchHelpers";
 import { getReadModelStripe } from "./readModelStripeHelpers";
 import { syncProspectFitScoreAggregate } from "./prospectFitScoreAggregate";
 import {
+  clearWorkspaceReportingAggregate,
   syncWorkspaceAgentOpsReportingAggregate,
   syncWorkspaceAnalyticsReportingAggregate,
   syncWorkspaceQualifiedUsageAggregate,
@@ -440,8 +442,23 @@ async function applyWorkspaceAgentOpsChanges(
 }
 
 triggers.register("workspaces", async (ctx, change) => {
+  if (
+    change.oldDoc &&
+    change.newDoc &&
+    getLearningTargetingFingerprint(change.oldDoc) !==
+      getLearningTargetingFingerprint(change.newDoc)
+  ) {
+    await ctx.innerDb.patch("workspaces", change.newDoc._id, {
+      targetingLearningResetAt: getCurrentUTCTimestamp(),
+      prospectingBootstrapCycleCount: 0,
+      prospectingBootstrapCompletedAt: undefined,
+    });
+  }
   if (change.oldDoc || !change.newDoc) return;
 
+  // This workspace is new and has no reporting items yet. Initialize its trees
+  // with the same tuned configuration as the versioned migration path.
+  await clearWorkspaceReportingAggregate(ctx, change.newDoc._id);
   const now = getCurrentUTCTimestamp();
   await ctx.innerDb.insert("workspaceReportingRollouts", {
     workspaceId: change.newDoc._id,

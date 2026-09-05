@@ -1,3 +1,7 @@
+import {
+  getLearningTargetingFingerprint,
+  isCurrentTargetingLearning,
+} from "../lib/learningTargetingHelpers";
 import { paginationOptsValidator } from "convex/server";
 import { Infer, v } from "convex/values";
 import { vWorkflowId } from "@convex-dev/workflow";
@@ -80,6 +84,11 @@ export const beginApplicationInternal = internalMutation({
   handler: async (ctx, args): Promise<ApplicationTargets> => {
     const run = await ctx.db.get(args.runId);
     if (!run) throw new Error("Qualification audit run not found");
+    const workspace = await ctx.db.get(run.workspaceId);
+    if (!workspace || !isCurrentTargetingLearning(run, workspace))
+      throw new Error(
+        "Workspace targeting changed; run a new qualification audit"
+      );
     if (run.status !== "completed") {
       throw new Error("Qualification audit run is not complete");
     }
@@ -190,8 +199,14 @@ export const getApplicationBatchContextInternal = internalQuery({
   handler: async (ctx, args) => {
     const run = await ctx.db.get(args.runId);
     if (!run || run.applicationStatus !== "running") return null;
+    const workspace = await ctx.db.get(run.workspaceId);
+    if (!workspace || !isCurrentTargetingLearning(run, workspace))
+      throw new Error(
+        "Workspace targeting changed; run a new qualification audit"
+      );
     return {
       run,
+      targetingFingerprint: getLearningTargetingFingerprint(workspace),
       entries: await Promise.all(
         args.prospectIds.map(async (prospectId) => ({
           item: await ctx.db
@@ -287,6 +302,7 @@ export const processApplicationBatchInternal = internalAction({
   returns: v.object({ processed: v.number() }),
   handler: async (ctx, args): Promise<{ processed: number }> => {
     const context: {
+      targetingFingerprint: string;
       run: Doc<"qualificationAuditRuns">;
       entries: Array<{
         item: Doc<"qualificationAuditItems"> | null;
@@ -343,6 +359,7 @@ export const processApplicationBatchInternal = internalAction({
         internal.prospects.updateProspectQualification,
         {
           prospectId: entry.prospect._id,
+          expectedTargetingFingerprint: context.targetingFingerprint,
           expectedQualificationStatus: "qualified",
           ...(entry.item.previousScore === undefined
             ? {}
@@ -350,6 +367,9 @@ export const processApplicationBatchInternal = internalAction({
           qualificationStatus: entry.item.proposedStatus,
           qualificationScore: entry.item.proposedScore,
           qualificationScoreBreakdown: entry.item.scoreBreakdown,
+          qualificationCriteriaVersion: entry.item.qualificationCriteriaVersion,
+          qualificationCriterionResults:
+            entry.item.qualificationCriterionResults,
           qualifiedAt:
             entry.item.proposedStatus === "qualified"
               ? entry.prospect.qualifiedAt
@@ -382,6 +402,7 @@ export const processApplicationBatchInternal = internalAction({
             {
               workspaceId: String(context.run.workspaceId),
               prospectId: String(entry.prospect._id),
+              targetingFingerprint: context.targetingFingerprint,
               namespace: "verified_wins",
               displayName:
                 entry.prospect.displayName ||
@@ -411,6 +432,7 @@ export const processApplicationBatchInternal = internalAction({
             {
               workspaceId: String(context.run.workspaceId),
               prospectId: String(entry.prospect._id),
+              targetingFingerprint: context.targetingFingerprint,
               namespace: "verified_losses",
               displayName:
                 entry.prospect.displayName ||
@@ -645,11 +667,20 @@ export const correctQueryPerformanceBatchInternal = internalMutation({
   },
   returns: v.object({ corrected: v.number() }),
   handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    const workspace = run ? await ctx.db.get(run.workspaceId) : null;
+    if (!run || !workspace || !isCurrentTargetingLearning(run, workspace))
+      throw new Error(
+        "Workspace targeting changed; run a new qualification audit"
+      );
     let corrected = 0;
     const now = getCurrentUTCTimestamp();
     for (const input of args.rows) {
       const row = await ctx.db.get(input.queryPerformanceId);
       if (!row) continue;
+      if (row.workspaceId !== run.workspaceId)
+        throw new Error("Query performance workspace mismatch");
+      if (!isCurrentTargetingLearning(row, workspace)) continue;
       const qualifiedCount = Math.max(0, input.qualifiedCount);
       const qualificationRate = calculateQualificationRate(
         qualifiedCount,

@@ -1,13 +1,16 @@
 /// <reference types="vite/client" />
 
+import { finishScheduledBatches } from "../test/finishScheduledBatches";
 import { convexTest } from "convex-test";
 import agentTest from "@convex-dev/agent/test";
 import type { WorkflowId } from "@convex-dev/workflow";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { api, components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { X_CORE_SCOPES } from "./lib/xScopes";
+import { buildLegacyWorkspaceTargetingSpec } from "./lib/targetingSpecCore";
+import { workflow } from "./lib/workflow";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -132,6 +135,7 @@ async function seedSetupSession(
 }
 
 describe("setup session and workspace lifecycle", () => {
+  afterEach(() => vi.useRealTimers());
   test("deletes large preview sets through bounded scheduled batches", async () => {
     vi.useFakeTimers();
     try {
@@ -171,7 +175,7 @@ describe("setup session and workspace lifecycle", () => {
       );
       expect(firstBatch).toEqual({ deleted: 4, done: false });
 
-      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      await finishScheduledBatches(t);
       const remaining = await t.run((ctx) =>
         ctx.db
           .query("prospects")
@@ -460,6 +464,10 @@ describe("setup session and workspace lifecycle", () => {
         generationRevision: 1,
         improvedDescription: "Find hands-on SaaS founders with buying intent.",
         generatedProfiles,
+        targetingSpec: buildLegacyWorkspaceTargetingSpec({
+          description: "Find hands-on SaaS founders with buying intent.",
+          profiles: generatedProfiles,
+        }),
         generationCompletedAt: 42,
       }
     );
@@ -598,6 +606,10 @@ describe("setup session and workspace lifecycle", () => {
         assistantMessageId: "completion-assistant-message",
         improvedDescription: "Find qualified product designers.",
         generatedProfiles: setupProfiles,
+        targetingSpec: buildLegacyWorkspaceTargetingSpec({
+          description: "Find qualified product designers.",
+          profiles: setupProfiles,
+        }),
       }
     );
     await t.run((ctx) =>
@@ -1181,8 +1193,10 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("connected X keeps the persisted connection gate visible and completes paid setup idempotently", async () => {
+    vi.useFakeTimers();
     const t = convexTest(schema, modules);
     agentTest.register(t);
+    await registerWorkflowComponent(t);
     const { userId, workosUserId } = await seedUser(t, "complete-connections");
     const provisionalWorkspaceId = await seedProvisionalWorkspace(t, {
       userId,
@@ -1201,6 +1215,19 @@ describe("setup session and workspace lifecycle", () => {
       setupThreadId: String(setupThread._id),
       suffix: "complete-connections",
     });
+    const workflowId = await t.run(async (ctx) => {
+      const id = await workflow.start(
+        ctx,
+        internal.workflows.setup.setupSessionWorkflow,
+        { sessionId }
+      );
+      await ctx.db.patch(sessionId, { workflowId: String(id) });
+      return id;
+    });
+    await finishScheduledBatches(t);
+    expect(
+      await t.run((ctx) => workflow.status(ctx, workflowId))
+    ).toMatchObject({ type: "inProgress" });
     await t.run((ctx) =>
       ctx.db.insert("xAccounts", {
         userId,
@@ -1244,6 +1271,13 @@ describe("setup session and workspace lifecycle", () => {
       success: true,
       status: "ready",
       alreadyCompleted: true,
+    });
+    await finishScheduledBatches(t);
+    expect(
+      await t.run((ctx) => workflow.status(ctx, workflowId))
+    ).toMatchObject({
+      type: "completed",
+      result: { success: true, status: "ready" },
     });
 
     const state = await t.run(async (ctx) => ({

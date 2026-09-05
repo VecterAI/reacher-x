@@ -1,11 +1,23 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
+import { getLearningTargetingFingerprint } from "./lib/learningTargetingHelpers";
+import { WORKSPACE_REPORTING_AGGREGATE_VERSION } from "./lib/workspaceReportingAggregate";
+import { qualifyProspectCore } from "./lib/qualificationCore";
+import { buildLegacyWorkspaceTargetingSpec } from "./lib/targetingSpecCore";
 
 const modules = import.meta.glob("./**/*.ts");
+
+async function registerPolar(t: ReturnType<typeof convexTest>) {
+  const polarTestPath = ["@convex-dev/polar", "test"].join("/");
+  const polarTest = (await import(polarTestPath)) as {
+    default: { register: (instance: typeof t) => void };
+  };
+  polarTest.default.register(t);
+}
 
 function generatedProfile(title: string) {
   return {
@@ -118,6 +130,11 @@ describe("workspace targeting persistence", () => {
         improvedDescription:
           "Find doctors who publicly offer free consultations for new patients.",
         icps: profiles,
+        targetingSpec: buildLegacyWorkspaceTargetingSpec({
+          description:
+            "Find doctors who publicly offer free consultations for new patients.",
+          profiles,
+        }),
         useCaseKey: "general_outreach",
       }
     );
@@ -139,5 +156,185 @@ describe("workspace targeting persistence", () => {
       icps: profiles,
     });
     expect(workspace?.refineRollbackSnapshot).toBeUndefined();
+  });
+});
+
+describe("future-only rollout for an existing workspace", () => {
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  test("refreshes searches and qualifies only new discoveries without rewriting existing prospects or reporting rollout", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    await registerPolar(t);
+    const { userId, workspaceId } = await seedWorkspace(t, "future-only");
+    const oldIds = await t.run(async (ctx) => {
+      await ctx.db.patch(workspaceId, { prospectingWorkflowStatus: "paused" });
+      return Promise.all(
+        [
+          {
+            status: "new" as const,
+            qualificationStatus: "qualified" as const,
+            qualificationScore: 91,
+          },
+          {
+            status: "new" as const,
+            qualificationStatus: "disqualified" as const,
+            qualificationScore: 14,
+          },
+          {
+            status: "contacted" as const,
+            qualificationStatus: "qualified" as const,
+            qualificationScore: 88,
+          },
+          {
+            status: "archived" as const,
+            qualificationStatus: "disqualified" as const,
+            qualificationScore: 5,
+          },
+        ].map((state, i) =>
+          ctx.db.insert("prospects", {
+            userId,
+            workspaceId,
+            platform: "twitter",
+            origin: "workspace_discovery",
+            externalId: `old-${i}`,
+            data: {},
+            ...state,
+            matchReason: "Original saved decision",
+            updatedAt: 1,
+          })
+        )
+      );
+    });
+    const before = await t.run((ctx) =>
+      Promise.all(oldIds.map((id) => ctx.db.get(id)))
+    );
+    const oldWorkspace = (await t.run((ctx) => ctx.db.get(workspaceId)))!;
+    await t.mutation(internal.keywords.saveKeywordInternal, {
+      workspaceId,
+      type: "social_query",
+      value: "old narrow query",
+    });
+    const reportingBefore = await t.run((ctx) =>
+      ctx.db
+        .query("workspaceReportingRollouts")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+        .collect()
+    );
+    const profiles = [
+      generatedProfile("Founders hiring"),
+      generatedProfile("Engineering managers"),
+      generatedProfile("Hiring leaders"),
+    ];
+    const description =
+      "Find founders and decision makers actively hiring software engineers. US and remote are preferred, not required.";
+    const targetingSpec = buildLegacyWorkspaceTargetingSpec({
+      description,
+      profiles,
+    });
+    await t.mutation(
+      internal.workspaces.applyRegeneratedWorkspaceTargetingInternal,
+      {
+        workspaceId,
+        userId,
+        expectedTargetingFingerprint:
+          getLearningTargetingFingerprint(oldWorkspace),
+        name: oldWorkspace.name,
+        rawUserDescription: description,
+        improvedDescription: description,
+        icps: profiles,
+        targetingSpec,
+        useCaseKey: "customer_prospecting",
+      }
+    );
+    await t.mutation(internal.keywords.deleteWorkspaceKeywordsBatchInternal, {
+      workspaceId,
+      limit: 25,
+    });
+    await t.mutation(internal.keywords.saveKeywordsBatch, {
+      workspaceId,
+      keywords: [
+        {
+          type: "social_query",
+          value: "we are hiring engineers",
+          discoveryStage: "balanced",
+          platformTargets: ["twitter"],
+        },
+      ],
+    });
+    expect(
+      await t.run((ctx) => Promise.all(oldIds.map((id) => ctx.db.get(id))))
+    ).toEqual(before);
+    expect(
+      await t.run((ctx) =>
+        ctx.db
+          .query("workspaceReportingRollouts")
+          .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+          .collect()
+      )
+    ).toEqual(reportingBefore);
+    expect(WORKSPACE_REPORTING_AGGREGATE_VERSION).toBe(1);
+    for (const prospectId of oldIds)
+      expect(
+        await t.action(internal.workflows.qualification.startQualification, {
+          workspaceId,
+          prospectId,
+        })
+      ).toEqual({ workId: "" });
+    const saved = await t.mutation(internal.prospects.createProspectsBatch, {
+      userId,
+      workspaceId,
+      prospects: [
+        {
+          platform: "twitter",
+          externalId: "new-person",
+          data: {},
+          matchedKeywords: ["we are hiring engineers"],
+        },
+      ],
+    });
+    const newId = saved.prospectIds[0];
+    const scheduled = await t.run((ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect()
+    );
+    const qualificationStarts = scheduled.filter((job) =>
+      job.name.includes("qualification:startQualification")
+    );
+    expect(qualificationStarts).toHaveLength(1);
+    expect(qualificationStarts[0].args).toEqual([
+      { workspaceId, prospectId: newId },
+    ]);
+    const result = await qualifyProspectCore({
+      platform: "twitter",
+      evidencePosts: [],
+      discoveryQueries: ["we are hiring engineers"],
+      totalKeywords: 1,
+      profileData: {},
+      targetingSpec,
+    });
+    expect(result.status).toBe("disqualified");
+    const current = (await t.run((ctx) => ctx.db.get(workspaceId)))!;
+    await t.mutation(internal.prospects.updateProspectQualification, {
+      prospectId: newId,
+      expectedTargetingFingerprint: getLearningTargetingFingerprint(current),
+      qualificationStatus: result.status,
+      qualificationScore: result.score,
+    });
+    expect(
+      (await t.run((ctx) => ctx.db.get(newId)))
+        ?.qualificationTargetingFingerprint
+    ).toBe(getLearningTargetingFingerprint(current));
+    expect(
+      await t.run((ctx) => Promise.all(oldIds.map((id) => ctx.db.get(id))))
+    ).toEqual(before);
+    await t.run(async (ctx) => {
+      for (const job of await ctx.db.system
+        .query("_scheduled_functions")
+        .collect())
+        if (job.state.kind === "pending") await ctx.scheduler.cancel(job._id);
+    });
   });
 });

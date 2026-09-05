@@ -49,6 +49,7 @@ import {
   setupInputModeValidator,
   setupPreviewReviewModeValidator,
   setupSessionModeValidator,
+  workspaceTargetingSpecValidator,
   workspaceUseCaseKeyValidator,
 } from "./validators";
 import {
@@ -677,6 +678,7 @@ async function finalizeSetupSessionReady(
     improvedDescription:
       session.improvedDescription ?? session.seedDescription ?? "",
     icps: session.generatedProfiles ?? [],
+    targetingSpec: session.targetingSpec,
     seedDescription: session.seedDescription,
     sourceUrl: getSetupSessionSourceUrl(session),
     descriptionSource: getSetupSessionInputMode(session),
@@ -759,7 +761,8 @@ async function maybeSignalStateChanged(
   ctx: MutationCtx,
   session: SetupSessionDoc
 ) {
-  if (!session.workflowId || isTerminalSetupSessionStatus(session.status)) {
+  // Terminal transitions must wake the workflow so it can finish its wait.
+  if (!session.workflowId) {
     return;
   }
 
@@ -2148,6 +2151,7 @@ export const selectSetupPreference = mutation({
       improvedDescription:
         session.improvedDescription ?? session.seedDescription ?? "",
       icps: session.generatedProfiles ?? [],
+      targetingSpec: session.targetingSpec,
       seedDescription: session.seedDescription,
       sourceUrl: getSetupSessionSourceUrl(session),
       descriptionSource: getSetupSessionInputMode(session),
@@ -2205,6 +2209,7 @@ export const finalizeSetupSession = mutation({
       improvedDescription:
         session.improvedDescription ?? session.seedDescription ?? "",
       icps: session.generatedProfiles ?? [],
+      targetingSpec: session.targetingSpec,
       seedDescription: session.seedDescription,
       sourceUrl: getSetupSessionSourceUrl(session),
       descriptionSource: getSetupSessionInputMode(session),
@@ -2670,6 +2675,7 @@ export const runSetupGenerationInternal = internalAction({
       const generatedProfiles = markWorkspaceProfilesAsAiGenerated(
         generation.icps
       );
+      const targetingSpec = generation.targetingSpec;
       const now = getCurrentUTCTimestamp();
 
       await ctx.runMutation(internal.agentTelemetry.insertUsageEvent, {
@@ -2697,6 +2703,7 @@ export const runSetupGenerationInternal = internalAction({
           generationRevision,
           improvedDescription,
           generatedProfiles,
+          targetingSpec,
           draftName:
             session.draftName ??
             (isProfileRevision ? undefined : analyzedUrl?.businessName) ??
@@ -2726,6 +2733,7 @@ export const runSetupGenerationInternal = internalAction({
           sourceMessageId: session.generationSourceMessageId,
           improvedDescription,
           generatedProfiles,
+          targetingSpec,
         }
       );
 
@@ -2761,6 +2769,7 @@ export const recordGenerationResultInternal = internalMutation({
     generationRevision: v.optional(v.number()),
     improvedDescription: v.string(),
     generatedProfiles: v.array(icpValidator),
+    targetingSpec: workspaceTargetingSpecValidator,
     draftName: v.optional(v.string()),
     generationCompletedAt: v.number(),
   },
@@ -2780,6 +2789,7 @@ export const recordGenerationResultInternal = internalMutation({
       status: "awaiting_icp_confirmation",
       improvedDescription: args.improvedDescription,
       generatedProfiles: args.generatedProfiles,
+      targetingSpec: args.targetingSpec,
       draftName: args.draftName,
       previewWorkflowId: undefined,
       previewDiscoveryStartedAt: undefined,
@@ -2802,6 +2812,7 @@ export const recordGenerationResultInternal = internalMutation({
       status: "awaiting_icp_confirmation",
       improvedDescription: args.improvedDescription,
       generatedProfiles: args.generatedProfiles,
+      targetingSpec: args.targetingSpec,
       draftName: args.draftName,
       generationCompletedAt: args.generationCompletedAt,
       statusUpdatedAt: now,
@@ -2821,6 +2832,7 @@ export const recordSetupProfileSnapshotInternal = internalMutation({
     sourceMessageId: v.optional(v.string()),
     improvedDescription: v.string(),
     generatedProfiles: v.array(icpValidator),
+    targetingSpec: workspaceTargetingSpecValidator,
   },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
@@ -2857,6 +2869,7 @@ export const recordSetupProfileSnapshotInternal = internalMutation({
       useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
       improvedDescription: args.improvedDescription,
       generatedProfiles: args.generatedProfiles,
+      targetingSpec: args.targetingSpec,
       createdAt: getCurrentUTCTimestamp(),
     });
 
@@ -3367,6 +3380,7 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
           improvedDescription: session.improvedDescription,
           description: session.improvedDescription,
           icps: approvedProfiles,
+          targetingSpec: session.targetingSpec,
           sourceUrl: getSetupSessionSourceUrl(session),
           descriptionSource: getSetupSessionInputMode(session),
           useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
@@ -3387,6 +3401,7 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
               session.seedDescription ?? session.improvedDescription,
             improvedDescription: session.improvedDescription,
             icps: approvedProfiles,
+            targetingSpec: session.targetingSpec,
             sourceUrl: getSetupSessionSourceUrl(session),
             descriptionSource: getSetupSessionInputMode(session),
             useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),

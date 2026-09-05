@@ -32,6 +32,7 @@ type AgentMemoryRagFilters = {
  * Metadata stored alongside RAG entries for auditability.
  */
 type AgentMemoryEntryMetadata = {
+  targetingFingerprint?: string;
   workspaceId?: string;
   prospectId?: string;
   memoryItemId?: string;

@@ -1,6 +1,50 @@
 import { calculateQueryPerformanceScore } from "./memoryCore";
+import type { DiscoveryStage } from "./targetingSpecCore";
 
 export type QueryPriority = "new" | "proven" | "learning" | "cold";
+
+export type QueryMetadataRecord = {
+  query: string;
+  sourceKeyword?: string;
+  platformTargets: Array<"twitter" | "linkedin">;
+  linkedinSurface?: "posts" | "people";
+  linkedinSurfaceTargets?: Array<"posts" | "people">;
+  queryStyle: "natural_phrase" | "professional_keyword" | "role_title";
+  twitterSearchMode?: "exact" | "raw";
+  discoveryStage: DiscoveryStage;
+  targetingCriterionIds: string[];
+  legacyCompatibilitySource: boolean;
+};
+
+export function resolveQueryMetadata(
+  socialQueries: readonly string[],
+  queryMetadata: readonly QueryMetadataRecord[] | undefined
+): QueryMetadataRecord[] {
+  const metadataByQuery = new Map(
+    (queryMetadata ?? [])
+      .filter((item) => socialQueries.includes(item.query))
+      .map((item) => [item.query, item] as const)
+  );
+
+  return socialQueries.map((query) =>
+    metadataByQuery.has(query)
+      ? {
+          ...metadataByQuery.get(query)!,
+          discoveryStage:
+            metadataByQuery.get(query)!.discoveryStage ?? "balanced",
+          targetingCriterionIds:
+            metadataByQuery.get(query)!.targetingCriterionIds ?? [],
+        }
+      : {
+          query,
+          platformTargets: ["twitter"],
+          queryStyle: "natural_phrase",
+          legacyCompatibilitySource: true,
+          discoveryStage: "balanced",
+          targetingCriterionIds: [],
+        }
+  );
+}
 
 export type QueryPerformanceSnapshot = {
   impressions: number;
@@ -17,6 +61,7 @@ export type QueryPrioritizationCandidate<TId> = {
   value: string;
   createdAt: number;
   lastSearchedAt?: number;
+  discoveryStage?: DiscoveryStage;
   performance?: QueryPerformanceSnapshot;
 };
 

@@ -1,3 +1,4 @@
+import { isReusablePipelineLesson } from "./learningTargetingHelpers";
 import type {
   GenericDatabaseReader,
   GenericDatabaseWriter,
@@ -1156,16 +1157,17 @@ async function attachCanonicalWorkspaceMemory(
     parsed: ParsedAgentMemory;
   }
 ): Promise<AgentMemoryPromotionResult> {
+  const current = buildMemoryMeta(args);
   const canonicalContent =
     args.canonicalContent ??
     args.instruction ??
-    legacy.parsed.narrative ??
+    current.narrative ??
     legacy.memoryText;
   const metadata = args.metadata ?? {
-    signals: legacy.parsed.signals,
-    evidence: legacy.parsed.evidence,
-    relatedQueries: legacy.parsed.relatedQueries,
-    narrative: legacy.parsed.narrative,
+    signals: current.signals,
+    evidence: current.evidence,
+    relatedQueries: current.relatedQueries,
+    narrative: current.narrative,
   };
   const canonical = await upsertCanonicalWorkspaceMemory(db, {
     userId: args.userId as Id<"users">,
@@ -1175,16 +1177,21 @@ async function attachCanonicalWorkspaceMemory(
     category: args.category,
     namespace: args.namespace,
     kind: args.kind,
-    title: legacy.parsed.title,
-    summary: legacy.parsed.summary,
+    title: current.title,
+    summary: current.summary,
     canonicalContent,
     conflictKey: args.conflictKey,
     instruction: args.instruction,
     metadata,
     precedence: args.precedence,
-    confidence: legacy.parsed.confidence,
-    impactScore: legacy.parsed.impactScore,
-    prospectId: args.prospectId as Id<"prospects"> | undefined,
+    confidence: current.confidence,
+    impactScore: current.impactScore,
+    sourceProspectId: isReusablePipelineLesson(args)
+      ? (args.prospectId as Id<"prospects"> | undefined)
+      : undefined,
+    prospectId: isReusablePipelineLesson(args)
+      ? undefined
+      : (args.prospectId as Id<"prospects"> | undefined),
     surfaces: args.surfaces,
     channels: args.channels,
     provenanceKind: args.provenanceKind,
@@ -1223,7 +1230,7 @@ export async function promoteAgentMemory(
     workspaceId: args.workspaceId,
     authority: getWorkspaceMemoryAuthority(args.source),
     canonicalContent,
-    prospectId: args.prospectId,
+    prospectId: isReusablePipelineLesson(args) ? undefined : args.prospectId,
     surfaces: args.surfaces,
     channels: args.channels,
   });

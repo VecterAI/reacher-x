@@ -1,3 +1,4 @@
+import { getLearningTargetingFingerprint } from "./lib/learningTargetingHelpers";
 // convex/prospects.ts
 // v4: Prospect management queries and mutations
 
@@ -25,6 +26,7 @@ import {
   qualificationSourceValidator,
   qualificationVerificationValidator,
   qualificationScoreBreakdownValidator,
+  qualificationCriterionResultValidator,
   qualificationFailureValidator,
   prospectTypeValidator,
   enrichmentStatusValidator,
@@ -2092,12 +2094,17 @@ export const saveReplyDerivedProspectWithRetry = internalAction({
 export const updateProspectQualification = internalMutation({
   args: {
     prospectId: v.id("prospects"),
+    expectedTargetingFingerprint: v.optional(v.string()),
     expectedQualificationStatus: v.optional(qualificationStatusValidator),
     expectedQualificationScore: v.optional(v.number()),
     qualificationStatus: qualificationStatusValidator,
     qualificationScore: v.number(),
     qualificationScoreBreakdown: v.optional(
       qualificationScoreBreakdownValidator
+    ),
+    qualificationCriteriaVersion: v.optional(v.literal(1)),
+    qualificationCriterionResults: v.optional(
+      v.array(qualificationCriterionResultValidator)
     ),
     qualifiedAt: v.optional(v.number()),
     evidencePosts: v.optional(v.array(v.any())),
@@ -2136,6 +2143,14 @@ export const updateProspectQualification = internalMutation({
       return { success: true, skipped: true };
     }
 
+    const workspace = await ctx.db.get(prospect.workspaceId);
+    if (!workspace) return { success: true, skipped: true };
+    const fingerprint = getLearningTargetingFingerprint(workspace);
+    if (
+      args.expectedTargetingFingerprint !== undefined &&
+      args.expectedTargetingFingerprint !== fingerprint
+    )
+      return { success: true, skipped: true };
     const previousQualified = prospect.qualificationStatus === "qualified";
     const nextQualified = args.qualificationStatus === "qualified";
     const usageEligible = isProspectEligibleForQualifiedUsage(prospect);
@@ -2152,9 +2167,12 @@ export const updateProspectQualification = internalMutation({
     });
 
     await ctx.db.patch(args.prospectId, {
+      qualificationTargetingFingerprint: fingerprint,
       qualificationStatus: args.qualificationStatus,
       qualificationScore: args.qualificationScore,
       qualificationScoreBreakdown: args.qualificationScoreBreakdown,
+      qualificationCriteriaVersion: args.qualificationCriteriaVersion,
+      qualificationCriterionResults: args.qualificationCriterionResults,
       qualificationLastFailure: undefined,
       qualifiedAt: args.qualifiedAt,
       ...analyticsPatch,
@@ -2718,6 +2736,7 @@ export const setQualificationWorkflowId = internalMutation({
     workflowId: v.string(),
   },
   handler: async (ctx, args) => {
+    if (!(await ctx.db.get(args.prospectId))) return;
     await ctx.db.patch(args.prospectId, {
       qualificationWorkflowId: args.workflowId,
       updatedAt: getCurrentUTCTimestamp(),
@@ -2728,6 +2747,7 @@ export const setQualificationWorkflowId = internalMutation({
 export const clearQualificationWorkflowId = internalMutation({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, args) => {
+    if (!(await ctx.db.get(args.prospectId))) return;
     await ctx.db.patch(args.prospectId, {
       qualificationWorkflowId: undefined,
       updatedAt: getCurrentUTCTimestamp(),

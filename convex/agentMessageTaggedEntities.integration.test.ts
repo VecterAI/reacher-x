@@ -2,7 +2,7 @@
 
 import agentTest from "@convex-dev/agent/test";
 import { convexTest } from "convex-test";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildAgentComposerSubmission } from "../features/agent/lib/buildAgentComposerMessage";
 import { api } from "./_generated/api";
 import schema from "./schema";
@@ -13,7 +13,12 @@ vi.stubEnv("OPENROUTER_API_KEY", "tagged-entity-validator-test-key");
 vi.stubEnv("OPENAI_API_KEY", "tagged-entity-validator-test-key");
 
 describe("Agent message tagged entities", () => {
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
   test("creates a prospect thread with every supported tagged entity kind", async () => {
+    vi.useFakeTimers();
     const t = convexTest(schema, modules);
     agentTest.register(t);
 
@@ -80,6 +85,20 @@ describe("Agent message tagged entities", () => {
         prompt: submission.prompt,
         metadata: submission.metadata ?? undefined,
       });
+
+    // This test owns message persistence, not model generation. Keep the queued
+    // response from running after Vitest tears down the test environment.
+    await t.run(async (ctx) => {
+      const queued = await ctx.db.system
+        .query("_scheduled_functions")
+        .collect();
+      expect(
+        queued.some((job) => job.name === "chat:streamOutreachResponse")
+      ).toBe(true);
+      for (const job of queued) {
+        if (job.state.kind === "pending") await ctx.scheduler.cancel(job._id);
+      }
+    });
 
     const storedContext = await t.run((ctx) =>
       ctx.db

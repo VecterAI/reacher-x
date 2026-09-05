@@ -28,6 +28,19 @@ describe("setup generation boundaries", () => {
     expect(system).toContain("at least 2 balanced posts");
     expect(system).toContain("at least 1 broad but accurate post");
     expect(system).toContain("Final qualification must verify");
+    expect(system).toContain(
+      "searchFilters contains only filters supported directly"
+    );
+    expect(system).toContain(
+      "If a requested constraint has no searchFilters field"
+    );
+    expect(system).not.toContain("competitor_users");
+    expect(system).toContain("Counterfactual check");
+    expect(system).toContain("sourceQuote");
+    expect(system).toContain("Do not classify all words");
+    expect(system).toContain(
+      "A strong preference can have weight=5 without becoming required"
+    );
   });
 
   it("asks an ICP revision for profiles only", () => {
@@ -51,7 +64,7 @@ describe("setup generation boundaries", () => {
       "Current improved description (context only; do not edit or return it)"
     );
     expect(prompt).toContain("Do not return a description field.");
-    expect(system).toContain("Return profiles only.");
+    expect(system).toContain("Return profiles and targetingSpec only.");
     expect(system.toLowerCase()).toContain(
       "do not write, summarize, improve, replace"
     );
