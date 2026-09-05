@@ -16,9 +16,11 @@ export function shouldRecoverQualificationWorkflowStatusError(args: {
   leaseUpdatedAt: number;
   now: number;
 }): boolean {
-  const permanentLookupFailure = isUnresolvableWorkflowReferenceError(
-    args.errorMessage
-  );
+  const normalizedMessage = args.errorMessage.toLowerCase();
+  const permanentLookupFailure =
+    normalizedMessage.includes("workflow not found") ||
+    normalizedMessage.includes("invalid workflow id") ||
+    normalizedMessage.includes("argumentvalidationerror");
 
   return (
     permanentLookupFailure ||
@@ -90,16 +92,4 @@ export function parseQualificationModelFailure(message: string): {
     attemptCount: Number.isFinite(attemptCount) ? attemptCount : undefined,
     message: parseJsonString(originalMessage) ?? message,
   };
-}
-
-/** Only permanent lookup failures justify clearing a workflow reference immediately. */
-export function isUnresolvableWorkflowReferenceError(
-  errorMessage: string
-): boolean {
-  const normalized = errorMessage.toLowerCase();
-  return (
-    normalized.includes("workflow not found") ||
-    normalized.includes("invalid workflow id") ||
-    normalized.includes("argumentvalidationerror")
-  );
 }

@@ -21,13 +21,10 @@ and monthly presentation buckets.
 
 ## Safety gates
 
-- New workspaces begin on Aggregate version 3 and dual-write from their first
+- New workspaces begin on Aggregate version 1 and dual-write from their first
   source record.
 - Existing workspaces stay on the bounded action snapshots until their
-  `workspaceReportingRollouts` row is `verified` at a supported version (1, 2, or 3).
-  Verified version-1 and version-2 workspaces keep their existing reads and
-  writes until explicitly migrated. Version 3 partitions by metric and two
-  stable source stripes.
+  `workspaceReportingRollouts` row is `verified` at version 1.
 - Migration is accepted only when prospecting is not running or has never
   started.
 - Backfill runs in resumable transactions of 10 records by default and never
@@ -43,24 +40,19 @@ and monthly presentation buckets.
 
 ## Controlled deployment
 
-1. Verify the combined change and migration in an isolated deployment first.
-   After release approval, deploy the schema, component, triggers, queries, and
-   fallback UI together.
+1. Deploy the schema, component, triggers, queries, and fallback UI together.
 2. Confirm existing workspaces still render through the snapshot fallback.
-3. Choose one inactive canary workspace. Pause discovery and drain discovery,
-   qualification, enrichment, and memory evaluation work before migration.
-   Do not run requalification or targeting regeneration concurrently with the
-   migration. Then start its migration:
+3. Choose one inactive canary workspace and start its migration:
 
    ```bash
-   pnpm exec convex run --deployment <deployment-name> workspaceReportingMigration:prepareAndStartWorkspaceMigrationInternal \
+   pnpm convex run workspaceReportingMigration:prepareAndStartWorkspaceMigrationInternal \
      '{"workspaceId":"<workspace-id>"}'
    ```
 
 4. Inspect the checkpoint until it is `verified`:
 
    ```bash
-   pnpm exec convex run --deployment <deployment-name> workspaceReportingMigration:getWorkspaceMigrationStatusInternal \
+   pnpm convex run workspaceReportingMigration:getWorkspaceMigrationStatusInternal \
      '{"workspaceId":"<workspace-id>"}'
    ```
 
@@ -74,7 +66,7 @@ and monthly presentation buckets.
 The preparation action first repairs the app-owned memory inventory from the
 Agent component and rebuilds the current Agent Ops read model, then starts the
 Aggregate backfill. Use `restart: true` only for a failed or explicitly
-revalidated workspace. It clears and rebuilds that workspace's version-3
+revalidated workspace. It clears and rebuilds that workspace's version-1
 Aggregate namespace. Do not run it while prospecting is active.
 
 ## Rollback

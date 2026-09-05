@@ -1,87 +1,80 @@
 # Discovery and qualification verification — 2026-09-05
 
-## Scope and release decision
+## Current release boundary
 
-The combined discovery, qualification, learning delivery, targeting freshness, existing-workspace repair, and reporting changes passed local and isolated QA verification. They are ready for maintainer review as one release. Production deployment and migration have not been performed. Do not merge an incomplete subset or enable automatic merge.
+The release now covers future discovery, qualification, and learning for new activity in existing workspaces. It excludes bulk requalification and reporting v3. Existing saved decisions must not be rewritten by the rollout. Production has not been deployed or migrated; keep the PR draft and unmerged until release approval.
 
-The review branch is `codex/discovery-learning-completion`, based on `316fc9025746c815f7e85c8a1e9965da807b60c9`. The original working checkout and its uncommitted changes were preserved. QA used `tremendous-moose-99`; normal development uses `fast-poodle-167` and was not deployed by this work.
+Branch: `codex/discovery-learning-completion`, based on `316fc9025746c815f7e85c8a1e9965da807b60c9`. The original checkout and its uncommitted changes remain preserved. The earlier combined implementation is preserved at `e1e9de2045bf369bde4b2691d7215d940708fb61` on `codex/discovery-learning-full-snapshot`. Reporting work is parked separately on `codex/reporting-v3-deferred` at `8fcd8ee3` and has not been published as a separate release.
 
-## What was corrected
+## Included behavior
 
-- Preserve the original contact objective, mandatory requirements, preferences, exclusions, and required activity evidence through targeting generation and qualification.
-- Search with strict, balanced, and broad stages; pass supported LinkedIn and X filters at the provider boundary, preserving meaningful syntax and full persisted source text.
-- Deliver promoted reusable lessons to discovery and subsequent prospects. Keep their source prospect as provenance while retaining person-specific operator restrictions.
-- Fingerprint targeting for learned memories, semantic examples, candidates, executable queries, performance, qualifications, and audits. Reject stale in-flight writes and stale context after targeting changes.
-- Provide a paused, durable repair workflow with a mandatory dry run, an explicit apply limit, 25-record pages, at most 1,000 scanned records per run, continuation cursors, and a single active run per workspace. Repair uses normal qualification and suppresses automatic enrichment/outreach.
-- Keep verified reporting versions 1 and 2 compatible; migrate explicitly to version 3 with exact parity checks. Deletion clears retained legacy namespaces without changing migration's destination semantics.
+- Preserve the original contact objective, mandatory requirements, preferences, exclusions, and required activity evidence through targeting and qualification.
+- Generate strict, balanced, and broad searches; pass supported LinkedIn/X filters, preserve meaningful syntax, and persist full source text.
+- Deliver reusable promoted lessons to discovery and subsequent qualification. Keep person-specific restrictions scoped.
+- Fingerprint targeting for memories, semantic examples, candidates, executable queries, performance, qualifications, and audits. Reject stale context and in-flight writes after retargeting.
+- Refresh workspace targeting and queries without reevaluating old prospects. The normal deduplication/qualification guards preserve completed decisions.
+- Use the installed OpenRouter provider's `textEmbeddingModel` API for its embedding fallback. Fresh QA with only an OpenRouter key exposed an invalid method call that the OpenAI-primary environment had masked; a regression now constructs the real installed provider without network access.
 
-## Verification performed on the combined implementation
+The removed bulk repair workflow, repair-only schema/validators, and repair-specific tests are absent from the final tree. Reporting files match `main` exactly, retaining aggregate version 1. Reporting v3 migration is not required by this release.
 
-| Check                         | Result                                                                                       |
-| ----------------------------- | -------------------------------------------------------------------------------------------- |
-| Convex/Vitest suite           | 715 tests passed across 131 files; no unhandled errors                                       |
-| Node regression suites        | 43 tests passed, including plan usage/analytics and batch behavior                           |
-| TypeScript                    | `tsc --noEmit` passed; Convex deployment type checking passed                                |
-| Lint                          | Oxlint with `--deny-warnings` passed                                                         |
-| Production build              | Next.js 16.2.9 build passed                                                                  |
-| Formatting and diff hygiene   | Prettier and `git diff --check` passed                                                       |
-| CodeRabbit                    | Initial review raised 8 issues; follow-up review raised 0                                    |
-| Existing QA dashboards        | 24 successful analytics/Agent Ops reads across six workspaces, using 7-day and 30-day ranges |
-| Existing reporting migrations | All six version-3 checkpoints verified with matching recorded expected and aggregate totals  |
+## Current verification
 
-Two expanded migration tests initially exceeded Vitest's default five-second timeout during the full parallel suite. An unnecessary second migration was removed and a scoped 30-second timeout applied to those integration tests. The subsequent complete suite passed. Workflow test cleanup also drains/cancels scheduled test work so background model calls cannot escape test teardown.
+| Check                  | Result                                                                      |
+| ---------------------- | --------------------------------------------------------------------------- |
+| Convex/Vitest suite    | 711 tests passed across 132 files, without unhandled errors                 |
+| Node regression suites | 43 tests passed                                                             |
+| Convex deployment      | Pushed successfully with type checking to isolated `pleasant-kookabura-347` |
+| Next.js build          | Passed with the installed Next.js 16.2.9 configuration                      |
+| TypeScript             | `tsc --noEmit` passed                                                       |
+| Strict lint            | Passed                                                                      |
 
-### Real-model qualification controls
+The new integration regression snapshots four existing records (qualified, disqualified, contacted, archived), refreshes targeting/searches, and checks complete records remain unchanged. Attempts to start qualification for those completed records return no work. Only a newly inserted prospect schedules qualification, and its decision receives the current targeting fingerprint. Reporting checkpoint state remains unchanged and aggregate version stays 1.
 
-Four recorded public-evidence cases were run three times each with learning enabled and disabled: 24 model calls. Every call produced the expected verdict. The cases cover direct hiring authority with non-U.S./onsite preferences, talent-pool/market-research activity, an explicit “No agencies” restriction, and a remote engineering hiring announcement. Verdicts were unchanged between conditions; a small score variation occurred in one case.
+A separate fresh QA deployment is used for the current future-only verification because the older QA deployment already contains reporting v3 data. A version-1 fixture is prepared before the rollout test; the tested refresh/new-activity transition must not perform any migration. Its results and cleanup are recorded in `future-only-live.json`, `future-only-complete.log`, and `future-query-reuse.json` under the local evidence directory.
 
-These controls demonstrate no verdict regression on this set. They do not establish a statistically measured accuracy improvement, and they are replayed evidence rather than a fresh discovery-yield benchmark.
+### Live future-only results
 
-### Fresh four-record repair and learning pilot
+The isolated existing-workspace fixture passed all ten checks:
 
-A separate QA fixture account and workspace were created, with test-only plan entitlements. Targeting was regenerated from the original request while discovery remained paused. Generation preserved active hiring as essential and U.S./remote as preferences.
+- Two old records (one qualified, one disqualified) remained byte-for-byte unchanged after targeting refresh and after new activity. The unit regression additionally covers contacted and archived records.
+- Targeting refresh preserved U.S./remote as preferences and left discovery paused. It generated eleven future query entries.
+- Two newly inserted recorded-evidence prospects completed the ordinary durable qualification workflow. Both were correctly disqualified and stamped with the current targeting fingerprint.
+- Both qualification events reached `processed`. Three promoted memories were active and indexed `ready`; all three reached discovery and qualification context.
+- A subsequent real-model generation with those lessons available returned ten query entries successfully.
+- The existing reporting checkpoint remained unchanged at version 1 throughout the tested transition. Analytics showed four total prospects, one qualified, three disqualified, and zero pending; Usage remained one qualified prospect. Query performance recorded two new prospects and zero qualified.
 
-- Dry run: exactly 4 scanned, 4 eligible, no writes to qualification decisions.
-- Apply: 4 completed, 0 failed; 2 qualified and 2 disqualified.
-- All four qualification events reached `processed`.
-- Seven canonical memories were active and indexed `ready`; six applicable promoted lessons were returned to discovery.
-- Query performance reported 4 prospects found, 2 qualified, and a 50% qualification rate.
-- The subsequent discovery action returned ten platform query entries with strict/balanced/broad stages; LinkedIn people queries were correctly absent for required activity evidence.
-- A repeat repair dry run found 0 eligible and skipped all 4 current decisions.
-- Monthly analytics showed 4 prospects, 2 qualified, 2 disqualified, and 0 pending. Usage showed 2 qualified prospects after the fixture was marked setup-complete. Automatic enrichment was suppressed, so the ready count correctly remained 0.
+The fixture's empty v1 reporting baseline was prepared before the preservation snapshot. No migration occurred during targeting refresh or new activity. There were no outreach plans. The first new prospect initially failed because the isolated environment lacked the external-page-reading credential; after configuring that QA dependency, the normal scheduled retry completed successfully. Test-harness fixes handled CLI null output, normalized keyword text, and reading full persisted metadata rather than the deliberately reduced workflow projection. These were verification-script corrections, not additional product behavior changes.
 
-### Live targeting boundary
+Both model/page-reading credentials were temporary QA dependencies. Final cleanup paused the workspace, drained qualification and learning work, and removed those credentials; script access tokens were revoked. The fresh deployment expires after seven days.
 
-After learning completed, the dedicated QA audience was temporarily changed. The fingerprint changed, discovery returned zero stale lessons and zero stale performance rows, and an old-fingerprint qualification write was rejected. Restoring the audience restored its six applicable lessons. Source qualification and memory fingerprints were also inspected directly.
+## Earlier verification retained as supporting evidence
 
-Integration regressions additionally cover source ownership, legacy use-case normalization, scoped operator instructions, stale semantic content after requalification, late evaluator events, stale query screening, repair locking and pagination, and reporting readiness gates.
+The prior combined implementation on isolated `tremendous-moose-99` passed 715 tests and an earlier CodeRabbit follow-up raised 0 issues. Those counts include now-removed repair/reporting tests and do not describe the final tree.
 
-### Browser verification
+Four recorded public-evidence cases were run three times each with learning enabled and disabled (24 model calls). All produced the expected verdicts: direct hiring with non-U.S./onsite preferences, talent-pool/market-research activity, explicit “No agencies,” and remote engineering hiring. These demonstrate no sampled verdict regression, not a measured accuracy improvement or a fresh discovery-yield benchmark.
 
-The isolated application was served locally at the configured login origin. Verified populated prospect cards, qualification details, preserved source evidence, monthly Analytics, monthly Agent observability, and Usage. QA D displayed 125 total prospects, 2 qualified/ready, and 123 disqualified. No browser errors were captured for the completed flow. The original development server was restored afterward.
+The earlier learning pilot processed four qualification events, produced seven active indexed memories, delivered six reusable lessons to discovery, and generated ten subsequent query entries. A live targeting change excluded stale lessons/performance and rejected an old-fingerprint qualification write. Restoring the target restored applicable fingerprinted lessons. These checks exercised learning code retained in the current release.
 
-An initial attempt on another local port encountered an authentication refresh failure. Verification succeeded on the configured origin; no authentication code was changed.
+Earlier browser checks covered populated prospect cards, source evidence, monthly Analytics, Agent Ops, and Usage without captured browser errors. Those checks used the previous isolated QA data/reporting version; they do not substitute for current v1 compatibility checks. No frontend or authentication code is changed by the scope correction.
 
-## CodeRabbit triage
+## Review and QA history
 
-The initial eight issues were evaluated against code behavior. Confirmed fixes included actual provider-filter metadata, batch deduplication fingerprints, bounded repair runs, permanent missing-workflow references, LinkedIn OR normalization, excluding generated search hints from targeting identity, and clearing legacy reporting data during deletion.
+The current CodeRabbit review of the scope correction raised two minor documentation issues and no code issues. The claimed mismatch with `main` was rejected: `docs/convex/realtime-reporting-rollout.md` has the exact same Git blob (`955f451400ce88c8f4a5b822e90222b411f37806`) as `main`. The request for explicit deployment selectors is useful for the separate reporting procedure and is already implemented in the parked reporting branch. The active future-only runbook expressly forbids migration and requires environment confirmation. Neither suggestion warrants reintroducing reporting changes here. The new provider-construction test was also checked locally; CodeRabbit's uncommitted review did not include that untracked file.
 
-Suggestions were narrowed where necessary: arbitrary workflow-status errors remain fatal rather than being ignored, and migration continues clearing its destination version rather than the currently active legacy version. The project-required console logging convention was retained. No code change was made merely to satisfy a review suggestion.
+CodeRabbit suggestions were checked against actual behavior. Confirmed earlier fixes included provider-filter metadata, candidate deduplication fingerprints, permanent missing-workflow references, LinkedIn OR normalization, and excluding generated search hints from targeting identity. Repair/reporting-specific fixes were removed from this release along with those features.
 
-## QA incident and cleanup
+An earlier QA script incorrectly began repairing a stress fixture with 1,766 eligible records. It was canceled after three QA rows were touched (one qualified, one disqualified, one pending); no outreach plans were created. This happened only in `tremendous-moose-99`, before the future-only scope correction. The feature responsible has now been removed from this PR. Historical evidence remains in local logs; do not repeat that procedure for production.
 
-An early script mistakenly applied a repair after discovering that an existing stress-test workspace contained 1,766 eligible records. The run was canceled promptly. Three QA records were touched: one qualified, one disqualified, and one left pending. No outreach plans were created. The nested workflow was confirmed canceled before its stale prospect reference was cleared. This led to the mandatory reviewed scope limit and bounded continuation behavior above. Subsequent verification used the separate four-record fixture.
+All seven older QA workspaces were paused, active workflows drained, and temporary model credentials removed after that verification. New future-only QA uses a separate deployment. Normal development (`fast-poodle-167`) and production are not deployment targets of this work.
 
-Final QA inspection found all seven workspaces paused, no active repair or component workflows, and no pending/processing memory events. Temporary script access tokens were deleted in cleanup. The temporarily installed QA model key was removed. Historical stress data and the canceled run remain available for audit.
+## Deployment boundary
 
-## Deployment boundary and remaining release procedure
+The linked Vercel build command also invokes `convex deploy`. Preview key scope could not be verified using the available connector/CLI. Therefore the feature branch disables automatic Vercel deployment using the documented branch-specific `git.deploymentEnabled` rule. This does not affect `main`. No Vercel deployment was performed.
 
-The locally linked Vercel project configuration uses a build command that also invokes `convex deploy`. Preview key scope could not be verified through the available project connector; the local CLI credential received HTTP 403 from the project API. Therefore this review branch explicitly disables automatic Vercel deployment using the documented branch-specific `git.deploymentEnabled` setting. The isolated backend and local production build supplied the verification environment.
+After explicit release approval, follow only [the future-only rollout](./discovery-learning-rollout.md): pause/drain, refresh workspace targeting from the original request, verify old decisions and reporting checkpoint remain unchanged, then resume future discovery. Do not audit/requalify historical prospects or run reporting migration as part of it.
 
-This is not an approval to deploy production. After maintainer approval, follow [the discovery and learning rollout](./discovery-learning-rollout.md) and [the reporting migration procedure](./realtime-reporting-rollout.md): pause and drain, review regenerated targeting, dry-run and apply bounded repairs, separately review engaged prospects, deliberately enrich qualifying records, migrate reporting, verify parity, and resume one canary before expanding. Existing production decisions are not automatically repaired by merging code.
+## Evidence and primary documentation
 
-## Evidence and references
+Local evidence directory: `/private/tmp/reacher-learning-completion/`. Current evidence uses the `future-*` prefix. Earlier supporting evidence includes `live-controls.json`, `small-repair.json`, `post-learning-check.json`, `live-targeting-boundary.json`, and `reviewed-dashboard.json`. These are QA artifacts, not production telemetry.
 
-Detailed local logs and recorded results are retained in `/private/tmp/reacher-learning-completion/`, including `final-tests-2.log`, `node-tests.log`, `final-build.log`, `coderabbit-final.ndjson`, `live-controls.json`, `small-repair.json`, `pilot-provenance.json`, `post-learning-check.json`, `live-targeting-boundary.json`, and `reviewed-dashboard.json`. These artifacts are local QA evidence, not production telemetry.
-
-The implementation and operational checks used the installed SDKs, project skills, and primary documentation: [Convex agent context](https://docs.convex.dev/agents/context), [Convex Workflow](https://github.com/get-convex/workflow), [Convex testing](https://docs.convex.dev/testing/convex-test), [AI SDK structured generation](https://ai-sdk.dev/docs/ai-sdk-core/generating-structured-data), [Convex deployment separation](https://docs.convex.dev/production/multiple-deployments), and [Vercel branch deployment controls](https://vercel.com/docs/project-configuration/git-configuration).
+Implementation and checks used the project skills and installed SDKs, [Convex agent context](https://docs.convex.dev/agents/context), [Convex Workflow](https://github.com/get-convex/workflow), [Convex testing](https://docs.convex.dev/testing/convex-test), [AI SDK structured generation](https://ai-sdk.dev/docs/ai-sdk-core/generating-structured-data), [OpenRouter's provider API](https://github.com/OpenRouterTeam/ai-sdk-provider), [Convex deployment separation](https://docs.convex.dev/production/multiple-deployments), and [Vercel branch deployment controls](https://vercel.com/docs/project-configuration/git-configuration).

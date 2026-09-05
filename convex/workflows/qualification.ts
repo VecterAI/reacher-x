@@ -163,7 +163,6 @@ export const indexQualificationEvidence = internalAction({
 export const qualificationWorkflow = workflow.define({
   args: {
     expectedTargetingFingerprint: v.optional(v.string()),
-    skipEnrichment: v.optional(v.boolean()),
     prospectId: v.id("prospects"),
     workspaceId: v.id("workspaces"),
   },
@@ -448,7 +447,7 @@ export const qualificationWorkflow = workflow.define({
         ? `Qualified with ${result.score}% fit`
         : `Did not qualify (${result.score}% fit)`,
       description: result.qualified
-        ? `Qualified with a score of ${result.score}. Minimum required: ${QUALIFICATION_THRESHOLD}.${args.skipEnrichment ? " Qualification refreshed for current targeting." : " Moving to enrichment."}`
+        ? `Qualified with a score of ${result.score}. Minimum required: ${QUALIFICATION_THRESHOLD}. Moving to enrichment.`
         : `Scored ${result.score}. Minimum required: ${QUALIFICATION_THRESHOLD}.`,
     });
     await step.runMutation(internal.memory.recordMemoryWorkflowEventInternal, {
@@ -529,7 +528,7 @@ export const qualificationWorkflow = workflow.define({
     }
 
     // Step 6: If qualified, index evidence to RAG and start enrichment
-    if (result.qualified && !args.skipEnrichment) {
+    if (result.qualified) {
       // Convert evidence posts for RAG indexing
       const platform = (currentProspect.platform || "twitter") as
         | "twitter"

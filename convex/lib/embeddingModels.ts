@@ -30,7 +30,7 @@ export function getTextEmbeddingModel(): EmbeddingModel {
         "HTTP-Referer": "https://reacherx.com",
         "X-Title": "ReacherX",
       },
-    }).embeddingModel(configuredModel);
+    }).textEmbeddingModel(configuredModel);
   }
 
   throw new Error(

@@ -16,29 +16,8 @@ import {
 } from "./readModelHelpers";
 import type { TimeWindow, TrendBucketSet } from "./analyticsCore";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
-import { getReadModelStripe } from "./readModelStripeHelpers";
 
-// Version 1 put all concurrent source writes in one B-tree per dataset.
-// Reuse the read model's stable source stripes; the existing versioned rollout
-// retains version 1 reads/writes until an explicit per-workspace migration.
-export const WORKSPACE_REPORTING_AGGREGATE_VERSION = 3;
-
-export function isSupportedWorkspaceReportingVersion(version: number) {
-  return (
-    version === 1 ||
-    version === 2 ||
-    version === WORKSPACE_REPORTING_AGGREGATE_VERSION
-  );
-}
-// Each dashboard metric/window opens an index range per stripe. Two partitions
-// reduce writer contention while keeping the largest dashboard below Convex's
-// 4096-range limit. Version 3 additionally isolates each metric's tree so a
-// chart does not repeatedly read large nodes containing unrelated metrics.
-export const WORKSPACE_REPORTING_STRIPE_COUNT = 2;
-
-function reportingStripe(sourceKey: string) {
-  return getReadModelStripe(sourceKey) % WORKSPACE_REPORTING_STRIPE_COUNT;
-}
+export const WORKSPACE_REPORTING_AGGREGATE_VERSION = 1;
 
 export type WorkspaceReportingDataset = "analytics" | "agentOps" | "usage";
 export type WorkspaceAnalyticsMetric =
@@ -49,25 +28,11 @@ export type WorkspaceReportingMetric =
   | WorkspaceAgentOpsMetric
   | "qualifiedProspectsCount";
 
-type WorkspaceReportingNamespace =
-  | [
-      version: number,
-      workspaceId: Id<"workspaces">,
-      dataset: WorkspaceReportingDataset,
-    ]
-  | [
-      version: number,
-      workspaceId: Id<"workspaces">,
-      dataset: WorkspaceReportingDataset,
-      stripe: number,
-    ]
-  | [
-      version: number,
-      workspaceId: Id<"workspaces">,
-      dataset: WorkspaceReportingDataset,
-      stripe: number,
-      metric: WorkspaceReportingMetric,
-    ];
+type WorkspaceReportingNamespace = [
+  version: number,
+  workspaceId: Id<"workspaces">,
+  dataset: WorkspaceReportingDataset,
+];
 type WorkspaceReportingKey = [
   metric: WorkspaceReportingMetric,
   hourStartUtcMs: number,
@@ -118,8 +83,6 @@ function buildAggregateItems(args: {
           WORKSPACE_REPORTING_AGGREGATE_VERSION,
           target.workspaceId,
           args.dataset,
-          reportingStripe(args.sourceKey),
-          metric,
         ];
         const key: WorkspaceReportingKey = [metric, hourStartUtcMs];
         const id = `${args.sourceKey}:${metric}:${hourStartUtcMs}`;
@@ -144,9 +107,7 @@ function aggregateItemsEqual(left: AggregateItem, right: AggregateItem) {
     left.key[1] === right.key[1] &&
     left.namespace[0] === right.namespace[0] &&
     left.namespace[1] === right.namespace[1] &&
-    left.namespace[2] === right.namespace[2] &&
-    left.namespace[3] === right.namespace[3] &&
-    left.namespace[4] === right.namespace[4]
+    left.namespace[2] === right.namespace[2]
   );
 }
 
@@ -159,21 +120,20 @@ async function syncAggregateItems(
   for (const item of oldItems.values()) workspaceIds.add(item.namespace[1]);
   for (const item of newItems.values()) workspaceIds.add(item.namespace[1]);
 
-  const enabledWorkspaceVersions = new Map<Id<"workspaces">, number>();
+  const enabledWorkspaceIds = new Set<Id<"workspaces">>();
   for (const workspaceId of workspaceIds) {
     const rollout = await ctx.db
       .query("workspaceReportingRollouts")
       .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
       .unique();
     if (
-      rollout &&
-      isSupportedWorkspaceReportingVersion(rollout.aggregateVersion) &&
+      rollout?.aggregateVersion === WORKSPACE_REPORTING_AGGREGATE_VERSION &&
       (rollout.status === "preparing" ||
         rollout.status === "backfilling" ||
         rollout.status === "verifying" ||
         rollout.status === "verified")
     ) {
-      enabledWorkspaceVersions.set(workspaceId, rollout.aggregateVersion);
+      enabledWorkspaceIds.add(workspaceId);
       if (rollout.status === "preparing") {
         await ctx.db.patch("workspaceReportingRollouts", rollout._id, {
           preparationVersion: (rollout.preparationVersion ?? 0) + 1,
@@ -183,25 +143,11 @@ async function syncAggregateItems(
     }
   }
 
-  // Existing verified v1 workspaces continue to read AND maintain their
-  // original three-part namespaces. Deploying this code alone does not break
-  // their dashboards or require pausing every workspace for a global cutover.
-  for (const item of [...oldItems.values(), ...newItems.values()]) {
-    if (enabledWorkspaceVersions.get(item.namespace[1]) === 1) {
-      item.namespace = [1, item.namespace[1], item.namespace[2]];
-    } else if (enabledWorkspaceVersions.get(item.namespace[1]) === 2) {
-      const stripe = item.namespace[3];
-      if (stripe === undefined)
-        throw new Error("Reporting item is missing its source stripe");
-      item.namespace = [2, item.namespace[1], item.namespace[2], stripe];
-    }
-  }
-
   // Existing workspaces stay snapshot-only until their rollout starts. This
   // also prevents preparation repairs from paying Aggregate B-tree costs for
   // every repaired row before the resumable backfill checkpoint exists.
   for (const [mapKey, oldItem] of oldItems) {
-    if (!enabledWorkspaceVersions.has(oldItem.namespace[1])) continue;
+    if (!enabledWorkspaceIds.has(oldItem.namespace[1])) continue;
     const newItem = newItems.get(mapKey);
     if (!newItem) {
       await workspaceReportingAggregate.deleteIfExists(ctx, oldItem);
@@ -213,7 +159,7 @@ async function syncAggregateItems(
   }
 
   for (const [mapKey, newItem] of newItems) {
-    if (!enabledWorkspaceVersions.has(newItem.namespace[1])) continue;
+    if (!enabledWorkspaceIds.has(newItem.namespace[1])) continue;
     if (!oldItems.has(mapKey)) {
       await workspaceReportingAggregate.insertIfDoesNotExist(ctx, newItem);
     }
@@ -288,8 +234,6 @@ function buildQualifiedUsageItem(
       WORKSPACE_REPORTING_AGGREGATE_VERSION,
       prospect.workspaceId,
       "usage",
-      reportingStripe(sourceKey),
-      "qualifiedProspectsCount",
     ],
     key: ["qualifiedProspectsCount", prospect.qualifiedAt],
     id: sourceKey,
@@ -330,51 +274,26 @@ export async function getWorkspaceReportingMetricSums<
 ) {
   if (args.queries.length === 0) return [];
 
-  const rollout = await ctx.db
-    .query("workspaceReportingRollouts")
-    .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-    .unique();
-  const version =
-    rollout && isSupportedWorkspaceReportingVersion(rollout.aggregateVersion)
-      ? rollout.aggregateVersion
-      : WORKSPACE_REPORTING_AGGREGATE_VERSION;
-  const stripeCount = version === 1 ? 1 : WORKSPACE_REPORTING_STRIPE_COUNT;
-
-  // Keep each component call bounded rather than multiplying the query array
-  // beyond Convex's array limit. Sum disjoint stripes in the same read snapshot.
-  const totals = args.queries.map(() => 0);
-  for (let stripe = 0; stripe < stripeCount; stripe++) {
-    const sums = await workspaceReportingAggregate.sumBatch(
-      ctx,
-      args.queries.map((query) => ({
-        namespace: (version === 1
-          ? [1, args.workspaceId, args.dataset]
-          : version === 2
-            ? [version, args.workspaceId, args.dataset, stripe]
-            : [
-                version,
-                args.workspaceId,
-                args.dataset,
-                stripe,
-                query.metric,
-              ]) satisfies WorkspaceReportingNamespace,
-        bounds: {
-          lower: {
-            key: [query.metric, query.startMs] satisfies WorkspaceReportingKey,
-            inclusive: true,
-          },
-          upper: {
-            key: [query.metric, query.endMs] satisfies WorkspaceReportingKey,
-            inclusive: false,
-          },
+  return await workspaceReportingAggregate.sumBatch(
+    ctx,
+    args.queries.map((query) => ({
+      namespace: [
+        WORKSPACE_REPORTING_AGGREGATE_VERSION,
+        args.workspaceId,
+        args.dataset,
+      ] satisfies WorkspaceReportingNamespace,
+      bounds: {
+        lower: {
+          key: [query.metric, query.startMs] satisfies WorkspaceReportingKey,
+          inclusive: true,
         },
-      }))
-    );
-    sums.forEach((sum, index) => {
-      totals[index] += sum;
-    });
-  }
-  return totals;
+        upper: {
+          key: [query.metric, query.endMs] satisfies WorkspaceReportingKey,
+          inclusive: false,
+        },
+      },
+    }))
+  );
 }
 
 async function getSyntheticReportingRows(args: {
@@ -382,44 +301,28 @@ async function getSyntheticReportingRows(args: {
   workspaceId: Id<"workspaces">;
   dataset: WorkspaceReportingDataset;
   fields: readonly WorkspaceReportingMetric[];
-  trendFields?: readonly WorkspaceReportingMetric[];
   bucketSet: TrendBucketSet;
   previousWindow: TimeWindow;
 }) {
   const windows = [...args.bucketSet.buckets, args.previousWindow];
-  // Only charted metrics need one query per bucket. Other metrics are totals:
-  // place their current-window value in the first synthetic row. This preserves
-  // window sums without multiplying index reads by every unused chart bucket.
-  const queries = windows.flatMap((window, windowIndex) =>
-    args.fields.flatMap((metric) => {
-      const charted = !args.trendFields || args.trendFields.includes(metric);
-      if (!charted && windowIndex > 0 && windowIndex < windows.length - 1)
-        return [];
-      const range =
-        !charted && windowIndex === 0 ? args.bucketSet.window : window;
-      return [
-        { metric, startMs: range.startMs, endMs: range.endMs, windowIndex },
-      ];
-    })
-  );
   const sums = await getWorkspaceReportingMetricSums(args.ctx, {
     workspaceId: args.workspaceId,
     dataset: args.dataset,
-    queries,
+    queries: windows.flatMap((window) =>
+      args.fields.map((metric) => ({
+        metric,
+        startMs: window.startMs,
+        endMs: window.endMs,
+      }))
+    ),
   });
-  const values = new Map(
-    queries.map((query, index) => [
-      `${query.windowIndex}:${query.metric}`,
-      sums[index] ?? 0,
-    ])
-  );
 
   return windows.map((window, windowIndex) => ({
     window,
     values: Object.fromEntries(
-      args.fields.map((field) => [
+      args.fields.map((field, fieldIndex) => [
         field,
-        values.get(`${windowIndex}:${field}`) ?? 0,
+        sums[windowIndex * args.fields.length + fieldIndex] ?? 0,
       ])
     ) as Record<WorkspaceReportingMetric, number>,
   }));
@@ -435,12 +338,6 @@ export async function getWorkspaceAnalyticsAggregateRows(args: {
     ...args,
     dataset: "analytics",
     fields: WORKSPACE_ANALYTICS_HOURLY_FIELDS,
-    // Analytics charts new/contacted; Agent Ops additionally charts response rate.
-    trendFields: [
-      "hourlyNewProspectsCounts",
-      "hourlyContactedEventsCounts",
-      "hourlyRespondedEventsCounts",
-    ],
   });
 
   return snapshots.map(({ window, values }) => {
@@ -465,26 +362,6 @@ export async function getWorkspaceAgentOpsAggregateRows(args: {
     ...args,
     dataset: "agentOps",
     fields: AGENT_OPS_HOURLY_FIELDS,
-    // These are the fields consumed by the per-bucket charts in agentOpsCore.
-    // Suggestions, event totals and approvals only need current/previous sums.
-    trendFields: [
-      "hourlyKeywordsCreatedCounts",
-      "hourlyQueriesGeneratedCounts",
-      "hourlyQueriesReviewedCounts",
-      "hourlyQueriesActivatedCounts",
-      "hourlyQueriesRejectedExactDuplicateCounts",
-      "hourlyQueriesRejectedSemanticDuplicateCounts",
-      "hourlyMemoriesWrittenCounts",
-      "hourlyHighImpactMemoriesCounts",
-      "hourlyMemoryImpactScoreSums",
-      "hourlyMemoryConfidenceSums",
-      "hourlyRunsStartedCounts",
-      "hourlyFailedRunsCounts",
-      "hourlyQualificationCompletedCounts",
-      "hourlyQualificationQualifiedCounts",
-      "hourlyEnrichmentCompletedCounts",
-      "hourlyEnrichmentPainPointCountSums",
-    ],
   });
 
   return snapshots.map(({ window, values }) => {
@@ -501,51 +378,12 @@ export async function getWorkspaceAgentOpsAggregateRows(args: {
 
 export async function clearWorkspaceReportingAggregate(
   ctx: GenericMutationCtx<DataModel>,
-  workspaceId: Id<"workspaces">,
-  options?: { includeLegacyVersions?: boolean }
+  workspaceId: Id<"workspaces">
 ) {
-  // Migration clears the destination version before changing the rollout row.
-  // Deletion additionally removes retained legacy namespaces; never infer the
-  // migration destination from the currently enabled (possibly old) version.
   for (const dataset of ["analytics", "agentOps", "usage"] as const) {
-    if (options?.includeLegacyVersions) {
-      const legacyNamespaces: WorkspaceReportingNamespace[] = [
-        [1, workspaceId, dataset],
-      ];
-      for (let stripe = 0; stripe < WORKSPACE_REPORTING_STRIPE_COUNT; stripe++)
-        legacyNamespaces.push([2, workspaceId, dataset, stripe]);
-      for (const namespace of legacyNamespaces)
-        await workspaceReportingAggregate.clear(ctx, {
-          namespace,
-          rootLazy: true,
-          maxNodeSize: 32,
-        });
-    }
-    const metrics: readonly WorkspaceReportingMetric[] =
-      dataset === "analytics"
-        ? WORKSPACE_ANALYTICS_HOURLY_FIELDS
-        : dataset === "agentOps"
-          ? AGENT_OPS_HOURLY_FIELDS
-          : ["qualifiedProspectsCount"];
-    for (const metric of metrics) {
-      for (
-        let stripe = 0;
-        stripe < WORKSPACE_REPORTING_STRIPE_COUNT;
-        stripe++
-      ) {
-        await workspaceReportingAggregate.clear(ctx, {
-          namespace: [
-            WORKSPACE_REPORTING_AGGREGATE_VERSION,
-            workspaceId,
-            dataset,
-            stripe,
-            metric,
-          ],
-          rootLazy: true,
-          // Wider lazy roots keep more writes on independent child nodes.
-          maxNodeSize: 32,
-        });
-      }
-    }
+    await workspaceReportingAggregate.clear(ctx, {
+      namespace: [WORKSPACE_REPORTING_AGGREGATE_VERSION, workspaceId, dataset],
+      rootLazy: true,
+    });
   }
 }

@@ -782,9 +782,7 @@ export const finalizeWorkspaceDeletionInternal = internalMutation({
     if (fitScoreAggregateRollout) {
       await ctx.db.delete(fitScoreAggregateRollout._id);
     }
-    await clearWorkspaceReportingAggregate(ctx, args.workspaceId, {
-      includeLegacyVersions: true,
-    });
+    await clearWorkspaceReportingAggregate(ctx, args.workspaceId);
     await ctx.db.delete(workspace._id);
 
     const subscription = await polar.getCurrentSubscription(ctx, {

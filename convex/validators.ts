@@ -2996,32 +2996,3 @@ export const learningEntryReferenceValidator = v.object({
   targetingFingerprint: v.optional(v.string()),
   sourceId: v.optional(v.string()),
 });
-
-export const requalificationPageValidator = v.object({
-  items: v.array(
-    v.object({
-      prospectId: v.id("prospects"),
-      skipReason: v.union(v.string(), v.null()),
-    })
-  ),
-  isDone: v.boolean(),
-  continueCursor: v.string(),
-});
-export const requalificationResultValidator = v.object({
-  isDone: v.optional(v.boolean()),
-  continueCursor: v.optional(v.union(v.string(), v.null())),
-  scanned: v.number(),
-  eligible: v.number(),
-  completed: v.number(),
-  skipped: v.number(),
-  failed: v.number(),
-  dryRun: v.boolean(),
-});
-
-export const requalificationReadinessValidator = v.object({
-  targetingFingerprint: v.string(),
-  prospectingStatus: v.optional(v.string()),
-  activeWorkflowId: v.optional(v.string()),
-  lastResult: v.optional(requalificationResultValidator),
-  lastError: v.optional(v.string()),
-});

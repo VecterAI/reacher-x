@@ -3,7 +3,6 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
   agentComponentThreadStatusValidator,
-  requalificationResultValidator,
   icpValidator,
   discoveryStageValidator,
   planTierValidator,
@@ -380,12 +379,6 @@ export default defineSchema({
     // intent. Optional while existing workspaces are lazily backfilled.
     targetingSpec: v.optional(workspaceTargetingSpecValidator),
     targetingLearningResetAt: v.optional(v.number()),
-    requalificationWorkflowId: v.optional(v.string()),
-    lastRequalificationResult: v.optional(requalificationResultValidator),
-    lastRequalificationTargetingFingerprint: v.optional(v.string()),
-    lastRequalificationStartCursor: v.optional(v.string()),
-    lastRequalificationError: v.optional(v.string()),
-    lastRequalificationCompletedAt: v.optional(v.number()),
 
     // v4 NEW: Structured Ideal Customer Profiles
     icps: v.optional(

@@ -13,16 +13,10 @@ import {
 import schema from "./schema";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
-  AGENT_OPS_HOURLY_FIELDS,
-  createEmptyWorkspaceAgentOpsDailyRecord,
   getWorkspaceAgentOpsContributionsFromKeyword,
   mergeWorkspaceAgentOpsContributions,
 } from "./lib/agentOpsReadModelHelpers";
-import {
-  clearWorkspaceReportingAggregate,
-  getWorkspaceReportingMetricSums,
-  syncWorkspaceAgentOpsReportingAggregate,
-} from "./lib/workspaceReportingAggregate";
+import { getWorkspaceReportingMetricSums } from "./lib/workspaceReportingAggregate";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -49,178 +43,6 @@ describe("workspace reporting Aggregate", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  test.each([1, 2])(
-    "keeps v%s reporting live, then migrates exact totals without duplicates",
-    async (legacyVersion) => {
-      vi.useFakeTimers();
-      vi.setSystemTime(Date.UTC(2026, 7, 30, 12, 30));
-      const t = convexTest({ schema, modules, transactionLimits: true });
-      await registerPolar(t);
-      const { userId, workspaceId } = await t.run(async (ctx) => {
-        const userId = await ctx.db.insert("users", {
-          workosUserId: "legacy-report-owner",
-          email: "legacy@example.com",
-        });
-        const workspaceId = await ctx.db.insert("workspaces", {
-          userId,
-          name: "Legacy reporting",
-          description: "Migration fixture",
-          isDefault: true,
-          setupCompletedAt: getCurrentUTCTimestamp(),
-          prospectingWorkflowStatus: "paused",
-          updatedAt: getCurrentUTCTimestamp(),
-        });
-        await ctx.db.insert("userPlans", {
-          userId,
-          tier: "pro",
-          prospectsLimit: -1,
-          workspacesLimit: -1,
-          currentProspectsCount: 0,
-          updatedAt: getCurrentUTCTimestamp(),
-        });
-        await ctx.db.insert("workspaceReportingRollouts", {
-          userId,
-          workspaceId,
-          aggregateVersion: legacyVersion,
-          status: "verified",
-          revision: 1,
-          stage: "prospects",
-          batchSize: 2,
-          backfilledCount: 0,
-          verifiedSourceCount: 0,
-          expectedAnalyticsSums: [],
-          expectedAgentOpsSums: [],
-          expectedQualifiedUsageCount: 0,
-          startedAt: getCurrentUTCTimestamp(),
-          updatedAt: getCurrentUTCTimestamp(),
-        });
-        return { userId, workspaceId };
-      });
-      const owner = t.withIdentity({ subject: "legacy-report-owner" });
-      const createArgs = {
-        userId,
-        workspaceId,
-        prospects: [
-          {
-            platform: "twitter" as const,
-            externalId: "legacy-live",
-            data: {},
-            qualificationStatus: "qualified" as const,
-          },
-        ],
-      };
-      const created = await t.mutation(
-        internal.prospects.createProspectsBatch,
-        createArgs
-      );
-      await t.mutation(internal.prospects.createProspectsBatch, createArgs);
-      const queryArgs = {
-        workspaceId,
-        range: "30d" as const,
-        nowMs: getCurrentUTCTimestamp(),
-      };
-      const before = await owner.query(
-        api.analytics.getDashboardAnalytics,
-        queryArgs
-      );
-      expect(before.status, JSON.stringify(before)).toBe("success");
-      expect(before.data.newProspects.value).toBe(1);
-      expect(
-        await owner.query(
-          api.workspaceReporting.getUserWorkspaceReportingStatus,
-          {}
-        )
-      ).toEqual({ ready: true, workspaceCount: 1 });
-      // The metric helper selects a storage version; public readers own the
-      // readiness gate. A failed/partial legacy rollout must never serve totals.
-      const legacyRollout = await t.run((ctx) =>
-        ctx.db
-          .query("workspaceReportingRollouts")
-          .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
-          .unique()
-      );
-      for (const status of [
-        "preparing",
-        "backfilling",
-        "verifying",
-        "failed",
-      ] as const) {
-        await t.run((ctx) => ctx.db.patch(legacyRollout!._id, { status }));
-        const unavailable = await owner.query(
-          api.analytics.getDashboardAnalytics,
-          queryArgs
-        );
-        expect(unavailable.status).toBe("error");
-        await expect(
-          owner.query(api.agentOps.getAgentOpsDashboard, queryArgs)
-        ).rejects.toThrow("still being prepared");
-        await expect(
-          owner.query(api.usage.getUsageDashboard, { nowMs: queryArgs.nowMs })
-        ).rejects.toThrow("still being prepared");
-      }
-      await t.run((ctx) =>
-        ctx.db.patch(legacyRollout!._id, { status: "verified" })
-      );
-      // Clearing the v3 destination must preserve the active legacy tree.
-      await t.run((ctx) => clearWorkspaceReportingAggregate(ctx, workspaceId));
-      expect(
-        (await owner.query(api.analytics.getDashboardAnalytics, queryArgs)).data
-          .newProspects.value
-      ).toBe(1);
-      const migration = await t.mutation(startMigration, {
-        workspaceId,
-        batchSize: 2,
-      });
-      await t.finishAllScheduledFunctions(vi.runAllTimers);
-      const rollout = await t.run((ctx) =>
-        ctx.db.get("workspaceReportingRollouts", migration.rolloutId)
-      );
-      expect(rollout).toMatchObject({
-        aggregateVersion: 3,
-        status: "verified",
-        aggregateQualifiedUsageCount: 1,
-      });
-      const after = await owner.query(
-        api.analytics.getDashboardAnalytics,
-        queryArgs
-      );
-      expect(after.status, JSON.stringify(after)).toBe("success");
-      expect(after.data.newProspects.value).toBe(1);
-      await owner.mutation(api.prospects.deleteProspect, {
-        prospectId: created.prospectIds[0],
-      });
-      const deleted = await owner.query(
-        api.analytics.getDashboardAnalytics,
-        queryArgs
-      );
-      expect(deleted.status, JSON.stringify(deleted)).toBe("success");
-      expect(deleted.data.newProspects.value).toBe(0);
-      const usage = await owner.query(api.usage.getUsageDashboard, {
-        nowMs: queryArgs.nowMs,
-      });
-      expect(usage?.workspaces).toEqual([
-        expect.objectContaining({ workspaceId, used: 0 }),
-      ]);
-      // Workspace deletion must also remove both retained legacy versions.
-      await t.run((ctx) =>
-        clearWorkspaceReportingAggregate(ctx, workspaceId, {
-          includeLegacyVersions: true,
-        })
-      );
-      for (const version of [1, 2, 3]) {
-        await t.run((ctx) =>
-          ctx.db.patch(legacyRollout!._id, { aggregateVersion: version })
-        );
-        expect(
-          (await owner.query(api.analytics.getDashboardAnalytics, queryArgs))
-            .data.newProspects.value
-        ).toBe(0);
-      }
-    },
-    // Multiple real aggregate namespaces and migration pages run in one test.
-    30_000
-  );
 
   test("backfills exact totals and keeps analytics reactive after cutover", async () => {
     vi.useFakeTimers();
@@ -372,7 +194,7 @@ describe("workspace reporting Aggregate", () => {
       api.analytics.getDashboardAnalytics,
       queryArgs
     );
-    expect(before.status, JSON.stringify(before)).toBe("success");
+    expect(before.status).toBe("success");
     expect(before.data.newProspects.value).toBe(2);
     expect(before.data.processingSummary.disqualified.value).toBe(1);
     const agentOpsBefore = await owner.query(
@@ -383,22 +205,6 @@ describe("workspace reporting Aggregate", () => {
       }
     );
     expect(agentOpsBefore.discovery.stats.keywordsCreated.value).toBe(1);
-    // Fan-out across stripes must still fit production transaction limits for
-    // the largest built-in range, not just the default seven-day view.
-    const monthly = { ...queryArgs, range: "30d" as const };
-    const monthlyAnalytics = await owner.query(
-      api.analytics.getDashboardAnalytics,
-      monthly
-    );
-    expect(monthlyAnalytics.status, JSON.stringify(monthlyAnalytics)).toBe(
-      "success"
-    );
-    expect(monthlyAnalytics.data.newProspects.value).toBe(2);
-    const monthlyOps = await owner.query(api.agentOps.getAgentOpsDashboard, {
-      ...monthly,
-      tab: "overview",
-    });
-    expect(monthlyOps.discovery.stats.keywordsCreated.value).toBe(1);
     const usageBefore = await owner.query(api.usage.getUsageDashboard, {
       nowMs: queryArgs.nowMs,
     });
@@ -438,38 +244,7 @@ describe("workspace reporting Aggregate", () => {
     expect(usageAfter?.workspaces).toEqual([
       expect.objectContaining({ workspaceId: seeded.workspaceId, used: 2 }),
     ]);
-
-    // Small empty trees miss the byte-limit regression: reproduce a populated
-    // B-tree (9,600 metric items) under real transaction limits.
-    const dayStartUtcMs = Date.UTC(2026, 7, 30);
-    const contribution = createEmptyWorkspaceAgentOpsDailyRecord({
-      workspaceId: seeded.workspaceId,
-      dayStartUtcMs,
-    });
-    for (const field of AGENT_OPS_HOURLY_FIELDS) contribution[field][12] = 1;
-    for (let source = 0; source < 400; source++) {
-      await t.run((ctx) =>
-        syncWorkspaceAgentOpsReportingAggregate(ctx, {
-          sourceKey: `reporting-byte-budget-source-${source}`,
-          add: [
-            { workspaceId: seeded.workspaceId, dayStartUtcMs, contribution },
-          ],
-        })
-      );
-    }
-    const loadedOps = await owner.query(api.agentOps.getAgentOpsDashboard, {
-      ...monthly,
-      tab: "overview",
-    });
-    expect(loadedOps.discovery.stats.keywordsCreated.value).toBe(401);
-    expect(loadedOps.overview.metrics.memoriesLearned.value).toBe(400);
-    expect(
-      loadedOps.overview.selfImprovementTrend.reduce(
-        (sum, row) => sum + row.memoriesLearned,
-        0
-      )
-    ).toBe(400);
-  }, 60_000);
+  });
 
   test("rebuilds stale analytics before the Aggregate migration", async () => {
     vi.useFakeTimers();
