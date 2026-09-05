@@ -3,7 +3,8 @@
   "installCommand": "corepack install && corepack pnpm install --frozen-lockfile",
   "git": {
     "deploymentEnabled": {
-      "codex/discovery-learning-completion": false
+      "codex/discovery-learning-completion": false,
+      "codex/instrumentation-runtime-fix": false
     }
   }
 }
