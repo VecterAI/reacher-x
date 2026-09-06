@@ -1,3 +1,4 @@
+import { getWorkspaceIcpRefreshFingerprint } from "./lib/workspaceIcpSignalsCore";
 import {
   getLearningTargetingFingerprint,
   isCurrentTargetingLearning,
@@ -1181,12 +1182,23 @@ export const deleteWorkspaceKeywordsBatchInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
     limit: v.number(),
+    expectedTargetingFingerprint: v.optional(v.string()),
   },
   returns: v.object({
     deleted: v.number(),
     hasMore: v.boolean(),
   }),
   handler: async (ctx, args) => {
+    if (args.expectedTargetingFingerprint !== undefined) {
+      const workspace = await ctx.db.get(args.workspaceId);
+      if (
+        !workspace ||
+        getWorkspaceIcpRefreshFingerprint(workspace) !==
+          args.expectedTargetingFingerprint
+      ) {
+        return { deleted: 0, hasMore: false };
+      }
+    }
     const limit = Math.max(1, Math.min(Math.floor(args.limit), 500));
     const keywords = await ctx.db
       .query("keywords")

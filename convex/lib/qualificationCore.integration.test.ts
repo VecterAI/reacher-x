@@ -36,6 +36,7 @@ const spec: WorkspaceTargetingSpec = {
 const text = "I use the product daily. No service offers, please.";
 const candidateId = "social:twitter:123";
 const params = {
+  routing: "reasoning" as const,
   platform: "twitter" as const,
   evidencePosts: [
     {
@@ -188,5 +189,95 @@ describe("evidence-backed qualification verification", () => {
       "Verifier unavailable"
     );
     expect(robustGenerateObject).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("direct strong qualification and profile evidence", () => {
+  test("default uses one strong evaluation even for an immediate negative", async () => {
+    vi.mocked(robustGenerateObject).mockResolvedValueOnce(
+      response("not_matched")
+    );
+    await qualifyProspectCore({ ...params, routing: undefined });
+    expect(robustGenerateObject).toHaveBeenCalledOnce();
+    expect(vi.mocked(robustGenerateObject).mock.calls[0][0]).toMatchObject({
+      routing: "onboarding",
+      maxOutputTokens: 16_384,
+      nativeStructuredOutput: false,
+    });
+  });
+  test.each(["profile", "either", "activity"] as const)(
+    "profile evidence respects %s criterion requirements",
+    async (evidence) => {
+      const id = "profile:linkedin:ACo123";
+      const resultObject = response().object as Record<string, unknown>;
+      vi.mocked(robustGenerateObject).mockResolvedValueOnce({
+        object: {
+          ...resultObject,
+          criterionResults: [
+            {
+              criterionId: "usage",
+              verdict: "matched",
+              confidence: 1,
+              rationale: "Records software tutorials as an instructor",
+              candidateIds: [id],
+            },
+          ],
+          evidenceDecisions: [
+            {
+              candidateId: id,
+              supportsQualification: true,
+              supportingQuote: "I record software tutorials.",
+            },
+          ],
+          reasoning:
+            "Creates software tutorials as an instructor, a practical screen-recording workflow.",
+        },
+      } as Awaited<ReturnType<typeof robustGenerateObject>>);
+      const result = await qualifyProspectCore({
+        ...params,
+        routing: undefined,
+        platform: "linkedin",
+        evidencePosts: [],
+        profileData: { urn: "ACo123" },
+        profileEvidence: {
+          authorId: "ACo123",
+          url: "https://www.linkedin.com/in/educator",
+          text: "I record software tutorials.",
+        },
+        targetingSpec: {
+          ...spec,
+          criteria: spec.criteria.map((c) => ({ ...c, evidence })),
+        },
+      });
+      expect(result.qualificationVerification.candidateSourceCount).toBe(1);
+      expect(result.qualificationSources[0].evidenceKind).toBe("profile");
+      expect(result.scoreBreakdown.recency).toBe(0);
+      expect(result.criterionResults[0].verdict).toBe(
+        evidence === "activity" ? "unknown" : "matched"
+      );
+      // Existing formula rewards either/activity intent; profile-only intent does not earn those points.
+      expect(result.qualified).toBe(evidence === "either");
+      if (evidence !== "activity") expect(result.score).toBeGreaterThan(0);
+      expect(result.matchReasoning).not.toContain("usage");
+    }
+  );
+  test("invented or malformed profile evidence cannot bypass proof validation", async () => {
+    for (const url of ["not-a-url", "https://evil.example/in/educator"]) {
+      const result = await qualifyProspectCore({
+        ...params,
+        routing: undefined,
+        platform: "linkedin",
+        evidencePosts: [],
+        profileData: { urn: "ACo123" },
+        profileEvidence: {
+          authorId: "ACo123",
+          url,
+          text: "I record software tutorials.",
+        },
+      });
+      expect(result.qualified).toBe(false);
+      expect(result.evidenceCount).toBe(0);
+    }
+    expect(robustGenerateObject).not.toHaveBeenCalled();
   });
 });

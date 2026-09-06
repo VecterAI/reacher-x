@@ -44,6 +44,9 @@ import type { WorkspaceTargetingSpec } from "./targetingSpecCore";
 export const QUALIFICATION_THRESHOLD = SHARED_QUALIFICATION_THRESHOLD;
 export const MAX_EVIDENCE_POSTS = 20;
 export const MAX_KEYWORDS_TO_SEARCH = 10;
+// Bound the small structured verdict instead of inheriting a provider's
+// maximum completion reservation (65,536 tokens on the Sol route).
+export const MAX_QUALIFICATION_OUTPUT_TOKENS = 16_384;
 
 const qualificationLogger = logger.withScope("QualificationCore");
 
@@ -84,11 +87,16 @@ const llmQualificationSchema = z.object({
         verdict: z.enum(["matched", "partial", "not_matched", "unknown"]),
         confidence: z.number().min(0).max(1),
         rationale: z.string().max(1_000),
-        candidateIds: z.array(z.string().max(120)).max(MAX_EVIDENCE_POSTS),
+        candidateIds: z.array(z.string().max(120)).max(MAX_EVIDENCE_POSTS + 1),
       })
     )
     .max(12),
-  reasoning: z.string().max(2_000),
+  reasoning: z
+    .string()
+    .max(600)
+    .describe(
+      "A concise user-facing match explanation in 1-3 sentences: describe the actual relevant work or activity and why it is useful for this workspace, with any material uncertainty. No internal rubric IDs, chain of thought, scores, or generic biography. Do not invent intent. Use plain text; any source URL must come verbatim from supplied evidence."
+    ),
   isLikelyBot: z.boolean(),
   botFlags: z.array(z.string().max(240)).max(20),
   evidenceDecisions: z
@@ -99,7 +107,7 @@ const llmQualificationSchema = z.object({
         supportingQuote: z.string().max(1_000),
       })
     )
-    .max(MAX_EVIDENCE_POSTS),
+    .max(MAX_EVIDENCE_POSTS + 1),
 });
 
 export interface AuthenticityResult {
@@ -124,6 +132,8 @@ export interface QualificationResult {
   qualificationVerification: QualificationVerification;
   authenticity: AuthenticityResult;
   reasoning: string;
+  /** Concise display explanation, without diagnostic gate IDs. */
+  matchReasoning?: string;
   qualifiedAt?: number;
 }
 
@@ -211,6 +221,7 @@ function getNewestEvidenceAgeDays(args: {
 
 function buildAuthenticityResult(args: {
   profileData: Record<string, unknown>;
+  profileEvidence?: { url: string; authorId: string; text: string };
   isLikelyBot: boolean;
   flags: string[];
   now: number;
@@ -243,8 +254,10 @@ export interface QualificationCoreParams {
   discoveryQueries: string[];
   totalKeywords: number;
   profileData: Record<string, unknown>;
+  profileEvidence?: { url: string; authorId: string; text: string };
   targetingSpec: WorkspaceTargetingSpec;
   icpDescription?: string;
+  syntheticTargetingExamples?: string;
   icpPainPoints?: string[];
   useCaseKey?: WorkspaceUseCaseKey;
   relevantMemories?: string[];
@@ -262,10 +275,12 @@ export async function qualifyProspectCore(
     platform,
     evidencePosts,
     externalArticles,
+    profileEvidence,
     discoveryQueries,
     profileData,
     targetingSpec,
     icpDescription,
+    syntheticTargetingExamples,
     icpPainPoints,
     useCaseKey,
     relevantMemories,
@@ -273,7 +288,7 @@ export async function qualifyProspectCore(
     complianceInstructions,
     similarQualifiedCases,
     similarDisqualifiedCases,
-    routing = "reasoning",
+    routing = "onboarding",
   } = params;
   const now = getCurrentUTCTimestamp();
   const candidates = prepareQualificationCandidates({
@@ -283,6 +298,34 @@ export async function qualifyProspectCore(
     discoveryQueries,
     externalArticles,
   });
+
+  if (
+    profileEvidence &&
+    platform === "linkedin" &&
+    profileEvidence.text.trim()
+  ) {
+    const url = URL.parse(profileEvidence.url);
+    if (
+      url &&
+      url.protocol === "https:" &&
+      url.hostname === "www.linkedin.com" &&
+      url.pathname.startsWith("/in/") &&
+      profileData.urn === profileEvidence.authorId
+    ) {
+      candidates.push({
+        candidateId: `profile:linkedin:${profileEvidence.authorId}`,
+        sourceId: `profile:${profileEvidence.authorId}`,
+        sourceUrl: profileEvidence.url,
+        authorId: profileEvidence.authorId,
+        text: profileEvidence.text,
+        platform,
+        evidenceKind: "profile",
+        contentType: "profile",
+        discoveryQueries,
+        sourcePost: profileData,
+      });
+    }
+  }
 
   if (candidates.length === 0) {
     return {
@@ -335,6 +378,8 @@ export async function qualifyProspectCore(
   const prompt = `## ICP (Ideal Customer Profile)
 ${icpDescription || "No description provided - use general B2B prospect criteria"}
 
+${syntheticTargetingExamples || ""}
+
 ## Authoritative Workspace Targeting Specification
 \`\`\`json
 ${JSON.stringify(targetingSpec, null, 2)}
@@ -359,6 +404,8 @@ Set supportsQualification=true only when that source's own persisted text suppor
 When true, supportingQuote must be an exact verbatim substring of Persisted text.
 When false, supportingQuote must be an empty string.
 
+Profile candidates describe responsibilities, not dated activity. They may support evidence=profile/either criteria, never activity-only criteria. Do not infer recency, intent, or responsibilities from a generic job title alone.
+
 First complete goalAssessment: separate factual audience matches from usefulness for the user's intended contact. Explicit refusal of the offered service can contradict that goal even if the author matches every audience attribute. Evaluate the whole text, including stylized Unicode and non-English text. Record the exact conflicting quote and candidate ID. Missing proof that someone wants the service is merely unknown, NOT a contradiction. Missing preferred geography or format is NOT a goal contradiction. Do not invent universal exclusions for professions, employers, or satisfied product users.
 
 Return exactly one criterionResults entry for every targeting criterion ID.
@@ -369,6 +416,8 @@ Return exactly one criterionResults entry for every targeting criterion ID.
 - unknown means the available data cannot determine it.
 - For an exclusion criterion, matched means the prospect exhibits the excluded trait and must be rejected. not_matched means the prospect does not exhibit that trait. Never mark an exclusion matched merely because the prospect correctly passes the exclusion.
 - candidateIds must contain only exact Candidate IDs above that support the criterion. Profile-only criteria may have an empty candidateIds array.
+- Evaluate semantic meaning, not exact keyword presence or exact job-title spelling. A person creating instructional videos can fit an educator/course-creator audience without calling themselves an educator. A relevant responsibility can establish practical use when evidence=either; do not require a literal tool name, complaint, or buying announcement unless the user asks for it. A generic profession by itself is not proof of a specific activity.
+- Distinguish the actual workflow from adjacent media or tools. For example, filming, AI-generated video, animation, or visual-effects production alone does not establish a need to record a software screen. Look for demonstrations, walkthroughs, instructional work, or a concrete communication responsibility; do not invent those activities from software use alone. A tutorial about an online workflow can establish this use without the literal words "screen recording".
 - Interpret every criterion from the workspace specification and original description. Do not apply a fixed use-case rubric or keyword list.
 - When a criterion requires a relationship or behavior, require evidence of that specific relationship or behavior; a generic entity mention alone is not proof.
 - Read the ENTIRE source before deciding. Resolve negation, hypothetical/future plans, quoted third parties, and explicit counterevidence in any language. A request to join a future talent pool is not an active opening; a question addressed to product users is not the author's own usage. Explain conflicting evidence rather than selecting a convenient fragment.
@@ -409,6 +458,7 @@ Evaluate this prospect against the ICP.`;
           ? `${prompt}\n\nThe previous candidate violated workspace policy. Regenerate the complete object with this repair: ${repairInstruction}`
           : prompt,
         routing,
+        maxOutputTokens: MAX_QUALIFICATION_OUTPUT_TOKENS,
         // The onboarding route uses the established JSON + schema validation
         // path: its configured endpoints do not accept native structured output.
         nativeStructuredOutput: routing !== "onboarding",
@@ -444,6 +494,14 @@ Evaluate this prospect against the ICP.`;
         sourceIds: Array.from(
           new Set(
             result.candidateIds
+              .filter(
+                (candidateId) =>
+                  targetingSpec.criteria.find(
+                    (c) => c.id === result.criterionId
+                  )?.evidence !== "activity" ||
+                  candidates.find((c) => c.candidateId === candidateId)
+                    ?.evidenceKind !== "profile"
+              )
               .map((candidateId) => candidateSourceIdById.get(candidateId))
               .filter(
                 (sourceId): sourceId is string =>
@@ -525,6 +583,7 @@ Evaluate this prospect against the ICP.`;
         flags: object.botFlags,
         now,
       }),
+      matchReasoning: object.reasoning,
       reasoning: goalConflict
         ? `${object.reasoning} Evidence contradicts the user's contact goal: ${object.goalAssessment.rationale} Quote: ${object.goalAssessment.conflictingQuote}`
         : targetingScore.hardFailureCriterionIds.length > 0

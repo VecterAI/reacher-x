@@ -1,529 +1,74 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useStore } from "@nanostores/react";
+import { useCallback, useState } from "react";
 import { useAction, useMutation } from "convex/react";
 import { toast } from "sonner";
-import type { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
-import type { SetupPreviewProfilePanelTarget } from "@/features/agent/lib/setupPreviewProfileData";
-import type { SetupInputMode } from "@/features/agent/lib/setupOnboarding";
-import { LinkedInProfilePanel } from "@/features/prospects";
-import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
-import { TwitterProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
-import { PageContent, PageHeader } from "@/features/webapp/ui/components";
-import {
-  useActiveUseCaseLabels,
-  useQueryWithStatus,
-  useSetupThreadDraft,
-  useViewerUserRecord,
-  useWorkspace,
-} from "@/shared/hooks";
-import {
-  $setupUseCaseDraftKey,
-  setSetupUseCaseDraftKey,
-} from "@/shared/stores/setupUseCaseDraft";
-import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
-import { ScrollArea } from "@/shared/ui/components/ScrollArea";
+import { useSetupThreadDraft } from "@/shared/hooks";
+import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { Progress } from "@/shared/ui/components/Progress";
-import { Card, CardContent } from "@/shared/ui/components/Card";
+import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
-import { cn } from "@/shared/lib/utils";
-import { DESKTOP_PANEL_BORDER_CLASS_NAME } from "@/features/webapp/ui/components/page/PageLayout";
-import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
+import {
+  PageHeader,
+  DESKTOP_PANEL_BORDER_CLASS_NAME,
+} from "@/features/webapp/ui/components";
 import { ConnectionsStep } from "./onboarding/ConnectionsStep";
 import { PlanStep } from "./onboarding/PlanStep";
-import { PreferenceStep } from "./onboarding/PreferenceStep";
-import { UseCaseStep } from "./onboarding/UseCaseStep";
-import { WorkspaceInputStep } from "./onboarding/WorkspaceInputStep";
-import { SETUP_PANEL_STEP_TITLES } from "@/features/agent/lib/setupOnboardingStepTitles";
-
-const FALLBACK_VISIBLE_STEPS = [
-  { id: "input", label: "Audience", stepNumber: 1 },
-  { id: "connections", label: "Connections", stepNumber: 2 },
-  { id: "plan", label: "Plan", stepNumber: 3 },
-] as const;
-
-type VisibleStepRecord = {
-  id: string;
-  label: string;
-  stepNumber: number;
-};
-
-type PanelStepId =
-  | (typeof FALLBACK_VISIBLE_STEPS)[number]["id"]
-  | "use_case"
-  | "preference";
-type PreviewSocialPanel =
-  | { type: "twitter"; prospectId: Id<"prospects">; username: string }
-  | { type: "linkedin"; prospectId: Id<"prospects"> };
-
-const STEP_TITLES = SETUP_PANEL_STEP_TITLES;
-
-interface AgentOnboardingPanelProps {
-  className?: string;
-  threadId?: string | null;
-  /** Close panel → return to chat (chat-first setup). */
-  onClose?: () => void;
-}
+import { SetupExampleProfiles } from "./onboarding/SetupExampleProfiles";
 
 export function AgentOnboardingPanel({
   className,
   threadId,
   onClose,
-}: AgentOnboardingPanelProps) {
-  const router = useRouter();
-
-  const openWorkspaceHome = useCallback(() => {
-    setPreferredShellContext("workspace");
-    router.push("/");
-  }, [router]);
-  const optimisticUseCaseKey = useStore($setupUseCaseDraftKey);
-  const { workspace } = useWorkspace();
-  const { currentUser, isProvisioning: isViewerProvisioning } =
-    useViewerUserRecord();
-  const { openProfile, closeProfile } = useProfile();
-  const { activeUseCase, activeUseCaseKey } = useActiveUseCaseLabels();
-  const { setupDraft: setupSession, isLoading: isSetupDraftLoading } =
-    useSetupThreadDraft(threadId);
-  const selectSetupSessionUseCase = useMutation(
-    api.setupSessions.selectSetupSessionUseCase
-  );
-  const advanceSetupSessionFromUseCaseStep = useMutation(
-    api.setupSessions.advanceSetupSessionFromUseCaseStep
-  );
-  const submitSetupInput = useMutation(api.setupSessions.submitSetupInput);
-  const approveSetupGeneration = useMutation(
-    api.setupSessions.approveSetupGeneration
-  );
-  const confirmSetupIcps = useMutation(api.setupSessions.confirmSetupIcps);
-  const selectSetupPreference = useMutation(
-    api.setupSessions.selectSetupPreference
-  );
-  const startCheckoutFlow = useAction(api.billing.startCheckoutFlow);
-  const sessionId = setupSession?.sessionId ?? null;
-  const visibleSteps: VisibleStepRecord[] = useMemo(
-    () => setupSession?.visibleSteps ?? [...FALLBACK_VISIBLE_STEPS],
-    [setupSession?.visibleSteps]
-  );
-  const visibleStepIds = useMemo(
-    () => visibleSteps.map((step: VisibleStepRecord) => step.id as PanelStepId),
-    [visibleSteps]
-  );
-  const canonicalStep = (setupSession?.currentStepId ?? "input") as PanelStepId;
-  const [stepOverride, setStepOverride] = useState<PanelStepId | null>(null);
-  const [previewSocialPanel, setPreviewSocialPanel] =
-    useState<PreviewSocialPanel | null>(null);
-  const step =
-    stepOverride && visibleStepIds.includes(stepOverride)
-      ? stepOverride
-      : canonicalStep;
-  const [inputMode, setInputMode] = useState<SetupInputMode>("manual");
-  const [inputValue, setInputValue] = useState("");
-  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
-  const [isSavingUseCase, setIsSavingUseCase] = useState(false);
-  const [isApprovingPreview, setIsApprovingPreview] = useState(false);
-  const [isSubmittingInput, setIsSubmittingInput] = useState(false);
+  approvalDisabled = false,
+}: {
+  approvalDisabled?: boolean;
+  className?: string;
+  threadId?: string | null;
+  onClose?: () => void;
+}) {
+  const { setupDraft: session, isLoading } = useSetupThreadDraft(threadId);
+  const approve = useMutation(api.setupSessions.approveSetupGeneration);
+  const startCheckout = useAction(api.billing.startCheckoutFlow);
+  const [isApproving, setIsApproving] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
-  const [isCompletingPreferences, setIsCompletingPreferences] = useState(false);
-  const [fitScoreRange, setFitScoreRange] = useState<[number, number]>([
-    70, 100,
-  ]);
-
-  const pendingPreSessionUseCaseKeyRef = useRef<typeof activeUseCaseKey | null>(
-    null
-  );
-  const approvingPreviewRef = useRef(false);
-  const inFlightUseCaseSyncKeyRef = useRef<typeof activeUseCaseKey | null>(
-    null
-  );
-  const previousCanonicalStepRef = useRef(canonicalStep);
-
-  const isThreadReady = Boolean(threadId);
-  const stepNumber =
-    visibleSteps.find((candidate: VisibleStepRecord) => candidate.id === step)
-      ?.stepNumber ?? 1;
-  const stepTotal = setupSession?.totalSteps ?? visibleSteps.length;
-  const previousVisibleStep =
-    stepNumber > 1
-      ? ((visibleSteps[stepNumber - 2]?.id as PanelStepId | undefined) ?? null)
-      : null;
-  const progressValue = stepTotal > 0 ? (stepNumber / stepTotal) * 100 : 0;
-  const previewSummariesQuery = useQueryWithStatus(
-    api.setupSessions.getSetupPreviewSummaries,
-    currentUser
-      ? sessionId
-        ? {
-            sessionId,
-          }
-        : threadId
-          ? {
-              threadId,
-            }
-          : "skip"
-      : "skip"
-  );
-  const previewSummaries = previewSummariesQuery.data ?? [];
-  useEffect(() => {
-    if (stepOverride && !visibleStepIds.includes(stepOverride)) {
-      setStepOverride(null);
-    }
-  }, [stepOverride, visibleStepIds]);
-
-  useEffect(() => {
-    if (stepOverride && canonicalStep !== previousCanonicalStepRef.current) {
-      setStepOverride(null);
-    }
-    previousCanonicalStepRef.current = canonicalStep;
-  }, [canonicalStep, stepOverride]);
-
-  useEffect(() => {
-    setFitScoreRange([
-      workspace?.fitScoreMin ?? 70,
-      workspace?.fitScoreMax ?? 100,
-    ]);
-  }, [workspace?.fitScoreMax, workspace?.fitScoreMin]);
-
-  // Legacy sessions still on awaiting_preferences: auto-finish with fit 70–100.
-  const legacyPreferencesFinalizedRef = useRef(false);
-  useEffect(() => {
-    if (!sessionId || setupSession?.status !== "awaiting_preferences") {
-      legacyPreferencesFinalizedRef.current = false;
-      return;
-    }
-    if (legacyPreferencesFinalizedRef.current || isCompletingPreferences) {
-      return;
-    }
-    legacyPreferencesFinalizedRef.current = true;
-    setIsCompletingPreferences(true);
-    void selectSetupPreference({
-      sessionId,
-      fitScoreMin: 70,
-      fitScoreMax: 100,
-    })
-      .then(() => {
-        toast.success("Setup complete");
-        openWorkspaceHome();
-      })
-      .catch((error: unknown) => {
-        legacyPreferencesFinalizedRef.current = false;
-        toast.error("Could not finish setup", {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
-        });
-      })
-      .finally(() => {
-        setIsCompletingPreferences(false);
+  const labels = getWorkspaceUseCase(session?.useCaseKey);
+  const step = session?.currentStepId ?? "input";
+  const review = session?.status === "awaiting_icp_confirmation";
+  const handleApprove = useCallback(async () => {
+    if (!session || isApproving || approvalDisabled) return;
+    setIsApproving(true);
+    setApprovalError(null);
+    try {
+      await approve({
+        sessionId: session.sessionId,
+        generationRevision: session.generationRevision,
       });
-  }, [
-    isCompletingPreferences,
-    openWorkspaceHome,
-    selectSetupPreference,
-    sessionId,
-    setupSession?.status,
-  ]);
-
-  useEffect(() => {
-    const setupSourceUrl = setupSession?.sourceUrl ?? null;
-    const setupSeedDescription = setupSession?.seedDescription ?? null;
-    const setupInputMode = setupSession?.inputMode ?? null;
-
-    if (setupInputMode === "url" && setupSourceUrl && !sourceUrl) {
-      setSourceUrl(setupSourceUrl);
-      setInputMode("url");
-    }
-
-    if (setupSeedDescription && inputValue.trim().length === 0) {
-      setInputValue(setupSeedDescription);
-      if (setupInputMode === "manual" || !setupSourceUrl) {
-        setInputMode("manual");
-      }
-    }
-
-    if (setupInputMode === "manual" && sourceUrl) {
-      setSourceUrl(null);
-    }
-  }, [
-    setupSession?.inputMode,
-    setupSession?.seedDescription,
-    setupSession?.sourceUrl,
-    inputValue,
-    sourceUrl,
-  ]);
-
-  useEffect(() => {
-    if (
-      setupSession?.status !== "generating_profiles" &&
-      setupSession?.status !== "provisioning_preview_workspace" &&
-      setupSession?.status !== "discovering_preview_prospects" &&
-      setupSession?.status !== "preview_search_in_progress"
-    ) {
-      setIsSubmittingInput(false);
-    }
-  }, [setupSession?.status]);
-
-  useEffect(() => {
-    if (
-      setupSession?.errorMessage &&
-      setupSession.status === "awaiting_input"
-    ) {
-      setIsSubmittingInput(false);
-    }
-  }, [setupSession?.errorMessage, setupSession?.status]);
-
-  useEffect(() => {
-    if (
-      previewSocialPanel &&
-      (step !== "input" ||
-        setupSession?.inputPhase !== "awaiting_preview_approval")
-    ) {
-      closeProfile();
-      setPreviewSocialPanel(null);
-    }
-  }, [closeProfile, previewSocialPanel, setupSession?.inputPhase, step]);
-
-  const handleClosePreviewProfile = useCallback(() => {
-    closeProfile();
-    setPreviewSocialPanel(null);
-  }, [closeProfile]);
-
-  const handleOpenPreviewProfile = useCallback(
-    (target: SetupPreviewProfilePanelTarget) => {
-      closeProfile();
-      setPreviewSocialPanel(target);
-      if (target.type === "twitter") {
-        void openProfile({ username: target.username });
-      }
-    },
-    [closeProfile, openProfile]
-  );
-
-  const syncSetupUseCase = useCallback(
-    async (
-      nextUseCaseKey: typeof activeUseCaseKey,
-      showErrorToast: boolean
-    ) => {
-      if (!sessionId) {
-        return;
-      }
-
-      setIsSavingUseCase(true);
-      try {
-        await selectSetupSessionUseCase({
-          sessionId,
-          useCaseKey: nextUseCaseKey,
-        });
-      } catch (error) {
-        if (showErrorToast) {
-          toast.error("Could not update workspace use case", {
-            description:
-              error instanceof Error ? error.message : "Please try again.",
-          });
-        }
-        throw error;
-      } finally {
-        setIsSavingUseCase(false);
-      }
-    },
-    [selectSetupSessionUseCase, sessionId]
-  );
-
-  useEffect(() => {
-    if (
-      inFlightUseCaseSyncKeyRef.current &&
-      setupSession?.useCaseKey === inFlightUseCaseSyncKeyRef.current
-    ) {
-      inFlightUseCaseSyncKeyRef.current = null;
-    }
-  }, [setupSession?.useCaseKey]);
-
-  useEffect(() => {
-    if (!sessionId || !optimisticUseCaseKey) {
-      return;
-    }
-
-    if (setupSession?.useCaseKey === optimisticUseCaseKey) {
-      pendingPreSessionUseCaseKeyRef.current = null;
-      return;
-    }
-
-    if (inFlightUseCaseSyncKeyRef.current === optimisticUseCaseKey) {
-      return;
-    }
-
-    if (pendingPreSessionUseCaseKeyRef.current !== optimisticUseCaseKey) {
-      return;
-    }
-
-    inFlightUseCaseSyncKeyRef.current = optimisticUseCaseKey;
-    pendingPreSessionUseCaseKeyRef.current = null;
-
-    void syncSetupUseCase(optimisticUseCaseKey, false).catch((error) => {
-      inFlightUseCaseSyncKeyRef.current = null;
-      setSetupUseCaseDraftKey(
-        setupSession?.useCaseKey ?? workspace?.useCaseKey ?? null
+    } catch {
+      setApprovalError(
+        "Could not continue. Wait for Agent to finish, then try again."
       );
-      toast.error("Could not sync the selected use case", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    });
-  }, [
-    optimisticUseCaseKey,
-    setupSession?.useCaseKey,
-    sessionId,
-    syncSetupUseCase,
-    workspace?.useCaseKey,
-  ]);
-
-  const handleUseCaseStepHeaderBack = useCallback(() => {
-    // First panel step: no upstream step to return to; control stays visible but disabled.
-  }, []);
-
-  const handleContinueFromUseCaseStep = useCallback(async () => {
-    if (sessionId) {
-      try {
-        await advanceSetupSessionFromUseCaseStep({ sessionId });
-      } catch (error) {
-        toast.error("Could not continue", {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
-        });
-        return;
-      }
-    }
-    setStepOverride("input");
-  }, [advanceSetupSessionFromUseCaseStep, sessionId]);
-
-  const handleSelectUseCase = useCallback(
-    (nextUseCaseKey: typeof activeUseCaseKey) => {
-      const previousUseCaseKey =
-        optimisticUseCaseKey ??
-        setupSession?.useCaseKey ??
-        workspace?.useCaseKey ??
-        null;
-
-      setSetupUseCaseDraftKey(nextUseCaseKey);
-      if (!sessionId) {
-        pendingPreSessionUseCaseKeyRef.current = nextUseCaseKey;
-        return;
-      }
-
-      pendingPreSessionUseCaseKeyRef.current = null;
-      inFlightUseCaseSyncKeyRef.current = nextUseCaseKey;
-
-      void syncSetupUseCase(nextUseCaseKey, true).catch(() => {
-        inFlightUseCaseSyncKeyRef.current = null;
-        setSetupUseCaseDraftKey(previousUseCaseKey);
-      });
-    },
-    [
-      optimisticUseCaseKey,
-      setupSession?.useCaseKey,
-      sessionId,
-      syncSetupUseCase,
-      workspace?.useCaseKey,
-    ]
-  );
-
-  const handleSubmitInput = useCallback(async () => {
-    if (!sessionId) {
-      toast.error("Setup draft is still loading", {
-        description: "Please wait a moment and try again.",
-      });
-      return;
-    }
-
-    const trimmedValue = inputValue.trim();
-    const pastedUrl = getUrlFromWholeValue(trimmedValue);
-    const resolvedInputMode: SetupInputMode =
-      pastedUrl || (inputMode === "url" && sourceUrl) ? "url" : "manual";
-    const detectedUrl =
-      resolvedInputMode === "url" ? (pastedUrl ?? sourceUrl) : null;
-    const hasValidInput = Boolean(detectedUrl) || trimmedValue.length > 0;
-
-    if (!hasValidInput) {
-      toast.error("Add workspace input first", {
-        description: "Paste a URL or provide a clear description to continue.",
-      });
-      return;
-    }
-
-    setIsSubmittingInput(true);
-    setInputMode(resolvedInputMode);
-
-    try {
-      await submitSetupInput({
-        sessionId,
-        inputMode: resolvedInputMode,
-        inputValue: trimmedValue,
-        sourceUrl: detectedUrl ?? undefined,
-      });
-    } catch (error) {
-      setIsSubmittingInput(false);
-      toast.error("Could not send setup input", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [inputMode, inputValue, sourceUrl, sessionId, submitSetupInput]);
-
-  const handleConfirmIdealProfiles = useCallback(async () => {
-    if (!sessionId) {
-      return;
-    }
-
-    try {
-      await confirmSetupIcps({ sessionId });
-    } catch (error) {
-      toast.error("Could not start preview search", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [confirmSetupIcps, sessionId]);
-
-  const handleApproveGeneratedDraft = useCallback(async () => {
-    if (!sessionId || approvingPreviewRef.current) {
-      return;
-    }
-
-    approvingPreviewRef.current = true;
-    setIsApprovingPreview(true);
-    try {
-      await approveSetupGeneration({ sessionId });
-    } catch (error) {
-      toast.error("Could not continue setup", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
     } finally {
-      approvingPreviewRef.current = false;
-      setIsApprovingPreview(false);
+      setIsApproving(false);
     }
-  }, [approveSetupGeneration, sessionId]);
-
-  const handlePlanChoice = useCallback(
+  }, [approve, isApproving, session, approvalDisabled]);
+  const handleCheckout = useCallback(
     async (
-      choice: "hobby" | "base" | "pro",
-      billingPeriod: "monthly" | "yearly" = "monthly"
+      tier: "hobby" | "base" | "pro",
+      billingPeriod: "monthly" | "yearly"
     ) => {
-      if (typeof window === "undefined") {
-        return;
-      }
-
+      if (isStartingCheckout) return;
       setIsStartingCheckout(true);
       try {
         const returnUrl = new URL(window.location.href);
-        returnUrl.searchParams.delete("code");
-        returnUrl.searchParams.delete("state");
-        returnUrl.searchParams.delete("error");
-        returnUrl.searchParams.delete("error_description");
-
-        const { url } = await startCheckoutFlow({
-          tier: choice,
+        for (const key of ["code", "state", "error", "error_description"])
+          returnUrl.searchParams.delete(key);
+        const { url } = await startCheckout({
+          tier,
           billingPeriod,
           source: "onboarding_plan",
           origin: returnUrl.origin,
@@ -540,343 +85,102 @@ export function AgentOnboardingPanel({
         setIsStartingCheckout(false);
       }
     },
-    [startCheckoutFlow, threadId]
+    [isStartingCheckout, startCheckout, threadId]
   );
 
-  const handleCompletePreferences = useCallback(async () => {
-    if (!sessionId) {
-      toast.error("Setup draft is still loading", {
-        description: "Please wait a moment and try again.",
-      });
-      return;
-    }
-
-    if (setupSession?.status === "ready") {
-      openWorkspaceHome();
-      return;
-    }
-
-    if (setupSession?.status !== "awaiting_preferences") {
-      toast.error("Preferences are already up to date", {
-        description:
-          "Setup has already moved past this step. Opening your workspace instead.",
-      });
-      openWorkspaceHome();
-      return;
-    }
-
-    setIsCompletingPreferences(true);
-    try {
-      await selectSetupPreference({
-        sessionId,
-        fitScoreMin: fitScoreRange[0],
-        fitScoreMax: fitScoreRange[1],
-      });
-      openWorkspaceHome();
-    } catch (error) {
-      toast.error("Could not finish setup", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    } finally {
-      setIsCompletingPreferences(false);
-    }
-  }, [
-    fitScoreRange,
-    openWorkspaceHome,
-    selectSetupPreference,
-    sessionId,
-    setupSession?.status,
-  ]);
-
-  const isBusy =
-    isSavingUseCase ||
-    isSubmittingInput ||
-    isStartingCheckout ||
-    isCompletingPreferences ||
-    setupSession?.status === "generating_profiles" ||
-    setupSession?.status === "provisioning_preview_workspace" ||
-    setupSession?.status === "discovering_preview_prospects" ||
-    setupSession?.status === "preview_search_in_progress";
-  if (previewSocialPanel) {
-    return (
-      <div
-        id="rx-onboarding-panel"
-        className={cn(
-          "bg-background flex h-full min-h-0 w-full max-w-lg flex-1 overflow-hidden md:min-w-0",
-          DESKTOP_PANEL_BORDER_CLASS_NAME,
-          className
-        )}
-      >
-        {previewSocialPanel.type === "twitter" ? (
-          <TwitterProfilePanel
-            prospectId={previewSocialPanel.prospectId}
-            onBackAction={handleClosePreviewProfile}
-            disableMobileDrawer
-            className="w-full max-w-none border-0"
-          />
-        ) : (
-          <LinkedInProfilePanel
-            prospectId={previewSocialPanel.prospectId}
-            onBack={handleClosePreviewProfile}
-            className="w-full max-w-none border-0"
-          />
-        )}
-      </div>
-    );
-  }
-
-  const renderStep = () => {
-    if (!isThreadReady && step !== "use_case" && step !== "connections") {
-      return (
-        <Card>
-          <CardContent className="p-4">
-            <AsciiSpinnerText text="Starting the setup thread..." />
-          </CardContent>
-        </Card>
-      );
-    }
-
-    switch (step) {
-      case "use_case":
-        return (
-          <UseCaseStep
-            activeUseCaseKey={activeUseCaseKey}
-            onSelectUseCase={handleSelectUseCase}
-          />
-        );
-      case "input":
-        return (
-          <WorkspaceInputStep
-            inputValue={inputValue}
-            isApprovingPreview={isApprovingPreview}
-            isSubmitting={isSubmittingInput}
-            profileLabelPlural={activeUseCase.profileLabelPlural}
-            sourceUrl={sourceUrl}
-            useCaseKey={activeUseCaseKey}
-            generatedProfiles={setupSession?.generatedProfiles ?? []}
-            inputPhase={setupSession?.inputPhase ?? "collecting_input"}
-            previewProspects={previewSummaries ?? []}
-            previewProgress={
-              setupSession?.previewProgress ?? {
-                discoveredCount: 0,
-                qualifiedCount: 0,
-                enrichedCount: 0,
-                selectedCount: 0,
-              }
-            }
-            previewDiscoveryStartedAt={
-              setupSession?.previewDiscoveryStartedAt ?? null
-            }
-            previewStatusUpdatedAt={setupSession?.statusUpdatedAt ?? null}
-            errorMessage={setupSession?.errorMessage ?? null}
-            onContinue={handleSubmitInput}
-            onConfirmIdealProfiles={handleConfirmIdealProfiles}
-            onApprovePreviewPeople={handleApproveGeneratedDraft}
-            onInputValueChange={setInputValue}
-            onInputModeChange={setInputMode}
-            onSourceUrlChange={setSourceUrl}
-            onOpenPreviewProfile={handleOpenPreviewProfile}
-            hidePromptComposer
-          />
-        );
-      case "connections":
-        return null;
-      case "plan":
-        return (
-          <PlanStep
-            onUpgradePaid={({ tier, billing }) =>
-              void handlePlanChoice(tier, billing)
-            }
-            isStartingCheckout={isStartingCheckout}
-            entityPlural={activeUseCase.entityPlural}
-          />
-        );
-      case "preference":
-        return (
-          <PreferenceStep
-            useCase={activeUseCase}
-            workspaceId={
-              setupSession?.targetWorkspaceId ?? workspace?._id ?? null
-            }
-            defaultRange={fitScoreRange}
-            onRangeChange={setFitScoreRange}
-          />
-        );
-      default:
-        return null;
-    }
-  };
-
+  const title =
+    step === "connections"
+      ? "Connect accounts"
+      : step === "plan"
+        ? "Choose a plan"
+        : `Example ${labels.entityPlural.toLowerCase()}`;
   return (
     <aside
       id="rx-onboarding-panel"
       className={cn(
-        "bg-background flex h-full min-h-0 w-full max-w-lg flex-1 overflow-hidden md:min-w-0",
+        "bg-background flex h-full min-h-0 w-full max-w-lg flex-col overflow-hidden",
         DESKTOP_PANEL_BORDER_CLASS_NAME,
-        step === "use_case" && "rounded-none",
         className
       )}
     >
-      <div className="flex h-full min-h-0 w-full flex-col">
-        <PageHeader
-          title={STEP_TITLES[step]}
-          titleSuffix={
-            <span className="text-muted-foreground font-mono text-sm">
-              {" "}
-              · {stepNumber}/{stepTotal}
-            </span>
-          }
-          backDisabled={!onClose}
-          className="rounded-none"
-          onBack={
-            onClose
-              ? () => onClose()
-              : previousVisibleStep
-                ? () => setStepOverride(previousVisibleStep)
-                : handleUseCaseStepHeaderBack
-          }
+      <PageHeader
+        title={title}
+        onBack={onClose}
+        titleSuffix={
+          <span className="text-muted-foreground">
+            · {session?.currentStepNumber ?? 1}/{session?.totalSteps ?? 3}
+          </span>
+        }
+      />
+      <Progress
+        value={
+          session ? (session.currentStepNumber / session.totalSteps) * 100 : 0
+        }
+        className="h-0.5 shrink-0 rounded-none"
+        indicatorClassName="bg-foreground rounded-none"
+      />
+      {!threadId || (!isLoading && !session) ? (
+        <p className="text-muted-foreground p-4 text-sm">
+          Setup draft is unavailable. Reopen setup from the workspace menu.
+        </p>
+      ) : isLoading || !session ? (
+        <div className="p-4">
+          <AsciiSpinnerText text="Loading setup..." />
+        </div>
+      ) : step === "connections" ? (
+        <ConnectionsStep
+          sessionId={session.sessionId}
+          onCompleteStep={() => {}}
         />
-        <Progress
-          aria-label={`Setup progress: step ${stepNumber} of ${stepTotal}`}
-          className="h-0.5 rounded-none border-0"
-          indicatorClassName="bg-foreground rounded-none"
-          value={progressValue}
-        />
-        {step === "input" ? (
-          <div className="min-h-0 flex-1">{renderStep()}</div>
-        ) : step === "connections" ? (
-          !isThreadReady ? (
-            <ScrollArea className="min-h-0 flex-1">
-              <PageContent className="space-y-4 px-4 py-4">
-                {isSetupDraftLoading || isViewerProvisioning ? (
-                  <Card>
-                    <CardContent className="p-4">
-                      <AsciiSpinnerText text="Starting onboarding..." />
-                    </CardContent>
-                  </Card>
-                ) : null}
-                <Card>
-                  <CardContent className="p-4">
-                    <AsciiSpinnerText text="Starting the setup thread..." />
-                  </CardContent>
-                </Card>
-              </PageContent>
-            </ScrollArea>
-          ) : (
-            <ConnectionsStep
-              sessionId={sessionId}
-              onCompleteStep={(status) => {
-                setStepOverride(null);
-                if (status === "ready") {
-                  openWorkspaceHome();
-                }
-              }}
-            />
-          )
-        ) : step === "preference" ? (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            <ScrollArea className="min-h-0 flex-1">
-              <PageContent className="space-y-4 px-4 py-4">
-                {!isThreadReady &&
-                (isSetupDraftLoading || isViewerProvisioning) ? (
-                  <Card>
-                    <CardContent className="p-4">
-                      <AsciiSpinnerText text="Starting onboarding..." />
-                    </CardContent>
-                  </Card>
-                ) : null}
-                {renderStep()}
-                {isBusy ? (
-                  <p className="text-muted-foreground text-sm">
-                    The setup assistant is working in the background. You can
-                    keep using the panel while the chat updates.
-                  </p>
-                ) : null}
-              </PageContent>
-            </ScrollArea>
-            <div className="bg-background shrink-0 border-t px-4 py-2">
-              <div className="flex w-full min-w-0 items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  className="shrink-0"
-                  disabled={
-                    !previousVisibleStep ||
-                    isCompletingPreferences ||
-                    setupSession?.status === "provisioning_preview_workspace" ||
-                    setupSession?.status === "discovering_preview_prospects" ||
-                    setupSession?.status === "preview_search_in_progress"
-                  }
-                  onClick={() => {
-                    if (previousVisibleStep) {
-                      setStepOverride(previousVisibleStep);
-                    }
-                  }}
-                >
-                  Back
-                </Button>
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                  <Button
-                    type="button"
-                    size="xs"
-                    disabled={
-                      isCompletingPreferences ||
-                      setupSession?.status ===
-                        "provisioning_preview_workspace" ||
-                      setupSession?.status ===
-                        "discovering_preview_prospects" ||
-                      setupSession?.status === "preview_search_in_progress" ||
-                      (setupSession?.status !== "awaiting_preferences" &&
-                        setupSession?.status !== "ready")
-                    }
-                    onClick={() => void handleCompletePreferences()}
-                  >
-                    {setupSession?.status === "ready"
-                      ? `Open ${activeUseCase.pageLabels.entities}`
-                      : `Show ${activeUseCase.pageLabels.entities}`}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
+      ) : (
+        <>
           <ScrollArea className="min-h-0 flex-1">
-            <PageContent className="space-y-4 px-4 py-4">
-              {!isThreadReady &&
-              (isSetupDraftLoading || isViewerProvisioning) ? (
-                <Card>
-                  <CardContent className="p-4">
-                    <AsciiSpinnerText text="Starting onboarding..." />
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {renderStep()}
-
-              {isBusy ? (
-                <p className="text-muted-foreground text-sm">
-                  The setup assistant is working in the background. You can keep
-                  using the panel while the chat updates.
+            {review ? (
+              <SetupExampleProfiles
+                profiles={session.generatedProfiles}
+                useCaseKey={session.useCaseKey}
+              />
+            ) : step === "plan" ? (
+              <div className="px-4 py-4">
+                <PlanStep
+                  entityPlural={labels.entityPlural}
+                  isStartingCheckout={isStartingCheckout}
+                  onUpgradePaid={({ tier, billing }) =>
+                    void handleCheckout(tier, billing)
+                  }
+                />
+              </div>
+            ) : (
+              <div className="text-muted-foreground p-4 text-sm">
+                {session.status === "generating_profiles" ? (
+                  <AsciiSpinnerText
+                    text={`Creating example ${labels.entityPlural.toLowerCase()}...`}
+                  />
+                ) : (
+                  "Tell Agent who you want to reach in the chat."
+                )}
+              </div>
+            )}
+          </ScrollArea>
+          {review ? (
+            <footer className="bg-background shrink-0 border-t px-4 py-2">
+              {approvalError ? (
+                <p role="alert" className="text-destructive mb-2 text-sm">
+                  {approvalError}
                 </p>
               ) : null}
-            </PageContent>
-          </ScrollArea>
-        )}
-        {step === "use_case" ? (
-          <div className="px-4 py-2">
-            <Button
-              size="xs"
-              className="w-full"
-              disabled={isSavingUseCase}
-              onClick={() => void handleContinueFromUseCaseStep()}
-            >
-              Continue
-            </Button>
-          </div>
-        ) : null}
-      </div>
+              <Button
+                size="xs"
+                className="w-full"
+                disabled={isApproving || approvalDisabled}
+                onClick={() => void handleApprove()}
+              >
+                {isApproving ? "Continuing..." : "Continue"}
+              </Button>
+            </footer>
+          ) : null}
+        </>
+      )}
     </aside>
   );
 }

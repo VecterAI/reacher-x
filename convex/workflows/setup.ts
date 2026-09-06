@@ -49,8 +49,6 @@ export const setupSessionWorkflow = workflowManager.define({
         case "draft":
         case "awaiting_input":
         case "awaiting_icp_confirmation":
-        case "awaiting_preview_confirmation":
-        case "preview_search_in_progress":
         case "awaiting_connections":
         case "awaiting_plan":
         case "awaiting_preferences": {
@@ -84,19 +82,15 @@ export const setupSessionWorkflow = workflowManager.define({
           break;
         }
 
-        case "provisioning_preview_workspace": {
-          await step.runAction(
-            internal.setupSessions.provisionDraftWorkspaceForPreviewInternal,
-            {
-              sessionId,
-            }
+        case "provisioning_preview_workspace":
+        case "discovering_preview_prospects":
+        case "awaiting_preview_confirmation":
+        case "preview_search_in_progress": {
+          await step.runMutation(
+            internal.setupSessions.upgradeLegacySetupInternal,
+            { sessionId }
           );
-          break;
-        }
-
-        case "discovering_preview_prospects": {
-          await step.awaitEvent({ name: stateChangedEventName });
-          break;
+          return { success: false, status: "upgraded" };
         }
 
         case "ready":

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { getLearningTargetingFingerprint } from "./lib/learningTargetingHelpers";
+import { getWorkspaceIcpRefreshFingerprint } from "./lib/workspaceIcpSignalsCore";
 import { WORKSPACE_REPORTING_AGGREGATE_VERSION } from "./lib/workspaceReportingAggregate";
 import { qualifyProspectCore } from "./lib/qualificationCore";
 import { buildLegacyWorkspaceTargetingSpec } from "./lib/targetingSpecCore";
@@ -241,7 +242,7 @@ describe("future-only rollout for an existing workspace", () => {
         workspaceId,
         userId,
         expectedTargetingFingerprint:
-          getLearningTargetingFingerprint(oldWorkspace),
+          getWorkspaceIcpRefreshFingerprint(oldWorkspace),
         name: oldWorkspace.name,
         rawUserDescription: description,
         improvedDescription: description,

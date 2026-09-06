@@ -25,9 +25,7 @@ import {
 } from "../lib/functionBuilders";
 import { discoveryStageValidator } from "../validators";
 import {
-  BATCH_LIMITS,
   buildDiscoveryBusinessContext,
-  buildPreviewTwitterRawGraphSeedQueries,
   checkProspectLimit,
   formatQualifiedProspectLimitReachedMessage,
   getProspectingRecoveryDelayMs,
@@ -122,7 +120,6 @@ type TwitterSearchResult = {
   graphSeedPostsFound: number;
 };
 
-const PREVIEW_GRAPH_SEED_LOOKBACK_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 const TWITTER_WORKFLOW_SEED_POST_LIMIT = 20;
 const TWITTER_PROSPECTING_DAY_MS = 24 * 60 * 60 * 1000;
 const TWITTER_SIMILAR_PROFILE_LIMITS = {
@@ -166,10 +163,10 @@ function createEmptyTwitterSearchResult(): TwitterSearchResult {
   };
 }
 
-function getPreviewGraphSeedSinceTimestampSeconds() {
-  return Math.floor(
-    (getCurrentUTCTimestamp() - PREVIEW_GRAPH_SEED_LOOKBACK_MS) / 1000
-  );
+function isRealProspectingCandidate(
+  summary: Pick<Doc<"prospectSummaries">, "origin" | "status">
+) {
+  return summary.origin !== "setup_preview" && summary.status !== "archived";
 }
 
 // ============================================================================
@@ -299,6 +296,34 @@ export const prospectingWorkflow = workflow.define({
       return {
         status: "error",
         reason: "Workspace setup incomplete",
+        shouldContinue: false,
+      };
+    }
+
+    // Check configuration before model calls or provider retry queues.
+    const configuration = await step.runQuery(
+      internal.workflows.prospecting.getDiscoveryConfigurationInternal,
+      {}
+    );
+    if (!configuration.configured) {
+      await step.runMutation(
+        internal.workspaces.setOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+          statusCode: "search_configuration_missing",
+          source: "search",
+        }
+      );
+      await step.runMutation(
+        internal.workflows.prospecting.updateWorkflowStatus,
+        {
+          workspaceId: args.workspaceId,
+          status: "stopped",
+        }
+      );
+      return {
+        status: "error",
+        reason: "Discovery service configuration missing",
         shouldContinue: false,
       };
     }
@@ -1986,280 +2011,6 @@ async function expandTwitterSimilarProfiles(args: {
   };
 }
 
-export const runPreviewDiscoveryBurstInternal = internalAction({
-  args: {
-    workspaceId: v.id("workspaces"),
-    sessionId: v.id("workspaceSetupSessions"),
-    previewRevision: v.number(),
-  },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{
-    prospectsFound: number;
-    twitterSaved: number;
-    linkedinSaved: number;
-    twitterQueryCount: number;
-    linkedinPostQueryCount: number;
-    linkedinPeopleQueryCount: number;
-  }> => {
-    const workspace = await ctx.runQuery(internal.workspaces.getById, {
-      workspaceId: args.workspaceId,
-    });
-
-    if (!workspace || !hasRequiredWorkspaceAgentData(workspace)) {
-      return {
-        prospectsFound: 0,
-        twitterSaved: 0,
-        linkedinSaved: 0,
-        twitterQueryCount: 0,
-        linkedinPostQueryCount: 0,
-        linkedinPeopleQueryCount: 0,
-      };
-    }
-
-    const allSyntheticPosts = workspace.icps.flatMap(
-      (icp: { syntheticPosts?: string[] }) => icp.syntheticPosts || []
-    );
-    if (allSyntheticPosts.length === 0) {
-      return {
-        prospectsFound: 0,
-        twitterSaved: 0,
-        linkedinSaved: 0,
-        twitterQueryCount: 0,
-        linkedinPostQueryCount: 0,
-        linkedinPeopleQueryCount: 0,
-      };
-    }
-
-    const keywordsResult = await ctx.runAction(
-      internal.agents.internal.generateProspectingKeywordsAction,
-      {
-        workspaceId: args.workspaceId,
-        syntheticPosts: allSyntheticPosts,
-        businessContext: buildDiscoveryBusinessContext(workspace),
-        useCaseKey: workspace.useCaseKey,
-        routing: "fast",
-      }
-    );
-    if (!keywordsResult.success || !keywordsResult.prospectingKeywords) {
-      throw new Error(
-        keywordsResult.error || "Failed to generate preview keywords"
-      );
-    }
-
-    const socialQueriesResult = await ctx.runAction(
-      internal.agents.internal.convertToSocialQueriesAction,
-      {
-        workspaceId: args.workspaceId,
-        keywords: keywordsResult.prospectingKeywords,
-        platforms: ["twitter"],
-        businessContext: buildDiscoveryBusinessContext(workspace),
-        useCaseKey: workspace.useCaseKey,
-      }
-    );
-    if (!socialQueriesResult.success || !socialQueriesResult.socialQueries) {
-      throw new Error(
-        socialQueriesResult.error || "Failed to generate preview queries"
-      );
-    }
-
-    const socialQueries = socialQueriesResult.socialQueries.slice(
-      0,
-      BATCH_LIMITS.socialQueriesPerCycle
-    );
-    const queryMetadata = resolveQueryMetadata(
-      socialQueries,
-      socialQueriesResult.queryMetadata
-    );
-
-    const noveltyScreening =
-      queryMetadata.length > 0
-        ? await ctx.runAction(
-            internal.memory.screenDiscoveryQueryCandidatesInternal,
-            {
-              workspaceId: args.workspaceId,
-              expectedTargetingFingerprint:
-                getLearningTargetingFingerprint(workspace),
-              candidates: queryMetadata.map((item: QueryMetadataRecord) => ({
-                rawValue: item.query,
-                sourceTheme: item.sourceKeyword,
-              })),
-            }
-          )
-        : { accepted: [] as Array<{ rawValue: string }> };
-
-    const acceptedQueries = noveltyScreening.accepted.map(
-      (candidate: { rawValue: string }) => candidate.rawValue
-    );
-    const acceptedQuerySet = new Set(
-      acceptedQueries.length > 0 ? acceptedQueries : socialQueries
-    );
-
-    const fallbackMetadata = queryMetadata.filter((item: QueryMetadataRecord) =>
-      acceptedQuerySet.has(item.query)
-    );
-    const twitterQueries = dedupeQueries([
-      ...(socialQueriesResult.queriesByPlatform?.twitter ?? []).filter(
-        (query: string) => acceptedQuerySet.has(query)
-      ),
-      ...fallbackMetadata
-        .filter((item: QueryMetadataRecord) =>
-          item.platformTargets.includes("twitter")
-        )
-        .map((item: QueryMetadataRecord) => item.query),
-    ]).slice(0, PREVIEW_BATCH_LIMITS.twitterSearchBatch);
-    const twitterSearchModeByQuery = new Map(
-      fallbackMetadata.map((item) => [
-        item.query.toLowerCase(),
-        item.twitterSearchMode ?? ("raw" as const),
-      ])
-    );
-    const partitionedTwitterQueries = partitionTwitterProspectingQueries(
-      twitterQueries.map((query) => ({
-        query,
-        searchMode: twitterSearchModeByQuery.get(query.toLowerCase()) ?? "raw",
-      }))
-    );
-    const twitterQueryKeys = new Set(
-      twitterQueries.map((query) => query.toLowerCase())
-    );
-    const twitterGraphSeedQueries = buildPreviewTwitterRawGraphSeedQueries(
-      workspace,
-      {
-        sinceTimestampSeconds: getPreviewGraphSeedSinceTimestampSeconds(),
-      }
-    )
-      .filter((query) => !twitterQueryKeys.has(query.toLowerCase()))
-      .slice(0, PREVIEW_BATCH_LIMITS.twitterGraphSeedSearchBatch);
-
-    const twitterResult = await ctx
-      .runAction(internal.workflows.prospecting.searchTwitterInternal, {
-        workspaceId: args.workspaceId,
-        exactQueries: partitionedTwitterQueries.exact,
-        rawQueries: partitionedTwitterQueries.raw,
-        graphSeedQueries: twitterGraphSeedQueries,
-        processingMode: "preview",
-        prospectOrigin: "setup_preview",
-        setupSessionId: args.sessionId,
-        setupRevision: args.previewRevision,
-      })
-      .catch((error) => {
-        prospectingWorkflowLogger.error(
-          "Preview Twitter search failed",
-          {
-            workspaceId: args.workspaceId,
-            workspaceName: workspace.name,
-            previewRevision: args.previewRevision,
-          },
-          error
-        );
-        return createEmptyTwitterSearchResult();
-      });
-
-    const similarExpansion =
-      twitterResult.posts.length > 0
-        ? await expandTwitterSimilarProfiles({
-            ctx,
-            workspace,
-            processingMode: "preview",
-            prospectOrigin: "setup_preview",
-            sessionId: args.sessionId,
-            previewRevision: args.previewRevision,
-            seedPosts: twitterResult.posts,
-            matchedQueriesByPostId: twitterResult.matchedQueriesByPostId,
-          }).catch((error) => {
-            prospectingWorkflowLogger.error(
-              "Preview similar-profile expansion failed",
-              {
-                workspaceId: String(args.workspaceId),
-                workspaceName: workspace.name,
-                previewRevision: args.previewRevision,
-              },
-              error
-            );
-            return createEmptyTwitterSimilarExpansionResult();
-          })
-        : createEmptyTwitterSimilarExpansionResult();
-
-    const prospectsFound = twitterResult.saved + similarExpansion.saved;
-    const recordedAt = getCurrentUTCTimestamp();
-    await ctx
-      .runMutation(internal.memory.recordMemoryWorkflowEventInternal, {
-        workspaceId: args.workspaceId,
-        eventType: "query_search_executed",
-        sourceType: "workflow_event",
-        sourceId: `setup-preview:${args.sessionId}:${args.previewRevision}:${recordedAt}`,
-        workflowName: "previewWorkflow",
-        payload: {
-          mode: "setup_preview",
-          sessionId: String(args.sessionId),
-          previewRevision: args.previewRevision,
-          generatedSocialQueries: socialQueries.length,
-          acceptedQueries: acceptedQueries.length,
-          twitterQueries,
-          twitterGraphSeedQueries,
-          twitterPrimarySearchMode:
-            partitionedTwitterQueries.exact.length > 0 &&
-            partitionedTwitterQueries.raw.length > 0
-              ? "mixed"
-              : partitionedTwitterQueries.exact.length > 0
-                ? "exact"
-                : "raw",
-          twitterExactFallbackQueries: twitterResult.exactFallbackQueries,
-          twitterGraphSeedSearchMode: "raw",
-          twitterQueryStats: twitterResult.queryStats,
-          twitterPrimaryQueryStats: twitterResult.primaryQueryStats,
-          twitterGraphSeedQueryStats: twitterResult.graphSeedQueryStats,
-          twitterPrimaryPostsFound: twitterResult.primaryPostsFound,
-          twitterGraphSeedPostsFound: twitterResult.graphSeedPostsFound,
-          twitterPostsFound: twitterResult.posts.length,
-          twitterSaved: twitterResult.saved,
-          similarProfilesSaved: similarExpansion.saved,
-          similarProfileStats: similarExpansion.similarStats,
-          similarProfileEvidenceStats: similarExpansion.evidenceStats,
-          prospectsFound,
-        },
-        eventKey: `setup-preview-search:${args.sessionId}:${args.previewRevision}:${recordedAt}`,
-      })
-      .catch((error) => {
-        prospectingWorkflowLogger.warn(
-          "Failed to record preview search debug event",
-          {
-            workspaceId: String(args.workspaceId),
-            workspaceName: workspace.name,
-            sessionId: String(args.sessionId),
-            previewRevision: args.previewRevision,
-          },
-          error
-        );
-      });
-
-    return {
-      prospectsFound,
-      twitterSaved: prospectsFound,
-      linkedinSaved: 0,
-      twitterQueryCount: twitterQueries.length + twitterGraphSeedQueries.length,
-      linkedinPostQueryCount: 0,
-      linkedinPeopleQueryCount: 0,
-    };
-  },
-});
-
-// Note: qualifyProspectsInternal REMOVED
-// Qualification now happens automatically per-prospect via streaming workflows
-// triggered immediately when prospects are saved (see workflows/qualification.ts)
-
-// ============================================================================
-// Workflow Scheduling (for continuous 24/7 operation)
-// ============================================================================
-
-function isRealProspectingCandidate(
-  summary: Pick<Doc<"prospectSummaries">, "origin" | "status">
-) {
-  return summary.origin !== "setup_preview" && summary.status !== "archived";
-}
-
 export const initializeProspectingBootstrapInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
@@ -2729,4 +2480,16 @@ export const handleWorkflowComplete = internalMutation({
       );
     }
   },
+});
+
+/** Report presence only; provider secrets never leave the backend. */
+export const getDiscoveryConfigurationInternal = internalQuery({
+  args: {},
+  returns: v.object({ configured: v.boolean() }),
+  handler: async () => ({
+    configured: Boolean(
+      process.env.SOCIALAPI_API_KEY?.trim() &&
+      process.env.LINKDAPI_API_KEY?.trim()
+    ),
+  }),
 });

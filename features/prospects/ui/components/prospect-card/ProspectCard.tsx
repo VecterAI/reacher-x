@@ -24,9 +24,27 @@ export type ProspectSurfaceMode =
   | "onboarding_preview"
   | "ui_preview";
 
+/** Display-only synthetic profile. Has no prospect ID, actions, links, or evidence. */
+export type SyntheticProspectCardRecord = {
+  synthetic: true;
+  displayName: string;
+  platform: "twitter" | "linkedin";
+  title: string;
+  briefIntro: string;
+  status?: never;
+  bioUrlEntities?: never;
+  prospectType?: "individual";
+  planGenerationStatus?: never;
+  qualificationStatus?: never;
+  qualificationScore?: never;
+  location?: never;
+};
+
 interface ProspectCardProps {
-  prospect: ProspectCardRecord;
+  prospect: ProspectCardRecord | SyntheticProspectCardRecord;
   highlightKeywords?: string[];
+  /** Label for a preview of a different use case. Defaults to the active workspace. */
+  entityLabel?: string;
   onClick?: () => void;
   className?: string;
   interactive?: boolean;
@@ -39,6 +57,7 @@ interface ProspectCardProps {
 export function ProspectCard({
   prospect,
   highlightKeywords,
+  entityLabel,
   onClick,
   className,
   interactive = true,
@@ -53,6 +72,8 @@ export function ProspectCard({
     ProspectCardRecord["status"] | null
   >(null);
 
+  const storedProspect = "synthetic" in prospect ? null : prospect;
+  const canInteract = Boolean(storedProspect) && interactive;
   const {
     avatarUrl,
     displayName,
@@ -60,16 +81,31 @@ export function ProspectCard({
     twitterUsername,
     verified,
     platform,
-  } = getProspectDisplayData(prospect);
-  const prospectId =
-    "prospectId" in prospect ? prospect.prospectId : prospect._id;
-  const financeDisplayValue =
-    "prospectId" in prospect
-      ? prospect.financeDisplayValue
-      : prospect.finance?.displayValue;
+  } = storedProspect
+    ? getProspectDisplayData(storedProspect)
+    : {
+        displayName: prospect.displayName ?? "",
+        platform: prospect.platform,
+        avatarUrl: undefined,
+        profileUrl: undefined,
+        twitterUsername: undefined,
+        verified: false,
+      };
+  const prospectId = storedProspect
+    ? "prospectId" in storedProspect
+      ? storedProspect.prospectId
+      : storedProspect._id
+    : undefined;
+  const financeDisplayValue = storedProspect
+    ? "prospectId" in storedProspect
+      ? storedProspect.financeDisplayValue
+      : storedProspect.finance?.displayValue
+    : undefined;
   const outreachProgress =
     "prospectId" in prospect ? prospect.outreachProgress : undefined;
-  const displayTimestamp = getProspectDisplayTimestamp(prospect);
+  const displayTimestamp = storedProspect
+    ? getProspectDisplayTimestamp(storedProspect)
+    : undefined;
 
   // If optimistic status is set and differs from current, hide the card
   if (optimisticStatus !== null && optimisticStatus !== prospect.status) {
@@ -78,19 +114,19 @@ export function ProspectCard({
 
   return (
     <article
-      onClick={interactive ? onClick : undefined}
+      onClick={canInteract ? onClick : undefined}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
         "h-full w-full min-w-0 space-y-2 rounded-xl border px-4 py-3",
-        interactive && "cursor-pointer",
+        canInteract && "cursor-pointer",
         unread && "bg-muted/40 dark:bg-muted/25",
         className
       )}
-      role={interactive ? "button" : undefined}
-      tabIndex={interactive ? 0 : undefined}
+      role={canInteract ? "button" : undefined}
+      tabIndex={canInteract ? 0 : undefined}
       onKeyDown={
-        interactive
+        canInteract
           ? (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 onClick?.();
@@ -98,7 +134,7 @@ export function ProspectCard({
             }
           : undefined
       }
-      aria-label={`${entitySingular}: ${displayName}`}
+      aria-label={`${entityLabel ?? entitySingular}: ${displayName}`}
     >
       <ProspectCardHeader
         prospectId={prospectId}
@@ -109,17 +145,17 @@ export function ProspectCard({
         timestamp={displayTimestamp}
         prospectType={prospect.prospectType}
         status={prospect.status}
-        interactive={interactive}
+        interactive={canInteract}
         mode={mode}
         platform={platform}
       >
-        {showMenu ? (
+        {showMenu && prospectId && storedProspect ? (
           <ProspectCardMenu
             prospectId={prospectId}
             platform={platform}
             profileUrl={profileUrl}
             twitterUsername={twitterUsername}
-            status={prospect.status}
+            status={storedProspect.status}
             mode={mode}
             onViewProfile={() => onClick?.()}
             onStatusChange={setOptimisticStatus}
@@ -128,8 +164,16 @@ export function ProspectCard({
       </ProspectCardHeader>
 
       <ProspectCardBody
-        text={prospect.briefIntro}
-        urlEntities={normalizeTwitterUrlEntities(prospect.bioUrlEntities)}
+        text={
+          storedProspect && mode !== "ui_preview"
+            ? storedProspect.qualificationReasoning
+            : prospect.briefIntro
+        }
+        urlEntities={
+          storedProspect && mode !== "ui_preview"
+            ? undefined
+            : normalizeTwitterUrlEntities(prospect.bioUrlEntities)
+        }
         highlightKeywords={highlightKeywords}
       />
 

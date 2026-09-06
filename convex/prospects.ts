@@ -1,3 +1,4 @@
+import { getProspectMatchReasoning } from "../shared/lib/prospectMatchReasoningHelpers";
 import { getLearningTargetingFingerprint } from "./lib/learningTargetingHelpers";
 // convex/prospects.ts
 // v4: Prospect management queries and mutations
@@ -743,7 +744,13 @@ export const getProspect = query({
     const user = await getViewerUser(ctx);
     if (!user) return null;
 
-    return await getOwnedProspect(ctx, args.prospectId, user._id);
+    const prospect = await getOwnedProspect(ctx, args.prospectId, user._id);
+    return prospect
+      ? {
+          ...prospect,
+          qualificationReasoning: getProspectMatchReasoning(prospect),
+        }
+      : null;
   },
 });
 
@@ -2099,6 +2106,7 @@ export const updateProspectQualification = internalMutation({
     expectedQualificationScore: v.optional(v.number()),
     qualificationStatus: qualificationStatusValidator,
     qualificationScore: v.number(),
+    qualificationReasoning: v.optional(v.string()),
     qualificationScoreBreakdown: v.optional(
       qualificationScoreBreakdownValidator
     ),
@@ -2170,6 +2178,8 @@ export const updateProspectQualification = internalMutation({
       qualificationTargetingFingerprint: fingerprint,
       qualificationStatus: args.qualificationStatus,
       qualificationScore: args.qualificationScore,
+      qualificationReasoning:
+        args.qualificationReasoning ?? prospect.qualificationReasoning,
       qualificationScoreBreakdown: args.qualificationScoreBreakdown,
       qualificationCriteriaVersion: args.qualificationCriteriaVersion,
       qualificationCriterionResults: args.qualificationCriterionResults,
@@ -2207,13 +2217,6 @@ export const updateProspectQualification = internalMutation({
         }
       );
     }
-
-    await ctx.runMutation(
-      internal.setupSessions.syncSetupPreviewCandidatesInternal,
-      {
-        workspaceId: prospect.workspaceId,
-      }
-    );
 
     return { success: true, skipped: false };
   },
@@ -2353,13 +2356,6 @@ export const updateProspectEnrichment = internalMutation({
         description: args.activityLogDescription,
       });
     }
-
-    await ctx.runMutation(
-      internal.setupSessions.syncSetupPreviewCandidatesInternal,
-      {
-        workspaceId: prospect.workspaceId,
-      }
-    );
 
     return { success: true, skipped: false };
   },
@@ -3650,3 +3646,40 @@ export const claimPendingQualificationRecoveryInternal = internalMutation({
 // Note: qualifyProspectInternal REMOVED (dead code)
 // All qualification logic is now in lib/qualificationCore.ts
 // Used by: workflows/qualification.ts, agents/tools/qualifyProspect.ts
+
+/** Persist acquired evidence only for this workspace's unfinished candidate. */
+export const saveQualificationDiscoveryEvidenceInternal = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    expectedTargetingFingerprint: v.string(),
+    profileData: v.any(),
+    evidencePosts: v.array(v.any()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (
+      !prospect ||
+      prospect.workspaceId !== args.workspaceId ||
+      prospect.qualificationStatus !== "pending"
+    )
+      return null;
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (
+      !workspace ||
+      getLearningTargetingFingerprint(workspace) !==
+        args.expectedTargetingFingerprint
+    )
+      return null;
+    await ctx.db.patch(args.prospectId, {
+      qualificationProfileData: args.profileData,
+      qualificationEvidenceFetchedAt: getCurrentUTCTimestamp(),
+      evidencePosts: mergeEvidencePosts(
+        prospect.evidencePosts,
+        args.evidencePosts.slice(0, 10)
+      ),
+    });
+    return null;
+  },
+});

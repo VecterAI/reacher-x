@@ -36,14 +36,12 @@ test("configured models are trimmed and empty values use the safe fallback", () 
   );
 });
 
-test("Convex and local environment templates document every model role", () => {
+test("Convex and the checked-in environment template document every model role", () => {
   const convexConfig = readFileSync("convex/convex.config.ts", "utf8");
   const envExample = readFileSync(".env.example", "utf8");
-  const envLocal = readFileSync(".env.local", "utf8");
 
   for (const key of expectedModelEnvironmentKeys) {
     assert.match(convexConfig, new RegExp(`\\b${key}:`));
     assert.match(envExample, new RegExp(`^# ${key}=`, "m"));
-    assert.match(envLocal, new RegExp(`^${key}=\\S+`, "m"));
   }
 });

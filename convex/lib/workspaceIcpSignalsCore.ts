@@ -1,3 +1,4 @@
+import { hasSyntheticProfileExamples } from "./syntheticProfileCore";
 import type { Doc } from "../_generated/dataModel";
 import { canonicalizeWorkspaceProfileChannels } from "../../shared/lib/workspaceProfileChannels";
 import { getWorkspaceProfileProvenance } from "./workspaceProfileChangeCore";
@@ -33,6 +34,7 @@ export function invalidateWorkspaceIcpGeneratedSignals(
 ): WorkspaceIcp[] {
   return icps.map(
     ({
+      syntheticExamples: _syntheticExamples,
       syntheticPosts: _syntheticPosts,
       qualificationKeywords: _keywords,
       ...icp
@@ -41,9 +43,13 @@ export function invalidateWorkspaceIcpGeneratedSignals(
 }
 
 export function hasWorkspaceIcpGeneratedSignals(
-  icp: Pick<WorkspaceIcp, "syntheticPosts" | "qualificationKeywords">
+  icp: Pick<
+    WorkspaceIcp,
+    "syntheticPosts" | "qualificationKeywords" | "syntheticExamples"
+  >
 ): boolean {
   return (
+    hasSyntheticProfileExamples(icp) &&
     Array.isArray(icp.syntheticPosts) &&
     icp.syntheticPosts.length > 0 &&
     Array.isArray(icp.qualificationKeywords) &&
@@ -117,6 +123,7 @@ export function restoreWorkspaceIcpSignalsFromReference(args: {
     restoredIndices.push(index);
     return {
       ...icp,
+      syntheticExamples: matchedReference.syntheticExamples,
       syntheticPosts: matchedReference.syntheticPosts,
       qualificationKeywords: matchedReference.qualificationKeywords,
     };
@@ -149,6 +156,7 @@ export function reconcileWorkspaceIcpUpdate(args: {
       const mergedIcp: WorkspaceIcp = {
         ...incomingIcp,
         provenance: getWorkspaceProfileProvenance(exactMatch),
+        syntheticExamples: exactMatch.syntheticExamples,
         syntheticPosts: exactMatch.syntheticPosts,
         qualificationKeywords: exactMatch.qualificationKeywords,
       };
@@ -193,4 +201,24 @@ export function summarizeWorkspaceIcpSignalRefresh(args: {
     shouldClearSystemIssue: success,
     missingIndices,
   };
+}
+
+/** Identity of the input for a refresh, excluding generated output. */
+export function getWorkspaceIcpRefreshFingerprint(
+  workspace: Pick<
+    Doc<"workspaces">,
+    | "description"
+    | "improvedDescription"
+    | "useCaseKey"
+    | "icps"
+    | "targetingLearningResetAt"
+  >
+): string {
+  return JSON.stringify({
+    description: workspace.description,
+    improvedDescription: workspace.improvedDescription,
+    useCaseKey: workspace.useCaseKey,
+    revision: workspace.targetingLearningResetAt,
+    profiles: workspace.icps?.map(buildWorkspaceIcpSemanticKey),
+  });
 }
