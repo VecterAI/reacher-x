@@ -1,3 +1,4 @@
+import { formatSyntheticTargetingExamples } from "../lib/syntheticProfileCore";
 import {
   getLearningTargetingFingerprint,
   isCurrentTargetingLearning,
@@ -470,9 +471,12 @@ async function auditProspect(
       workspaceId: workspace._id,
       prospectId: prospect._id,
       icpDescription: workspace.description,
+      syntheticTargetingExamples: formatSyntheticTargetingExamples(
+        workspace.icps ?? []
+      ),
       icpPainPoints: keywordContext.evaluationKeywords,
       useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
-      routing: "reasoning",
+      routing: "onboarding",
     });
   } catch (error) {
     const failure: QualificationFailure =
@@ -537,6 +541,7 @@ async function auditProspect(
     evaluatedEvidenceCount: evidence.posts.length,
     verifiedSourceCount: result.qualificationSources.length,
     reasoning: result.reasoning,
+    matchReasoning: result.matchReasoning,
     qualificationSources: result.qualificationSources,
     qualificationVerification: result.qualificationVerification,
     authenticity: result.authenticity,

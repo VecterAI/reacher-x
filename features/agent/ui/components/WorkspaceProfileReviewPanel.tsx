@@ -71,14 +71,6 @@ export type WorkspaceProfileReviewPreviewProposal = {
   removedTitles?: string[];
 };
 
-export type WorkspaceProfileReviewSetupProposal = {
-  sessionId: Id<"workspaceSetupSessions">;
-  revision: number;
-  profileLabelPlural: string;
-  proposedProfiles: WorkspaceProfileReviewPreviewProposal["proposedProfiles"];
-  errorMessage?: string | null;
-};
-
 export interface WorkspaceProfileReviewPanelProps {
   /** Real Convex request. Omit when `previewProposal` is provided (mock/setup preview). */
   requestId?: string;
@@ -89,14 +81,6 @@ export interface WorkspaceProfileReviewPanelProps {
    * request. Same panel chrome + form as the live agent profile proposal.
    */
   previewProposal?: WorkspaceProfileReviewPreviewProposal;
-  /** Live setup proposal. Approving saves edits and advances setup atomically. */
-  setupProposal?: WorkspaceProfileReviewSetupProposal;
-  /**
-   * Chat-first setup: approve ICPs by sending a message in the thread so the
-   * agent picks it up and responds.  When provided, the panel uses this
-   * callback instead of calling `approveSetupIcps` directly.
-   */
-  onApproveIdealProfiles?: () => Promise<void>;
 }
 
 function normalizeProfilesForForm(
@@ -142,22 +126,19 @@ export function WorkspaceProfileReviewPanel({
   onClose,
   className,
   previewProposal,
-  setupProposal,
-  onApproveIdealProfiles,
 }: WorkspaceProfileReviewPanelProps) {
   const isPreview = Boolean(previewProposal);
-  const isSetupProposal = Boolean(setupProposal);
   const proposalFromQuery = useQuery(
     api.workspaceProfileChanges.getWorkspaceProfileChange,
-    isPreview || isSetupProposal || !requestId
+    isPreview || !requestId
       ? "skip"
       : { requestId: requestId as Id<"workspaceProfileChangeRequests"> }
   );
-  const propDrivenProposal = setupProposal ?? previewProposal;
+  const propDrivenProposal = previewProposal;
   const proposal = propDrivenProposal
     ? {
         status: "pending_approval" as const,
-        revision: setupProposal?.revision ?? 1,
+        revision: 1,
         profileLabelPlural: propDrivenProposal.profileLabelPlural,
         proposedProfiles: propDrivenProposal.proposedProfiles,
         addedTitles:
@@ -176,7 +157,6 @@ export function WorkspaceProfileReviewPanel({
   const approveProposal = useMutation(
     api.workspaceProfileChanges.approveWorkspaceProfileChange
   );
-  const approveSetupProposal = useMutation(api.setupSessions.approveSetupIcps);
   const form = useForm<WorkspaceProfileReviewFormValues>({
     resolver: zodResolver(
       workspaceProfileReviewFormSchema
@@ -213,7 +193,7 @@ export function WorkspaceProfileReviewPanel({
     setProposalUpdatedWhileEditing(false);
   }, [form, proposalRevision, proposedProfiles]);
 
-  if (proposal === undefined) {
+  if (requestId && proposal === undefined) {
     return (
       <WorkspaceProfileReviewPanelSkeleton
         onClose={onClose}
@@ -266,24 +246,6 @@ export function WorkspaceProfileReviewPanel({
     }));
 
     try {
-      if (setupProposal) {
-        // Chat-first setup: send approval through the thread so the agent
-        // picks it up and responds, instead of directly mutating the session.
-        if (onApproveIdealProfiles) {
-          await onApproveIdealProfiles();
-          onClose();
-          return;
-        }
-
-        await approveSetupProposal({
-          sessionId: setupProposal.sessionId,
-          generatedProfiles: proposedProfiles,
-        });
-        toast.success(`${label} approved`);
-        onClose();
-        return;
-      }
-
       if (!requestId) {
         throw new Error("Profile proposal is unavailable.");
       }
@@ -387,15 +349,6 @@ export function WorkspaceProfileReviewPanel({
 
         <PageScrollArea className="pt-4 pb-24">
           <PageContent className="space-y-4 px-4">
-            {setupProposal?.errorMessage ? (
-              <Alert variant="destructive">
-                <AlertTitle>Preview could not start</AlertTitle>
-                <AlertDescription>
-                  {setupProposal.errorMessage}
-                </AlertDescription>
-              </Alert>
-            ) : null}
-
             {isPending ? (
               <Alert>
                 <AlertTitle>Note</AlertTitle>
@@ -475,10 +428,10 @@ export function WorkspaceProfileReviewPanel({
                             size="xsIcon"
                             variant="ghost"
                             aria-label={`Delete profile ${index + 1}`}
-                            disabled={fields.length <= 3}
+                            disabled={fields.length <= 1}
                             title={
-                              fields.length <= 3
-                                ? "At least three profiles are required."
+                              fields.length <= 1
+                                ? "At least one profile is required."
                                 : "Delete profile"
                             }
                             onClick={() => remove(index)}

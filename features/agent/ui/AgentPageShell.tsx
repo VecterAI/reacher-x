@@ -46,7 +46,6 @@ import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { TwitterProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
 import { useSetupThreadDraft } from "@/shared/hooks/useSetupThreadDraft";
 import { shouldSyncAgentThreadToRoute } from "../lib/agentThreadInitialization";
-import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
 import {
   clearStoredLandingPromptHandoff,
   type LandingPromptHandoff,
@@ -56,7 +55,6 @@ import {
 import { submitLandingSetupHandoffToThread } from "../lib/landingSetupHandoff";
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
-import { optimisticallySendMessage } from "@convex-dev/agent/react";
 
 export function AgentPageShell() {
   const router = useRouter();
@@ -76,6 +74,7 @@ export function AgentPageShell() {
     closeProfile,
     isOpen: isTwitterProfileOpen,
   } = useProfile();
+  const [setupTurnPending, setSetupTurnPending] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [rightPanelSessionOpen, setRightPanelSessionOpen] = useState(false);
   const rightPanelSessionOpenRef = useRef(false);
@@ -466,23 +465,6 @@ export function AgentPageShell() {
     agentProspectQuery.data?.status === "archived";
   const setupPanelThreadId = effectiveThreadId ?? threadId ?? null;
 
-  // ---- Setup panel: approve ICPs through the chat thread ----
-  const APPROVE_ICP_PROMPT =
-    "I approve these ideal profiles. Continue with setup.";
-  const initiateStreamingMessage = useMutation(
-    api.chat.initiateStreamingMessage
-  ).withOptimisticUpdate(
-    optimisticallySendMessage(api.chat.listThreadMessages)
-  );
-  const handlePanelApproveIdealProfiles = useCallback(async () => {
-    const resolvedThreadId = setupPanelThreadId;
-    if (!resolvedThreadId) return;
-    await initiateStreamingMessage({
-      threadId: resolvedThreadId,
-      prompt: APPROVE_ICP_PROMPT,
-      expectedSurface: "setup" as const,
-    });
-  }, [initiateStreamingMessage, setupPanelThreadId]);
   const setupPanelDraft = useSetupThreadDraft(
     isSetupRoute ? setupPanelThreadId : null
   );
@@ -1017,10 +999,6 @@ export function AgentPageShell() {
     Boolean(setupPanelThreadId) &&
     !setupPanelDraft.error &&
     (setupPanelDraft.isLoading || setupPanelDraft.setupDraft === null);
-  const setupProfileReviewDraft =
-    setupPanelDraft.setupDraft?.inputPhase === "awaiting_icp_approval"
-      ? setupPanelDraft.setupDraft
-      : null;
   const setupWorkspaceId =
     setupPanelDraft.setupDraft?.targetWorkspaceId ??
     setupPanelDraft.setupDraft?.existingWorkspaceId ??
@@ -1064,6 +1042,7 @@ export function AgentPageShell() {
             onNewThread={!isSetupRoute ? handleNewThread : undefined}
             newThreadSignal={newThreadSignal}
             deferSetupHandoff={isLandingDraftDecisionPending}
+            onSetupTurnPendingChange={setSetupTurnPending}
             onEffectiveThreadIdChange={handleEffectiveThreadIdChange}
             onOpenPanelFromCard={handleOpenPanelFromCard}
             onOpenPlanPanel={handleOpenPlanPanel}
@@ -1206,28 +1185,9 @@ export function AgentPageShell() {
               showSetupChatOnly && "border-l-0"
             )}
           />
-        ) : setupProfileReviewDraft ? (
-          <div id="rx-onboarding-panel" className="contents">
-            <WorkspaceProfileReviewPanel
-              onClose={() => setSetupOnboardingPanelOpen(false)}
-              onApproveIdealProfiles={handlePanelApproveIdealProfiles}
-              setupProposal={{
-                sessionId: setupProfileReviewDraft.sessionId,
-                revision: setupProfileReviewDraft.statusUpdatedAt,
-                profileLabelPlural: getWorkspaceUseCase(
-                  setupProfileReviewDraft.useCaseKey
-                ).profileLabelPlural,
-                proposedProfiles: setupProfileReviewDraft.generatedProfiles,
-                errorMessage: setupProfileReviewDraft.errorMessage,
-              }}
-              className={cn(
-                DESKTOP_PANEL_BORDER_CLASS_NAME,
-                showSetupChatOnly && "max-w-none border-l-0"
-              )}
-            />
-          </div>
         ) : (
           <AgentOnboardingPanel
+            approvalDisabled={setupTurnPending}
             threadId={setupPanelThreadId}
             onClose={() => setSetupOnboardingPanelOpen(false)}
             className={cn(

@@ -4,6 +4,10 @@
 // Internal actions for AI-powered keyword generation
 // These are called by both standalone tools and the searchProspects orchestrator
 
+import {
+  resolvePeopleQueryStage,
+  hasDiscoveryEntityCoverage,
+} from "../lib/discoveryQueryPlanningCore";
 import { internalAction } from "../lib/functionBuilders";
 import { v } from "convex/values";
 import { z } from "zod";
@@ -58,10 +62,18 @@ const twitterSocialQueryItemSchema = socialQueryMetadataSchema.extend({
   searchMode: z.enum(["exact", "raw"]),
 });
 
+const MAX_SOCIAL_QUERY_ITEMS_PER_GROUP = 5;
+
 const socialQueriesSchema = z.object({
-  twitterQueries: z.array(twitterSocialQueryItemSchema).max(15),
-  linkedinPostQueries: z.array(socialQueryItemSchema).max(15),
-  linkedinPeopleQueries: z.array(socialQueryItemSchema).max(15),
+  twitterQueries: z
+    .array(twitterSocialQueryItemSchema)
+    .max(MAX_SOCIAL_QUERY_ITEMS_PER_GROUP),
+  linkedinPostQueries: z
+    .array(socialQueryItemSchema)
+    .max(MAX_SOCIAL_QUERY_ITEMS_PER_GROUP),
+  linkedinPeopleQueries: z
+    .array(socialQueryItemSchema)
+    .max(MAX_SOCIAL_QUERY_ITEMS_PER_GROUP),
   reasoning: z.string(),
 });
 
@@ -90,7 +102,6 @@ type SocialQueryMetadata = {
 
 const MAX_TWITTER_QUERY_CHARS = 220;
 const MAX_LINKEDIN_QUERY_CHARS = 120;
-const MAX_SOCIAL_QUERY_ITEMS_PER_GROUP = 15;
 const PEOPLE_QUERY_HINTS = [
   "architect",
   "consultant",
@@ -356,13 +367,29 @@ function buildSocialQueryActionResult(args: {
     }),
   }));
   const twitterQueries = args.includeTwitter
-    ? dedupeQueryItems(twitterInputs, "twitter")
+    ? dedupeQueryItems(twitterInputs, "twitter").slice(
+        0,
+        MAX_SOCIAL_QUERY_ITEMS_PER_GROUP
+      )
     : [];
   const linkedinPostQueries = args.includeLinkedIn
-    ? dedupeQueryItems(args.object.linkedinPostQueries, "linkedin")
+    ? dedupeQueryItems(args.object.linkedinPostQueries, "linkedin").slice(
+        0,
+        MAX_SOCIAL_QUERY_ITEMS_PER_GROUP
+      )
     : [];
   const linkedinPeopleQueries = args.includeLinkedInPeople
-    ? dedupeQueryItems(args.object.linkedinPeopleQueries, "linkedin")
+    ? dedupeQueryItems(
+        args.object.linkedinPeopleQueries.map((item) => ({
+          ...item,
+          stage: resolvePeopleQueryStage(
+            item.query,
+            item.stage,
+            args.targetingSpec
+          ),
+        })),
+        "linkedin"
+      ).slice(0, MAX_SOCIAL_QUERY_ITEMS_PER_GROUP)
     : [];
 
   const metadataMap = new Map<string, SocialQueryMetadata>();
@@ -609,10 +636,10 @@ function buildProspectingKeywordsPrompt(useCaseKey?: unknown) {
 
 Your task is to analyze synthetic posts (realistic examples of what target ${useCase.entityPlural.toLowerCase()} would write) and extract keywords or phrases that can be used to find similar posts on Twitter and LinkedIn.
 
-Use this search framing: ${useCase.promptContext.searchIntent}
+The workspace description and targeting specification define useful prospects. This preset is only vocabulary context: ${useCase.promptContext.searchIntent}. Never impose its buying-intent assumptions when the user simply wants people who can use a product.
 
 Extract keywords that:
-1. Capture the essence of the pain point, intent signal, or fit signal expressed
+1. Capture actual tasks, useful workflows, audience fit, or explicitly requested intent
 2. Are short phrases (2-5 words, max 40 characters)
 3. Would match real posts from likely ${useCase.entityPlural.toLowerCase()}
 4. Are specific enough to filter out irrelevant results
@@ -622,14 +649,9 @@ Generate a tiered mix instead of making every keyword equally narrow:
 - balanced: preserves target identity and core intent while omitting one filter-like detail
 - broad but accurate: preserves the relationship goal or qualifying signal for recall without contradicting any requirement
 
-Order the first five keywords as strict, strict, balanced, balanced, broad. Repeat that mix for any remaining keywords so small search batches still contain both precision and recall.
+Include the conventional product/service category from the business description as a simple seed, and named alternatives when supplied. Do not replace these core seeds entirely with niche workflow descriptions. The first ten keywords must cover distinct requested audiences and actual use cases. Do not spend those slots on several variants of the first pain point. Include short, ordinary activity names and named products from the user context; these are often better searches than invented compound phrases.
 
-Focus on:
-- Problem-aware keywords
-- Outcome-seeking keywords
-- Frustration expressions
-- Action phrases
-- Signals aligned with this workspace's qualification lens: ${useCase.promptContext.qualificationLens}
+Focus on ordinary activities and relevant roles. Complaints, buying signals, frustration, and desired outcomes are additional search angles only when useful; they must not dominate a request for potential users. Do not add purchase urgency to the user's criteria.
 
 You may receive operational memory about what is already working, duplicated, exhausted, or recently retired.
 Treat prior outcomes and learned observations as advisory evidence. Current user intent and the authoritative targeting specification take precedence over every historical pattern. Never turn an old preference into a mandatory condition. In particular:
@@ -692,15 +714,15 @@ ${args.businessContext ? `**Business context:**\n${args.businessContext}` : ""}
 ${formatDiscoveryContextBlock(discoveryContext)}
 
 Extract 10-15 unique keywords or short phrases that:
-1. Capture pain points expressed in these posts
+1. Capture distinct practical activities and use cases expressed in these posts
 2. Would help find similar posts on social media
 3. Are short and searchable (2-5 words, max 40 characters each)
 4. Are varied - don't repeat similar concepts
 
-Focus on extracting the core problem/need expressions from each post.
+Preserve the practical activity, audience, and named product context. Cover the distinct requested personas rather than only the first synthetic posts. Include ordinary use, not only complaints or shopping. Never replace the core activity with a nearby concept (for example, screenshots are not screen recording).
 Use the business context to keep the keywords aligned with the user's original target and relationship goal. Do not infer the target from synthetic posts alone.
 Only return net-new keywords in uncovered themes when memory indicates existing themes are already saturated.`;
-    const routing = args.routing ?? (args.workspaceId ? "reasoning" : "fast");
+    const routing = args.routing ?? "onboarding";
     const routingTelemetry = getRoutingTelemetry(routing);
 
     try {
@@ -779,7 +801,7 @@ function buildSocialQueryPrompt(useCaseKey?: unknown) {
 
 Your task is to convert search keywords into platform-specific discovery queries that would match likely ${useCase.entityPlural.toLowerCase()}.
 
-Use this search framing: ${useCase.promptContext.searchIntent}
+The workspace description and targeting specification define useful prospects. This preset is only vocabulary context: ${useCase.promptContext.searchIntent}. Never impose its buying-intent assumptions when the user simply wants people who can use a product.
 
 **CRITICAL: CHARACTER LIMIT**
 - Twitter queries must be at most 220 characters so named entities and useful operators are preserved.
@@ -788,9 +810,9 @@ Use this search framing: ${useCase.promptContext.searchIntent}
 
 Return three separate groups:
 1. twitterQueries
-- Natural first-person phrasing plus short role/profile/company/topic terms
-- Conversational pain, intent, recommendation, or help-seeking language
-- Profile-fit terms that can lead to seed accounts for expansion
+- Prefer short recognizable activities, entities, and role/profile terms that actual people use
+- Use ordinary activity queries first; add pain, recommendation, or shopping queries only if the user requires those signals
+- Do not manufacture polished first-person sentences and then search for them verbatim
 - For every Twitter query, return searchMode as either "exact" or "raw"
 - Use "exact" only for a coherent 2-5 word phrase that people plausibly write verbatim
 - Use "raw" for keyword combinations, broader intent, hashtags, operators, or sentence fragments
@@ -810,7 +832,11 @@ Return three separate groups:
 - Do not stuff locations or languages into the people query text. The provider adapter applies those documented filters directly when the targeting specification contains them
 
 Each query should:
-- Be short and high-signal
+- Be short and high-signal: usually 2-5 meaningful words, not a sentence or a biography
+- Preserve the core qualifying activity or relationship in strict queries. A generic job title is broad when the essential requirement is tool use or an activity; it can be strict when that role itself is the requested target
+- Cover different approved audiences across the early queries, rather than spending the first batch on near-duplicate signals
+- Include explicitly named product/entity context when useful to discovery; a mention is retrieval context, never qualification proof
+- Avoid excessive AND-like word combinations. Use natural short phrases or deliberate Boolean alternatives; do not require every persona attribute in one post
 - Avoid duplicates across all groups
 - Stay specific to this workspace's qualification lens
 - Include stage as strict, balanced, or broad
@@ -818,11 +844,16 @@ Each query should:
 - Include criterionIds for the targeting criteria it is intended to discover
 
 Generate a tiered mix in every requested group:
-- strict queries preserve several distinctive target and intent signals
+- strict queries directly express the core requested workflow, role, or entity; a single distinctive phrase is enough
 - balanced queries preserve the target identity and core intent while dropping one filter-like detail
 - broad but accurate queries preserve the relationship goal or qualifying signal without contradicting a requirement
 
-Order the first five queries in each group as strict, strict, balanced, balanced, broad. Repeat that mix for additional queries. A broad discovery query improves recall, but final qualification still enforces the full workspace description and profile constraints.
+For each requested post-search platform, include the conventional category/activity name from the user context as a short query (for example, "screen recording" or "payroll software"), plus a standalone named alternative when supplied (the product name alone; do not add "using", "workflow", or "alternative"). These are retrieval anchors, not mandatory qualification criteria. Avoid abstract combinations such as "demo maintenance workflow" or "product-led video": people rarely describe their work that way.
+
+Return at most five queries per requested group. Most post queries should contain only 2-4 meaningful words. At most one Twitter query may combine Boolean groups; simpler terms retrieve more useful evidence for the later qualifier. Select across ALL keywords and approved audiences, not one query per keyword in input order. The first batch is small: cover distinct use cases before near-synonyms of the same theme. Place strong, concise queries first, then broader ones, but NEVER force a stage label to satisfy an ordering quota.
+For activity discovery, a short phrase naming the actual useful activity can be strict without adding a role, adjective, or competitor. Do not append benefit words such as polished, faster, efficient, or reliable unless the user actually requires that expressed intent. Named alternatives deserve their own simple query when relevant; do not require the alternative in every query.
+People queries must use recognizable occupations from the targeting context. Do not manufacture titles by combining the user's product name with a role. Keep generic roles broad when they cannot by themselves establish the required practical use.
+A broad discovery query improves recall, but final qualification still enforces the full workspace description and profile constraints.
 
 The original audience request in business context is the source of truth. Use-case presets must not change who the user is trying to find.
 
@@ -901,9 +932,9 @@ Return grouped queries that are net-new relative to the operational memory above
 Use the business context to preserve the user's original target and relationship goal. Build a precision-and-recall mix rather than making every query equally narrow.
 
 When Twitter is requested:
-- generate a balanced mix of post-like first-person phrasing and short role, company, profile, or topical terms
+- generate mostly short activity, product/entity, or role phrases; avoid invented first-person sentences and unnecessary AND constraints
 - set searchMode="exact" only for short phrases likely to appear verbatim
-- otherwise set searchMode="raw"; do not add quotation marks yourself
+- otherwise set searchMode="raw"; use a short keyword combination or OR alternatives. Quote only established multiword entities when necessary; avoid stacking several mandatory clauses.
 
 When LinkedIn is requested:
 - generate linkedinPostQueries as short professional/topic phrases
@@ -913,23 +944,54 @@ When LinkedIn is requested:
         : "return an empty linkedinPeopleQueries array because this targeting specification contains a required activity-only criterion that people search results cannot prove"
     }
 
-For every query, include the source keyword, strict/balanced/broad stage, and only real criterion IDs from the targeting specification. Strict queries preserve named entities and required intent. Balanced queries may omit one preference. Broad queries may omit preferences but never reverse core intent or include an exclusion.
+For every query, include the source keyword, strict/balanced/broad stage, and only real criterion IDs from the targeting specification. Strict queries express a genuinely distinctive required signal; they do not need every named entity or preference. Generic role-only people queries are broad if practical usage is required. Balanced queries may omit preferences. Broad queries must never reverse core intent or include an exclusion. Do not create imaginary job titles containing the product name.
 If a platform is not requested, return an empty array for that group.`;
-    const routing = "fast" as const;
+    const routing = "onboarding" as const;
     const routingTelemetry = getRoutingTelemetry(routing);
 
     try {
-      const { object, model, usage } = await robustGenerateObject({
-        operation: "convertToSocialQueries",
-        schema: socialQueriesSchema,
-        system: buildSocialQueryPrompt(args.useCaseKey),
-        prompt: userPrompt,
-        temperature: 0.45,
-        maxRetries: 1,
-        routing,
-        normalizeParsed: normalizeSocialQueriesPayload,
-        failureLogLevel: "info",
-      });
+      const generate = (coverageRepair = "") =>
+        robustGenerateObject({
+          operation: "convertToSocialQueries",
+          schema: socialQueriesSchema,
+          system: buildSocialQueryPrompt(args.useCaseKey),
+          prompt: userPrompt + coverageRepair,
+          temperature: 0.45,
+          maxRetries: 1,
+          routing,
+          normalizeParsed: normalizeSocialQueriesPayload,
+          failureLogLevel: "info",
+        });
+
+      let generation = await generate();
+      const entities = args.targetingSpec?.searchHints.entities ?? [];
+      const hasEntityCoverage = (value: SocialQueriesObject) =>
+        (!includeTwitter ||
+          hasDiscoveryEntityCoverage(
+            value.twitterQueries
+              .slice(0, MAX_SOCIAL_QUERY_ITEMS_PER_GROUP)
+              .map((item) => item.query),
+            entities
+          )) &&
+        (!includeLinkedIn ||
+          hasDiscoveryEntityCoverage(
+            value.linkedinPostQueries
+              .slice(0, MAX_SOCIAL_QUERY_ITEMS_PER_GROUP)
+              .map((item) => item.query),
+            entities
+          ));
+      if (!hasEntityCoverage(generation.object)) {
+        // One bounded repair: named alternatives should not disappear from the plan.
+        generation = await generate(
+          `\n\nCoverage repair: the previous plan omitted named context on at least one requested platform. Include in EACH requested post-search group at least one short standalone query for a relevant named alternative product/tool from this supplied list: ${JSON.stringify(entities)}. Do not combine it with invented buying intent or a job title. Return the complete grouped plan.`
+        );
+      }
+      if (!hasEntityCoverage(generation.object)) {
+        throw new Error(
+          "Query plan omitted named retrieval context after repair"
+        );
+      }
+      const { object, model, usage } = generation;
 
       const durationMs = getCurrentUTCTimestamp() - startTime;
       logEvent?.set({
@@ -972,7 +1034,10 @@ If a platform is not requested, return an empty array for that group.`;
 
       return buildSocialQueryActionResult({
         object: buildKeywordFallbackSocialQueries({
-          keywords: args.keywords,
+          keywords: [
+            ...(args.targetingSpec?.searchHints.entities ?? []),
+            ...args.keywords,
+          ],
           includeTwitter,
           includeLinkedIn,
         }),

@@ -1,3 +1,4 @@
+import { getProspectMatchReasoning } from "../shared/lib/prospectMatchReasoningHelpers";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -772,7 +773,34 @@ export async function listWorkspaceProspectSummariesSearchPage(
   return result;
 }
 
+/** Hydrate only legacy rows on the requested page; new rows contain the explanation. */
 export async function listWorkspaceProspectSummariesPage(
+  db: SummaryDb,
+  args: ListWorkspaceProspectSummariesArgs
+) {
+  const result = await listWorkspaceProspectSummariesPageInternal(db, args);
+  return {
+    ...result,
+    page: await Promise.all(
+      result.page.map(async (row) => {
+        if (row.qualificationReasoning) return row;
+        const prospect = await db.get(row.prospectId);
+        if (
+          !prospect ||
+          prospect.workspaceId !== row.workspaceId ||
+          prospect.userId !== row.userId
+        )
+          return row;
+        return {
+          ...row,
+          qualificationReasoning: getProspectMatchReasoning(prospect),
+        };
+      })
+    ),
+  };
+}
+
+async function listWorkspaceProspectSummariesPageInternal(
   db: SummaryDb,
   args: ListWorkspaceProspectSummariesArgs
 ): Promise<{

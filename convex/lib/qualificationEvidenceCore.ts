@@ -87,9 +87,9 @@ export type QualificationExternalArticle = {
 
 export type QualificationCandidate = {
   candidateId: string;
-  evidenceKind: "social_content" | "external_article";
+  evidenceKind: "social_content" | "external_article" | "profile";
   platform: "twitter" | "linkedin";
-  contentType: "post" | "reply" | "quote_post";
+  contentType: "post" | "reply" | "quote_post" | "profile";
   sourceId: string;
   sourceUrl: string;
   evidenceUrl?: string;

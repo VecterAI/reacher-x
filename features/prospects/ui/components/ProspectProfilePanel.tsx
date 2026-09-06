@@ -58,6 +58,7 @@ export interface ProspectProfileData {
   platform?: "twitter" | "linkedin";
   prospectType?: "individual" | "organization" | "unknown";
   briefIntro?: string;
+  qualificationReasoning?: string;
   pipelineStage?: PipelineStage;
   stageTimestamps?: Partial<Record<PipelineStage, number>>;
   qualificationStatus?: "pending" | "qualified" | "disqualified";
@@ -451,6 +452,7 @@ export function ProspectProfilePanel({
                     {/* Details */}
                     <section className="px-4 py-4">
                       <ProspectDetailsCard
+                        qualificationReasoning={prospect.qualificationReasoning}
                         qualificationStatus={prospect.qualificationStatus}
                         qualificationScore={prospect.qualificationScore}
                         qualificationSourceCount={

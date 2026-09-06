@@ -6,7 +6,7 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "@/shared/lib/utils";
+import { cn, parseText } from "@/shared/lib/utils";
 import {
   formatUrlDisplayText,
   selectProfileWebsiteHref,
@@ -39,6 +39,7 @@ import {
 } from "@/features/prospects/lib/qualificationUi";
 
 export interface ProspectDetailsCardProps {
+  qualificationReasoning?: string;
   qualificationStatus?: Doc<"prospects">["qualificationStatus"];
   /** Qualification score (0-100) */
   qualificationScore?: number;
@@ -198,6 +199,7 @@ function ContactSourceMeta({ source }: { source?: ProspectContactSource }) {
 }
 
 export function ProspectDetailsCard({
+  qualificationReasoning,
   qualificationStatus,
   qualificationScore = 0,
   qualificationSourceCount = 0,
@@ -241,6 +243,17 @@ export function ProspectDetailsCard({
       >
         {qualificationPresentation.profileValueText}
       </DetailRow>
+
+      {qualificationReasoning ? (
+        <DetailRow
+          icon={<SearchActivityIcon className="fill-current" />}
+          label="Match reasoning"
+          className="items-start"
+          valueClassName="text-foreground whitespace-pre-line overflow-visible [overflow-wrap:anywhere] [&_a]:text-muted-foreground [&_a]:hover:underline"
+        >
+          {parseText(qualificationReasoning)}
+        </DetailRow>
+      ) : null}
 
       {/* Fit (always visible) */}
       <DetailRow

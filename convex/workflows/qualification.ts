@@ -1,3 +1,4 @@
+import { formatSyntheticTargetingExamples } from "../lib/syntheticProfileCore";
 import { getLearningTargetingFingerprint } from "../lib/learningTargetingHelpers";
 import { v } from "convex/values";
 import { vWorkflowId, type WorkflowId } from "@convex-dev/workflow";
@@ -84,6 +85,7 @@ export const runQualificationCore = internalAction({
     workspaceId: v.id("workspaces"),
     prospectId: v.id("prospects"),
     icpDescription: v.optional(v.string()),
+    syntheticTargetingExamples: v.optional(v.string()),
     icpPainPoints: v.optional(v.array(v.string())),
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
     relevantMemories: v.optional(v.array(v.string())),
@@ -110,6 +112,7 @@ export const runQualificationCore = internalAction({
       workspaceId: args.workspaceId,
       prospectId: args.prospectId,
       icpDescription: args.icpDescription,
+      syntheticTargetingExamples: args.syntheticTargetingExamples,
       icpPainPoints: args.icpPainPoints,
       useCaseKey: resolveWorkspaceUseCaseKey(args.useCaseKey),
       relevantMemories: args.relevantMemories,
@@ -368,6 +371,9 @@ export const qualificationWorkflow = workflow.define({
         workspaceId: args.workspaceId,
         prospectId: args.prospectId,
         icpDescription: workspace.description,
+        syntheticTargetingExamples: formatSyntheticTargetingExamples(
+          workspace.icps ?? []
+        ),
         icpPainPoints: allKeywords,
         useCaseKey: workspace.useCaseKey,
         relevantMemories: learningContext.relevantMemories,
@@ -375,7 +381,7 @@ export const qualificationWorkflow = workflow.define({
         complianceInstructions: learningContext.complianceInstructions,
         similarQualifiedCases: learningContext.similarQualifiedCases,
         similarDisqualifiedCases: learningContext.similarDisqualifiedCases,
-        routing: isSetupPreview ? "onboarding" : "reasoning",
+        routing: "onboarding",
       }
     );
 
@@ -387,6 +393,7 @@ export const qualificationWorkflow = workflow.define({
         expectedTargetingFingerprint:
           getLearningTargetingFingerprint(workspace),
         qualificationStatus: result.status,
+        qualificationReasoning: result.matchReasoning ?? result.reasoning,
         qualificationScore: result.score,
         qualificationScoreBreakdown: result.scoreBreakdown,
         qualificationCriteriaVersion: 1,
@@ -564,15 +571,7 @@ export const qualificationWorkflow = workflow.define({
       }
 
       // Start enrichment workflow
-      if (isStillSetupPreview && currentProspect.setupSessionId) {
-        await step.runAction(
-          internal.workflows.enrichment.scheduleSetupPreviewEnrichmentInternal,
-          {
-            sessionId: currentProspect.setupSessionId,
-            workspaceId: args.workspaceId,
-          }
-        );
-      } else {
+      if (!isStillSetupPreview) {
         await step.runAction(internal.workflows.enrichment.startEnrichment, {
           prospectId: args.prospectId,
           workspaceId: args.workspaceId,
@@ -587,15 +586,6 @@ export const qualificationWorkflow = workflow.define({
         workflowId: String(step.workflowId),
       }
     );
-
-    if (isStillSetupPreview && currentProspect.setupSessionId) {
-      await step.runAction(
-        internal.setupSessions.resumePreviewWorkflowIfNeededInternal,
-        {
-          sessionId: currentProspect.setupSessionId,
-        }
-      );
-    }
 
     return {
       success: true,
@@ -626,7 +616,12 @@ export const runQualificationWorkflow = internalAction({
         prospectId: args.prospectId,
       }
     );
-    if (!prospect) {
+    if (
+      !prospect ||
+      prospect.workspaceId !== args.workspaceId ||
+      prospect.qualificationStatus !== "pending" ||
+      prospect.status === "archived"
+    ) {
       return { workflowId: "" };
     }
 
@@ -653,24 +648,53 @@ export const runQualificationWorkflow = internalAction({
       }
     }
 
-    const wfId = await workflow.start(
+    return await ctx.runMutation(
+      internal.workflows.qualification.startQualificationWorkflowAtomically,
+      args
+    );
+  },
+});
+
+/** Claim the prospect and enqueue its workflow in one transaction. */
+export const startQualificationWorkflowAtomically = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    tenantJobId: v.optional(v.id("tenantJobs")),
+  },
+  returns: v.object({ workflowId: v.string() }),
+  handler: async (ctx, args): Promise<{ workflowId: string }> => {
+    const prospect = await ctx.db.get(args.prospectId);
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (
+      !prospect ||
+      !workspace ||
+      workspace.deletionStartedAt ||
+      prospect.workspaceId !== args.workspaceId ||
+      prospect.status === "archived" ||
+      prospect.qualificationStatus !== "pending"
+    ) {
+      return { workflowId: "" };
+    }
+    if (prospect.qualificationWorkflowId) {
+      return { workflowId: prospect.qualificationWorkflowId };
+    }
+    const workflowId = await workflow.start(
       ctx,
       internal.workflows.qualification.qualificationWorkflow,
+      { prospectId: args.prospectId, workspaceId: args.workspaceId },
       {
-        prospectId: args.prospectId,
-        workspaceId: args.workspaceId,
-      },
-      {
+        startAsync: true,
         onComplete:
           internal.workflows.qualification.handleQualificationComplete,
-        context: {
-          prospectId: args.prospectId,
-          tenantJobId: args.tenantJobId,
-        },
+        context: { prospectId: args.prospectId, tenantJobId: args.tenantJobId },
       }
     );
-
-    return { workflowId: wfId.toString() };
+    await ctx.db.patch(prospect._id, {
+      qualificationWorkflowId: String(workflowId),
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+    return { workflowId: String(workflowId) };
   },
 });
 

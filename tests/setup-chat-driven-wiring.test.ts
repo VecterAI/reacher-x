@@ -115,7 +115,7 @@ test("profile review stays conversational while processing gates lock chat", () 
   const agentChat = read("features/agent/ui/AgentChat.tsx");
 
   assert.match(flow, /"awaiting_icp_confirmation",/);
-  assert.match(agentChat, /Ask to add, remove, or refine an ideal profile/);
+  assert.match(agentChat, /Tell me what to change about these/);
   assert.match(agentChat, /Chat is locked during this setup step/);
   assert.match(agentChat, /!isSetupCollectingAudience/);
   assert.match(agentChat, /showReasoning=\{!isSetupRoute\}/);
@@ -137,24 +137,19 @@ test("setup hydration uses a spinner and setup-only workflow work does not expos
   assert.match(emptyState, /const showAgentMark = !headline/);
 });
 
-test("setup progress and profile review use the conversational card and shared panel", () => {
+test("setup examples use the existing prospect card and production panel", () => {
   const agentChat = read("features/agent/ui/AgentChat.tsx");
   const snapshots = read("features/agent/lib/setupProfileSnapshots.ts");
-  const shell = read("features/agent/ui/AgentPageShell.tsx");
-  const profilePanel = read(
-    "features/agent/ui/components/WorkspaceProfileReviewPanel.tsx"
+  const panel = read("features/agent/ui/components/AgentOnboardingPanel.tsx");
+  const examples = read(
+    "features/agent/ui/components/onboarding/SetupExampleProfiles.tsx"
   );
-
-  assert.match(agentChat, /supplementalContent=\{/);
   assert.match(agentChat, /listSetupProfileSnapshots/);
-  assert.match(agentChat, /setupProfileSnapshotByAssistantKey/);
-  assert.match(snapshots, /sourceMessageId/);
   assert.match(snapshots, /generationRevision/);
-  assert.doesNotMatch(agentChat, /messageId="setup-inline-card"/);
-  assert.match(shell, /setupProposal=\{/);
-  assert.match(shell, /errorMessage: setupProfileReviewDraft\.errorMessage/);
-  assert.match(profilePanel, /api\.setupSessions\.approveSetupIcps/);
-  assert.match(profilePanel, /Preview could not start/);
+  assert.match(panel, /SetupExampleProfiles/);
+  assert.match(examples, /<ProspectCard/);
+  assert.match(panel, /api\.setupSessions\.approveSetupGeneration/);
+  assert.doesNotMatch(panel, /setup-mock/);
 });
 
 test("setup cards never render beneath the pending Thinking response", () => {
@@ -172,22 +167,19 @@ test("setup cards never render beneath the pending Thinking response", () => {
   assert.doesNotMatch(pendingComponent, /SetupOnboardingInlineCard/);
 });
 
-test("ideal-profile approval is a visible agent turn and is single-flight", () => {
+test("example approval is revision-specific and blocked during a pending chat turn", () => {
+  const panel = read("features/agent/ui/components/AgentOnboardingPanel.tsx");
   const agentChat = read("features/agent/ui/AgentChat.tsx");
-  const inlineCard = read(
-    "features/agent/ui/components/SetupOnboardingInlineCard.tsx"
-  );
-  const setupTools = read("convex/agents/tools/setupSessionChat.ts");
-
-  assert.match(agentChat, /approvingSetupIcpsRef\.current/);
+  assert.match(panel, /generationRevision: session.generationRevision/);
+  assert.match(panel, /isApproving \|\| approvalDisabled/);
   assert.match(
     agentChat,
-    /I approve these ideal profiles\. Continue with setup\./
+    /onSetupTurnPendingChange\?\.\(isLoading \|\| isStreaming\)/
   );
-  assert.doesNotMatch(inlineCard, /Suggested description/);
-  assert.doesNotMatch(inlineCard, /suggestedDescription/);
-  assert.doesNotMatch(agentChat, /suggestedDescription/);
-  assert.match(setupTools, /approveSetupIdealProfiles/);
+  assert.match(
+    read("convex/agents/tools/setupSessionChat.ts"),
+    /approveSetupExamples/
+  );
 });
 
 test("workspace details prefer the immutable raw description", () => {
@@ -197,27 +189,6 @@ test("workspace details prefer the immutable raw description", () => {
 
   assert.ok(rawDescription >= 0);
   assert.ok(seedDescription > rawDescription);
-});
-
-test("preview approval is single-flight while the backend promotes results", () => {
-  const agentChat = read("features/agent/ui/AgentChat.tsx");
-  const onboardingPanel = read(
-    "features/agent/ui/components/AgentOnboardingPanel.tsx"
-  );
-  const inputStep = read(
-    "features/agent/ui/components/onboarding/WorkspaceInputStep.tsx"
-  );
-
-  assert.match(onboardingPanel, /approvingPreviewRef\.current/);
-  assert.match(onboardingPanel, /setIsApprovingPreview\(true\)/);
-  assert.match(onboardingPanel, /finally \{/);
-  assert.match(inputStep, /disabled=\{isApprovingPreview\}/);
-  assert.match(
-    inputStep,
-    /isApprovingPreview \? "Continuing\.\.\." : "Continue"/
-  );
-  assert.match(agentChat, /approvingSetupPreviewRef\.current/);
-  assert.match(agentChat, /disabled=\{isApprovingSetupPreview\}/);
 });
 
 test("X OAuth completion persists the connection step before leaving setup", () => {
@@ -236,49 +207,14 @@ test("X OAuth completion persists the connection step before leaving setup", () 
     /void persistConnectionsStep\(\{ connectedX: true \}\)/
   );
   assert.match(connectionsStep, /onCompleteStep\(result\.status\)/);
-  assert.match(onboardingPanel, /if \(status === "ready"\)/);
-  assert.match(onboardingPanel, /openWorkspaceHome\(\)/);
+  assert.match(onboardingPanel, /<ConnectionsStep/);
+  assert.match(
+    read("features/agent/ui/AgentChat.tsx"),
+    /<OnboardingProgressCard/
+  );
   assert.match(setupSessions, /requiresSetupConnectionsStep\(\{/);
   assert.match(setupStatusTool, /requiresSetupConnectionsStep\(\{/);
   assert.match(setupSessions, /alreadyCompleted: true as const/);
-});
-
-test("preview approval uses a panel footer and sits before the inline open action", () => {
-  const agentChat = read("features/agent/ui/AgentChat.tsx");
-  const mockPreview = read(
-    "features/agent/ui/components/setup-mock/MockSetupThreadPreview.tsx"
-  );
-  const inputStep = read(
-    "features/agent/ui/components/onboarding/WorkspaceInputStep.tsx"
-  );
-  const previewStripStart = agentChat.indexOf(
-    "{showSetupPreviewStrip && setupPreviewStripParticipants.length > 0 ? ("
-  );
-  const inlineContinueIndex = agentChat.indexOf(
-    "handleApproveSetupPreview()",
-    previewStripStart
-  );
-  const inlineOpenIndex = agentChat.indexOf(
-    'aria-label="Open preview panel"',
-    previewStripStart
-  );
-
-  assert.doesNotMatch(inputStep, /Continue with these profiles\?/);
-  assert.doesNotMatch(inputStep, /preview-satisfaction-strip/);
-  assert.match(inputStep, /\? "border-t px-4 py-2"/);
-  assert.match(inputStep, /flex w-full min-w-0 items-center justify-end gap-2/);
-  assert.match(
-    inputStep,
-    /size="xs"\s+className="w-full"\s+disabled=\{isApprovingPreview\}/
-  );
-  assert.ok(previewStripStart >= 0);
-  assert.ok(inlineContinueIndex > previewStripStart);
-  assert.ok(inlineOpenIndex > inlineContinueIndex);
-  assert.doesNotMatch(mockPreview, /title=\{`Preview \$\{entitiesLower\}`\}/);
-  assert.match(
-    mockPreview,
-    /size="xs"\s+className="w-full"\s+onClick=\{\(\) => selectCase\("connections"\)\}/
-  );
 });
 
 test("setup profile proposals stay inside assistant content before its footer", () => {

@@ -1,222 +1,243 @@
-import type { IdealCustomerProfileCardData } from "@/features/prospects/ui/components/ideal-customer-profile";
+import type { Doc } from "@/convex/_generated/dataModel";
+import { MOCK_PROSPECTS } from "@/features/prospects/lib/mockData";
 import {
   getWorkspaceUseCase,
+  WORKSPACE_USE_CASE_KEYS,
   type WorkspaceUseCaseKey,
 } from "@/shared/lib/workspaceUseCases";
 
 export const MOCK_SETUP_CASES = [
-  {
-    id: "empty",
-    label: "Empty",
-    description: "Who should Agent find? + composer",
-  },
-  {
-    id: "generating_icps",
-    label: "Generating ICPs",
-    description: "Chat only — no panel",
-  },
-  {
-    id: "icp_review",
-    label: "ICP review",
-    description: "Inline card + Profiles panel",
-  },
-  {
-    id: "preview_running",
-    label: "Preview running",
-    description: "Progress + waiting panel (no Continue)",
-  },
-  {
-    id: "preview_ready",
-    label: "Preview ready",
-    description: "Avatar stack + panel cards + sticky Continue",
-  },
-  {
-    id: "connections",
-    label: "Connections",
-    description: "Connect accounts panel",
-  },
-  {
-    id: "plan",
-    label: "Plan",
-    description: "Choose a plan panel",
-  },
-  {
-    id: "done",
-    label: "Done",
-    description: "Workspace ready",
-  },
-  {
-    id: "prospecting",
-    label: "Real prospecting",
-    description: "Search/qualify progress inline",
-  },
+  { id: "empty", label: "Describe" },
+  { id: "generating", label: "Generating" },
+  { id: "generation_failed", label: "Generation failed" },
+  { id: "review", label: "Review" },
+  { id: "updated", label: "Updated" },
+  { id: "starting", label: "Saving approval" },
+  { id: "start_failed", label: "Approval failed" },
+  { id: "connections", label: "Connections" },
+  { id: "plan", label: "Plan" },
+  { id: "checkout", label: "Checkout pending" },
+  { id: "checkout_failed", label: "Checkout failed" },
+  { id: "done", label: "Running, no results" },
+  { id: "results", label: "Results arriving" },
 ] as const;
-
 export type MockSetupCaseId = (typeof MOCK_SETUP_CASES)[number]["id"];
+export type MockUseCaseOptionId = WorkspaceUseCaseKey;
+export const MOCK_USE_CASE_OPTIONS = WORKSPACE_USE_CASE_KEYS.map((id) => ({
+  id,
+  label: getWorkspaceUseCase(id).displayName,
+}));
+export const getMockUseCaseLabels = getWorkspaceUseCase;
 
-/** Use-case dictionary to preview terminology (incl. planned fallback). */
-export const MOCK_USE_CASE_OPTIONS = [
-  {
-    id: "general_outreach",
-    label: "Custom outreach (fallback)",
-  },
-  {
-    id: "customer_prospecting",
-    label: "Customer Prospecting",
-  },
-  {
-    id: "recruiting",
-    label: "Recruiting",
-  },
-] as const;
-
-export type MockUseCaseOptionId = (typeof MOCK_USE_CASE_OPTIONS)[number]["id"];
-
-export type MockUseCaseLabels = {
-  id: MockUseCaseOptionId;
-  displayName: string;
-  entitySingular: string;
-  entityPlural: string;
-  profileLabelPlural: string;
-  successLabel: string;
+type Example = { name: string; title: string; bio: string; secondBio: string };
+const EXAMPLES: Record<WorkspaceUseCaseKey, Example[]> = {
+  customer_prospecting: [
+    {
+      name: "Ava Chen",
+      title: "Software founder",
+      bio: "Founder of a small B2B SaaS. Building the product, talking to customers, and figuring out outbound.",
+      secondBio:
+        "Bootstrapping a software business. I handle product and sales. Sharing what I learn about finding customers.",
+    },
+    {
+      name: "Sam Cole",
+      title: "Sales development manager",
+      bio: "SDR manager. Coaching outbound reps, building account lists, and making prospecting less of a grind.",
+      secondBio:
+        "Leading sales development at a B2B software company. Outbound strategy, rep coaching, and better conversations.",
+    },
+  ],
+  recruiting: [
+    {
+      name: "Ava Chen",
+      title: "Frontend engineer",
+      bio: "Frontend engineer. React, TypeScript, and accessible interfaces. Open to frontend roles.",
+      secondBio:
+        "React developer building interfaces for the web. Looking for my next frontend role. I share side projects here.",
+    },
+    {
+      name: "Sam Cole",
+      title: "Backend engineer",
+      bio: "Backend engineer. APIs, PostgreSQL, and distributed systems. Exploring new opportunities.",
+      secondBio:
+        "I build backend services and write about reliability. Open to backend engineering roles.",
+    },
+  ],
+  general_outreach: [
+    {
+      name: "Ava Chen",
+      title: "Solo product founder",
+      bio: "Solo founder. Building a small software product and sharing the wins, bugs, and lessons along the way.",
+      secondBio:
+        "Bootstrapping my first SaaS. Product updates and build-in-public notes. Just me for now.",
+    },
+    {
+      name: "Sam Cole",
+      title: "Developer-tool founder",
+      bio: "Building developer tools. Shipping updates and talking to the developers who use them.",
+      secondBio:
+        "Founder, developer, occasional docs writer. Building tools I wish I had and sharing the process.",
+    },
+    {
+      name: "Priya Nair",
+      title: "Technical educator",
+      bio: "I teach software development through projects. Tutorials, code, and things I learned the hard way.",
+      secondBio:
+        "Developer and educator. I make practical coding walkthroughs and share the tools I use.",
+    },
+  ],
+  partnership_outreach: [
+    {
+      name: "Ava Chen",
+      title: "Agency founder",
+      bio: "Founder of a software agency. We build products for clients. Always interested in useful product partnerships.",
+      secondBio:
+        "Running a small development studio. Client work, software delivery, and tools worth recommending.",
+    },
+    {
+      name: "Sam Cole",
+      title: "Integration partnerships manager",
+      bio: "Product partnerships and integrations. Helping software teams build things that work better together.",
+      secondBio:
+        "I lead integration partnerships. APIs, partner launches, and connecting useful products.",
+    },
+  ],
+  investor_outreach: [
+    {
+      name: "Ava Chen",
+      title: "Angel investor",
+      bio: "Angel investor in early-stage software. Former operator. I like helping founders find their first customers.",
+      secondBio:
+        "Backing software founders early. Product, distribution, and the first ten customers.",
+    },
+    {
+      name: "Sam Cole",
+      title: "Seed fund partner",
+      bio: "Partner at a seed fund. Investing in software companies and meeting founders building their first products.",
+      secondBio:
+        "Seed-stage software investor. I work with founders on early product and go-to-market decisions.",
+    },
+  ],
+  user_research_recruitment: [
+    {
+      name: "Ava Chen",
+      title: "Freelance designer",
+      bio: "Freelance product designer. Juggling client projects, Figma files, and a very full calendar.",
+      secondBio:
+        "Independent designer working with small product teams. Client projects, design systems, and weekly planning.",
+    },
+    {
+      name: "Sam Cole",
+      title: "Design team lead",
+      bio: "Design lead. Helping a team turn messy briefs into useful products. Planning is half the job.",
+      secondBio:
+        "Leading a product design team. Design reviews, project planning, and making space for focused work.",
+    },
+  ],
+  creator_outreach: [
+    {
+      name: "Ava Chen",
+      title: "Software tutorial creator",
+      bio: "I make tutorials about software tools. Practical demos and honest reviews. Open to relevant sponsorships.",
+      secondBio:
+        "Software tutorials without the fluff. New walkthroughs every week. Sponsorship enquiries welcome.",
+    },
+    {
+      name: "Sam Cole",
+      title: "Technology newsletter writer",
+      bio: "Writing a newsletter about software worth trying. Product notes, useful tools, and the occasional sponsored edition.",
+      secondBio:
+        "Independent tech newsletter writer. Software, workflows, and products I find interesting. Open to sponsors.",
+    },
+  ],
+  community_growth: [
+    {
+      name: "Ava Chen",
+      title: "Indie founder",
+      bio: "Indie founder building software. Looking for other builders to swap feedback and keep each other shipping.",
+      secondBio:
+        "Bootstrapping a product on my own. Here to meet founders and share what is working.",
+    },
+    {
+      name: "Sam Cole",
+      title: "Open-source maintainer",
+      bio: "Open-source maintainer. Developer tools, issues, pull requests. I like communities where people help each other.",
+      secondBio:
+        "Maintaining an open-source project and learning in public. Always up for meeting fellow builders.",
+    },
+  ],
+  podcast_speaker_sourcing: [
+    {
+      name: "Ava Chen",
+      title: "Bootstrapped founder",
+      bio: "Bootstrapped founder. I write and speak about building software and finding the first customers.",
+      secondBio:
+        "Growing a software business without funding. Happy to talk about customer acquisition and the mistakes along the way.",
+    },
+    {
+      name: "Sam Cole",
+      title: "Engineering leader",
+      bio: "Engineering leader. Building teams and software. Sharing lessons about hiring, delivery, and technical decisions.",
+      secondBio:
+        "I lead an engineering team and talk about the practical side of building products and hiring developers.",
+    },
+  ],
 };
 
-const GENERAL_OUTREACH_LABELS: MockUseCaseLabels = {
-  id: "general_outreach",
-  displayName: "Custom outreach",
-  entitySingular: "Person",
-  entityPlural: "People",
-  profileLabelPlural: "Ideal profiles",
-  successLabel: "Connections",
-};
-
-export function getMockUseCaseLabels(
-  id: MockUseCaseOptionId
-): MockUseCaseLabels {
-  if (id === "general_outreach") {
-    return GENERAL_OUTREACH_LABELS;
-  }
-
-  const useCase = getWorkspaceUseCase(id as WorkspaceUseCaseKey);
-  return {
-    id,
-    displayName: useCase.displayName,
-    entitySingular: useCase.entitySingular,
-    entityPlural: useCase.entityPlural,
-    profileLabelPlural: useCase.profileLabelPlural,
-    successLabel: useCase.pageLabels.converts,
-  };
+// Local fixtures only. Reuse the existing mock identities; never persist these records.
+export function getMockSetupProspects(
+  useCaseKey: WorkspaceUseCaseKey
+): Array<Doc<"prospects"> & { exampleKey: string }> {
+  return EXAMPLES[useCaseKey].flatMap((example, personaIndex) => {
+    const { _id, workspaceId, userId } = MOCK_PROSPECTS[personaIndex];
+    return [example.bio, example.secondBio].map((bio, variantIndex) => ({
+      _id,
+      workspaceId,
+      userId,
+      exampleKey: `${useCaseKey}-${personaIndex}-${variantIndex}`,
+      _creationTime: 0,
+      updatedAt: 0,
+      // Each persona has one LinkedIn example and one X/Twitter example.
+      platform:
+        variantIndex === 0 ? ("linkedin" as const) : ("twitter" as const),
+      externalId: String(_id),
+      origin: "setup_preview" as const,
+      status: "new" as const,
+      data: {},
+      displayName:
+        variantIndex === 0
+          ? example.name
+          : ["Marco Diaz", "Nina Patel", "Owen Reed"][personaIndex],
+      title: example.title,
+      briefIntro: bio,
+      prospectType: "individual" as const,
+    }));
+  });
 }
 
-export const MOCK_DESCRIPTION =
-  "Find people who post about building in public and shipping indie products.";
-
-export const MOCK_IDEAL_PROFILES: IdealCustomerProfileCardData[] = [
-  {
-    title: "Indie builders shipping publicly",
-    description:
-      "Founders who document product progress in public and share shipping updates on X.",
-    painPoints: [
-      "Hard to find peers who actually ship",
-      "Wants tools that fit solo workflows",
-      "Ignores generic SaaS outreach",
-    ],
-    channels: ["twitter", "linkedin"],
-  },
-  {
-    title: "Solo makers with early traction",
-    description:
-      "Independent makers with a small but engaged audience and a live product.",
-    painPoints: [
-      "Limited time for research",
-      "Needs distribution, not more theory",
-    ],
-    channels: ["twitter"],
-  },
-  {
-    title: "Technical creators evaluating tools",
-    description:
-      "Engineers and technical creators who try new tooling and share honest takes.",
-    painPoints: ["Skeptical of vague claims", "Wants concrete workflow fit"],
-    channels: ["twitter", "linkedin"],
-  },
-];
-
-export const MOCK_PREVIEW_PROGRESS = {
-  discoveredCount: 42,
-  qualifiedCount: 11,
-  enrichedCount: 7,
-  selectedCount: 2,
+export const MOCK_DESCRIPTIONS: Record<WorkspaceUseCaseKey, string> = {
+  customer_prospecting:
+    "Find software founders doing outbound themselves and sales development managers who want to spend less time researching prospects.",
+  recruiting:
+    "Find frontend React engineers and backend engineers who are looking for a new role.",
+  general_outreach:
+    "Find solo founders shipping indie products, developer-tool founders, and technical educators who share their work publicly.",
+  partnership_outreach:
+    "Find software agency founders and integration partnerships managers for product partnerships.",
+  investor_outreach:
+    "Find angel investors and seed fund partners investing in early-stage software companies.",
+  user_research_recruitment:
+    "Find freelance designers and design team leads for interviews about project planning.",
+  creator_outreach:
+    "Find software tutorial creators and technology newsletter writers who accept sponsorships.",
+  community_growth:
+    "Find indie founders and open-source maintainers for a community of software builders.",
+  podcast_speaker_sourcing:
+    "Find bootstrapped founders and engineering leaders to interview on a software podcast.",
 };
 
-/** Same Unsplash face crops as the /home use-case demo. */
-const DEMO_FACE_URLS = {
-  ava: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  marcus:
-    "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  priya:
-    "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-} as const;
-
-/** Real Unsplash landscapes for profile banner slots. */
-const DEMO_BANNER_URLS = {
-  ava: "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&h=400&fit=crop&auto=format&q=80",
-  marcus:
-    "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=1200&h=400&fit=crop&auto=format&q=80",
-  priya:
-    "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&h=400&fit=crop&auto=format&q=80",
-} as const;
-
-export const MOCK_TWITTER_PROFILES: Array<{
-  id: string;
-  profileData: Record<string, unknown>;
-}> = [
-  {
-    id: "ava",
-    profileData: {
-      displayName: "Ava Chen",
-      username: "avabuilds",
-      bio: "Shipping a local-first notes app in public",
-      followersCount: 12400,
-      followingCount: 480,
-      verified: false,
-      profileUrl: "https://x.com/avabuilds",
-      avatarUrl: DEMO_FACE_URLS.ava,
-      bannerUrl: DEMO_BANNER_URLS.ava,
-      location: "San Francisco",
-      joinedAt: "2021-03-01T00:00:00.000Z",
-    },
-  },
-  {
-    id: "marcus",
-    profileData: {
-      displayName: "Marcus Cole",
-      username: "marcusships",
-      bio: "Indie hacker · 2 products, $8k MRR",
-      followersCount: 9100,
-      followingCount: 312,
-      verified: false,
-      profileUrl: "https://x.com/marcusships",
-      avatarUrl: DEMO_FACE_URLS.marcus,
-      bannerUrl: DEMO_BANNER_URLS.marcus,
-      location: "Austin",
-      joinedAt: "2019-08-01T00:00:00.000Z",
-    },
-  },
-  {
-    id: "priya",
-    profileData: {
-      displayName: "Priya Nair",
-      username: "priyanair",
-      bio: "Building developer tools · open to partnerships",
-      followersCount: 18700,
-      followingCount: 640,
-      verified: false,
-      profileUrl: "https://x.com/priyanair",
-      avatarUrl: DEMO_FACE_URLS.priya,
-      bannerUrl: DEMO_BANNER_URLS.priya,
-      location: "London",
-      joinedAt: "2020-01-01T00:00:00.000Z",
-    },
-  },
-];
+export function getMockSetupRefinement(
+  useCaseKey: WorkspaceUseCaseKey
+): string {
+  return `Keep only the ${EXAMPLES[useCaseKey][0].title.toLowerCase()} profile.`;
+}

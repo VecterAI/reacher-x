@@ -1,5 +1,6 @@
 "use node";
 
+import { validateSyntheticProfileExamples } from "./syntheticProfileCore";
 import type { ProviderMetadata } from "ai";
 import { z } from "zod";
 import {
@@ -19,9 +20,11 @@ import {
 
 const icpsSchema = z
   .array(icpSchema)
-  .min(3)
-  .max(4)
-  .describe("3-4 distinct Ideal Customer Profile segments");
+  .min(1)
+  .max(12)
+  .describe(
+    "One distinct persona per profile, no invented quota; at most 12 personas"
+  );
 
 /**
  * NOTE: This Zod schema intentionally mirrors workspaceTargetingSpecValidator.
@@ -218,13 +221,13 @@ export function buildInitialSetupGenerationUserPrompt(
 ): string {
   const useCase = getWorkspaceUseCase(args.useCaseKey);
 
-  let prompt = `Lightly improve the user's description and create 3-4 ${useCase.profileLabelPlural}.
+  let prompt = `Lightly improve the user's description and create one ${useCase.profileLabelPlural} per distinct audience persona.
 
 ${buildGroundedDescriptionContext(args)}
 
 Create:
 1. A lightly edited improved description. Preserve all material meaning and facts; do not add or infer anything.
-2. 3-4 distinct profiles with pain points and preferred social channels.
+2. One profile per distinct audience persona, with pain points, social channels, search signals, and two syntheticExamples: one X/Twitter and one LinkedIn. When the description names no audiences, infer plausible audience roles and work contexts from the product or goal. Respect explicit audience restrictions. Do not combine different personas, split by product benefits, or invent a quota.
 3. A machine-readable targetingSpec that preserves the user's exact requirements, preferences, exclusions, named products/companies, and observable intent.`;
 
   const preservedProfiles = getCurrentProfiles(args);
@@ -261,7 +264,7 @@ ${currentImprovedDescription}
 ${args.revisionFeedback.trim()}
 </revision_feedback>
 
-Return a full replacement set of 3-4 ${useCase.profileLabelPlural.toLowerCase()} plus an updated targetingSpec. Do not return a description field.`;
+Return a full replacement set of persona-specific ${useCase.profileLabelPlural.toLowerCase()} plus an updated targetingSpec. Do not return a description field.`;
 
   return prompt;
 }
@@ -315,6 +318,7 @@ export async function generateInitialSetupDraft(
     }
   );
 
+  validateSyntheticProfileExamples(object.icps);
   return {
     improvedDescription: object.improvedDescription,
     icps: object.icps,
@@ -333,6 +337,33 @@ export async function generateInitialSetupDraft(
       usage,
     }),
   };
+}
+
+/** Rebuild the search contract without rewriting the user-maintained profiles. */
+export async function generateTargetingSpecForProfiles(args: {
+  description: string;
+  profiles: NonNullable<GenerateSetupDraftArgs["currentProfiles"]>;
+  currentTargetingSpec?: WorkspaceTargetingSpec;
+  useCaseKey?: WorkspaceUseCaseKey | null;
+}): Promise<WorkspaceTargetingSpec> {
+  const { object } = await robustGenerateObject({
+    operation: "refreshWorkspaceTargetingSpec",
+    routing: "onboarding",
+    schema: workspaceTargetingSpecSchema,
+    system: `${buildProfileRevisionPrompt(args.useCaseKey)}
+Return only the targeting specification. The supplied current profiles are the authoritative persona set: remove targeting for deleted personas and include newly added personas. Do not rewrite profiles. Preserve explicit requirements and exclusions from the workspace description. Preserve unrelated constraints from the existing specification; never turn fictional examples into requirements or evidence.`,
+    prompt: `Current workspace description:
+${args.description}
+
+Current profiles:
+${formatCurrentProfiles(args.profiles)}
+
+Previous targeting specification (retain applicable constraints):
+${JSON.stringify(args.currentTargetingSpec ?? null)}`,
+    temperature: 0.2,
+    maxRetries: 2,
+  });
+  return normalizeWorkspaceTargetingSpec(object);
 }
 
 /**
@@ -359,6 +390,7 @@ export async function generateSetupProfileRevision(
     }
   );
 
+  validateSyntheticProfileExamples(object.icps);
   return {
     icps: object.icps,
     targetingSpec: normalizeWorkspaceTargetingSpec(object.targetingSpec),

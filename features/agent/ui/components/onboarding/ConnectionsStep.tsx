@@ -7,17 +7,11 @@ import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components"
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { PageContent } from "@/features/webapp/ui/components";
-import {
-  ConnectedAccountsList,
-  ConnectedAccountsListWithErrorHint,
-  LinkedInConnectNoticeDialog,
-} from "@/features/linked-accounts/ui/components";
+import { LinkedInConnectNoticeDialog } from "@/features/linked-accounts/ui/components";
 import { useXAccountConnection } from "@/features/linked-accounts/hooks/useXAccountConnection";
 import { useLinkedInAccountConnection } from "@/features/linked-accounts/hooks/useLinkedInAccountConnection";
 import { useQueryWithStatus } from "@/shared/hooks";
-import { Button } from "@/shared/ui/components/Button";
-import { ScrollArea } from "@/shared/ui/components/ScrollArea";
+import { ConnectionsStepContent } from "./ConnectionsStepContent";
 
 interface ConnectionsStepProps {
   sessionId: Id<"workspaceSetupSessions"> | null;
@@ -183,46 +177,26 @@ export function ConnectionsStep({
   }, [canContinue, persistConnectionsStep, sessionId]);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <ScrollArea className="min-h-0 flex-1">
-        <PageContent className="min-w-0 overflow-x-hidden px-4 py-4">
-          <header className="space-y-1">
-            <h2 className="text-xl font-semibold">
-              Let the △ Agent take action
-            </h2>
-            <p className="text-muted-foreground text-sm wrap-break-word">
-              Connect your accounts so the Agent can send DMs, reply to posts,
-              and engage on your behalf.
-            </p>
-          </header>
-
-          <div className="mt-4">
-            <ConnectedAccountsListWithErrorHint statusError={statusError}>
-              <ConnectedAccountsList
-                loading={pageLoading}
-                googleEmail={googleEmail}
-                googleConnectedAt={googleConnectedAt}
-                isGoogleConnected={isGoogleConnected}
-                xStatus={xStatus}
-                linkedinStatus={linkedinStatus}
-                onConnectX={handleConnectX}
-                onDisconnectX={handleDisconnectX}
-                onConnectLinkedIn={() => setLinkedInDialogOpen(true)}
-                onDisconnectLinkedIn={handleDisconnectLinkedIn}
-                hideXDisconnect
-                hideLinkedInDisconnect
-              />
-            </ConnectedAccountsListWithErrorHint>
-
-            {isMutating ? (
-              <p className="text-muted-foreground mt-2 text-xs">
-                Updating account status…
-              </p>
-            ) : null}
-          </div>
-        </PageContent>
-      </ScrollArea>
-
+    <ConnectionsStepContent
+      accounts={{
+        loading: pageLoading,
+        googleEmail,
+        googleConnectedAt,
+        isGoogleConnected,
+        xStatus,
+        linkedinStatus,
+        onConnectX: handleConnectX,
+        onDisconnectX: handleDisconnectX,
+        onConnectLinkedIn: () => setLinkedInDialogOpen(true),
+        onDisconnectLinkedIn: handleDisconnectLinkedIn,
+      }}
+      statusError={statusError}
+      isMutating={isMutating}
+      isCompletingStep={isCompletingStep}
+      continueDisabled={!canContinue || !sessionId || isCompletingStep}
+      onContinue={() => void handleContinue()}
+      onConnectLater={() => void handleConnectLater()}
+    >
       <LinkedInConnectNoticeDialog
         open={linkedInDialogOpen}
         isSubmitting={linkedInIsMutating}
@@ -239,28 +213,6 @@ export function ConnectionsStep({
           );
         }}
       />
-
-      <div className="bg-background shrink-0 border-t px-4 py-2">
-        <div className="flex w-full min-w-0 items-center justify-end gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            disabled={isCompletingStep}
-            onClick={() => void handleConnectLater()}
-          >
-            Connect later
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            disabled={!canContinue || !sessionId || isCompletingStep}
-            onClick={() => void handleContinue()}
-          >
-            Continue
-          </Button>
-        </div>
-      </div>
-    </div>
+    </ConnectionsStepContent>
   );
 }

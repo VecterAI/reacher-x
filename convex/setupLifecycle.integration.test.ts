@@ -22,8 +22,13 @@ async function registerWorkflowComponent(t: ReturnType<typeof convexTest>) {
   workflowTest.default.register(t);
 }
 
+import { syntheticExamples } from "../test/syntheticProfiles";
+
 const setupProfiles = [
   {
+    syntheticExamples,
+    syntheticPosts: ["Redesigning a complex workflow this week."],
+    qualificationKeywords: ["product design"],
     title: "Senior product designers",
     description: "Experienced B2B SaaS product designers.",
     painPoints: ["Hard-to-use workflows"],
@@ -115,6 +120,14 @@ async function seedSetupSession(
   return await t.run((ctx) =>
     ctx.db.insert("workspaceSetupSessions", {
       userId: args.userId,
+      flowVersion: 2,
+      generationRevision: 1,
+      approvedGenerationRevision: [
+        "awaiting_connections",
+        "awaiting_plan",
+      ].includes(args.status ?? "")
+        ? 1
+        : undefined,
       mode: args.mode ?? "new_workspace",
       status: args.status ?? "awaiting_input",
       setupThreadId: args.setupThreadId ?? `setup-thread-${args.suffix}`,
@@ -328,6 +341,85 @@ describe("setup session and workspace lifecycle", () => {
     expect(activeSession?.sessionId).toBe(activeSessionId);
   });
 
+  test.each(["awaiting_connections", "awaiting_plan"] as const)(
+    "legacy refinement cannot provision a completed workspace through %s",
+    async (status) => {
+      const t = convexTest(schema, modules);
+      const { userId, workosUserId } = await seedUser(t, `refine-${status}`);
+      const workspaceId = await seedCompletedWorkspace(t, {
+        userId,
+        name: "Keep existing",
+        isDefault: true,
+        entitlementSlot: 1,
+      });
+      const sessionId = await seedSetupSession(t, {
+        userId,
+        status,
+        refineFromWorkspace: true,
+        targetWorkspaceId: workspaceId,
+        suffix: status,
+      });
+      const authenticated = t.withIdentity({ subject: workosUserId });
+      const operation =
+        status === "awaiting_connections"
+          ? authenticated.mutation(api.setupSessions.completeSetupConnections, {
+              sessionId,
+              connectedX: false,
+            })
+          : authenticated.mutation(api.setupSessions.selectSetupPlan, {
+              sessionId,
+              planChoice: "pro",
+            });
+      await expect(operation).rejects.toThrow("Use workspace settings");
+      expect((await t.run((ctx) => ctx.db.get(workspaceId)))?.name).toBe(
+        "Keep existing"
+      );
+      expect(
+        (await t.run((ctx) => ctx.db.query("workspaces").collect())).length
+      ).toBe(1);
+    }
+  );
+
+  test.each(["awaiting_connections", "awaiting_plan"] as const)(
+    "legacy existing-workspace fallback cannot overwrite a completed workspace through %s",
+    async (status) => {
+      const t = convexTest(schema, modules);
+      const { userId, workosUserId } = await seedUser(t, `existing-${status}`);
+      const workspaceId = await seedCompletedWorkspace(t, {
+        userId,
+        name: "Keep existing",
+        isDefault: true,
+        entitlementSlot: 1,
+      });
+      const sessionId = await seedSetupSession(t, {
+        userId,
+        status,
+        suffix: `existing-${status}`,
+      });
+      await t.run((ctx) =>
+        ctx.db.patch(sessionId, { existingWorkspaceId: workspaceId })
+      );
+      const authenticated = t.withIdentity({ subject: workosUserId });
+      const operation =
+        status === "awaiting_connections"
+          ? authenticated.mutation(api.setupSessions.completeSetupConnections, {
+              sessionId,
+              connectedX: false,
+            })
+          : authenticated.mutation(api.setupSessions.selectSetupPlan, {
+              sessionId,
+              planChoice: "pro",
+            });
+      await expect(operation).rejects.toThrow("cannot be provisioned");
+      expect((await t.run((ctx) => ctx.db.get(workspaceId)))?.name).toBe(
+        "Keep existing"
+      );
+      expect(
+        (await t.run((ctx) => ctx.db.query("workspaces").collect())).length
+      ).toBe(1);
+    }
+  );
+
   test("starting New workspace creates one reusable setup draft and no workspace document", async () => {
     const t = convexTest(schema, modules);
     agentTest.register(t);
@@ -424,7 +516,7 @@ describe("setup session and workspace lifecycle", () => {
       status: "generating_profiles",
       rawUserDescription: originalDescription,
       seedDescription: originalDescription,
-      generationRevision: 1,
+      generationRevision: 2,
       generationSourceMessageId: "user-message-verbatim",
       useCaseKey: "recruiting",
     });
@@ -447,6 +539,7 @@ describe("setup session and workspace lifecycle", () => {
     );
     const generatedProfiles = [
       {
+        syntheticExamples,
         title: "Hands-on SaaS founders",
         description: "Founders actively improving product-led acquisition.",
         painPoints: ["Finding qualified buyers"],
@@ -639,270 +732,132 @@ describe("setup session and workspace lifecycle", () => {
     expect(snapshots[0]).not.toHaveProperty("improvedDescription");
   });
 
-  test("approving edited setup profiles saves the validated proposal and advances atomically", async () => {
-    const t = convexTest(schema, modules);
-    const { userId, workosUserId } = await seedUser(t, "approve-icps");
-    const sessionId = await seedSetupSession(t, {
-      userId,
-      status: "awaiting_icp_confirmation",
-      suffix: "approve-icps",
-    });
-    const generatedSetupProfiles = [
-      {
-        title: "Technical founders",
-        description: "Founders building developer infrastructure.",
-        painPoints: ["Reaching technical buyers"],
-        channels: ["LinkedIn"],
-        syntheticPosts: ["Finding technical buyers is harder than building."],
-        qualificationKeywords: ["developer infrastructure"],
-      },
-      {
-        title: "Revenue leaders",
-        description: "Revenue leaders at growing B2B teams.",
-        painPoints: ["Pipeline quality"],
-        channels: ["X/Twitter"],
-        syntheticPosts: ["Pipeline quality matters more than lead volume."],
-        qualificationKeywords: ["pipeline quality"],
-      },
-      {
-        title: "Product leaders",
-        description: "Product leaders evaluating customer research tools.",
-        painPoints: ["Slow research cycles"],
-        channels: ["LinkedIn", "X/Twitter"],
-        syntheticPosts: [
-          "Customer research should not take an entire quarter.",
-        ],
-        qualificationKeywords: ["customer research"],
-      },
-    ];
-    await t.run((ctx) =>
-      ctx.db.patch("workspaceSetupSessions", sessionId, {
-        generatedProfiles: generatedSetupProfiles,
-      })
-    );
-    const authenticated = t.withIdentity({ subject: workosUserId });
-    const generatedProfiles = generatedSetupProfiles.map(
-      ({
-        syntheticPosts: _posts,
-        qualificationKeywords: _keywords,
-        ...profile
-      }) => profile
-    );
-    generatedProfiles[1] = {
-      ...generatedProfiles[1]!,
-      description: "Revenue leaders building enterprise pipeline.",
-    };
-
-    await authenticated.mutation(api.setupSessions.approveSetupIcps, {
-      sessionId,
-      generatedProfiles,
-    });
-
-    const session = await t.run((ctx) =>
-      ctx.db.get("workspaceSetupSessions", sessionId)
-    );
-    expect(session).toMatchObject({
-      status: "provisioning_preview_workspace",
-      previewRevision: 1,
-    });
-    expect(session?.generatedProfiles?.[0]).toEqual({
-      ...generatedSetupProfiles[0],
-      provenance: "ai_generated",
-    });
-    expect(session?.generatedProfiles?.[1]).toMatchObject({
-      ...generatedProfiles[1]!,
-      provenance: "manual",
-    });
-    expect(session?.generatedProfiles?.[1]?.syntheticPosts).toBeUndefined();
-    expect(
-      session?.generatedProfiles?.[1]?.qualificationKeywords
-    ).toBeUndefined();
-    expect(session?.generatedProfiles?.[2]).toEqual({
-      ...generatedSetupProfiles[2],
-      provenance: "ai_generated",
-    });
-  });
-
-  test("the setup agent approval is anchored to the approving chat message", async () => {
+  test("approval persists examples once without provisioning or searching", async () => {
+    vi.useFakeTimers();
     const t = convexTest(schema, modules);
     agentTest.register(t);
-    const { userId } = await seedUser(t, "agent-approve-icps");
+    const { userId, workosUserId } = await seedUser(t, "examples");
+    const thread = await t.mutation(components.agent.threads.createThread, {
+      userId: String(userId),
+    });
     const sessionId = await seedSetupSession(t, {
       userId,
+      suffix: "examples",
       status: "awaiting_icp_confirmation",
-      suffix: "agent-approve-icps",
+      setupThreadId: thread._id,
     });
-    const profiles = [
-      "Frontend contributors",
-      "Backend contributors",
-      "Maintainers",
-    ].map((title) => ({
-      title,
-      description: `${title} seeking meaningful open-source work.`,
-      painPoints: ["Finding a project that fits their skills"],
-      channels: ["LinkedIn"],
-    }));
     await t.run((ctx) =>
-      ctx.db.patch("workspaceSetupSessions", sessionId, {
-        generatedProfiles: profiles,
+      ctx.db.patch(sessionId, {
+        targetingSpec: buildLegacyWorkspaceTargetingSpec({
+          description: "Find product designers",
+          profiles: setupProfiles,
+        }),
       })
     );
-
-    const result = await t.mutation(
-      internal.setupSessions.approveSetupIdealProfilesFromAgentInternal,
-      {
+    const viewer = t.withIdentity({ subject: workosUserId });
+    await expect(
+      viewer.mutation(api.setupSessions.approveSetupGeneration, {
         sessionId,
-        sourceMessageId: "approved-profiles-message",
-      }
+        generationRevision: 0,
+      })
+    ).rejects.toThrow("changed");
+    const first = await viewer.mutation(
+      api.setupSessions.approveSetupGeneration,
+      { sessionId, generationRevision: 1 }
     );
+    expect(first.status).toBe("awaiting_connections");
+    const repeat = await viewer.mutation(
+      api.setupSessions.approveSetupGeneration,
+      { sessionId, generationRevision: 1 }
+    );
+    expect(repeat.alreadyCompleted).toBe(true);
+    const approvalMessages = await t.run((ctx) =>
+      ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
+        threadId: thread._id,
+        order: "asc",
+        paginationOpts: { numItems: 20, cursor: null },
+      })
+    );
+    expect(
+      approvalMessages.page
+        .filter((item) => item.message?.role === "user")
+        .map((item) => item.message?.content)
+    ).toEqual(["I approve these example people. Continue with setup."]);
 
-    expect(result).toMatchObject({
-      success: true,
-      status: "provisioning_preview_workspace",
-      previewRevision: 1,
-    });
-    const session = await t.run((ctx) =>
-      ctx.db.get("workspaceSetupSessions", sessionId)
+    const state = await t.run(async (ctx) => ({
+      session: await ctx.db.get(sessionId),
+      workspaces: await ctx.db.query("workspaces").collect(),
+      prospects: await ctx.db.query("prospects").collect(),
+      jobs: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+    expect(state.workspaces).toHaveLength(0);
+    expect(state.session?.generatedProfiles?.[0]?.syntheticExamples).toEqual(
+      syntheticExamples
     );
-    expect(session).toMatchObject({
-      status: "provisioning_preview_workspace",
-      generationSourceMessageId: "approved-profiles-message",
-    });
+    expect(state.prospects).toHaveLength(0);
+    expect(
+      state.jobs.some((job) => job.name.includes("startProspecting"))
+    ).toBe(false);
+    expect(state.session?.approvedGenerationRevision).toBe(1);
+    await expect(
+      t
+        .withIdentity({ subject: "another-user" })
+        .mutation(api.setupSessions.approveSetupGeneration, {
+          sessionId,
+          generationRevision: 1,
+        })
+    ).rejects.toThrow();
   });
 
-  test("persists regenerated setup signals only for the current provisioning revision", async () => {
+  test("rejects incomplete platform examples before creating a workspace", async () => {
     const t = convexTest(schema, modules);
-    const { userId } = await seedUser(t, "persist-profile-signals");
+    agentTest.register(t);
+    const { userId, workosUserId } = await seedUser(t, "missing-example");
+    const thread = await t.mutation(components.agent.threads.createThread, {
+      userId: String(userId),
+    });
     const sessionId = await seedSetupSession(t, {
       userId,
+      suffix: "missing-example",
+      setupThreadId: thread._id,
       status: "awaiting_icp_confirmation",
-      suffix: "persist-profile-signals",
     });
     await t.run((ctx) =>
-      ctx.db.patch("workspaceSetupSessions", sessionId, {
-        status: "provisioning_preview_workspace",
-        previewRevision: 2,
+      ctx.db.patch(sessionId, {
+        generatedProfiles: [
+          { ...setupProfiles[0]!, syntheticExamples: [syntheticExamples[0]!] },
+        ],
       })
     );
-    const refreshedProfiles = Array.from({ length: 3 }, (_, index) => ({
-      title: `Profile ${index + 1}`,
-      description: `Description ${index + 1}`,
-      painPoints: [`Pain ${index + 1}`],
-      channels: ["LinkedIn"],
-      syntheticPosts: [`A sufficiently specific synthetic post ${index + 1}.`],
-      qualificationKeywords: [`keyword ${index + 1}`],
-    }));
-
-    const staleFailure = await t.mutation(
-      internal.setupSessions.markPreviewProvisioningFailedInternal,
-      {
-        sessionId,
-        previewRevision: 1,
-        errorMessage: "An old provisioning action failed.",
-      }
-    );
-    expect(staleFailure.updated).toBe(false);
-
-    const stale = await t.mutation(
-      internal.setupSessions.recordApprovedSetupProfileSignalsInternal,
-      {
-        sessionId,
-        previewRevision: 1,
-        generatedProfiles: refreshedProfiles,
-      }
-    );
-    expect(stale.updated).toBe(false);
-
-    const afterStaleCallbacks = await t.run((ctx) =>
-      ctx.db.get("workspaceSetupSessions", sessionId)
-    );
-    expect(afterStaleCallbacks?.status).toBe("provisioning_preview_workspace");
-
-    const current = await t.mutation(
-      internal.setupSessions.recordApprovedSetupProfileSignalsInternal,
-      {
-        sessionId,
-        previewRevision: 2,
-        generatedProfiles: refreshedProfiles,
-      }
-    );
-    expect(current.updated).toBe(true);
-
-    const session = await t.run((ctx) =>
-      ctx.db.get("workspaceSetupSessions", sessionId)
-    );
-    expect(session?.generatedProfiles).toEqual(refreshedProfiles);
+    await expect(
+      t
+        .withIdentity({ subject: workosUserId })
+        .mutation(api.setupSessions.approveSetupGeneration, {
+          sessionId,
+          generationRevision: 1,
+        })
+    ).rejects.toThrow("one X/Twitter");
+    expect(
+      await t.run((ctx) => ctx.db.query("workspaces").collect())
+    ).toHaveLength(0);
   });
 
-  test("turns a nested preview semantic error into a retryable setup state", async () => {
+  test("late legacy preview completion cannot change a new draft", async () => {
     const t = convexTest(schema, modules);
-    const { userId } = await seedUser(t, "preview-semantic-error");
+    const { userId } = await seedUser(t, "late-preview");
     const sessionId = await seedSetupSession(t, {
       userId,
-      suffix: "preview-semantic-error",
+      suffix: "late-preview",
+      status: "awaiting_icp_confirmation",
     });
-    await t.run((ctx) =>
-      ctx.db.patch("workspaceSetupSessions", sessionId, {
-        status: "discovering_preview_prospects",
-        previewWorkflowId: "preview-workflow-semantic-error",
-        previewDiscoveryStartedAt: 30,
-      })
-    );
-
     await t.mutation(internal.workflows.preview.handlePreviewWorkflowComplete, {
-      workflowId: "preview-workflow-semantic-error" as WorkflowId,
-      result: {
-        kind: "success",
-        returnValue: {
-          status: "error",
-          shouldContinue: false,
-          readyCount: 0,
-          prospectsFound: 0,
-          reason: "missing_synthetic_posts",
-        },
-      },
+      workflowId: "retired-preview" as WorkflowId,
+      result: { kind: "failed", error: "old failure" },
       context: { sessionId },
     });
-
-    const session = await t.run((ctx) =>
-      ctx.db.get("workspaceSetupSessions", sessionId)
+    expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
+      "awaiting_icp_confirmation"
     );
-    expect(session).toMatchObject({
-      status: "awaiting_icp_confirmation",
-      errorCode: "preview_missing_targeting_signals",
-    });
-    expect(session?.previewWorkflowId).toBeUndefined();
-    expect(session?.errorMessage).toContain("Approve the profiles again");
-  });
-
-  test("turns an exhausted preview workflow failure into a retryable setup state", async () => {
-    const t = convexTest(schema, modules);
-    const { userId } = await seedUser(t, "preview-execution-failure");
-    const sessionId = await seedSetupSession(t, {
-      userId,
-      suffix: "preview-execution-failure",
-    });
-    await t.run((ctx) =>
-      ctx.db.patch("workspaceSetupSessions", sessionId, {
-        status: "preview_search_in_progress",
-        previewWorkflowId: "preview-workflow-execution-failure",
-      })
-    );
-
-    await t.mutation(internal.workflows.preview.handlePreviewWorkflowComplete, {
-      workflowId: "preview-workflow-execution-failure" as WorkflowId,
-      result: { kind: "failed", error: "Retries exhausted" },
-      context: { sessionId },
-    });
-
-    const session = await t.run((ctx) =>
-      ctx.db.get("workspaceSetupSessions", sessionId)
-    );
-    expect(session).toMatchObject({
-      status: "awaiting_icp_confirmation",
-      errorCode: "preview_workflow_execution_failed",
-    });
-    expect(session?.previewWorkflowId).toBeUndefined();
   });
 
   test("anonymous and unknown authenticated visitors do not bootstrap database state", async () => {
@@ -1194,6 +1149,7 @@ describe("setup session and workspace lifecycle", () => {
 
   test("connected X keeps the persisted connection gate visible and completes paid setup idempotently", async () => {
     vi.useFakeTimers();
+    vi.useFakeTimers();
     const t = convexTest(schema, modules);
     agentTest.register(t);
     await registerWorkflowComponent(t);
@@ -1272,6 +1228,16 @@ describe("setup session and workspace lifecycle", () => {
       status: "ready",
       alreadyCompleted: true,
     });
+    // Verify discovery is scheduled once, but keep this setup lifecycle test
+    // from executing the separate discovery pipeline and its external services.
+    await t.run(async (ctx) => {
+      const jobs = await ctx.db.system.query("_scheduled_functions").collect();
+      const discoveryJobs = jobs.filter((job) =>
+        job.name.includes("startProspectingWorkflowInternal")
+      );
+      expect(discoveryJobs).toHaveLength(1);
+      await ctx.scheduler.cancel(discoveryJobs[0]._id);
+    });
     await finishScheduledBatches(t);
     expect(
       await t.run((ctx) => workflow.status(ctx, workflowId))
@@ -1299,6 +1265,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("finishing setup promotes the provisional workspace to completed and default", async () => {
+    vi.useFakeTimers();
     const t = convexTest(schema, modules);
     agentTest.register(t);
     const { userId, workosUserId } = await seedUser(t, "finish");
@@ -1347,5 +1314,220 @@ describe("setup session and workspace lifecycle", () => {
     );
     expect(state.promotedWorkspace?.isDefault).toBe(true);
     expect(state.existingWorkspace?.isDefault).toBe(false);
+  });
+  test("free users can approve and skip accounts, but cannot forge payment; finalization creates once", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    agentTest.register(t);
+    const { userId, workosUserId } = await seedUser(t, "free-to-paid");
+    const thread = await t.mutation(components.agent.threads.createThread, {
+      userId: String(userId),
+    });
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "free-to-paid",
+      entitlementSlot: 1,
+      setupThreadId: thread._id,
+      status: "awaiting_icp_confirmation",
+    });
+    const planId = await t.run(async (ctx) => {
+      const plan = await ctx.db
+        .query("userPlans")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .unique();
+      await ctx.db.patch(plan!._id, { tier: "free" });
+      await ctx.db.patch(sessionId, {
+        targetingSpec: buildLegacyWorkspaceTargetingSpec({
+          description: "Find designers",
+          profiles: setupProfiles,
+        }),
+      });
+      return plan!._id;
+    });
+    const viewer = t.withIdentity({ subject: workosUserId });
+    await viewer.mutation(api.setupSessions.approveSetupGeneration, {
+      sessionId,
+      generationRevision: 1,
+    });
+    await viewer.mutation(api.setupSessions.completeSetupConnections, {
+      sessionId,
+      connectedX: false,
+    });
+    expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
+      "awaiting_plan"
+    );
+    await expect(
+      viewer.mutation(api.setupSessions.selectSetupPlan, {
+        sessionId,
+        planChoice: "pro",
+      })
+    ).rejects.toThrow("Payment is not confirmed");
+    expect(
+      await t.run((ctx) => ctx.db.query("workspaces").collect())
+    ).toHaveLength(0);
+    await t.run((ctx) => ctx.db.patch(planId, { tier: "pro" }));
+    await viewer.mutation(api.setupSessions.selectSetupPlan, {
+      sessionId,
+      planChoice: "pro",
+    });
+    await viewer.mutation(api.setupSessions.selectSetupPlan, {
+      sessionId,
+      planChoice: "pro",
+    });
+    const final = await t.run(async (ctx) => ({
+      session: await ctx.db.get(sessionId),
+      workspaces: await ctx.db.query("workspaces").collect(),
+      jobs: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+    expect(final.session?.status).toBe("ready");
+    expect(final.workspaces).toHaveLength(1);
+    expect(final.workspaces[0]?.icps?.[0]?.syntheticExamples).toEqual(
+      syntheticExamples
+    );
+    expect(
+      final.jobs.filter((job) =>
+        job.name.includes("startProspectingWorkflowInternal")
+      )
+    ).toHaveLength(1);
+  });
+
+  test("late generation and failure callbacks cannot replace a newer revision", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedUser(t, "stale-generation");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "stale-generation",
+    });
+    await t.run((ctx) =>
+      ctx.db.patch(sessionId, {
+        generationRevision: 2,
+        status: "generating_profiles",
+      })
+    );
+    expect(
+      await t.mutation(internal.setupSessions.recordGenerationResultInternal, {
+        sessionId,
+        generationRevision: 1,
+        improvedDescription: "Old request",
+        generatedProfiles: setupProfiles,
+        targetingSpec: buildLegacyWorkspaceTargetingSpec({
+          description: "Old request",
+          profiles: setupProfiles,
+        }),
+        generationCompletedAt: 10,
+      })
+    ).toEqual({ updated: false });
+    await t.mutation(internal.setupSessions.markGenerationFailedInternal, {
+      sessionId,
+      generationRevision: 1,
+      errorMessage: "Old failure",
+    });
+    expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
+      "generating_profiles"
+    );
+  });
+  test("generation retry preserves the failed refinement and URL context", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    await registerWorkflowComponent(t);
+    const { userId, workosUserId } = await seedUser(t, "retry-refinement");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "retry-refinement",
+    });
+    await t.run((ctx) =>
+      ctx.db.patch(sessionId, {
+        status: "generating_profiles",
+        inputMode: "url",
+        sourceUrl: "https://example.com",
+        generationFeedback: "Keep only designers",
+        generationRevision: 2,
+      })
+    );
+    await t.mutation(internal.setupSessions.markGenerationFailedInternal, {
+      sessionId,
+      generationRevision: 2,
+      errorMessage: "Provider timed out",
+    });
+    expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
+      "failed"
+    );
+    await t
+      .withIdentity({ subject: workosUserId })
+      .mutation(api.setupSessions.retrySetupGeneration, { sessionId });
+    const retried = await t.run((ctx) => ctx.db.get(sessionId));
+    expect(retried).toMatchObject({
+      status: "generating_profiles",
+      generationRevision: 3,
+      generationFeedback: "Keep only designers",
+      inputMode: "url",
+      sourceUrl: "https://example.com",
+    });
+    expect(retried?.errorMessage).toBeUndefined();
+    await expect(
+      t
+        .withIdentity({ subject: workosUserId })
+        .mutation(api.setupSessions.retrySetupGeneration, { sessionId })
+    ).rejects.toThrow("no failed generation");
+    const staleFailure = await t.mutation(
+      internal.setupSessions.markGenerationFailedInternal,
+      { sessionId, generationRevision: 2, errorMessage: "Late failure" }
+    );
+    expect(staleFailure.updated).toBe(false);
+  });
+
+  test("unfinished legacy previews upgrade once and require new example approval", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    await registerWorkflowComponent(t);
+    const { userId } = await seedUser(t, "legacy-upgrade");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "legacy-upgrade",
+      status: "awaiting_preview_confirmation",
+    });
+    await t.run((ctx) =>
+      ctx.db.patch(sessionId, {
+        flowVersion: undefined,
+        approvedGenerationRevision: undefined,
+      })
+    );
+    await t.mutation(internal.setupSessions.upgradeLegacySetupInternal, {
+      sessionId,
+    });
+    const upgraded = await t.run((ctx) => ctx.db.get(sessionId));
+    expect(upgraded).toMatchObject({
+      flowVersion: 2,
+      status: "generating_profiles",
+      generationRevision: 2,
+    });
+    expect(upgraded?.generatedProfiles).toBeUndefined();
+    expect(upgraded?.approvedGenerationRevision).toBeUndefined();
+    await t.mutation(internal.setupSessions.upgradeLegacySetupInternal, {
+      sessionId,
+    });
+    expect(
+      (await t.run((ctx) => ctx.db.get(sessionId)))?.generationRevision
+    ).toBe(2);
+  });
+  test("agent approval validates the owner supplied by trusted tool context", async () => {
+    const t = convexTest(schema, modules);
+    const owner = await seedUser(t, "agent-approval-owner");
+    const other = await seedUser(t, "agent-approval-other");
+    const sessionId = await seedSetupSession(t, {
+      userId: owner.userId,
+      suffix: "agent-approval-owner",
+      status: "awaiting_icp_confirmation",
+    });
+    await expect(
+      t.mutation(internal.setupSessions.approveSetupExamplesFromAgentInternal, {
+        sessionId,
+        userId: other.userId,
+        generationRevision: 1,
+      })
+    ).rejects.toThrow("Setup session not found");
+    expect(
+      (await t.run((ctx) => ctx.db.get(sessionId)))?.approvedGenerationRevision
+    ).toBeUndefined();
   });
 });
