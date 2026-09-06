@@ -215,7 +215,7 @@ export function ProspectProfilePanel({
     }
 
     const payload = {
-      title: "Qualification sources",
+      title: "Source",
       posts,
       platform: prospect.platform || "twitter",
     } as const;

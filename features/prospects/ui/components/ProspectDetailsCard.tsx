@@ -30,8 +30,11 @@ import {
   PaidIcon,
   Flag2Icon,
   SearchActivityIcon,
+  FactCheckIcon,
+  Cognition2Icon,
 } from "@/shared/ui/components/icons";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
+import { useExpandableClamp } from "@/shared/hooks/useExpandableClamp";
 import type { Doc } from "@/convex/_generated/dataModel";
 import {
   QUALIFICATION_UI_LABELS,
@@ -172,6 +175,39 @@ function DetailRow({
   );
 }
 
+function ReasoningValue({ text }: { text: string }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const { canExpand, textRef } = useExpandableClamp(text, expanded);
+  const contentId = React.useId();
+
+  return (
+    <div className="text-foreground space-y-2">
+      <span
+        id={contentId}
+        ref={textRef}
+        className={cn(
+          "text-muted-foreground block",
+          !expanded && "line-clamp-3"
+        )}
+      >
+        {parseText(text)}
+      </span>
+      {canExpand || expanded ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => setExpanded((previous) => !previous)}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function ContactSourceMeta({ source }: { source?: ProspectContactSource }) {
   if (!source) {
     return null;
@@ -244,17 +280,6 @@ export function ProspectDetailsCard({
         {qualificationPresentation.profileValueText}
       </DetailRow>
 
-      {qualificationReasoning ? (
-        <DetailRow
-          icon={<SearchActivityIcon className="fill-current" />}
-          label="Match reasoning"
-          className="items-start"
-          valueClassName="text-foreground whitespace-pre-line overflow-visible [overflow-wrap:anywhere] [&_a]:text-muted-foreground [&_a]:hover:underline"
-        >
-          {parseText(qualificationReasoning)}
-        </DetailRow>
-      ) : null}
-
       {/* Fit (always visible) */}
       <DetailRow
         icon={<HandshakeIcon className="fill-current" />}
@@ -272,8 +297,8 @@ export function ProspectDetailsCard({
 
       {qualificationSourceCount > 0 && onQualificationSourcesClick ? (
         <DetailRow
-          icon={<SearchActivityIcon className="fill-current" />}
-          label="Qualification sources"
+          icon={<FactCheckIcon className="fill-current" />}
+          label="Source"
         >
           <button
             type="button"
@@ -283,6 +308,20 @@ export function ProspectDetailsCard({
             {qualificationSourceCount}{" "}
             {qualificationSourceCount === 1 ? "source" : "sources"}
           </button>
+        </DetailRow>
+      ) : null}
+
+      {qualificationReasoning ? (
+        <DetailRow
+          icon={<Cognition2Icon className="fill-current" />}
+          label="Reasoning"
+          className="items-start"
+          valueClassName="text-muted-foreground whitespace-pre-line overflow-visible [overflow-wrap:anywhere] [&_a]:text-muted-foreground [&_a]:hover:underline"
+        >
+          <ReasoningValue
+            key={qualificationReasoning}
+            text={qualificationReasoning}
+          />
         </DetailRow>
       ) : null}
 

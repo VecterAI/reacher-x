@@ -816,6 +816,36 @@ export const ArrowMenuCloseIcon: React.FC<IconProps> = ({
   );
 };
 
+export const FactCheckIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M3.33203 11.3333H6.66536V10H3.33203V11.3333ZM9.6987 10L12.9987 6.7L12.0487 5.75L9.6987 8.11667L8.7487 7.16667L7.81536 8.11667L9.6987 10ZM3.33203 8.66667H6.66536V7.33333H3.33203V8.66667ZM3.33203 6H6.66536V4.66667H3.33203V6ZM1.33203 14V2H14.6654V14H1.33203ZM2.66536 12.6667H13.332V3.33333H2.66536V12.6667Z" />
+      </g>
+    </svg>
+  );
+};
+
 export const SearchActivityIcon: React.FC<IconProps> = ({
   className,
   ...props
