@@ -3,6 +3,7 @@
   "installCommand": "corepack install && corepack pnpm install --frozen-lockfile",
   "git": {
     "deploymentEnabled": {
+      "codex/fix-agent-ops-query-budget": false,
       "codex/discovery-learning-completion": false,
       "codex/instrumentation-runtime-fix": false,
       "codex/workspace-refresh-timeout": false

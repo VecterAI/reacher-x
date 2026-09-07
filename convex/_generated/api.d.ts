@@ -100,6 +100,8 @@ import type * as lib_agentContextHelpers from "../lib/agentContextHelpers.js";
 import type * as lib_agentMemoryCore from "../lib/agentMemoryCore.js";
 import type * as lib_agentMetadata from "../lib/agentMetadata.js";
 import type * as lib_agentOpsCore from "../lib/agentOpsCore.js";
+import type * as lib_agentOpsDashboardCore from "../lib/agentOpsDashboardCore.js";
+import type * as lib_agentOpsDashboardReadCore from "../lib/agentOpsDashboardReadCore.js";
 import type * as lib_agentOpsHelpers from "../lib/agentOpsHelpers.js";
 import type * as lib_agentOpsInventoryCursor from "../lib/agentOpsInventoryCursor.js";
 import type * as lib_agentOpsReadModelHelpers from "../lib/agentOpsReadModelHelpers.js";
@@ -478,6 +480,8 @@ declare const fullApi: ApiFromModules<{
   "lib/agentMemoryCore": typeof lib_agentMemoryCore;
   "lib/agentMetadata": typeof lib_agentMetadata;
   "lib/agentOpsCore": typeof lib_agentOpsCore;
+  "lib/agentOpsDashboardCore": typeof lib_agentOpsDashboardCore;
+  "lib/agentOpsDashboardReadCore": typeof lib_agentOpsDashboardReadCore;
   "lib/agentOpsHelpers": typeof lib_agentOpsHelpers;
   "lib/agentOpsInventoryCursor": typeof lib_agentOpsInventoryCursor;
   "lib/agentOpsReadModelHelpers": typeof lib_agentOpsReadModelHelpers;

@@ -1,8 +1,7 @@
 # Large-range query reliability rollout
 
 > Historical note: this document records the 2026-08-28 snapshot rollout. The
-> reactive Aggregate follow-up in
-> [realtime-reporting-rollout.md](./realtime-reporting-rollout.md) restores live
+> reactive Aggregate follow-up restores live
 > dashboard subscriptions without bringing back the unbounded reads described
 > below.
 
