@@ -1,4 +1,5 @@
 "use node";
+import { formatSyntheticTargetingExamples } from "../../lib/syntheticProfileCore";
 
 // convex/agents/tools/qualifyProspect.ts
 // Agent tool for prospect qualification
@@ -368,6 +369,9 @@ export const qualifyProspect = createTool({
                 profiles: workspace.icps ?? [],
               }),
             icpDescription: workspace.description,
+            syntheticTargetingExamples: formatSyntheticTargetingExamples(
+              workspace.icps ?? []
+            ),
             icpPainPoints: keywords,
             useCaseKey: workspace.useCaseKey,
             relevantMemories: learningContext.relevantMemories,
@@ -375,7 +379,7 @@ export const qualifyProspect = createTool({
             complianceInstructions: learningContext.complianceInstructions,
             similarQualifiedCases: learningContext.similarQualifiedCases,
             similarDisqualifiedCases: learningContext.similarDisqualifiedCases,
-            routing: "fast",
+            routing: "onboarding",
           });
 
           // 5. Update prospect in database
@@ -386,6 +390,7 @@ export const qualifyProspect = createTool({
                 getLearningTargetingFingerprint(workspace),
               prospectId: args.prospectId as Id<"prospects">,
               qualificationStatus: result.status,
+              qualificationReasoning: result.matchReasoning ?? result.reasoning,
               qualificationScore: result.score,
               qualificationScoreBreakdown: result.scoreBreakdown,
               qualificationCriteriaVersion: 1,

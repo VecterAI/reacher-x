@@ -112,19 +112,23 @@ export function normalizeProspectProfileData(
 
   const qualificationSources = [
     ...new Map(
-      rawQualificationSources.map((source, index) => {
-        const sourceId =
-          typeof source.sourceId === "string" ? source.sourceId : undefined;
-        return [
-          sourceId ?? `qualification-source-${index}`,
-          {
-            sourceId,
-            sourcePost:
-              (sourceId ? evidencePostsById.get(sourceId) : undefined) ??
-              resolveEvidencePost(source.sourcePost),
-          },
-        ] as const;
-      })
+      rawQualificationSources
+        .filter((source) => source.evidenceKind !== "profile")
+        .map((source, index) => {
+          const sourceId =
+            typeof source.sourceId === "string" && source.sourceId.trim()
+              ? source.sourceId
+              : undefined;
+          return [
+            sourceId ?? `qualification-source-${index}`,
+            {
+              sourceId,
+              sourcePost:
+                (sourceId ? evidencePostsById.get(sourceId) : undefined) ??
+                resolveEvidencePost(source.sourcePost),
+            },
+          ] as const;
+        })
     ).values(),
   ];
 
@@ -178,6 +182,10 @@ export function normalizeProspectProfileData(
       (prospect.prospectType as "individual" | "organization" | "unknown") ||
       "unknown",
     briefIntro: prospect.briefIntro as string | undefined,
+    qualificationReasoning:
+      typeof prospect.qualificationReasoning === "string"
+        ? prospect.qualificationReasoning
+        : undefined,
     pipelineStage: (prospect.pipelineStage as PipelineStage) || "new",
     stageTimestamps: creationTime
       ? {

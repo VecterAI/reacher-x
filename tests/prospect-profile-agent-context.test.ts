@@ -103,7 +103,7 @@ test("agent profile snapshot includes the same stored website, socials, enrichme
   assert.equal(snapshot.recentActivityLog.length, 1);
 });
 
-test("Main Agent cannot launch discovery while Setup Agent retains that tool", () => {
+test("neither Main nor Setup Agent can bypass durable discovery workflows", () => {
   const source = readFileSync("convex/agents/index.ts", "utf8");
   const mainTools = source.match(
     /const mainAgentBaseTools = \{([\s\S]*?)\n\} as const;/
@@ -115,7 +115,8 @@ test("Main Agent cannot launch discovery while Setup Agent retains that tool", (
   assert.ok(mainTools);
   assert.ok(setupTools);
   assert.doesNotMatch(mainTools, /searchProspects/);
-  assert.match(setupTools, /searchProspects/);
+  assert.doesNotMatch(setupTools, /searchProspects/);
+  assert.match(setupTools, /approveSetupExamples/);
 });
 
 test("persisted progress artifacts do not render a live spinner", () => {

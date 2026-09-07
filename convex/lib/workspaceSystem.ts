@@ -1,3 +1,4 @@
+import { DISCOVERY_CONFIGURATION_MESSAGE } from "../../shared/lib/workspaceStatusCopyHelpers";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import type {
@@ -12,6 +13,7 @@ import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { hasRequiredWorkspaceAgentData } from "./workspaceSetup";
 
 type WorkspaceIssueReason =
+  | "search_configuration_missing"
   | "setup_incomplete"
   | "icp_refresh_required"
   | "workflow_failed"
@@ -48,6 +50,9 @@ function deriveWorkspaceIssueReason(
   if (!hasRequiredWorkspaceAgentData(workspace)) {
     return "setup_incomplete";
   }
+
+  if (workspace.onboardingIssueStatusCode === "search_configuration_missing")
+    return "search_configuration_missing";
 
   if (workspace.onboardingIssueStatusCode === "icp_refresh_required") {
     return "icp_refresh_required";
@@ -268,6 +273,25 @@ export function deriveWorkspaceSystemStatus(
     (feature) =>
       feature.status === "degraded" || feature.status === "unavailable"
   );
+
+  if (issueReason === "search_configuration_missing") {
+    return {
+      workspaceId: String(workspace._id),
+      mode: "attention",
+      workflowStatus,
+      discoveryState: "paused",
+      pauseReason: null,
+      issueReason,
+      canResume: false,
+      label: "Search unavailable",
+      tooltip: DISCOVERY_CONFIGURATION_MESSAGE,
+      dialogTitle: "Search needs attention",
+      dialogDescription: DISCOVERY_CONFIGURATION_MESSAGE,
+      actionLabel: "Retry",
+      actionKind: "retry",
+      features,
+    };
+  }
 
   if (
     workflowStatus === "running" &&

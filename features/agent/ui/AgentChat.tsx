@@ -174,7 +174,6 @@ import {
   RadioButtonUncheckedIcon,
   PersonIcon,
   ChangeHistoryIcon,
-  OpenInNewIcon,
 } from "@/shared/ui/components/icons";
 import {
   useOutreachPlanPreviewState,
@@ -192,6 +191,7 @@ import {
   buildAgentMentionReplacementText,
   filterSelectedMentionEntitiesByInput,
 } from "@/features/agent/lib/entityMentions";
+import { OnboardingProgressCard } from "./components/OnboardingProgressCard";
 import { SetupOnboardingInlineCard } from "./components/SetupOnboardingInlineCard";
 import { SetupOnboardingCardMenu } from "./components/SetupOnboardingCardMenu";
 import { XChatUnlockCard } from "./components/xchat-history";
@@ -201,10 +201,7 @@ import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 import { resolveUrlDescriptionStatusText } from "@/shared/lib/urls/urlDescriptionStatus";
 import { isSetupComposerLocked } from "@/convex/lib/setupFlowCore";
-import { buildSetupPreviewProfileData } from "@/features/agent/lib/setupPreviewProfileData";
 import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
-import { AvatarStack } from "@/shared/ui/components/AvatarStack";
-import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import { UrlDescriptionFooterSlot } from "@/shared/ui/components/UrlDescriptionStatus";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -412,6 +409,7 @@ export interface AgentChatProps {
   /** Prevent setup bootstrap while a landing draft decision is unresolved. */
   deferSetupHandoff?: boolean;
   /** Callback when effective thread ID changes (resolved from URL or internal state) */
+  onSetupTurnPendingChange?: (pending: boolean) => void;
   onEffectiveThreadIdChange?: (threadId: string | null) => void;
   /** Open dynamic panel from inline card */
   onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
@@ -2264,6 +2262,7 @@ export function AgentChat({
   newThreadSignal,
   deferSetupHandoff = false,
   onEffectiveThreadIdChange,
+  onSetupTurnPendingChange,
   onOpenPanelFromCard,
   onOpenPlanPanel,
   onOpenWorkspaceProfilePanel,
@@ -3033,9 +3032,7 @@ export function AgentChat({
     !isSetupAudienceEntry &&
     !isSetupCollectingAudience &&
     setupSessionForInlineCard &&
-    !["discarded", "failed", "ready"].includes(
-      setupSessionForInlineCard.status
-    );
+    !["discarded"].includes(setupSessionForInlineCard.status);
   const showSetupDraftMenu =
     isSetupRoute &&
     Boolean(setupSessionForInlineCard) &&
@@ -3139,84 +3136,24 @@ export function AgentChat({
   const showComposerStop =
     !isSetupAudienceEntry &&
     (isSetupRoute ? isStreaming : isLoading || isStreaming);
-  const showSetupPreviewStrip =
-    showSetupInlineCard &&
-    setupSessionForInlineCard?.inputPhase === "awaiting_preview_approval";
-  const setupPreviewSummariesQuery = useQueryWithStatus(
-    api.setupSessions.getSetupPreviewSummaries,
-    showSetupPreviewStrip && setupSessionForInlineCard
-      ? { sessionId: setupSessionForInlineCard.sessionId }
-      : "skip"
-  );
-  const setupPreviewStripParticipants = useMemo(() => {
-    const rows = setupPreviewSummariesQuery.data ?? [];
-    return rows.slice(0, 4).map((prospect) => {
-      const card = buildSetupPreviewProfileData(prospect);
-      const name =
-        typeof card.profileData.displayName === "string"
-          ? card.profileData.displayName
-          : "Preview";
-      const avatarUrl =
-        typeof card.profileData.avatarUrl === "string"
-          ? card.profileData.avatarUrl
-          : undefined;
-      return { name, avatarUrl };
-    });
-  }, [setupPreviewSummariesQuery.data]);
-  const setupPreviewEntityPlural = useMemo(() => {
-    if (!setupSessionForInlineCard) {
-      return "people";
-    }
-    return getWorkspaceUseCase(
-      setupSessionForInlineCard.useCaseKey
-    ).entityPlural.toLowerCase();
-  }, [setupSessionForInlineCard]);
-  const approveSetupGeneration = useMutation(
-    api.setupSessions.approveSetupGeneration
-  );
-  const [isApprovingSetupPreview, setIsApprovingSetupPreview] = useState(false);
-  const approvingSetupPreviewRef = useRef(false);
-  const [isApprovingSetupIcps, setIsApprovingSetupIcps] = useState(false);
-  const approvingSetupIcpsRef = useRef(false);
-  const handleApproveSetupIdealProfiles = useCallback(async () => {
-    if (!setupSessionForInlineCard || approvingSetupIcpsRef.current) return;
-
-    approvingSetupIcpsRef.current = true;
-    setIsApprovingSetupIcps(true);
+  const retrySetup = useMutation(api.setupSessions.retrySetupGeneration);
+  const handleRetrySetup = useCallback(async () => {
+    if (!setupSessionForInlineCard) return;
     try {
-      await sendMessage("I approve these ideal profiles. Continue with setup.");
-    } finally {
-      approvingSetupIcpsRef.current = false;
-      setIsApprovingSetupIcps(false);
-    }
-  }, [sendMessage, setupSessionForInlineCard]);
-  const isSetupApprovalTurnPending =
-    isApprovingSetupIcps ||
-    (pendingTurn?.prompt ===
-      "I approve these ideal profiles. Continue with setup." &&
-      pendingTurn.phase !== "failed" &&
-      pendingTurn.phase !== "finished");
-  const handleApproveSetupPreview = useCallback(async () => {
-    if (!setupSessionForInlineCard || approvingSetupPreviewRef.current) {
-      return;
-    }
-
-    approvingSetupPreviewRef.current = true;
-    setIsApprovingSetupPreview(true);
-    try {
-      await approveSetupGeneration({
+      await retrySetup({
         sessionId: setupSessionForInlineCard.sessionId,
       });
     } catch (error) {
-      toast.error("Could not continue setup", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    } finally {
-      approvingSetupPreviewRef.current = false;
-      setIsApprovingSetupPreview(false);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not retry. Please try again."
+      );
     }
-  }, [approveSetupGeneration, setupSessionForInlineCard]);
+  }, [retrySetup, setupSessionForInlineCard]);
+  useEffect(() => {
+    onSetupTurnPendingChange?.(isLoading || isStreaming);
+  }, [isLoading, isStreaming, onSetupTurnPendingChange]);
   const currentGenerationHasSnapshot = Boolean(
     setupSessionForInlineCard &&
     setupProfileSnapshots?.some(
@@ -3234,53 +3171,19 @@ export function AgentChat({
     );
   const setupInlineContent =
     shouldShowLiveSetupCard && setupSessionForInlineCard ? (
-      <div className="flex min-w-0 flex-col gap-3">
-        {showSetupPreviewStrip && setupPreviewStripParticipants.length > 0 ? (
-          <section aria-label="Preview results">
-            <InlineFeatureStrip
-              leading={
-                <>
-                  <AvatarStack
-                    size="sm"
-                    maxVisible={4}
-                    participants={setupPreviewStripParticipants}
-                  />
-                  <span className="min-w-0 truncate text-sm font-medium">
-                    <span className="font-mono tabular-nums">
-                      {setupSessionForInlineCard.previewProspectIds.length ||
-                        setupPreviewStripParticipants.length}
-                    </span>
-                    {` preview ${setupPreviewEntityPlural}`}
-                  </span>
-                </>
-              }
-              trailing={
-                <>
-                  <Button
-                    type="button"
-                    size="xs"
-                    disabled={isApprovingSetupPreview}
-                    onClick={() => void handleApproveSetupPreview()}
-                  >
-                    {isApprovingSetupPreview ? "Continuing..." : "Continue"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="xsIcon"
-                    variant="outline"
-                    aria-label="Open preview panel"
-                    onClick={onOpenSetupOnboardingPanel}
-                  >
-                    <OpenInNewIcon className="fill-current" />
-                  </Button>
-                </>
-              }
-            />
-          </section>
-        ) : null}
+      setupSessionForInlineCard.status === "ready" &&
+      setupSessionForInlineCard.targetWorkspaceId ? (
+        <OnboardingProgressCard
+          workspaceId={setupSessionForInlineCard.targetWorkspaceId}
+          footerMode="action"
+          footerActionLabel={`View ${getWorkspaceUseCase(setupSessionForInlineCard.useCaseKey).entityPlural.toLowerCase()}`}
+          onFooterAction={() => {
+            setPreferredShellContext("workspace");
+            router.push("/");
+          }}
+        />
+      ) : (
         <SetupOnboardingInlineCard
-          sessionId={setupSessionForInlineCard.sessionId}
-          mode={setupSessionForInlineCard.mode}
           useCaseKey={setupSessionForInlineCard.useCaseKey}
           title={getSetupPanelStepTitle(
             setupSessionForInlineCard.currentStepId
@@ -3289,13 +3192,11 @@ export function AgentChat({
           stepTotal={setupSessionForInlineCard.totalSteps}
           inputPhase={setupSessionForInlineCard.inputPhase}
           generatedProfiles={setupSessionForInlineCard.generatedProfiles}
-          previewProgress={setupSessionForInlineCard.previewProgress}
-          statusUpdatedAt={setupSessionForInlineCard.statusUpdatedAt}
+          errorMessage={setupSessionForInlineCard.errorMessage}
+          onRetry={handleRetrySetup}
           onContinue={onOpenSetupOnboardingPanel}
-          onApproveIdealProfiles={handleApproveSetupIdealProfiles}
-          isApprovalPending={isSetupApprovalTurnPending}
         />
-      </div>
+      )
     ) : null;
   const activeGenerationSourceOrder =
     setupSessionForInlineCard?.generationSourceMessageId
@@ -3306,7 +3207,9 @@ export function AgentChat({
         )?.order
       : undefined;
   const setupInlineAnchorMessageKey =
-    setupInlineContent && !shouldShowPendingUserMessage
+    setupInlineContent &&
+    !shouldShowPendingUserMessage &&
+    setupSessionForInlineCard?.status === "generating_profiles"
       ? (renderedDisplayMessages.find(
           (message) =>
             message.role === "assistant" &&
@@ -3322,37 +3225,19 @@ export function AgentChat({
 
       return (
         <SetupOnboardingInlineCard
-          sessionId={snapshot.sessionId}
-          mode={snapshot.mode}
           useCaseKey={snapshot.useCaseKey}
-          title="Review ideal profiles"
+          title="Review examples"
           stepNumber={1}
           stepTotal={1}
           inputPhase="awaiting_icp_approval"
           generatedProfiles={snapshot.generatedProfiles}
-          previewProgress={{
-            discoveredCount: 0,
-            qualifiedCount: 0,
-            enrichedCount: 0,
-            selectedCount: 0,
-          }}
-          statusUpdatedAt={snapshot.createdAt}
-          isApprovalPending={isSetupApprovalTurnPending}
           onContinue={
             isCurrentApproval ? onOpenSetupOnboardingPanel : undefined
-          }
-          onApproveIdealProfiles={
-            isCurrentApproval ? handleApproveSetupIdealProfiles : undefined
           }
         />
       );
     },
-    [
-      handleApproveSetupIdealProfiles,
-      isSetupApprovalTurnPending,
-      onOpenSetupOnboardingPanel,
-      setupSessionForInlineCard,
-    ]
+    [onOpenSetupOnboardingPanel, setupSessionForInlineCard]
   );
   const handleTriggerMentionInsertion = useCallback(() => {
     if (!agentComposerApi || isComposerLocked) {
@@ -3557,7 +3442,7 @@ export function AgentChat({
               : isSetupRoute &&
                   setupSessionForInlineCard?.inputPhase ===
                     "awaiting_icp_approval"
-                ? "Ask to add, remove, or refine an ideal profile…"
+                ? `Tell me what to change about these ${getWorkspaceUseCase(setupSessionForInlineCard.useCaseKey).entityPlural.toLowerCase()}…`
                 : isSetupRoute && setupSessionLocksComposer
                   ? "Chat is locked during this setup step."
                   : displayMessages.length > 0

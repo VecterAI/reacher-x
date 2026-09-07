@@ -1,6 +1,8 @@
 "use node";
 
-import { getLearningTargetingFingerprint } from "./lib/learningTargetingHelpers";
+import { clearWorkspaceKeywords } from "./lib/keywordResetCore";
+
+import { getWorkspaceIcpRefreshFingerprint } from "./lib/workspaceIcpSignalsCore";
 import type { WorkflowId } from "@convex-dev/workflow";
 import type { ProviderMetadata } from "ai";
 import { v } from "convex/values";
@@ -71,25 +73,6 @@ async function recordGenerationTelemetry(
       userId: args.userId,
     }),
   ]);
-}
-
-async function clearWorkspaceKeywords(
-  ctx: ActionCtx,
-  workspaceId: Doc<"workspaces">["_id"]
-) {
-  let deleted = 0;
-  let hasMore = true;
-
-  while (hasMore) {
-    const result: { deleted: number; hasMore: boolean } = await ctx.runMutation(
-      internal.keywords.deleteWorkspaceKeywordsBatchInternal,
-      { workspaceId, limit: 250 }
-    );
-    deleted += result.deleted;
-    hasMore = result.hasMore;
-  }
-
-  return deleted;
 }
 
 export const regenerateWorkspaceTargeting = action({
@@ -201,7 +184,7 @@ export const regenerateWorkspaceTargeting = action({
       {
         workspaceId: workspace._id,
         expectedTargetingFingerprint:
-          getLearningTargetingFingerprint(workspace),
+          getWorkspaceIcpRefreshFingerprint(workspace),
         userId: user._id,
         name: args.name,
         sourceUrl: args.sourceUrl?.trim() || undefined,

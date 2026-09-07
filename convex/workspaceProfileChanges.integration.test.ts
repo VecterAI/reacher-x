@@ -8,12 +8,15 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 const modules = import.meta.glob("./**/*.ts");
 
+import { syntheticExamples } from "../test/syntheticProfiles";
+
 const savedProfiles = [
   {
     title: "Senior frontend engineers",
     description: "Experienced product engineers focused on React applications.",
     painPoints: ["Limited growth", "Legacy frontend stacks"],
     channels: ["X", "LinkedIn"],
+    syntheticExamples,
     syntheticPosts: ["I want to work on a modern frontend stack."],
     qualificationKeywords: ["React", "TypeScript"],
   },
@@ -22,6 +25,7 @@ const savedProfiles = [
     description: "Technical leaders who still build user-facing products.",
     painPoints: ["Low technical ownership"],
     channels: ["LinkedIn"],
+    syntheticExamples,
     syntheticPosts: ["Technical leadership should stay close to the product."],
     qualificationKeywords: ["Staff engineer", "Product engineering"],
   },
@@ -30,6 +34,7 @@ const savedProfiles = [
     description: "Early-stage engineers comfortable with product ambiguity.",
     painPoints: ["Slow decision making"],
     channels: ["X"],
+    syntheticExamples,
     syntheticPosts: ["I enjoy taking products from zero to one."],
     qualificationKeywords: ["Founding engineer", "Zero to one"],
   },

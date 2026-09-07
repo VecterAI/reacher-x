@@ -51,12 +51,20 @@ export const workspaceProfileProvenanceValidator = v.union(
   v.literal("manual")
 );
 
+export const syntheticProfileExampleValidator = v.object({
+  platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+  displayName: v.string(),
+  title: v.string(),
+  bio: v.string(),
+});
+
 export const icpValidator = v.object({
   title: v.string(),
   description: v.string(),
   painPoints: v.array(v.string()),
   channels: v.array(v.string()),
   provenance: v.optional(workspaceProfileProvenanceValidator),
+  syntheticExamples: v.optional(v.array(syntheticProfileExampleValidator)),
   syntheticPosts: v.optional(v.array(v.string())),
   qualificationKeywords: v.optional(v.array(v.string())),
 });
@@ -1341,7 +1349,8 @@ export const prospectPlatformValidator = v.union(
 export const qualificationSourceContentTypeValidator = v.union(
   v.literal("post"),
   v.literal("reply"),
-  v.literal("quote_post")
+  v.literal("quote_post"),
+  v.literal("profile")
 );
 
 /**
@@ -1352,7 +1361,8 @@ export const qualificationSourceValidator = v.object({
   verificationVersion: v.literal(1),
   evidenceKind: v.union(
     v.literal("social_content"),
-    v.literal("external_article")
+    v.literal("external_article"),
+    v.literal("profile")
   ),
   platform: prospectPlatformValidator,
   contentType: qualificationSourceContentTypeValidator,
@@ -1470,6 +1480,7 @@ export const qualificationAuditItemResultValidator = v.object({
   evaluatedEvidenceCount: v.number(),
   verifiedSourceCount: v.number(),
   reasoning: v.string(),
+  matchReasoning: v.optional(v.string()),
   error: v.optional(v.string()),
   failure: v.optional(qualificationFailureValidator),
   qualificationSources: v.array(qualificationSourceValidator),
@@ -2590,6 +2601,7 @@ export const workspaceOnboardingIssueStatusCodeValidator = v.union(
   v.literal("workflow_failed"),
   v.literal("monitor_creation_failed"),
   v.literal("search_failed"),
+  v.literal("search_configuration_missing"),
   v.literal("icp_refresh_required"),
   v.literal("setup_incomplete"),
   v.literal("unknown_error")

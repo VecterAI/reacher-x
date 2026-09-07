@@ -21,25 +21,18 @@ import {
 } from "../lib/agentMetadata";
 import { buildMainAgentPrompt, buildSetupAgentPrompt } from "./prompts";
 import { DEFAULT_WORKSPACE_USE_CASE_KEY } from "../../shared/lib/workspaceUseCases";
-import { analyzeUrl } from "./tools/analyzeUrl";
-import { convertToSocialQueries } from "./tools/convertToSocialQueries";
-import { createWorkspace } from "./tools/createWorkspace";
-import { enrichProspect } from "./tools/enrichProspect";
-import { generateImprovedDescriptionAndICPs } from "./tools/generateImprovedDescription";
 import { getUserStatus } from "./tools/getUserStatus";
 import {
-  approveSetupIdealProfiles,
+  approveSetupExamples,
+  getSetupTargeting,
   reviseSetupAudience,
   submitSetupAudience,
 } from "./tools/setupSessionChat";
 import { listProspectPlans, managePlanBatch } from "./tools/planBatch";
-import { qualifyProspect } from "./tools/qualifyProspect";
 import { queryWorkspace } from "./tools/queryWorkspace";
 import { rememberWorkspaceMemory } from "./tools/rememberWorkspaceMemory";
-import { searchProspects } from "./tools/searchProspects";
 import { searchWorkspaceMemories } from "./tools/searchWorkspaceMemories";
 import { startWorkspacePlans } from "./tools/startWorkspacePlans";
-import { updateWorkspace } from "./tools/updateWorkspace";
 import {
   approveWorkspaceProfiles,
   proposeWorkspaceProfiles,
@@ -204,21 +197,14 @@ export const setupAgent = new Agent(components.agent, {
   instructions: buildSetupAgentPrompt(DEFAULT_WORKSPACE_USE_CASE_KEY),
   tools: {
     // Setup tools
-    analyzeUrl,
-    generateImprovedDescriptionAndICPs,
     getUserStatus,
     submitSetupAudience,
     reviseSetupAudience,
-    approveSetupIdealProfiles,
-    createWorkspace,
-    updateWorkspace,
+    approveSetupExamples,
+    getSetupTargeting,
     // Prospecting tools
-    convertToSocialQueries,
-    searchProspects,
     // Qualification tools
-    qualifyProspect,
     // Enrichment tools
-    enrichProspect,
     // Workspace memory tools
     rememberWorkspaceMemory,
     searchWorkspaceMemories,

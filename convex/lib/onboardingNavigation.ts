@@ -1,3 +1,4 @@
+import { DISCOVERY_CONFIGURATION_MESSAGE } from "../../shared/lib/workspaceStatusCopyHelpers";
 import type { Doc } from "../_generated/dataModel";
 import { isProspectReadyQualifiedEnriched } from "./readModelHelpers";
 
@@ -23,7 +24,13 @@ export function mapInternalIssueCodeToUserVisibleIssueState(
   if (!issueCode) {
     return { status: "none", message: null };
   }
-  return { status: "delayed", message: ONBOARDING_DELAYED_SAFE_MESSAGE };
+  return {
+    status: "delayed",
+    message:
+      issueCode === "search_configuration_missing"
+        ? DISCOVERY_CONFIGURATION_MESSAGE
+        : ONBOARDING_DELAYED_SAFE_MESSAGE,
+  };
 }
 
 export function countReadyQualifiedEnrichedProspects(

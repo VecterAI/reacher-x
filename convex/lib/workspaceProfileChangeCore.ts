@@ -64,6 +64,9 @@ export function normalizeWorkspaceProfiles(
       )
     ),
     ...(profile.provenance ? { provenance: profile.provenance } : {}),
+    ...(profile.syntheticExamples
+      ? { syntheticExamples: profile.syntheticExamples }
+      : {}),
     ...(profile.syntheticPosts
       ? { syntheticPosts: profile.syntheticPosts }
       : {}),
@@ -89,8 +92,8 @@ export function markWorkspaceProfilesAsAiGenerated(
 }
 
 export function validateWorkspaceProfiles(profiles: WorkspaceProfile[]): void {
-  if (profiles.length < 3) {
-    throw new Error("At least three ideal profiles are required.");
+  if (profiles.length < 1) {
+    throw new Error("At least one ideal profile is required.");
   }
 
   const titleKeys = new Set<string>();

@@ -187,13 +187,16 @@ test("task editing replaces active agent panels instead of hiding behind them", 
   );
 });
 
-test("both Post panels use the desktop left divider without a right divider", () => {
-  for (const file of [
-    "features/prospects/ui/components/TwitterPostPanel.tsx",
-    "features/webapp/ui/components/linkedin/LinkedInPostThreadPanel.tsx",
-  ]) {
-    const source = readSource(file);
-    assert.match(source, /md:border-l/);
-    assert.match(source, /md:border-r-0/);
-  }
+test("Post panels avoid a right divider and Twitter avoids the duplicate left divider", () => {
+  const twitterSource = readSource(
+    "features/prospects/ui/components/TwitterPostPanel.tsx"
+  );
+  const linkedinSource = readSource(
+    "features/webapp/ui/components/linkedin/LinkedInPostThreadPanel.tsx"
+  );
+  // PR #72 intentionally removed Twitter's duplicate left border.
+  assert.doesNotMatch(twitterSource, /md:border-l(?![-\w])/);
+  assert.match(linkedinSource, /md:border-l(?![-\w])/);
+  assert.match(twitterSource, /md:border-r-0/);
+  assert.match(linkedinSource, /md:border-r-0/);
 });

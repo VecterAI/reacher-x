@@ -73,11 +73,11 @@ test("legacy exhausted failures without nextRetryAt become due after backoff", (
   );
 });
 
-test("qualification uses native structured output and a stronger fallback", () => {
-  assert.match(qualificationCoreSource, /nativeStructuredOutput:\s*true/);
+test("qualification defaults to Sol with compatible output and preserves failure details", () => {
+  assert.match(qualificationCoreSource, /routing = "onboarding"/);
   assert.match(
     qualificationCoreSource,
-    /fallbackRouting:\s*routing === "onboarding" \? undefined : "onboarding"/
+    /nativeStructuredOutput:\s*routing !== "onboarding"/
   );
   assert.match(
     qualificationCoreSource,
@@ -90,7 +90,7 @@ test("technical failures keep one rate-bounded durable retry scheduled", () => {
     qualificationWorkflowSource.indexOf(
       "export const handleQualificationComplete"
     ),
-    qualificationWorkflowSource.indexOf("export const startQualification")
+    qualificationWorkflowSource.indexOf("export const startQualification =")
   );
   assert.match(completionHandler, /getQualificationFailureRetryDelayMs/);
   assert.match(completionHandler, /ctx\.scheduler\.runAt/);

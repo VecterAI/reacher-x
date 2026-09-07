@@ -1,3 +1,4 @@
+import { getProspectMatchReasoning } from "../../shared/lib/prospectMatchReasoningHelpers";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import {
@@ -39,6 +40,8 @@ type ProspectSource = Pick<
   | "qualifiedAt"
   | "disqualifiedAt"
   | "qualificationScore"
+  | "qualificationReasoning"
+  | "qualificationCriterionResults"
   | "enrichedAt"
   | "enrichmentStatus"
   | "readyAt"
@@ -191,6 +194,7 @@ export interface ProspectSummaryRecord {
   displayName: string;
   title: string | undefined;
   briefIntro: string | undefined;
+  qualificationReasoning: string | undefined;
   websiteUrl: string | undefined;
   websiteHref: string | undefined;
   websiteDisplayText: string | undefined;
@@ -669,6 +673,7 @@ export function buildProspectSummaryRecord(
     displayName: display.displayName,
     title: prospect.title,
     briefIntro: prospect.briefIntro,
+    qualificationReasoning: getProspectMatchReasoning(prospect),
     websiteUrl: prospect.websiteUrl,
     websiteHref: selectProfileWebsiteHref(
       prospect.websiteHref,

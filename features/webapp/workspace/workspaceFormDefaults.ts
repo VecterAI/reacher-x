@@ -27,7 +27,7 @@ export function workspaceDocToFormValues(
     channels: [...icp.channels],
     provenance: resolveWorkspaceProfileProvenance(icp),
   }));
-  while (icps.length < 3) {
+  while (icps.length < 1) {
     icps.push({
       title: "",
       description: "",

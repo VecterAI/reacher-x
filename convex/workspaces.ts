@@ -1,4 +1,5 @@
-import { getLearningTargetingFingerprint } from "./lib/learningTargetingHelpers";
+import { validateSyntheticProfileExamples } from "./lib/syntheticProfileCore";
+import { getWorkspaceIcpRefreshFingerprint } from "./lib/workspaceIcpSignalsCore";
 import { v } from "convex/values";
 import type { WorkflowId } from "@convex-dev/workflow";
 import {
@@ -681,7 +682,7 @@ export const applyRegeneratedWorkspaceTargetingInternal = internalMutation({
     if (
       args.expectedTargetingFingerprint !== undefined &&
       args.expectedTargetingFingerprint !==
-        getLearningTargetingFingerprint(workspace)
+        getWorkspaceIcpRefreshFingerprint(workspace)
     )
       throw new Error(
         "Workspace targeting changed while regeneration was running; retry with current settings"
@@ -1831,10 +1832,19 @@ export const updateWorkspaceIcpSignalsInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
     icps: v.array(icpValidator),
+    targetingSpec: v.optional(workspaceTargetingSpecValidator),
+    expectedTargetingFingerprint: v.string(),
     clearSystemIssue: v.optional(v.boolean()),
     lastGeneratedAt: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    updated: boolean;
+    mayRestart: boolean;
+    publishedFingerprint?: string;
+  }> => {
     const now = getCurrentUTCTimestamp();
     const workspace = await ctx.db.get(args.workspaceId);
 
@@ -1842,9 +1852,19 @@ export const updateWorkspaceIcpSignalsInternal = internalMutation({
       throw new Error("Workspace not found");
     }
 
+    if (
+      getWorkspaceIcpRefreshFingerprint(workspace) !==
+      args.expectedTargetingFingerprint
+    ) {
+      return { updated: false, mayRestart: false };
+    }
+
+    validateSyntheticProfileExamples(args.icps);
     const updateData: Record<string, unknown> = {
       icps: args.icps,
+      ...(args.targetingSpec ? { targetingSpec: args.targetingSpec } : {}),
       updatedAt: now,
+      icpRefreshResumeRequested: undefined,
     };
 
     if (args.lastGeneratedAt !== undefined) {
@@ -1864,6 +1884,15 @@ export const updateWorkspaceIcpSignalsInternal = internalMutation({
     }
 
     await ctx.db.patch(args.workspaceId, updateData);
+    return {
+      updated: true,
+      publishedFingerprint: getWorkspaceIcpRefreshFingerprint(
+        (await ctx.db.get(args.workspaceId))!
+      ),
+      mayRestart:
+        workspace.prospectingWorkflowStatus === "stopped" ||
+        workspace.prospectingWorkflowStatus === "running",
+    };
   },
 });
 
@@ -1957,8 +1986,9 @@ export const startProspectingWorkflow = action({
       workspace.icps ?? []
     );
     if (
-      missingSignalIndices.length > 0 &&
-      !hasAnyWorkspaceIcpSyntheticPosts(workspace.icps ?? [])
+      workspace.onboardingIssueStatusCode === "icp_refresh_required" ||
+      (missingSignalIndices.length > 0 &&
+        !hasAnyWorkspaceIcpSyntheticPosts(workspace.icps ?? []))
     ) {
       await ctx.runMutation(
         internal.workspaces.setOnboardingIssueStateInternal,
@@ -2134,8 +2164,9 @@ export const startProspectingWorkflowInternal = internalAction({
       workspace.icps ?? []
     );
     if (
-      missingSignalIndices.length > 0 &&
-      !hasAnyWorkspaceIcpSyntheticPosts(workspace.icps ?? [])
+      workspace.onboardingIssueStatusCode === "icp_refresh_required" ||
+      (missingSignalIndices.length > 0 &&
+        !hasAnyWorkspaceIcpSyntheticPosts(workspace.icps ?? []))
     ) {
       await ctx.runMutation(
         internal.workspaces.setOnboardingIssueStateInternal,
@@ -2258,6 +2289,7 @@ export const startProspectingWorkflowInternal = internalAction({
 export const restartProspectingWorkflowForSetupInternal = internalAction({
   args: {
     workspaceId: v.id("workspaces"),
+    expectedTargetingFingerprint: v.optional(v.string()),
   },
   handler: async (
     ctx,
@@ -2270,7 +2302,6 @@ export const restartProspectingWorkflowForSetupInternal = internalAction({
     if (!workspace) {
       throw new Error("Workspace not found");
     }
-    const now = getCurrentUTCTimestamp();
 
     const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
     if (!hasRequiredSetupData) {
@@ -2298,72 +2329,116 @@ export const restartProspectingWorkflowForSetupInternal = internalAction({
       };
     }
 
-    if (workspace.prospectingWorkflowId) {
-      try {
-        await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
-      } catch (error) {
-        workspaceLogger.warn(
-          "Failed to cancel prior prospecting workflow during restart",
-          { workspaceId: String(args.workspaceId) },
-          error
-        );
-      }
-    }
-
-    await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
-      workspaceId: args.workspaceId,
-      status: "stopped",
-    });
-
-    await ctx.runMutation(
-      internal.workflows.prospecting.initializeProspectingBootstrapInternal,
-      { workspaceId: args.workspaceId }
+    return ctx.runMutation(
+      internal.workspaces.restartProspectingWorkflowForSetupCommitInternal,
+      args
     );
-
-    const workflowId = await workflow.start(
-      ctx,
-      internal.workflows.prospecting.prospectingWorkflow,
-      { workspaceId: args.workspaceId },
-      {
-        onComplete: internal.workflows.prospecting.handleWorkflowComplete,
-        context: { workspaceId: args.workspaceId },
-      }
-    );
-
-    await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
-      workspaceId: args.workspaceId,
-      status: "running",
-      workflowId: workflowId.toString(),
-      lastMeaningfulActivityAt: now,
-    });
-    await ctx.runMutation(internal.tenantScheduler.resumeWorkspaceInternal, {
-      workspaceId: args.workspaceId,
-    });
-    await ctx.runMutation(
-      internal.workspaces.clearOnboardingIssueStateInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
-    );
-    await ctx.runMutation(
-      internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
-    );
-    await ctx.runMutation(
-      internal.workspaces.clearProspectingRecoveryStateInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
-    );
-
-    return {
-      success: true,
-      workflowId: workflowId.toString(),
-    };
   },
 });
+
+/** Commit the restart and targeting check in the same transaction. */
+export const restartProspectingWorkflowForSetupCommitInternal =
+  internalMutation({
+    args: {
+      workspaceId: v.id("workspaces"),
+      expectedTargetingFingerprint: v.optional(v.string()),
+    },
+    handler: async (
+      ctx,
+      args
+    ): Promise<{ success: boolean; workflowId?: string; error?: string }> => {
+      const workspace = await ctx.db.get(args.workspaceId);
+      if (!workspace || !hasRequiredWorkspaceAgentData(workspace)) {
+        throw new Error("Workspace setup is incomplete");
+      }
+      if (
+        args.expectedTargetingFingerprint !== undefined &&
+        (getWorkspaceIcpRefreshFingerprint(workspace) !==
+          args.expectedTargetingFingerprint ||
+          !["stopped", "running"].includes(
+            workspace.prospectingWorkflowStatus ?? ""
+          ) ||
+          listWorkspaceIcpSignalMissingIndices(workspace.icps).length > 0 ||
+          workspace.onboardingIssueStatusCode === "icp_refresh_required")
+      ) {
+        return {
+          success: false,
+          error: "Targeting changed or Agent was paused during refresh.",
+        };
+      }
+      const now = getCurrentUTCTimestamp();
+      if (workspace.prospectingWorkflowId) {
+        try {
+          await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
+        } catch (error) {
+          workspaceLogger.warn(
+            "Failed to cancel prior prospecting workflow during restart",
+            { workspaceId: String(args.workspaceId) },
+            error
+          );
+        }
+      }
+
+      await ctx.runMutation(
+        internal.workflows.prospecting.updateWorkflowStatus,
+        {
+          workspaceId: args.workspaceId,
+          status: "stopped",
+        }
+      );
+
+      await ctx.runMutation(
+        internal.workflows.prospecting.initializeProspectingBootstrapInternal,
+        { workspaceId: args.workspaceId }
+      );
+
+      const workflowId = await workflow.start(
+        ctx,
+        internal.workflows.prospecting.prospectingWorkflow,
+        { workspaceId: args.workspaceId },
+        {
+          onComplete: internal.workflows.prospecting.handleWorkflowComplete,
+          context: { workspaceId: args.workspaceId },
+        }
+      );
+
+      await ctx.runMutation(
+        internal.workflows.prospecting.updateWorkflowStatus,
+        {
+          workspaceId: args.workspaceId,
+          status: "running",
+          workflowId: workflowId.toString(),
+          lastMeaningfulActivityAt: now,
+        }
+      );
+      await ctx.runMutation(internal.tenantScheduler.resumeWorkspaceInternal, {
+        workspaceId: args.workspaceId,
+      });
+      await ctx.runMutation(
+        internal.workspaces.clearOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      await ctx.runMutation(
+        internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      await ctx.runMutation(
+        internal.workspaces.clearProspectingRecoveryStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+
+      return {
+        success: true,
+        workflowId: workflowId.toString(),
+      };
+    },
+  });
 
 /**
  * Retry a failed prospecting workflow after cooldown.

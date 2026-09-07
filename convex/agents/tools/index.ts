@@ -8,12 +8,11 @@ export {
 } from "./generateImprovedDescription";
 export { getUserStatus } from "./getUserStatus";
 export {
-  approveSetupIdealProfiles,
+  approveSetupExamples,
+  getSetupTargeting,
   reviseSetupAudience,
   submitSetupAudience,
 } from "./setupSessionChat";
-export { createWorkspace } from "./createWorkspace";
-export { updateWorkspace } from "./updateWorkspace";
 export { rememberWorkspaceMemory } from "./rememberWorkspaceMemory";
 export { searchWorkspaceMemories } from "./searchWorkspaceMemories";
 export { queryWorkspace } from "./queryWorkspace";

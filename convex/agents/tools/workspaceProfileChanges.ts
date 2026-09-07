@@ -44,9 +44,9 @@ async function resolveProfileChangeContext(
 
 const proposedProfilesSchema = z
   .array(icpFormEntrySchema)
-  .min(3)
+  .min(1)
   .describe(
-    "The complete proposed ideal-profile list. Preserve every unchanged saved profile and include all requested additions, updates, and removals. Channels may only use X/Twitter or LinkedIn."
+    "The complete proposed ideal-profile list. Each profile represents one distinct persona. Preserve every unchanged saved profile and include all requested additions, updates, and removals. Channels may only use X/Twitter or LinkedIn."
   );
 
 export const proposeWorkspaceProfiles = createTool({

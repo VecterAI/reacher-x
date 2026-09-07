@@ -38,14 +38,14 @@ test("onboarding has a dedicated Sol route", () => {
   );
   assert.match(setupClassificationSource, /routing = "onboarding" as const/);
   assert.match(setupGenerationSource, /routing = "onboarding" as const/);
-  assert.match(
-    qualificationSource,
-    /isSetupPreview \? "onboarding" : "reasoning"/
-  );
+  assert.match(qualificationSource, /routing: "onboarding"/);
 });
 
-test("keyword generation stays fast and receives original intent", () => {
-  assert.match(prospectingSource, /routing: "fast"/);
+test("keyword generation uses Sol and receives original intent", () => {
+  assert.match(
+    readFileSync("convex/agents/internal.ts", "utf8"),
+    /const routing = args.routing \?\? "onboarding"/
+  );
   assert.match(prospectingSource, /buildDiscoveryBusinessContext\(workspace\)/);
 });
 

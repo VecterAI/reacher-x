@@ -182,8 +182,9 @@ export function getSetupInputPhase(
   switch (status) {
     case "draft":
     case "awaiting_input":
-    case "failed":
       return "collecting_input";
+    case "failed":
+      return null;
     case "generating_profiles":
       return "generating_icps";
     case "awaiting_icp_confirmation":

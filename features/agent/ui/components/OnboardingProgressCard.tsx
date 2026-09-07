@@ -1,6 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import {
+  getRunningWorkspaceStatusCopy,
+  getRecoveringWorkspaceStatusCopy,
+} from "@/shared/lib/workspaceStatusCopyHelpers";
+import { getWorkspaceDiscoveryVerb } from "@/shared/lib/workspaceUseCases";
 import { CloseIcon } from "@/shared/ui/components/icons";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -225,13 +230,7 @@ export function OnboardingProgressCard({
   const entitiesLabel = (
     viewEntitiesLabel ?? pageLabels.entities
   ).toLowerCase();
-  const issueMessage =
-    data?.userVisibleIssueState?.status === "delayed"
-      ? data.userVisibleIssueState.message
-      : null;
-
   const timelineStep = data ? getTimelineStep(data) : 0;
-  const entitiesLower = activeUseCase.entityPlural.toLowerCase();
   const nextRunLabel = nextRunAt ? formatNextRunLabel(nextRunAt) : null;
 
   const handleViewProspects = () => {
@@ -249,41 +248,62 @@ export function OnboardingProgressCard({
     );
   }
 
-  const headerMessage = headlineOverride
-    ? headlineOverride
-    : isReady
-      ? `Your ${entitiesLower} are ready`
-      : issueMessage
-        ? issueMessage
-        : displayMode === "paused"
-          ? "△ Agent is paused."
-          : displayMode === "attention"
-            ? "△ Agent needs attention."
-            : "Setting up your workspace...";
+  const resolvedMode = previewData ? displayMode : data.systemMode;
+  const isStarting =
+    !previewData && !data.pipelineStartedAt && resolvedMode === "running";
+  const headerMessage =
+    headlineOverride ??
+    (resolvedMode === "paused"
+      ? "△ Agent is paused."
+      : resolvedMode === "attention"
+        ? data.userVisibleIssueState?.message || "△ Agent needs attention."
+        : resolvedMode === "degraded"
+          ? getRecoveringWorkspaceStatusCopy({
+              entityPlural: activeUseCase.entityPlural,
+              useCaseName: activeUseCase.displayName,
+            }).title
+          : isStarting
+            ? "△ Agent is starting."
+            : getRunningWorkspaceStatusCopy({
+                discoveryVerb: getWorkspaceDiscoveryVerb(activeUseCase.key),
+                entityPlural: activeUseCase.entityPlural,
+                useCaseName: activeUseCase.displayName,
+              }).title);
   const headerMetaLabel =
     metaLabelOverride ??
-    (displayMode === "running"
+    (resolvedMode === "running"
       ? `${activeUseCase.displayName} pipeline`
-      : displayMode === "degraded"
+      : resolvedMode === "degraded"
         ? `${activeUseCase.displayName} recovering`
-        : displayMode === "paused"
+        : resolvedMode === "paused"
           ? `${activeUseCase.displayName} paused`
           : "Action required");
   const showRecoveringStatus =
-    displayMode === "degraded" && pipelineStartedAt !== null;
+    resolvedMode === "degraded" && pipelineStartedAt !== null;
   const showElapsedTimer =
-    timerMode === "elapsed" && !nextRunLabel && !showRecoveringStatus;
-  const showPausedTimer = timerMode === "paused";
+    (previewData
+      ? timerMode
+      : resolvedMode === "paused"
+        ? "paused"
+        : "elapsed") === "elapsed" &&
+    !nextRunLabel &&
+    !showRecoveringStatus;
+  const showPausedTimer =
+    (previewData
+      ? timerMode
+      : resolvedMode === "paused"
+        ? "paused"
+        : "elapsed") === "paused";
 
   return (
-    <Card className={cn("w-full max-w-md shadow-none", className)}>
+    <Card className={cn("w-full shadow-none", className)}>
       <CardHeader className="gap-3 border-b px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-sm leading-6 font-medium">
               {headlineOverride ? (
                 <span className="text-muted-foreground">{headerMessage}</span>
-              ) : headerMessage === "Setting up your workspace..." ? (
+              ) : isStarting ? (
                 <AsciiSpinnerText
                   text={headerMessage}
                   variant="spinner"
@@ -310,7 +330,7 @@ export function OnboardingProgressCard({
             >
               <CloseIcon className="size-4 fill-current" />
             </Button>
-          ) : headerMessage === "Setting up your workspace..." ? (
+          ) : isStarting ? (
             <div className="w-8 shrink-0" />
           ) : null}
         </div>

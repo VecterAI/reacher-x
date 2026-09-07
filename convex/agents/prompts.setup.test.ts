@@ -7,8 +7,21 @@ describe("chat-driven setup agent prompt", () => {
   it("uses agent tools for validated input and profile revisions", () => {
     expect(prompt).toContain("call submitSetupAudience");
     expect(prompt).toContain("call reviseSetupAudience");
-    expect(prompt).toContain("call approveSetupIdealProfiles");
+    expect(prompt).toContain("call approveSetupExamples");
+    expect(prompt).toContain("call getSetupTargeting");
     expect(prompt).toContain("structured LLM validation/classification");
+  });
+
+  it("does not advertise retired setup search tools", () => {
+    const toolsSection = prompt.split("## Available Tools")[1];
+    for (const retired of [
+      "analyzeUrl",
+      "generateImprovedDescriptionAndICPs",
+      "convertToSocialQueries",
+      "searchProspects",
+      "## Search Flow",
+    ])
+      expect(toolsSection).not.toContain(retired);
   });
 
   it("limits setup approval to ideal profiles", () => {

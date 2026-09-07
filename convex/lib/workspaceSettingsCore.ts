@@ -7,7 +7,7 @@ import {
 } from "../../shared/lib/utils/time/timeUtils";
 import { assertValidWorkspaceName } from "./workspaceNameHelpers";
 import {
-  hasAnyWorkspaceIcpSyntheticPosts,
+  buildWorkspaceIcpSemanticKey,
   invalidateWorkspaceIcpGeneratedSignals,
   reconcileWorkspaceIcpUpdate,
 } from "./workspaceIcpSignalsCore";
@@ -47,6 +47,7 @@ export async function applyWorkspaceSettingsUpdateCore(
   const { workspace, updates } = args;
   const now = getCurrentUTCTimestamp();
   const updateData: Record<string, unknown> = { updatedAt: now };
+  let profilesChanged = false;
   let appliedIcps: WorkspaceProfile[] | undefined;
   let regenerationIndices: number[] = [];
   let restartWorkflowAfterRefresh = false;
@@ -95,20 +96,31 @@ export async function applyWorkspaceSettingsUpdateCore(
       ? invalidateWorkspaceIcpGeneratedSignals(reconciliation.nextIcps)
       : reconciliation.nextIcps;
 
+    profilesChanged =
+      JSON.stringify(
+        (workspace.icps ?? []).map(buildWorkspaceIcpSemanticKey)
+      ) !== JSON.stringify(nextIcps.map(buildWorkspaceIcpSemanticKey));
     updateData.icps = nextIcps;
     appliedIcps = nextIcps;
     regenerationIndices = targetingContextChanged
       ? nextIcps.map((_profile, index) => index)
       : reconciliation.regenerationIndices;
 
-    if (regenerationIndices.length > 0) {
+    if (
+      regenerationIndices.length > 0 ||
+      profilesChanged ||
+      targetingContextChanged
+    ) {
       updateData.onboardingIssueStatusCode = "icp_refresh_required";
       updateData.onboardingIssueSource = "system";
       updateData.onboardingIssueUpdatedAt = now;
       stopWorkflowForRefresh =
-        !hasAnyWorkspaceIcpSyntheticPosts(nextIcps) &&
         workspace.prospectingWorkflowStatus === "running";
-      restartWorkflowAfterRefresh = stopWorkflowForRefresh;
+      restartWorkflowAfterRefresh =
+        stopWorkflowForRefresh ||
+        (workspace.icpRefreshResumeRequested === true &&
+          workspace.prospectingWorkflowStatus === "stopped");
+      updateData.icpRefreshResumeRequested = restartWorkflowAfterRefresh;
     } else if (
       workspace.onboardingIssueSource === "system" &&
       workspace.onboardingIssueStatusCode === "icp_refresh_required"
@@ -136,9 +148,14 @@ export async function applyWorkspaceSettingsUpdateCore(
     );
   }
 
-  if (targetingContextChanged || regenerationIndices.length > 0) {
+  if (
+    targetingContextChanged ||
+    profilesChanged ||
+    regenerationIndices.length > 0
+  ) {
     updateData.targetingLearningResetAt = now;
-    updateData.targetingSpec = undefined;
+    // Keep the prior contract while work is paused; refresh publishes its
+    // replacement atomically with the new examples.
     updateData.prospectingBootstrapCycleCount = 0;
     updateData.prospectingBootstrapCompletedAt = undefined;
   }
@@ -151,7 +168,11 @@ export async function applyWorkspaceSettingsUpdateCore(
     });
   }
 
-  if (regenerationIndices.length > 0) {
+  if (
+    regenerationIndices.length > 0 ||
+    profilesChanged ||
+    targetingContextChanged
+  ) {
     await ctx.scheduler.runAfter(
       0,
       internal.workspaceIcpSignals.refreshWorkspaceIcpSignalsInternal,

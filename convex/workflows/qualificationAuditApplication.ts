@@ -366,6 +366,8 @@ export const processApplicationBatchInternal = internalAction({
             : { expectedQualificationScore: entry.item.previousScore }),
           qualificationStatus: entry.item.proposedStatus,
           qualificationScore: entry.item.proposedScore,
+          qualificationReasoning:
+            entry.item.matchReasoning ?? entry.item.reasoning,
           qualificationScoreBreakdown: entry.item.scoreBreakdown,
           qualificationCriteriaVersion: entry.item.qualificationCriteriaVersion,
           qualificationCriterionResults:

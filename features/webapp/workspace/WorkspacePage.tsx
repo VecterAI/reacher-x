@@ -126,7 +126,7 @@ function createEmptyWorkspaceFormValues(): WorkspacePageFormValues {
     rawUserDescription: "",
     improvedDescription: "",
     sourceUrl: "",
-    icps: Array.from({ length: 3 }, () => ({
+    icps: Array.from({ length: 1 }, () => ({
       title: "",
       description: "",
       painPoints: [],
@@ -358,10 +358,10 @@ export default function WorkspacePage() {
       .filter(icpDraftHasMeaningfulContent);
     const agentSettingsChanged =
       agentAutonomyMode !== persistedAgentAutonomyMode;
-    if (profilesWereEdited && normalizedIcps.length < 3) {
+    if (profilesWereEdited && normalizedIcps.length < 1) {
       form.setError("icps", {
         type: "manual",
-        message: "At least three ideal customer profiles are required.",
+        message: "At least one ideal profile is required.",
       });
       setActiveTab("profiles");
       return "failed" as const;
@@ -937,14 +937,14 @@ export default function WorkspacePage() {
                                     type="button"
                                     size="xsIcon"
                                     variant="ghost"
-                                    disabled={fields.length <= 3}
+                                    disabled={fields.length <= 1}
                                     title={
-                                      fields.length <= 3
-                                        ? "At least three profiles are required."
+                                      fields.length <= 1
+                                        ? "At least one profile is required."
                                         : "Delete profile"
                                     }
                                     onClick={() => {
-                                      if (fields.length > 3) remove(index);
+                                      if (fields.length > 1) remove(index);
                                     }}
                                   >
                                     <DeleteIcon className="fill-current" />

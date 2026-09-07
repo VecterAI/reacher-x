@@ -55,7 +55,6 @@ import {
   workspaceOnboardingIssueSourceValidator,
   workspaceOnboardingIssueStatusCodeValidator,
   workspaceProfileChangeStatusValidator,
-  workspaceProfileProvenanceValidator,
   monitorStatusValidator,
   monitorHealthStatusValidator,
   pipelineStageValidator,
@@ -381,21 +380,8 @@ export default defineSchema({
     targetingLearningResetAt: v.optional(v.number()),
 
     // v4 NEW: Structured Ideal Customer Profiles
-    icps: v.optional(
-      v.array(
-        v.object({
-          title: v.string(), // e.g., "Solo SaaS Founders"
-          description: v.string(), // Who they are
-          painPoints: v.array(v.string()), // Their problems
-          channels: v.array(v.string()), // Where to find them (Twitter, LinkedIn)
-          provenance: v.optional(workspaceProfileProvenanceValidator),
-          // Synthetic posts: realistic tweets/posts this ICP would write
-          syntheticPosts: v.optional(v.array(v.string())),
-          // Keywords for qualification evidence search
-          qualificationKeywords: v.optional(v.array(v.string())),
-        })
-      )
-    ),
+    icps: v.optional(v.array(icpValidator)),
+    icpRefreshResumeRequested: v.optional(v.boolean()),
 
     // Provenance for description generation
     descriptionSource: v.optional(descriptionSourceValidator),
@@ -527,6 +513,8 @@ export default defineSchema({
    * onboarding step completes.
    */
   workspaceSetupSessions: defineTable({
+    flowVersion: v.optional(v.literal(2)),
+    approvedGenerationRevision: v.optional(v.number()),
     userId: v.id("users"),
     mode: setupSessionModeValidator,
     status: setupSessionStatusValidator,
@@ -729,6 +717,7 @@ export default defineSchema({
     qualificationStatus: v.optional(qualificationStatusValidator),
     // Qualification score (0-100, threshold ≥80 for qualified)
     qualificationScore: v.optional(v.number()),
+    qualificationReasoning: v.optional(v.string()),
     qualificationScoreBreakdown: v.optional(
       qualificationScoreBreakdownValidator
     ),
@@ -738,6 +727,8 @@ export default defineSchema({
       v.array(qualificationCriterionResultValidator)
     ),
     qualificationLastFailure: v.optional(qualificationFailureValidator),
+    qualificationProfileData: v.optional(v.any()),
+    qualificationEvidenceFetchedAt: v.optional(v.number()),
     // When the prospect was qualified
     qualifiedAt: v.optional(v.number()),
     // When the prospect most recently entered the disqualified state
@@ -960,6 +951,7 @@ export default defineSchema({
     evaluatedEvidenceCount: v.number(),
     verifiedSourceCount: v.number(),
     reasoning: v.string(),
+    matchReasoning: v.optional(v.string()),
     error: v.optional(v.string()),
     qualificationSources: v.array(qualificationSourceValidator),
     qualificationVerification: v.optional(qualificationVerificationValidator),
@@ -1940,6 +1932,7 @@ export default defineSchema({
     readyAt: v.optional(v.number()),
     sortQualificationScore: v.number(),
     qualificationScore: v.optional(v.number()),
+    qualificationReasoning: v.optional(v.string()),
     prospectCreatedAt: v.number(),
     updatedAt: v.number(),
     displayName: v.string(),

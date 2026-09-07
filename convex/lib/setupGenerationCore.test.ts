@@ -12,6 +12,16 @@ const sourceDescription =
   "ReacherX is an open-source agent that searches X and LinkedIn for relevant people. I am building it solo and need contributors who want to work on open source.";
 
 describe("setup generation boundaries", () => {
+  it("distinguishes inferred audiences from fabricated restrictions and buyer-shaped bios", () => {
+    const prompt = buildProfileGenerationPrompt("customer_prospecting");
+    expect(prompt).toContain("infer plausible roles and work contexts");
+    expect(prompt).toContain("Respect explicit limits");
+    expect(prompt).toContain("not one segment for every product benefit");
+    expect(prompt).toContain("Bios describe the person's work");
+    expect(prompt).toContain("not explain why the person is a good lead");
+    expect(prompt).toContain("optional retrieval hints");
+  });
+
   it("grounds the initial improvement in the full user-authored description", () => {
     const prompt = buildInitialSetupGenerationUserPrompt({
       seedDescription: sourceDescription,

@@ -4,6 +4,14 @@ This guide explains where ReacherX environment variables belong, which features 
 
 Start from [`.env.example`](../.env.example). Never commit `.env.local`, API keys, webhook secrets, encryption keys, or deployment credentials.
 
+The values below are code defaults, not a snapshot of any hosted deployment. Explicit environment overrides can change them independently in each deployment.
+
+## Runtime Requirements
+
+Use Node.js 22+ and pnpm 11.x for development, as described in the [README](../README.md#getting-started). The repository pins its pnpm version in `package.json`.
+
+[`convex.json`](../convex.json) selects Node.js 22 for hosted Convex actions that use the Node runtime. It does not change the default Convex runtime used by queries and mutations or select the Node version for Next.js. The setting takes effect when the backend is deployed; old Node workers can remain active briefly during rollout. Self-hosted Convex does not honor this setting; its backend distribution determines the Node runtime. See the official [Convex runtime documentation](https://docs.convex.dev/functions/runtimes#nodejs-version-configuration).
+
 ## Environment Locations
 
 ReacherX has two separate environment-variable stores:
@@ -119,10 +127,13 @@ These are Convex deployment variables. LinkdAPI is the LinkedIn read plane; Unip
 | `NEXT_PUBLIC_POSTHOG_HOST` | `.env.local`/hosting      | PostHog host; defaults to the US endpoint                                                                        |
 | `RESEND_API_KEY`           | Convex                    | Waitlist welcome email only; general application email is not implemented yet                                    |
 | `POLAR_ORGANIZATION_TOKEN` | Convex                    | Polar billing API access                                                                                         |
+| `POLAR_WEBHOOK_SECRET`     | Convex                    | Verifies Polar subscription webhooks at `/polar/events`                                                          |
 | `POLAR_PRODUCT_*`          | Convex                    | Hobby, Base, and Pro monthly/yearly product IDs                                                                  |
 | `POLAR_SERVER`             | Convex                    | `sandbox` by default; use `production` for live billing                                                          |
 
 `CONVEX_SITE_URL` is automatically available inside Convex functions and is used for webhook URLs. Override it only when intentionally configuring custom deployment domains.
+
+For billing, register `https://<your-deployment>.convex.site/polar/events` (or the corresponding custom Convex HTTP-action origin) as the Polar webhook endpoint. Set its signing secret as `POLAR_WEBHOOK_SECRET` on that Convex deployment. The organization token, product IDs, and webhook secret must all belong to the environment selected by `POLAR_SERVER`. Subscription events update the application's plan state; checkout alone is not a substitute for working webhooks.
 
 ## AI Model Configuration
 
@@ -130,17 +141,17 @@ Model variable names represent stable workloads, not permanent model families. C
 
 Values are OpenRouter model IDs unless otherwise noted.
 
-| Variable                      | Code default                      | Workload                                                                                                       |
-| ----------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `AI_FAST_MODEL`               | Routing-preset `fast` model       | Fast general generation path                                                                                   |
-| `AI_REASONING_MODEL`          | Routing-preset `reasoning` model  | Higher-judgment general reasoning path                                                                         |
-| `AI_AUTOCOMPLETE_MODEL`       | `openai/gpt-oss-120b`             | Autocomplete and lightweight helper generation                                                                 |
-| `AI_ONBOARDING_MODEL`         | `openai/gpt-5.6-sol`              | High-judgment onboarding, setup classification, targeting profiles, revisions, and setup preview qualification |
-| `INLINE_AUTOCOMPLETE_ENABLED` | Production: `1`; development: `0` | Inline composer autocomplete. Accepts `1/0`, `true/false`, `yes/no`, or `on/off`.                              |
-| `AI_SETUP_AGENT_MODEL`        | Value of `AI_ONBOARDING_MODEL`    | Workspace setup chat agent                                                                                     |
-| `AI_MAIN_AGENT_MODEL`         | `openai/gpt-5.6-sol`              | Fixed model for stateful main and prospect-scoped conversations, planning, and outreach                        |
-| `AI_VISION_MODEL`             | `moonshotai/kimi-k2.6`            | Image/GIF understanding for multimodal turns                                                                   |
-| `AI_TEXT_EMBEDDING_MODEL`     | `openai/text-embedding-3-small`   | Agent-memory and RAG embeddings                                                                                |
+| Variable                      | Code default                      | Workload                                                                                                                                              |
+| ----------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AI_FAST_MODEL`               | Routing-preset `fast` model       | Fast general generation path                                                                                                                          |
+| `AI_REASONING_MODEL`          | Routing-preset `reasoning` model  | Higher-judgment general reasoning path                                                                                                                |
+| `AI_AUTOCOMPLETE_MODEL`       | `openai/gpt-oss-120b`             | Autocomplete and lightweight helper generation                                                                                                        |
+| `AI_ONBOARDING_MODEL`         | `openai/gpt-5.6-sol`              | Shared strong route for onboarding, targeting criteria, synthetic examples, revisions, prospecting keyword/query planning, and prospect qualification |
+| `INLINE_AUTOCOMPLETE_ENABLED` | Production: `1`; development: `0` | Inline composer autocomplete. Accepts `1/0`, `true/false`, `yes/no`, or `on/off`.                                                                     |
+| `AI_SETUP_AGENT_MODEL`        | Value of `AI_ONBOARDING_MODEL`    | Workspace setup chat agent                                                                                                                            |
+| `AI_MAIN_AGENT_MODEL`         | `openai/gpt-5.6-sol`              | Fixed model for stateful main and prospect-scoped conversations, planning, and outreach                                                               |
+| `AI_VISION_MODEL`             | `moonshotai/kimi-k2.6`            | Image/GIF understanding for multimodal turns                                                                                                          |
+| `AI_TEXT_EMBEDDING_MODEL`     | `openai/text-embedding-3-small`   | Agent-memory and RAG embeddings                                                                                                                       |
 
 `OPENROUTER_ROUTING_PRESET` is the fallback for `AI_FAST_MODEL` and `AI_REASONING_MODEL` when those role variables are unset:
 
@@ -168,9 +179,17 @@ exception for image and GIF inputs, rather than semantic per-turn routing.
 
 The RAG component is configured for exactly 1536 dimensions. Any value assigned to `AI_TEXT_EMBEDDING_MODEL` must return 1536-dimensional vectors. Changing to a model with a different dimension requires a coordinated code/index migration and re-embedding existing content.
 
+## Onboarding And Workflow Startup
+
+Onboarding generates targeting criteria, ideal profiles, and fictional example people with AI. These examples let the user review the intended audience without waiting for real prospect searches. They are not discovered people or evidence of real activity.
+
+Real discovery is scheduled in the background when setup becomes ready: the user has approved the current examples, completed any required connections step, and has a confirmed paid plan. An unpaid user can generate and review examples, but setup does not start real discovery until payment is confirmed. AI generation itself still uses the configured model provider.
+
+For an additional workspace, the existing user plan and connection state are reused. Steps that are already satisfied are skipped; the new workspace still needs its own description and approved examples. Discovery starts when that workspace finishes setup, subject to the existing plan capacity and workflow checks. Updating an existing workspace's targeting uses workspace settings.
+
 ## Real Prospecting Scheduling
 
-These settings affect real workflows only; they do not control onboarding previews.
+These settings affect real workflows only; they do not control synthetic example generation. `PROSPECTING_AUTO_RESCHEDULE=0` disables continuous rescheduling, not the initial discovery run scheduled when paid setup completes. Keep real provider credentials and usage in mind when testing the complete setup flow locally.
 
 | Variable                                                    |                     Code fallback | Meaning                                                                                    |
 | ----------------------------------------------------------- | --------------------------------: | ------------------------------------------------------------------------------------------ |
@@ -208,7 +227,7 @@ After direct post discovery, the workflow expands up to three promising authors 
 
 `PROSPECTING_TWITTER_SEARCH_BATCH` is a query-selection limit, not a total HTTP-request limit. Cursor pages, exact-query fallbacks, graph-seed searches, similar-profile evidence checks, and retries can add requests. All of them reserve capacity through the shared SocialAPI budget described below. Search telemetry records each workspace, query, page count, HTTP outcome, raw-result count, unique new-user count, and checkpoint state.
 
-The hosted production deployment uses `9` primary queries, up to `3` total pages per query, and a `90`-day initial lookback, matching the code fallbacks above.
+Without deployment overrides, discovery uses `9` primary queries, up to `3` total pages per query, and a `90`-day initial lookback. Check the intended deployment's settings before assuming these defaults are its active values.
 
 See the bundled [SocialAPI search reference](./socialapi/search.md), [search operators](./socialapi/monitor-and-operators.md#twitter-search-operators), and [similar-profile reference](./socialapi/similar-profiles.md) for provider behavior.
 
@@ -275,14 +294,14 @@ Increasing workpool parallelism without increasing provider capacity can increas
 
 ## Feature Flags And Reserved Variables
 
-| Variable                                    | Status                                                                                  |
-| ------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_BACKEND_STATUS_BANNER`         | Show a fixed site-wide downtime banner on landing and app (`true` / `1` / `yes` / `on`) |
-| `NEXT_PUBLIC_BACKEND_STATUS_BANNER_MESSAGE` | Optional banner copy override; defaults to a clear backend-unavailable notice           |
-| `SETUP_PREVIEW_FAST_PATH`                   | Active setup-preview optimization; unrelated to real-workflow scheduling                |
-| `XAI_API_KEY`                               | Reserved/currently unused; setting it has no effect                                     |
-| `XAI_BASE_URL`                              | Reserved/currently unused; setting it has no effect                                     |
-| `NEXT_PUBLIC_DISABLE_LLM_FILTER`            | Reserved/currently unused; setting it has no effect                                     |
+| Variable                                    | Status                                                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_BACKEND_STATUS_BANNER`         | Show a fixed site-wide downtime banner on landing and app (`true` / `1` / `yes` / `on`)                                         |
+| `NEXT_PUBLIC_BACKEND_STATUS_BANNER_MESSAGE` | Optional banner copy override; defaults to a clear backend-unavailable notice                                                   |
+| `SETUP_PREVIEW_FAST_PATH`                   | Legacy real-preview enrichment compatibility only; leave unset for new installations. New synthetic onboarding does not use it. |
+| `XAI_API_KEY`                               | Reserved/currently unused; setting it has no effect                                                                             |
+| `XAI_BASE_URL`                              | Reserved/currently unused; setting it has no effect                                                                             |
+| `NEXT_PUBLIC_DISABLE_LLM_FILTER`            | Reserved/currently unused; setting it has no effect                                                                             |
 
 Reserved variables remain in `.env.example` so intended future integration points are explicit without implying that they currently change application behavior.
 

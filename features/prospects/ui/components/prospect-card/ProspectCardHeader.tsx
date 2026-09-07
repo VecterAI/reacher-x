@@ -20,7 +20,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 
 interface ProspectCardHeaderProps {
-  prospectId: Id<"prospects">;
+  prospectId?: Id<"prospects">;
   avatarUrl?: string;
   displayName?: string;
   verified?: boolean;
@@ -54,7 +54,7 @@ export function ProspectCardHeader({
   const shouldLinkToDetailPage = interactive && mode === "default";
 
   const handleClick = (e: React.MouseEvent) => {
-    if (!shouldLinkToDetailPage) {
+    if (!shouldLinkToDetailPage || !prospectId) {
       return;
     }
     e.stopPropagation();
@@ -62,7 +62,7 @@ export function ProspectCardHeader({
   };
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
-    if (!shouldLinkToDetailPage) {
+    if (!shouldLinkToDetailPage || !prospectId) {
       return;
     }
     if (e.key === "Enter" || e.key === " ") {
@@ -121,7 +121,7 @@ export function ProspectCardHeader({
                 />
               )}
             </div>
-            {timestamp && (
+            {!!timestamp && (
               <div className="shrink-0">
                 <time
                   className="text-muted-foreground shrink-0 text-sm"

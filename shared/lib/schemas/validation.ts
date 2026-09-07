@@ -115,8 +115,8 @@ const editableWorkspaceProfileSchema = icpFormEntrySchema.extend({
 
 export const workspaceProfileReviewFormSchema = z
   .object({
-    icps: z.array(editableWorkspaceProfileSchema).min(3, {
-      error: "At least three ideal profiles are required.",
+    icps: z.array(editableWorkspaceProfileSchema).min(1, {
+      error: "At least one ideal profile is required.",
     }),
   })
   .superRefine((data, ctx) => {
@@ -163,8 +163,8 @@ export const workspacePageFormSchema = z
       .string()
       .max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH + 50),
     sourceUrl: z.string().max(2048).optional(),
-    icps: z.array(icpFormEntrySchema).min(3, {
-      error: "At least three ideal customer profiles are required.",
+    icps: z.array(icpFormEntrySchema).min(1, {
+      error: "At least one ideal profile is required.",
     }),
   })
   .superRefine((data, ctx) => {

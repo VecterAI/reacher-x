@@ -7,7 +7,10 @@ import {
   type WorkspaceIcp,
 } from "./workspaceIcpSignalsCore";
 
+import { syntheticExamples } from "../../test/syntheticProfiles";
+
 const savedProfile: WorkspaceIcp = {
+  syntheticExamples,
   title: "Technical founders",
   description: "Founders building developer infrastructure.",
   painPoints: ["Reaching technical buyers", "Long sales cycles"],

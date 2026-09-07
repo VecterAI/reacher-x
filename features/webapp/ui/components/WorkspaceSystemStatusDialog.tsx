@@ -11,6 +11,11 @@ import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import type { WorkspaceSystemDiscoveryState } from "@/shared/lib/workspaceSystem";
 import type { WorkspaceFeatureStatus } from "@/shared/lib/workspaceSystem";
 import { getWorkspaceDiscoveryVerb } from "@/shared/lib/workspaceUseCases";
+import {
+  DISCOVERY_CONFIGURATION_MESSAGE,
+  getRunningWorkspaceStatusCopy,
+  getRecoveringWorkspaceStatusCopy,
+} from "@/shared/lib/workspaceStatusCopyHelpers";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Dialog,
@@ -29,6 +34,7 @@ export type WorkspaceSystemStatus = {
   discoveryState: WorkspaceSystemDiscoveryState;
   pauseReason: "manual" | "inactive" | null;
   issueReason:
+    | "search_configuration_missing"
     | "setup_incomplete"
     | "icp_refresh_required"
     | "workflow_failed"
@@ -71,6 +77,14 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     status.discoveryState === "active";
 
   return useMemo(() => {
+    if (status.issueReason === "search_configuration_missing") {
+      return {
+        tooltip: "Search is unavailable",
+        title: DISCOVERY_CONFIGURATION_MESSAGE,
+        meta: "Action required",
+      };
+    }
+
     if (requiresPlan) {
       return {
         tooltip: "Upgrade plan",
@@ -80,11 +94,11 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     }
 
     if (status.mode === "running") {
-      return {
-        tooltip: "△ Agent is active",
-        title: `△ Agent is actively ${discoveryVerb} and qualifying ${entityPluralLower}.`,
-        meta: `${activeUseCase.displayName} pipeline`,
-      };
+      return getRunningWorkspaceStatusCopy({
+        discoveryVerb,
+        entityPlural: entityPluralLower,
+        useCaseName: activeUseCase.displayName,
+      });
     }
 
     if (status.mode === "paused") {
@@ -111,11 +125,10 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     }
 
     if (status.mode === "degraded") {
-      return {
-        tooltip: "△ Agent is still running and retrying automatically",
-        title: `△ Agent is still running and retrying automatically while it works on ${entityPluralLower}.`,
-        meta: `${activeUseCase.displayName} recovering`,
-      };
+      return getRecoveringWorkspaceStatusCopy({
+        entityPlural: entityPluralLower,
+        useCaseName: activeUseCase.displayName,
+      });
     }
 
     if (attentionWhileDiscoveryActive) {

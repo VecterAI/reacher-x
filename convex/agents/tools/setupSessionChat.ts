@@ -3,7 +3,7 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../_generated/api";
-import type { Id } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import { classifySetupInput } from "../../lib/setupInputClassificationCore";
 import { getWorkspaceUseCase } from "../../../shared/lib/workspaceUseCases";
 import { runLoggedAgentTool } from "./logging";
@@ -12,8 +12,7 @@ import { getToolPromptMessageId } from "./workspaceMemoryHelpers";
 type SetupApprovalToolResult =
   | {
       success: true;
-      status: "provisioning_preview_workspace";
-      previewRevision: number;
+      status: string;
     }
   | {
       success: false;
@@ -141,7 +140,7 @@ export const submitSetupAudience = createTool({
           useCaseKey: classification.useCaseKey,
           displayName: useCase.displayName,
           entityPlural: useCase.entityPlural,
-          profileLabelPlural: useCase.profileLabelPlural,
+          nextStep: `Generating example ${useCase.entityPlural.toLowerCase()} for review. The panel shows example profiles. Use getSetupTargeting if the user asks about the underlying ICPs.`,
         };
       }
     ),
@@ -149,7 +148,7 @@ export const submitSetupAudience = createTool({
 
 export const reviseSetupAudience = createTool({
   description:
-    "Apply the user's requested changes to the generated ideal profiles for the current setup thread. Call only when ideal profiles are awaiting review and the user asks to add, remove, narrow, broaden, or otherwise revise them.",
+    "Apply the user's requested changes to the generated example profiles for the current setup thread. Call only when example profiles are awaiting review and the user asks to add, remove, narrow, broaden, or otherwise revise them.",
   inputSchema: z.object({
     feedback: z
       .string()
@@ -171,7 +170,7 @@ export const reviseSetupAudience = createTool({
     if (!session || session.status !== "awaiting_icp_confirmation") {
       return {
         success: false as const,
-        message: "The ideal profiles are not currently awaiting revision.",
+        message: "The example profiles are not currently awaiting revision.",
       };
     }
 
@@ -186,17 +185,18 @@ export const reviseSetupAudience = createTool({
 
     return {
       success: true as const,
-      message: "The requested changes are being applied to the ideal profiles.",
+      message:
+        "The requested changes are being applied to the example profiles.",
     };
   },
 });
 
-export const approveSetupIdealProfiles = createTool({
+export const approveSetupExamples = createTool({
   description:
-    "Approve the currently displayed ideal profiles for the current setup conversation. Call only after the user explicitly approves those profiles. This promotes only the existing profile set; the improved description is background-only and is never regenerated or edited by this tool.",
+    "Approve the currently displayed example profiles for the current setup conversation. Call only after the user explicitly approves those profiles. This promotes only the existing profile set; the improved description is background-only and is never regenerated or edited by this tool.",
   inputSchema: z.object({}),
   execute: async (ctx): Promise<SetupApprovalToolResult> => {
-    if (!ctx.threadId) {
+    if (!ctx.threadId || !ctx.userId) {
       return {
         success: false as const,
         status: null,
@@ -206,12 +206,14 @@ export const approveSetupIdealProfiles = createTool({
 
     const session: {
       _id: Id<"workspaceSetupSessions">;
+      userId: Id<"users">;
       status: string;
+      generationRevision?: number;
     } | null = await ctx.runQuery(
       internal.setupSessions.getByThreadIdInternal,
       { threadId: ctx.threadId }
     );
-    if (!session) {
+    if (!session || session.userId !== ctx.userId) {
       return {
         success: false as const,
         status: null,
@@ -223,22 +225,78 @@ export const approveSetupIdealProfiles = createTool({
       return {
         success: false as const,
         status: session.status,
-        error: "The ideal profiles are not awaiting approval.",
+        error: "The examples are not awaiting approval.",
       };
     }
 
-    const result: { success: true; previewRevision: number } =
-      await ctx.runMutation(
-        internal.setupSessions.approveSetupIdealProfilesFromAgentInternal,
-        {
-          sessionId: session._id,
-          sourceMessageId: getToolPromptMessageId(ctx),
-        }
-      );
+    const result = await ctx.runMutation(
+      internal.setupSessions.approveSetupExamplesFromAgentInternal,
+      {
+        sessionId: session._id,
+        userId: session.userId,
+        generationRevision: session.generationRevision ?? 0,
+      }
+    );
+    return { success: result.success, status: result.status };
+  },
+});
+
+type SetupTargetingResult =
+  | { success: false; error: string }
+  | {
+      success: true;
+      status: string;
+      generationRevision?: number;
+      profiles: Array<
+        Pick<
+          NonNullable<Doc<"workspaces">["icps"]>[number],
+          | "title"
+          | "description"
+          | "painPoints"
+          | "channels"
+          | "syntheticExamples"
+        >
+      >;
+      targetingSpec: Doc<"workspaces">["targetingSpec"] | null;
+    };
+
+/** Read the current thread's saved targeting; never accept model-supplied IDs. */
+export const getSetupTargeting = createTool({
+  description:
+    "Read the actual saved ideal profiles and targeting criteria for this setup conversation. Use when the user asks about the ICPs, target audience, or why the examples fit. Do not infer a replacement audience when answering.",
+  inputSchema: z.object({}),
+  execute: async (ctx): Promise<SetupTargetingResult> => {
+    if (!ctx.threadId || !ctx.userId)
+      return { success: false, error: "No active setup conversation." };
+    const session = await ctx.runQuery(
+      internal.setupSessions.getByThreadIdInternal,
+      { threadId: ctx.threadId }
+    );
+    if (!session || session.userId !== ctx.userId)
+      return { success: false, error: "Setup conversation not found." };
+    const workspace =
+      session.status === "ready" && session.targetWorkspaceId
+        ? await ctx.runQuery(internal.workspaces.getById, {
+            workspaceId: session.targetWorkspaceId,
+          })
+        : null;
+    const currentWorkspace =
+      workspace?.userId === ctx.userId ? workspace : null;
     return {
-      success: result.success,
-      status: "provisioning_preview_workspace",
-      previewRevision: result.previewRevision,
+      success: true,
+      status: session.status,
+      generationRevision: session.generationRevision,
+      profiles: (currentWorkspace?.icps ?? session.generatedProfiles ?? []).map(
+        ({ title, description, painPoints, channels, syntheticExamples }) => ({
+          title,
+          description,
+          painPoints,
+          channels,
+          syntheticExamples,
+        })
+      ),
+      targetingSpec:
+        currentWorkspace?.targetingSpec ?? session.targetingSpec ?? null,
     };
   },
 });
