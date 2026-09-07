@@ -6,11 +6,7 @@ import type { PolarSubscriptionLike } from "./planCycleUtils";
 import { upgradePlan } from "./planCore";
 import { reconcilePlanUsageForUser } from "./planUsageCore";
 import { scheduleWorkspaceCapacityReconciliationForUser } from "./workspaceCapacityCore";
-import {
-  getComplimentaryGrant,
-  getHigherPlanTier,
-  migrateLegacyTesterGrant,
-} from "./planGrantCore";
+import { getComplimentaryGrant, getHigherPlanTier } from "./planGrantCore";
 import {
   getCurrentUTCTimestamp,
   parseIsoToTimestamp,
@@ -55,11 +51,6 @@ export async function applyPlanTransition(
     polarCustomerId?: string;
   }
 ) {
-  const existingPlan = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", args.userId))
-    .first();
-  if (existingPlan) await migrateLegacyTesterGrant(ctx, existingPlan);
   const grant = await getComplimentaryGrant(ctx, args.userId);
   const grantActive =
     grant &&

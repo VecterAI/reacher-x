@@ -1,15 +1,12 @@
 import { internal } from "../_generated/api";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import {
-  isPaidPlanTier,
   PAID_PLAN_TIERS,
   type PlanTier,
   type PaidPlanTier,
 } from "./planConstants";
-
-export const LEGACY_TESTER_SUBSCRIPTION_ID = "tester_free_access";
 
 export function resolveGrantExpiry(
   now: number,
@@ -63,7 +60,6 @@ export async function replaceComplimentaryGrant(
     userId: Id<"users">;
     tier: PaidPlanTier;
     expiresAt?: number;
-    label?: string;
   }
 ) {
   const existing = await getComplimentaryGrant(ctx, grant.userId);
@@ -80,28 +76,4 @@ export async function replaceComplimentaryGrant(
     );
   }
   return grantId;
-}
-
-/** Preserve known legacy gifts before a webhook replaces their old plan row. */
-export async function migrateLegacyTesterGrant(
-  ctx: MutationCtx,
-  plan: Doc<"userPlans">
-) {
-  if (
-    plan.externalSubscriptionId !== LEGACY_TESTER_SUBSCRIPTION_ID ||
-    !isPaidPlanTier(plan.tier) ||
-    (await getComplimentaryGrant(ctx, plan.userId))
-  )
-    return;
-  if (
-    plan.expiresAt !== undefined &&
-    plan.expiresAt <= getCurrentUTCTimestamp()
-  )
-    return;
-  await replaceComplimentaryGrant(ctx, {
-    userId: plan.userId,
-    tier: plan.tier,
-    expiresAt: plan.expiresAt,
-    label: LEGACY_TESTER_SUBSCRIPTION_ID,
-  });
 }

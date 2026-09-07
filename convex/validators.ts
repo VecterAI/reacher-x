@@ -1311,7 +1311,6 @@ export const complimentaryPlanGrantValidator = v.object({
   // Only migrated, previously indefinite grants may omit an expiry.
   expiresAt: v.optional(v.number()),
   createdAt: v.number(),
-  label: v.optional(v.string()),
 });
 
 export const testerPlanSummaryValidator = v.object({

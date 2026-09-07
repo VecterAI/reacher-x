@@ -31,8 +31,14 @@ async function seedBaseTester(t: ReturnType<typeof convexTest>) {
       currentProspectsCount: 0,
       currentProspectsCycleStart: currentWindow.cycleStart,
       currentProspectsCycleEnd: currentWindow.cycleEnd,
-      externalSubscriptionId: "tester_free_access",
+      subscriptionTier: "free",
       updatedAt: now,
+    });
+
+    await ctx.db.insert("complimentaryPlanGrants", {
+      userId,
+      tier: "base",
+      createdAt: now,
     });
 
     await ctx.db.insert("planUsageCycles", {
