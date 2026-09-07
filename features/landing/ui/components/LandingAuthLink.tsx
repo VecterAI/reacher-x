@@ -2,6 +2,7 @@
 
 import { forwardRef, type ComponentProps, type MouseEvent } from "react";
 import Link from "next/link";
+import { logout } from "@/shared/lib/auth/logout";
 import { navigateDocumentIntentionally } from "@/shared/lib/convex/intentionalDocumentNavigation";
 import type { AuthRouteHref } from "@/shared/lib/urls/authRoutes";
 
@@ -31,6 +32,10 @@ export const LandingAuthLink = forwardRef<
     }
 
     event.preventDefault();
+    if (href.split("?")[0] === "/logout") {
+      void logout();
+      return;
+    }
     navigateDocumentIntentionally(href);
   };
 

@@ -8,16 +8,21 @@ function read(path: string): string {
 
 test("logout clears XChat browser data before ending the WorkOS session", () => {
   const logoutPage = read("app/logout/page.tsx");
+  const logout = read("shared/lib/auth/logout.ts");
+  const logoutCore = read("shared/lib/auth/logoutCore.ts");
   const logoutRoute = read("app/logout/complete/route.ts");
   const proxy = read("proxy.ts");
 
-  assert.match(logoutPage, /clearXChatBrowserData\(\)/);
+  assert.match(logoutPage, /void logout\(\)/);
+  assert.doesNotMatch(logoutPage, /<main|Logging out/);
+  assert.match(logout, /await clearXChatBrowserData\(\)/);
   assert.ok(
-    logoutPage.indexOf("clearXChatBrowserData()") <
-      logoutPage.indexOf("submitDocumentFormIntentionally(")
+    logoutCore.indexOf("await dependencies.clearBrowserData()") <
+      logoutCore.indexOf("dependencies.submitLogout()")
   );
-  assert.match(logoutPage, /\/logout\/complete/);
-  assert.match(logoutPage, /method="post"/);
+  assert.match(logout, /\/logout\/complete/);
+  assert.match(logout, /form.method = "post"/);
+  assert.match(logout, /submitDocumentFormIntentionally\(form\)/);
   assert.match(logoutRoute, /export const POST/);
   assert.doesNotMatch(logoutRoute, /export const GET/);
   assert.match(
@@ -26,6 +31,18 @@ test("logout clears XChat browser data before ending the WorkOS session", () => 
   );
   assert.doesNotMatch(logoutRoute, /redirect\("\/"\)/);
   assert.match(proxy, /\^\\\/logout\(\?:\\\/complete\)\?\$/);
+});
+
+test("both account menus start logout without navigating to the logout page", () => {
+  const header = read("features/webapp/ui/components/Header.tsx");
+  const landingLink = read(
+    "features/landing/ui/components/LandingAuthLink.tsx"
+  );
+  assert.match(header, /onSelect=\{\(\) => \{\s*void logout\(\)/);
+  assert.doesNotMatch(header, /router.push\("\/logout"\)/);
+  assert.match(landingLink, /href.split\("\?"\)\[0\] === "\/logout"/);
+  assert.match(landingLink, /void logout\(\);\s*return;/);
+  assert.match(landingLink, /navigateDocumentIntentionally\(href\)/);
 });
 
 test("clearing XChat browser data removes memory, PINs, and the device key", () => {
