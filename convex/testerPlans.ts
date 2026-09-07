@@ -9,7 +9,6 @@ import { PLAN_LIMITS } from "./lib/planConstants";
 import { refreshUserPlanFromBilling } from "./lib/planTransitionCore";
 import {
   getComplimentaryGrant,
-  LEGACY_TESTER_SUBSCRIPTION_ID,
   replaceComplimentaryGrant,
   resolveGrantExpiry,
 } from "./lib/planGrantCore";
@@ -75,8 +74,6 @@ export const grantTesterPlanByEmail = internalMutation({
     tier: paidPlanTierValidator,
     durationDays: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
-    // Retained as an operator label for compatibility; never a billing ID.
-    externalSubscriptionId: v.optional(v.string()),
   },
   returns: v.object({
     success: v.literal(true),
@@ -90,7 +87,6 @@ export const grantTesterPlanByEmail = internalMutation({
       userId: user._id,
       tier: args.tier,
       expiresAt,
-      label: args.externalSubscriptionId,
     });
     await refreshUserPlanFromBilling(ctx, user._id);
     return {
@@ -111,14 +107,6 @@ export const revokeTesterPlanByEmail = internalMutation({
     if (!user) throw new Error(`User not found for email: ${args.email}`);
     const grant = await getComplimentaryGrant(ctx, user._id);
     if (grant) await ctx.db.delete(grant._id);
-    // Prevent the compatibility migration from recreating a revoked legacy gift.
-    const plan = await ctx.db
-      .query("userPlans")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-    if (plan?.externalSubscriptionId === LEGACY_TESTER_SUBSCRIPTION_ID) {
-      await ctx.db.patch(plan._id, { externalSubscriptionId: undefined });
-    }
     await refreshUserPlanFromBilling(ctx, user._id);
     return {
       success: true as const,

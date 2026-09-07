@@ -305,7 +305,6 @@ import type * as outreachActions from "../outreachActions.js";
 import type * as outreachRecovery from "../outreachRecovery.js";
 import type * as planBatchActions from "../planBatchActions.js";
 import type * as planBatches from "../planBatches.js";
-import type * as planGrantMigration from "../planGrantMigration.js";
 import type * as planUsage from "../planUsage.js";
 import type * as plans from "../plans.js";
 import type * as platformConversationMedia from "../platformConversationMedia.js";
@@ -688,7 +687,6 @@ declare const fullApi: ApiFromModules<{
   outreachRecovery: typeof outreachRecovery;
   planBatchActions: typeof planBatchActions;
   planBatches: typeof planBatches;
-  planGrantMigration: typeof planGrantMigration;
   planUsage: typeof planUsage;
   plans: typeof plans;
   platformConversationMedia: typeof platformConversationMedia;

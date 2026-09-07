@@ -6,7 +6,10 @@ import { api, components, internal } from "./_generated/api";
 import schema from "./schema";
 import { PLAN_LIMITS, type PaidPlanTier } from "./lib/planConstants";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
-import { resolveGrantExpiry } from "./lib/planGrantCore";
+import {
+  replaceComplimentaryGrant,
+  resolveGrantExpiry,
+} from "./lib/planGrantCore";
 import { isWorkspaceAccessibleForUser } from "./lib/workspaceEntitlements";
 import { buildProspectSummaryRecord } from "./lib/readModelHelpers";
 import { refreshUserPlanFromBilling } from "./lib/planTransitionCore";
@@ -536,38 +539,28 @@ describe("complimentary plan grants", () => {
     expect((await f.state()).plan?.tier).toBe("base");
   });
 
-  test.each(["future", "expired", "indefinite"])(
-    "migrates %s legacy grants idempotently without disturbing billing",
-    async (kind) => {
-      const f = await fixture();
-      await f.bill("hobby");
-      const expiresAt =
-        kind === "indefinite"
-          ? undefined
-          : NOW + (kind === "future" ? DAY : -DAY);
-      await f.t.run(async (ctx) => {
-        const plan = await ctx.db
-          .query("userPlans")
-          .withIndex("by_user", (q) => q.eq("userId", f.userId))
-          .unique();
-        await ctx.db.patch(plan!._id, {
-          tier: "pro",
-          externalSubscriptionId: "tester_free_access",
-          expiresAt,
-        });
-        await refreshUserPlanFromBilling(ctx, f.userId);
-        await refreshUserPlanFromBilling(ctx, f.userId);
+  test("existing indefinite access survives billing changes until explicitly revoked", async () => {
+    const f = await fixture();
+    await f.t.run(async (ctx) => {
+      await replaceComplimentaryGrant(ctx, {
+        userId: f.userId,
+        tier: "pro",
       });
-      expect((await f.state()).plan?.tier).toBe(
-        kind === "expired" ? "hobby" : "pro"
-      );
-      expect((await f.state()).plan?.externalSubscriptionId).toBe(
-        f.subscription("hobby").id
-      );
-      await f.advance(DAY);
-      expect((await f.state()).plan?.tier).toBe(
-        kind === "indefinite" ? "pro" : "hobby"
-      );
-    }
-  );
+      await refreshUserPlanFromBilling(ctx, f.userId);
+    });
+    await f.advance(60 * DAY);
+    expect((await f.state()).plan?.tier).toBe("pro");
+    expect((await f.state()).grant?.expiresAt).toBeUndefined();
+    await f.bill("hobby");
+    expect((await f.state()).plan).toMatchObject({
+      tier: "pro",
+      subscriptionTier: "hobby",
+      externalSubscriptionId: f.subscription("hobby").id,
+    });
+    await f.t.mutation(internal.testerPlans.revokeTesterPlanByEmail, {
+      email: f.email,
+    });
+    expect((await f.state()).grant).toBeNull();
+    expect((await f.state()).plan?.tier).toBe("hobby");
+  });
 });
