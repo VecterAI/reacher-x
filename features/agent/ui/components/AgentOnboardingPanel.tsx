@@ -123,7 +123,7 @@ export function AgentOnboardingPanel({
         title={title}
         onBack={onClose}
         titleSuffix={
-          <span className="text-muted-foreground">
+          <span className="text-muted-foreground font-mono text-xs font-medium">
             · {session?.currentStepNumber ?? 1}/{session?.totalSteps ?? 3}
           </span>
         }
