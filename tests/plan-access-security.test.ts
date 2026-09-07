@@ -19,5 +19,5 @@ test("reusable email-based tester plan administration remains internal", () => {
     testerPlansSource,
     /export const revokeTesterPlanByEmail = internalMutation/
   );
-  assert.match(testerPlansSource, /applyPlanTransition/);
+  assert.match(testerPlansSource, /refreshUserPlanFromBilling/);
 });

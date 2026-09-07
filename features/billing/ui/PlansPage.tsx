@@ -53,7 +53,10 @@ export function PlansPage() {
   const tier = plan?.tier ?? "free";
   const isPaid = tier !== "free";
 
-  const showUpgradePanel = tier !== "pro";
+  const purchaseTier = plan?.complimentaryGrant
+    ? (plan.subscriptionTier ?? "free")
+    : tier;
+  const showUpgradePanel = purchaseTier !== "pro";
   const upgradeOpen = showUpgradePanel && upgradeParam === PLANS_UPGRADE_VALUE;
 
   React.useEffect(() => {
@@ -152,7 +155,7 @@ export function PlansPage() {
       </header>
       <PlanSelector
         mode="plans"
-        currentTier={tier}
+        currentTier={purchaseTier}
         hideMarketingHeadline
         onUpgradePaid={(selection) => startCheckout(selection)}
       />
@@ -196,7 +199,9 @@ export function PlansPage() {
             ) : null
           ) : null}
 
-          {isPaid ? <BillingSection onManageBilling={openPortal} /> : null}
+          {subscription ? (
+            <BillingSection onManageBilling={openPortal} />
+          ) : null}
         </div>
       </PageContent>
     </PageLayout>

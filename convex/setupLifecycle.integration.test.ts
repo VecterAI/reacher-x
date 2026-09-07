@@ -2,6 +2,7 @@
 
 import { finishScheduledBatches } from "../test/finishScheduledBatches";
 import { convexTest } from "convex-test";
+import polarTest from "@convex-dev/polar/test";
 import agentTest from "@convex-dev/agent/test";
 import type { WorkflowId } from "@convex-dev/workflow";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -1390,6 +1391,99 @@ describe("setup session and workspace lifecycle", () => {
       )
     ).toHaveLength(1);
   });
+
+  test.each(["before_connections", "at_plan_gate"] as const)(
+    "complimentary access preserves onboarding and finishes %s without checkout",
+    async (timing) => {
+      vi.useFakeTimers();
+      const t = convexTest(schema, modules);
+      agentTest.register(t);
+      polarTest.register(t);
+      const { userId, workosUserId } = await seedUser(t, `gift-${timing}`);
+      const thread = await t.mutation(components.agent.threads.createThread, {
+        userId: String(userId),
+      });
+      const sessionId = await seedSetupSession(t, {
+        userId,
+        suffix: timing,
+        mode: "first_workspace",
+        entitlementSlot: 1,
+        setupThreadId: thread._id,
+        status: "awaiting_icp_confirmation",
+      });
+      await t.run(async (ctx) => {
+        const plan = await ctx.db
+          .query("userPlans")
+          .withIndex("by_user", (q) => q.eq("userId", userId))
+          .unique();
+        await ctx.db.patch(plan!._id, { tier: "free" });
+        await ctx.db.patch(sessionId, {
+          targetingSpec: buildLegacyWorkspaceTargetingSpec({
+            description: "Find designers",
+            profiles: setupProfiles,
+          }),
+        });
+      });
+      const viewer = t.withIdentity({ subject: workosUserId });
+      const grant = () =>
+        t.mutation(internal.testerPlans.grantTesterPlanByEmail, {
+          email: `gift-${timing}@example.com`,
+          tier: "hobby",
+          durationDays: 60,
+        });
+      if (timing === "before_connections") await grant();
+      expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
+        "awaiting_icp_confirmation"
+      );
+      await viewer.mutation(api.setupSessions.approveSetupGeneration, {
+        sessionId,
+        generationRevision: 1,
+      });
+      expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
+        "awaiting_connections"
+      );
+      await viewer.mutation(api.setupSessions.completeSetupConnections, {
+        sessionId,
+        connectedX: false,
+      });
+      if (timing === "at_plan_gate") {
+        expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
+          "awaiting_plan"
+        );
+        await grant();
+        const state = await viewer.query(
+          api.setupSessions.getSetupSessionState,
+          { threadId: thread._id }
+        );
+        expect(state?.requiresPlan).toBe(false);
+        expect(state?.currentStepId).toBe("plan");
+        await t.mutation(internal.testerPlans.revokeTesterPlanByEmail, {
+          email: `gift-${timing}@example.com`,
+        });
+        await expect(
+          viewer.mutation(api.setupSessions.selectSetupPlanByThreadId, {
+            threadId: thread._id,
+            planChoice: "hobby",
+          })
+        ).rejects.toThrow("Payment is not confirmed");
+        expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
+          "awaiting_plan"
+        );
+        await grant();
+        await viewer.mutation(api.setupSessions.selectSetupPlanByThreadId, {
+          threadId: thread._id,
+          planChoice: "hobby",
+        });
+      }
+      const final = await t.run(async (ctx) => ({
+        session: await ctx.db.get(sessionId),
+        workspaces: await ctx.db.query("workspaces").take(10),
+      }));
+      expect(final.session?.status).toBe("ready");
+      expect(final.workspaces).toHaveLength(1);
+      expect(final.workspaces[0].setupCompletedAt).toEqual(expect.any(Number));
+    }
+  );
 
   test("late generation and failure callbacks cannot replace a newer revision", async () => {
     const t = convexTest(schema, modules);

@@ -58,6 +58,7 @@ export type UserPlan = {
   _creationTime: number;
   userId: Id<"users">;
   tier: PlanTier;
+  subscriptionTier?: PlanTier;
   prospectsLimit: number;
   workspacesLimit: number;
   currentProspectsCount: number;

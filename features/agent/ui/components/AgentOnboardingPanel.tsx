@@ -17,6 +17,7 @@ import {
   DESKTOP_PANEL_BORDER_CLASS_NAME,
 } from "@/features/webapp/ui/components";
 import { ConnectionsStep } from "./onboarding/ConnectionsStep";
+import { GrantedPlanStep } from "./onboarding/GrantedPlanStep";
 import { PlanStep } from "./onboarding/PlanStep";
 import { SetupExampleProfiles } from "./onboarding/SetupExampleProfiles";
 
@@ -157,13 +158,17 @@ export function AgentOnboardingPanel({
               />
             ) : step === "plan" ? (
               <div className="px-4 py-4">
-                <PlanStep
-                  entityPlural={labels.entityPlural}
-                  isStartingCheckout={isStartingCheckout}
-                  onUpgradePaid={({ tier, billing }) =>
-                    void handleCheckout(tier, billing)
-                  }
-                />
+                {!session.requiresPlan ? (
+                  <GrantedPlanStep threadId={threadId} />
+                ) : (
+                  <PlanStep
+                    entityPlural={labels.entityPlural}
+                    isStartingCheckout={isStartingCheckout}
+                    onUpgradePaid={({ tier, billing }) =>
+                      void handleCheckout(tier, billing)
+                    }
+                  />
+                )}
               </div>
             ) : (
               <div className="text-muted-foreground p-4 text-sm">

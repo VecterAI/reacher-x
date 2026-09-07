@@ -6,6 +6,7 @@ import {
   icpValidator,
   discoveryStageValidator,
   planTierValidator,
+  complimentaryPlanGrantValidator,
   prospectListSortValidator,
   prospectPlatformValidator,
   qualificationSourceValidator,
@@ -984,6 +985,8 @@ export default defineSchema({
   userPlans: defineTable({
     userId: v.id("users"),
     tier: planTierValidator,
+    // Billing tier is independent of the effective tier during a gift.
+    subscriptionTier: v.optional(planTierValidator),
     // Limits based on tier
     prospectsLimit: v.number(), // -1 for unlimited
     workspacesLimit: v.number(),
@@ -1000,6 +1003,11 @@ export default defineSchema({
     // When the plan expires (for paid plans)
     expiresAt: v.optional(v.number()),
   }).index("by_user", ["userId"]),
+
+  /** One current complimentary grant per user, independent of Polar billing. */
+  complimentaryPlanGrants: defineTable(complimentaryPlanGrantValidator)
+    .index("by_userId", ["userId"])
+    .index("by_expiresAt", ["expiresAt"]),
 
   /**
    * Snapshotted usage per billing or calendar cycle for the Plans page.

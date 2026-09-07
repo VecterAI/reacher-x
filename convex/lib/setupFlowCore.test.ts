@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildVisibleSetupSteps,
+  buildSetupFlowState,
   getNextSetupStatusAfterConnections,
   getNextSetupStatusAfterProvisioning,
   isSetupComposerLocked,
@@ -66,6 +67,20 @@ describe("setupFlowCore lean chat-first flow", () => {
         xConnected: true,
       })
     ).toBe(false);
+  });
+
+  it("keeps the plan completion action visible when a grant arrives at the gate", () => {
+    expect(
+      buildSetupFlowState({
+        status: "awaiting_plan",
+        requiresConnections: true,
+        requiresPlan: false,
+      })
+    ).toMatchObject({
+      currentStepId: "plan",
+      requiresPlan: false,
+      totalSteps: 3,
+    });
   });
 
   it("unlocks composer for collecting, ICP review, and ready", () => {

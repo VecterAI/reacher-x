@@ -7,10 +7,8 @@ import { api, components } from "./_generated/api";
 import { internalMutation, query } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { parseIsoToTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { getUserFromIdentity } from "./lib/userUtils";
-import type { PlanTier } from "./lib/planConstants";
-import { applyPlanTransition } from "./lib/planTransitionCore";
+import { refreshUserPlanFromBilling } from "./lib/planTransitionCore";
 import { getWideEventLogger } from "./lib/wideEventLogger";
 
 // ============================================================================
@@ -136,78 +134,16 @@ export const syncSubscriptionToUserPlan = internalMutation({
     currentPeriodEnd: v.optional(v.string()), // ISO date string
     polarCustomerId: v.optional(v.string()),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
-    const logEvent = getWideEventLogger(ctx);
-    // Get product IDs from environment variables
-    const hobbyMonthlyId = process.env.POLAR_PRODUCT_HOBBY_MONTHLY;
-    const hobbyYearlyId = process.env.POLAR_PRODUCT_HOBBY_YEARLY;
-    const baseMonthlyId = process.env.POLAR_PRODUCT_BASE_MONTHLY;
-    const baseYearlyId = process.env.POLAR_PRODUCT_BASE_YEARLY;
-    const proMonthlyId = process.env.POLAR_PRODUCT_PRO_MONTHLY;
-    const proYearlyId = process.env.POLAR_PRODUCT_PRO_YEARLY;
-
-    /**
-     * Maps Polar product UUIDs to internal plan tiers.
-     *
-     * Environment variables provide the product UUIDs from Polar dashboard:
-     * - POLAR_PRODUCT_HOBBY_MONTHLY / POLAR_PRODUCT_HOBBY_YEARLY → "hobby" tier
-     * - POLAR_PRODUCT_BASE_MONTHLY / POLAR_PRODUCT_BASE_YEARLY → "base" tier
-     * - POLAR_PRODUCT_PRO_MONTHLY / POLAR_PRODUCT_PRO_YEARLY → "pro" tier
-     *
-     * If the productId doesn't match any known UUID, defaults to "free" tier.
-     */
-    const tierMap: Record<string, PlanTier> = {};
-    if (hobbyMonthlyId) tierMap[hobbyMonthlyId] = "hobby";
-    if (hobbyYearlyId) tierMap[hobbyYearlyId] = "hobby";
-    if (baseMonthlyId) tierMap[baseMonthlyId] = "base";
-    if (baseYearlyId) tierMap[baseYearlyId] = "base";
-    if (proMonthlyId) tierMap[proMonthlyId] = "pro";
-    if (proYearlyId) tierMap[proYearlyId] = "pro";
-
-    // If cancelled or no productId, revert to free
-    const tier = args.productId ? (tierMap[args.productId] ?? "free") : "free";
-
-    // Convert ISO date string to timestamp using centralized utility
-    // Per AGENT_CONTEXT.txt: Use date-fns via timeUtils for reliable date parsing
-    let expiresAt: number | undefined;
-    if (args.currentPeriodEnd) {
-      expiresAt = parseIsoToTimestamp(args.currentPeriodEnd);
-      if (expiresAt === undefined) {
-        logEvent?.warn("Invalid Polar currentPeriodEnd date", {
-          subscription: {
-            id: args.subscriptionId,
-          },
-        });
-      }
-    }
-
-    logEvent?.set({
-      billing: {
-        provider: "polar",
-        tier,
-      },
-      subscription: {
-        expires_at: expiresAt,
-        has_product: Boolean(args.productId),
-        id: args.subscriptionId,
-        status: args.status,
-      },
-      user: {
-        id: String(args.userId),
-      },
+    // The Polar component persists each webhook before this callback and rejects
+    // stale updates. Re-read it so a late event cannot roll back current billing.
+    await refreshUserPlanFromBilling(ctx, args.userId);
+    getWideEventLogger(ctx)?.set({
+      billing: { provider: "polar" },
+      subscription: { id: args.subscriptionId, status: args.status },
+      user: { id: String(args.userId) },
     });
-
-    await applyPlanTransition(ctx, {
-      userId: args.userId,
-      tier,
-      subscription: {
-        currentPeriodStart: args.currentPeriodStart,
-        currentPeriodEnd: args.currentPeriodEnd,
-        status: args.status,
-      },
-      externalSubscriptionId: args.subscriptionId,
-      expiresAt,
-      polarCustomerId: args.polarCustomerId,
-    });
+    return null;
   },
 });
