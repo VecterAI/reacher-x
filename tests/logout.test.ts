@@ -129,3 +129,100 @@ test("restoring the document permits a new logout without an old attempt submitt
   assert.equal(dependencies.clearBrowserData.mock.callCount(), 2);
   assert.equal(dependencies.submitLogout.mock.callCount(), 1);
 });
+
+test("stalled navigation preserves delayed feedback, then allows one retry", async (t) => {
+  const { controller, dependencies, finishCleanup } = setup(t);
+  const logout = controller.start();
+  finishCleanup();
+  await logout;
+  t.mock.timers.tick(749);
+  assert.equal(dependencies.showPending.mock.callCount(), 0);
+  t.mock.timers.tick(1);
+  assert.equal(dependencies.showPending.mock.callCount(), 1);
+  t.mock.timers.tick(14_249);
+  assert.equal(dependencies.showError.mock.callCount(), 0);
+  await controller.start();
+  assert.equal(dependencies.submitLogout.mock.callCount(), 1);
+
+  t.mock.timers.tick(1);
+  assert.equal(dependencies.showError.mock.callCount(), 1);
+  assert.equal(dependencies.dismissPending.mock.callCount(), 0);
+  t.mock.timers.tick(60_000);
+  assert.equal(dependencies.showError.mock.callCount(), 1);
+
+  await controller.start();
+  await controller.start();
+  assert.equal(dependencies.submitLogout.mock.callCount(), 2);
+  t.mock.timers.tick(14_999);
+  assert.equal(dependencies.showError.mock.callCount(), 1);
+  t.mock.timers.tick(1);
+  assert.equal(dependencies.showError.mock.callCount(), 2);
+});
+
+test("cleanup time does not consume the navigation deadline", async (t) => {
+  const { controller, dependencies, finishCleanup } = setup(t);
+  const logout = controller.start();
+  t.mock.timers.tick(20_000);
+  assert.equal(dependencies.showError.mock.callCount(), 0);
+  assert.equal(dependencies.submitLogout.mock.callCount(), 0);
+  finishCleanup();
+  await logout;
+  t.mock.timers.tick(14_999);
+  assert.equal(dependencies.showError.mock.callCount(), 0);
+  t.mock.timers.tick(1);
+  assert.equal(dependencies.showError.mock.callCount(), 1);
+});
+
+test("leaving after submission cancels the toast and navigation timers", async (t) => {
+  const { controller, dependencies, finishCleanup } = setup(t);
+  const logout = controller.start();
+  finishCleanup();
+  await logout;
+  controller.reset();
+  t.mock.timers.tick(60_000);
+  assert.equal(dependencies.showPending.mock.callCount(), 0);
+  assert.equal(dependencies.showError.mock.callCount(), 0);
+});
+
+test("a synchronous reset during submission leaves no navigation timer", async (t) => {
+  const { controller, dependencies, finishCleanup } = setup(t);
+  dependencies.submitLogout.mock.mockImplementation(() => {
+    controller.reset();
+  });
+  const logout = controller.start();
+  finishCleanup();
+  await logout;
+  t.mock.timers.tick(60_000);
+  assert.equal(dependencies.showPending.mock.callCount(), 0);
+  assert.equal(dependencies.showError.mock.callCount(), 0);
+});
+
+test("submission errors cancel their deadline before a later retry", async (t) => {
+  const { controller, dependencies, finishCleanup } = setup(t);
+  t.mock.method(console, "error", () => undefined);
+  dependencies.submitLogout.mock.mockImplementationOnce(() => {
+    throw new Error("submission failed");
+  });
+  finishCleanup();
+  await controller.start();
+  assert.equal(dependencies.showError.mock.callCount(), 1);
+  t.mock.timers.tick(5_000);
+  await controller.start();
+  t.mock.timers.tick(10_000);
+  assert.equal(dependencies.showError.mock.callCount(), 1);
+  t.mock.timers.tick(5_000);
+  assert.equal(dependencies.showError.mock.callCount(), 2);
+});
+
+test("a restored document's new attempt cannot be expired by the old deadline", async (t) => {
+  const { controller, dependencies, finishCleanup } = setup(t);
+  finishCleanup();
+  await controller.start();
+  t.mock.timers.tick(5_000);
+  controller.reset();
+  await controller.start();
+  t.mock.timers.tick(10_000);
+  assert.equal(dependencies.showError.mock.callCount(), 0);
+  t.mock.timers.tick(5_000);
+  assert.equal(dependencies.showError.mock.callCount(), 1);
+});

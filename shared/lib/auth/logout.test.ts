@@ -24,6 +24,45 @@ afterEach(() => {
 });
 
 describe("browser logout integration", () => {
+  test("a stalled POST replaces loading with retry and pagehide clears the new deadline", async () => {
+    const requestSubmit = vi.fn();
+    const addEventListener = vi.fn();
+    vi.stubGlobal("window", { addEventListener, setTimeout });
+    vi.stubGlobal("document", {
+      createElement: () => ({
+        checkValidity: () => true,
+        requestSubmit,
+        remove: vi.fn(),
+      }),
+      body: { append: vi.fn() },
+    });
+    vi.stubGlobal("requestAnimationFrame", vi.fn());
+    const { logout } = await import("./logout");
+    const { toast } = await import("sonner");
+    await logout();
+    vi.advanceTimersByTime(750);
+    expect(toast.getToasts()).toEqual([
+      expect.objectContaining({ type: "loading", title: "Logging out…" }),
+    ]);
+    vi.advanceTimersByTime(14_250);
+    expect(toast.getToasts()).toEqual([
+      expect.objectContaining({
+        type: "error",
+        title: "Couldn't log out. Please try again.",
+        action: expect.objectContaining({ label: "Try again" }),
+      }),
+    ]);
+    await logout();
+    expect(requestSubmit).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(750);
+    expect(toast.getToasts()).toEqual([
+      expect.objectContaining({ type: "loading", action: undefined }),
+    ]);
+    addEventListener.mock.calls[0][1]();
+    vi.advanceTimersByTime(30_000);
+    expect(toast.getToasts()).toHaveLength(0);
+  });
+
   test("submits a hidden POST after cleanup and resets on pagehide", async () => {
     const form = {
       action: "",
