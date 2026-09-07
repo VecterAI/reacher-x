@@ -137,7 +137,8 @@ export async function upgradePlan(
   newTier: PlanTier,
   externalSubscriptionId?: string,
   expiresAt?: number,
-  polarCustomerId?: string
+  polarCustomerId?: string,
+  subscriptionTier?: PlanTier
 ) {
   const plan = await ctx.db
     .query("userPlans")
@@ -153,6 +154,7 @@ export async function upgradePlan(
     await ctx.db.insert("userPlans", {
       userId,
       tier: newTier,
+      subscriptionTier,
       prospectsLimit: limits.prospectsLimit,
       workspacesLimit: limits.workspacesLimit,
       currentProspectsCount: 0,
@@ -166,6 +168,7 @@ export async function upgradePlan(
   } else {
     await ctx.db.patch(plan._id, {
       tier: newTier,
+      subscriptionTier,
       prospectsLimit: limits.prospectsLimit,
       workspacesLimit: limits.workspacesLimit,
       externalSubscriptionId,

@@ -1295,12 +1295,42 @@ export const sendWelcomeEmailArgsValidator = v.object({
 });
 
 // v4: Plan tier validator
-export const planTierValidator = v.union(
-  v.literal("free"),
+export const paidPlanTierValidator = v.union(
   v.literal("hobby"),
   v.literal("base"),
   v.literal("pro")
 );
+export const planTierValidator = v.union(
+  v.literal("free"),
+  paidPlanTierValidator
+);
+
+export const complimentaryPlanGrantValidator = v.object({
+  userId: v.id("users"),
+  tier: paidPlanTierValidator,
+  // Only migrated, previously indefinite grants may omit an expiry.
+  expiresAt: v.optional(v.number()),
+  createdAt: v.number(),
+  label: v.optional(v.string()),
+});
+
+export const testerPlanSummaryValidator = v.object({
+  userId: v.id("users"),
+  email: v.string(),
+  tier: planTierValidator,
+  prospectsLimit: v.number(),
+  workspacesLimit: v.number(),
+  externalSubscriptionId: v.optional(v.string()),
+  expiresAt: v.optional(v.number()),
+  updatedAt: v.optional(v.number()),
+  complimentaryGrant: v.union(
+    v.object({
+      tier: paidPlanTierValidator,
+      expiresAt: v.optional(v.number()),
+    }),
+    v.null()
+  ),
+});
 
 // v4: Agent thread validators
 export const agentThreadTypeValidator = v.union(

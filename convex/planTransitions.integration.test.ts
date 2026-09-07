@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 
+import polarTest from "@convex-dev/polar/test";
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { internal } from "./_generated/api";
 import { getUtcMonthBounds } from "./lib/planCycleUtils";
 import { PLAN_LIMITS } from "./lib/planConstants";
@@ -67,13 +68,17 @@ async function seedBaseTester(t: ReturnType<typeof convexTest>) {
 }
 
 describe("trusted plan transitions", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
   test("granting Pro updates the canonical plan and current usage snapshot atomically", async () => {
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await seedBaseTester(t);
 
     await t.mutation(internal.testerPlans.grantTesterPlanByEmail, {
       email: seeded.email,
       tier: "pro",
+      durationDays: 30,
     });
 
     const state = await t.run(async (ctx) => {
@@ -103,7 +108,7 @@ describe("trusted plan transitions", () => {
       tier: "pro",
       prospectsLimit: PLAN_LIMITS.pro.prospectsLimit,
       workspacesLimit: PLAN_LIMITS.pro.workspacesLimit,
-      externalSubscriptionId: "tester_free_access",
+      subscriptionTier: "free",
     });
     expect(state.currentCycle).toMatchObject({
       tier: "pro",
@@ -123,6 +128,7 @@ describe("trusted plan transitions", () => {
 
   test("revoking tester access uses the same transition and clears paid limits", async () => {
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await seedBaseTester(t);
 
     await t.mutation(internal.testerPlans.revokeTesterPlanByEmail, {

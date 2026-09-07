@@ -88,4 +88,11 @@ crons.interval(
   internal.tenantScheduler.cleanupCompletedJobsInternal
 );
 
+crons.interval(
+  "recover expired complimentary plan grants",
+  { minutes: 5 },
+  internal.testerPlans.recoverExpiredGrantsInternal,
+  {}
+);
+
 export default crons;

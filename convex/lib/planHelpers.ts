@@ -17,6 +17,7 @@ import {
   PLAN_TIER_LABELS,
   type PlanTier,
 } from "./planConstants";
+import { getComplimentaryGrant } from "./planGrantCore";
 import { checkProspectLimit } from "./prospectingHelpers";
 import { countCompletedWorkspaces } from "./workspaceSetup";
 
@@ -222,6 +223,11 @@ export async function getPlanUsageSummary(ctx: QueryCtx, userId: Id<"users">) {
       limit: plan.workspacesLimit,
       percentUsed: Math.round((usedWorkspaces / plan.workspacesLimit) * 100),
     },
+    subscriptionTier: plan.subscriptionTier ?? plan.tier,
+    complimentaryGrant: await getComplimentaryGrant(ctx, userId).then(
+      (grant) =>
+        grant ? { tier: grant.tier, expiresAt: grant.expiresAt } : null
+    ),
     expiresAt: plan.expiresAt,
     polarCustomerId: plan.polarCustomerId,
   };

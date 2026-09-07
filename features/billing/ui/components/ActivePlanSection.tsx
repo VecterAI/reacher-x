@@ -4,11 +4,14 @@ import { format } from "date-fns";
 import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import { ONBOARDING_PLAN_TIERS } from "@/features/agent/ui/components/onboarding/planStepConfig";
+import { parseIsoToTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import { CheckIcon } from "@/shared/ui/components/icons";
 
 type PlanSummary = {
   tier: "free" | "hobby" | "base" | "pro";
   expiresAt?: number;
+  subscriptionTier?: PlanSummary["tier"];
+  complimentaryGrant?: { tier: PlanSummary["tier"]; expiresAt?: number } | null;
 };
 
 type SubscriptionLike =
@@ -45,6 +48,9 @@ export function ActivePlanSection({
   isPaid,
 }: ActivePlanSectionProps) {
   const tier = plan?.tier ?? "free";
+  const grant = plan?.complimentaryGrant;
+  const billingTier = plan?.subscriptionTier ?? tier;
+  const hasSubscription = Boolean(subscription) && billingTier !== "free";
   const tierConfig = ONBOARDING_PLAN_TIERS.find((candidate) => {
     if (tier === "free") return candidate.id === "hobby";
     return candidate.id === tier;
@@ -56,7 +62,9 @@ export function ActivePlanSection({
       ? subscription.currentPeriodEnd
       : subscription?.currentPeriodEnd instanceof Date
         ? subscription.currentPeriodEnd.getTime()
-        : plan?.expiresAt;
+        : typeof subscription?.currentPeriodEnd === "string"
+          ? parseIsoToTimestamp(subscription.currentPeriodEnd)
+          : plan?.expiresAt;
 
   const renewalLabel =
     renewalTs != null ? format(renewalTs, "MMM d, yyyy") : null;
@@ -69,7 +77,7 @@ export function ActivePlanSection({
         : null;
 
   const showCancelNotice =
-    Boolean(subscription?.cancelAtPeriodEnd) && renewalLabel;
+    hasSubscription && Boolean(subscription?.cancelAtPeriodEnd) && renewalLabel;
 
   return (
     <section className="border-border border-b px-4 py-4">
@@ -83,11 +91,34 @@ export function ActivePlanSection({
           </h2>
         </div>
         <Badge variant="outline">
-          {isPaid ? "Active" : "Upgrade required"}
+          {grant
+            ? "Complimentary access"
+            : isPaid
+              ? "Active"
+              : "Upgrade required"}
         </Badge>
       </div>
 
-      {tier !== "free" && (intervalLabel || renewalLabel) ? (
+      {grant ? (
+        <p className="text-muted-foreground mt-2 text-xs">
+          Complimentary {tierTitle(grant.tier)} access
+          {grant.expiresAt !== undefined ? (
+            <>
+              {" "}
+              until{" "}
+              <time dateTime={new Date(grant.expiresAt).toISOString()}>
+                {format(grant.expiresAt, "MMM d, yyyy, h:mm a")}
+              </time>
+            </>
+          ) : null}
+          .
+          {hasSubscription
+            ? ` Your ${tierTitle(billingTier)} subscription continues separately.`
+            : " No subscription charge."}
+        </p>
+      ) : null}
+
+      {hasSubscription && (intervalLabel || renewalLabel) ? (
         <div className="text-muted-foreground mt-2 space-y-1 text-xs">
           {intervalLabel ? <p>Billing: {intervalLabel}</p> : null}
           {renewalLabel ? (
@@ -118,6 +149,11 @@ export function ActivePlanSection({
       </ul>
 
       <div className="mt-4 flex flex-wrap gap-2">
+        {grant && tier === "pro" && billingTier !== "pro" ? (
+          <Button type="button" size="xs" onClick={onUpgrade}>
+            Choose a paid plan
+          </Button>
+        ) : null}
         {tier === "free" ? (
           <Button type="button" size="xs" onClick={onUpgrade}>
             Upgrade
@@ -128,7 +164,7 @@ export function ActivePlanSection({
             <Button type="button" size="xs" onClick={onUpgradeToPro}>
               {tier === "hobby" ? "Upgrade plan" : "Upgrade to Pro"}
             </Button>
-            {isPaid ? (
+            {hasSubscription ? (
               <Button
                 type="button"
                 size="xs"
@@ -140,7 +176,7 @@ export function ActivePlanSection({
             ) : null}
           </>
         ) : null}
-        {tier === "pro" && isPaid ? (
+        {tier === "pro" && hasSubscription ? (
           <Button
             type="button"
             size="xs"

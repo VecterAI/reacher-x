@@ -1,152 +1,172 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { normalizeEmailAddress } from "../shared/lib/utils/contact/contactUtils";
 import { PLAN_LIMITS } from "./lib/planConstants";
-import { applyPlanTransition } from "./lib/planTransitionCore";
+import { refreshUserPlanFromBilling } from "./lib/planTransitionCore";
+import {
+  getComplimentaryGrant,
+  LEGACY_TESTER_SUBSCRIPTION_ID,
+  replaceComplimentaryGrant,
+  resolveGrantExpiry,
+} from "./lib/planGrantCore";
+import {
+  paidPlanTierValidator,
+  testerPlanSummaryValidator,
+} from "./validators";
 
-const paidTesterTierValidator = v.union(
-  v.literal("hobby"),
-  v.literal("base"),
-  v.literal("pro")
-);
-
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
-}
-
-async function getUserByEmailOrThrow(
-  ctx: QueryCtx | MutationCtx,
-  email: string
-) {
+async function getUserByEmail(ctx: QueryCtx | MutationCtx, email: string) {
+  const normalized = normalizeEmailAddress(email);
+  if (!normalized) throw new Error("Email is required.");
+  const exact = email.trim();
   const user = await ctx.db
     .query("users")
-    .withIndex("by_email", (q) => q.eq("email", normalizeEmail(email)))
-    .first();
+    .withIndex("by_email", (q) => q.eq("email", exact))
+    .unique();
+  if (user || exact === normalized) return user;
+  return ctx.db
+    .query("users")
+    .withIndex("by_email", (q) => q.eq("email", normalized))
+    .unique();
+}
 
-  if (!user) {
-    throw new Error(`User not found for email: ${email}`);
-  }
-
-  return user;
+async function getTesterPlanSummary(
+  ctx: QueryCtx | MutationCtx,
+  user: Doc<"users">
+) {
+  const [plan, grant] = await Promise.all([
+    ctx.db
+      .query("userPlans")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first(),
+    getComplimentaryGrant(ctx, user._id),
+  ]);
+  return {
+    userId: user._id,
+    email: user.email,
+    tier: plan?.tier ?? "free",
+    prospectsLimit: plan?.prospectsLimit ?? PLAN_LIMITS.free.prospectsLimit,
+    workspacesLimit: plan?.workspacesLimit ?? PLAN_LIMITS.free.workspacesLimit,
+    externalSubscriptionId: plan?.externalSubscriptionId,
+    expiresAt: plan?.expiresAt,
+    updatedAt: plan?.updatedAt,
+    complimentaryGrant: grant
+      ? { tier: grant.tier, expiresAt: grant.expiresAt }
+      : null,
+  };
 }
 
 export const getTesterPlanByEmail = internalQuery({
-  args: {
-    email: v.string(),
-  },
+  args: { email: v.string() },
+  returns: v.union(testerPlanSummaryValidator, v.null()),
   handler: async (ctx, args) => {
-    const normalizedEmail = normalizeEmail(args.email);
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
-      .first();
-
-    if (!user) {
-      return null;
-    }
-
-    const plan = await ctx.db
-      .query("userPlans")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-
-    return {
-      userId: user._id,
-      email: user.email,
-      tier: plan?.tier ?? "free",
-      prospectsLimit: plan?.prospectsLimit ?? PLAN_LIMITS.free.prospectsLimit,
-      workspacesLimit:
-        plan?.workspacesLimit ?? PLAN_LIMITS.free.workspacesLimit,
-      externalSubscriptionId: plan?.externalSubscriptionId,
-      expiresAt: plan?.expiresAt,
-      updatedAt: plan?.updatedAt,
-    };
+    const user = await getUserByEmail(ctx, args.email);
+    return user ? getTesterPlanSummary(ctx, user) : null;
   },
 });
 
+/** Also extends/replaces the current grant; durationDays starts from this call. */
 export const grantTesterPlanByEmail = internalMutation({
   args: {
     email: v.string(),
-    tier: paidTesterTierValidator,
+    tier: paidPlanTierValidator,
     durationDays: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
+    // Retained as an operator label for compatibility; never a billing ID.
     externalSubscriptionId: v.optional(v.string()),
   },
+  returns: v.object({
+    success: v.literal(true),
+    ...testerPlanSummaryValidator.fields,
+  }),
   handler: async (ctx, args) => {
-    if (args.durationDays !== undefined && args.expiresAt !== undefined) {
-      throw new Error("Provide either durationDays or expiresAt, not both.");
-    }
-
-    if (args.durationDays !== undefined && args.durationDays <= 0) {
-      throw new Error("durationDays must be greater than 0.");
-    }
-
-    const now = getCurrentUTCTimestamp();
-    const normalizedEmail = normalizeEmail(args.email);
-    const user = await getUserByEmailOrThrow(ctx, normalizedEmail);
-
-    const resolvedExpiresAt =
-      args.expiresAt ??
-      (args.durationDays !== undefined
-        ? now + args.durationDays * 24 * 60 * 60 * 1000
-        : undefined);
-
-    await applyPlanTransition(ctx, {
+    const expiresAt = resolveGrantExpiry(getCurrentUTCTimestamp(), args);
+    const user = await getUserByEmail(ctx, args.email);
+    if (!user) throw new Error(`User not found for email: ${args.email}`);
+    await replaceComplimentaryGrant(ctx, {
       userId: user._id,
       tier: args.tier,
-      subscription: null,
-      externalSubscriptionId:
-        args.externalSubscriptionId ?? "tester_free_access",
-      expiresAt: resolvedExpiresAt,
+      expiresAt,
+      label: args.externalSubscriptionId,
     });
-
-    const plan = await ctx.db
-      .query("userPlans")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-
+    await refreshUserPlanFromBilling(ctx, user._id);
     return {
-      success: true,
-      userId: user._id,
-      email: user.email,
-      tier: plan?.tier ?? args.tier,
-      externalSubscriptionId:
-        plan?.externalSubscriptionId ?? "tester_free_access",
-      expiresAt: plan?.expiresAt,
-      updatedAt: plan?.updatedAt ?? now,
+      success: true as const,
+      ...(await getTesterPlanSummary(ctx, user)),
     };
   },
 });
 
 export const revokeTesterPlanByEmail = internalMutation({
-  args: {
-    email: v.string(),
-  },
+  args: { email: v.string() },
+  returns: v.object({
+    success: v.literal(true),
+    ...testerPlanSummaryValidator.fields,
+  }),
   handler: async (ctx, args) => {
-    const now = getCurrentUTCTimestamp();
-    const normalizedEmail = normalizeEmail(args.email);
-    const user = await getUserByEmailOrThrow(ctx, normalizedEmail);
-
-    await applyPlanTransition(ctx, {
-      userId: user._id,
-      tier: "free",
-      subscription: null,
-    });
-
+    const user = await getUserByEmail(ctx, args.email);
+    if (!user) throw new Error(`User not found for email: ${args.email}`);
+    const grant = await getComplimentaryGrant(ctx, user._id);
+    if (grant) await ctx.db.delete(grant._id);
+    // Prevent the compatibility migration from recreating a revoked legacy gift.
     const plan = await ctx.db
       .query("userPlans")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .first();
-
+    if (plan?.externalSubscriptionId === LEGACY_TESTER_SUBSCRIPTION_ID) {
+      await ctx.db.patch(plan._id, { externalSubscriptionId: undefined });
+    }
+    await refreshUserPlanFromBilling(ctx, user._id);
     return {
-      success: true,
-      userId: user._id,
-      email: user.email,
-      tier: plan?.tier ?? "free",
-      externalSubscriptionId: plan?.externalSubscriptionId,
-      expiresAt: plan?.expiresAt,
-      updatedAt: plan?.updatedAt ?? now,
+      success: true as const,
+      ...(await getTesterPlanSummary(ctx, user)),
     };
+  },
+});
+
+export const expireGrantInternal = internalMutation({
+  args: { grantId: v.id("complimentaryPlanGrants") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const grant = await ctx.db.get(args.grantId);
+    if (!grant || grant.expiresAt === undefined) return null;
+    if (grant.expiresAt > getCurrentUTCTimestamp()) {
+      await ctx.scheduler.runAt(
+        grant.expiresAt,
+        internal.testerPlans.expireGrantInternal,
+        args
+      );
+      return null;
+    }
+    await ctx.db.delete(grant._id);
+    if (await ctx.db.get(grant.userId)) {
+      await refreshUserPlanFromBilling(ctx, grant.userId);
+    }
+    return null;
+  },
+});
+
+/** Bounded repair if a scheduled mutation failed because of a deployment bug. */
+export const recoverExpiredGrantsInternal = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const grants = await ctx.db
+      .query("complimentaryPlanGrants")
+      .withIndex("by_expiresAt", (q) =>
+        q.gt("expiresAt", undefined).lte("expiresAt", getCurrentUTCTimestamp())
+      )
+      .take(100);
+    for (const grant of grants) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.testerPlans.expireGrantInternal,
+        { grantId: grant._id }
+      );
+    }
+    return null;
   },
 });

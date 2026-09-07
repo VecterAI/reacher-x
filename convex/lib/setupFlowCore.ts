@@ -222,7 +222,12 @@ export function buildSetupFlowState(args: {
 } {
   const visibleSteps = buildVisibleSetupSteps({
     requiresConnections: args.requiresConnections,
-    requiresPlan: args.requiresPlan,
+    // A grant can satisfy payment while this persisted step still needs the
+    // user's final Continue. Keep that action visible until setup is ready.
+    requiresPlan:
+      args.requiresPlan ||
+      args.status === "awaiting_plan" ||
+      args.status === "awaiting_preferences",
   });
   const currentStepId = resolveVisibleCurrentStepId({
     status: args.status,
