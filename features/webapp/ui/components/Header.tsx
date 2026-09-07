@@ -10,6 +10,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 
 import { cn } from "@/shared/lib/utils";
+import { logout } from "@/shared/lib/auth/logout";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 import { getWorkspaceSwitchHref } from "@/shared/lib/urls/workspaceSwitchHref";
 import { api } from "@/convex/_generated/api";
@@ -987,8 +988,8 @@ export function Header({
 
                 {/* Log out */}
                 <DropdownMenuItem
-                  onClick={() => {
-                    router.push("/logout");
+                  onSelect={() => {
+                    void logout();
                   }}
                 >
                   <LogoutIcon className="fill-current" aria-hidden="true" />
