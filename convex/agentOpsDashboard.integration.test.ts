@@ -244,7 +244,7 @@ describe("bounded reactive Agent Ops dashboard", () => {
       expect(bucketSet.buckets[0].startMs).toBe(
         normalizedWindow.current.startMs
       );
-      expect(bucketSet.buckets.at(-1)!.endMs).toBe(
+      expect(bucketSet.buckets[bucketSet.buckets.length - 1].endMs).toBe(
         normalizedWindow.current.endMs
       );
       const summary = await owner.query(
