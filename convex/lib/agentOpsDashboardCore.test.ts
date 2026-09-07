@@ -28,7 +28,7 @@ describe("Agent Ops chart bounds and calendar coverage", () => {
       expect(bucketSet.buckets[0].startMs).toBe(
         normalizedWindow.current.startMs
       );
-      expect(bucketSet.buckets.at(-1)!.endMs).toBe(
+      expect(bucketSet.buckets[bucketSet.buckets.length - 1].endMs).toBe(
         normalizedWindow.current.endMs
       );
     }
@@ -55,7 +55,7 @@ describe("Agent Ops chart bounds and calendar coverage", () => {
         expect(bucketSet.buckets[i].startMs).toBe(
           bucketSet.buckets[i - 1].endMs
         );
-      expect(bucketSet.buckets.at(-1)!.endMs).toBe(
+      expect(bucketSet.buckets[bucketSet.buckets.length - 1].endMs).toBe(
         normalizedWindow.current.endMs
       );
     }
