@@ -321,6 +321,18 @@ export const prospectingWorkflow = workflow.define({
           status: "stopped",
         }
       );
+      await step.runMutation(
+        internal.memory.recordMemoryWorkflowEventInternal,
+        {
+          workspaceId: args.workspaceId,
+          eventType: "prospecting_cycle_failed",
+          sourceType: "workflow_event",
+          sourceId: workflowSourceId,
+          workflowName: "prospectingWorkflow",
+          payload: { reason: "search_configuration_missing" },
+          eventKey: `prospecting:${workflowSourceId}:search_configuration_missing`,
+        }
+      );
       return {
         status: "error",
         reason: "Discovery service configuration missing",

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useAction, useMutation } from "convex/react";
+import { ConvexError } from "convex/values";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { useSetupThreadDraft } from "@/shared/hooks";
@@ -34,7 +35,15 @@ export function AgentOnboardingPanel({
   const approve = useMutation(api.setupSessions.approveSetupGeneration);
   const startCheckout = useAction(api.billing.startCheckoutFlow);
   const [isApproving, setIsApproving] = useState(false);
-  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approvalFailure, setApprovalFailure] = useState<{
+    revisionKey: string;
+    message: string;
+  } | null>(null);
+  const revisionKey = `${session?.sessionId}:${session?.generationRevision}`;
+  const approvalError =
+    approvalFailure?.revisionKey === revisionKey
+      ? approvalFailure.message
+      : null;
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
   const labels = getWorkspaceUseCase(session?.useCaseKey);
   const step = session?.currentStepId ?? "input";
@@ -42,20 +51,26 @@ export function AgentOnboardingPanel({
   const handleApprove = useCallback(async () => {
     if (!session || isApproving || approvalDisabled) return;
     setIsApproving(true);
-    setApprovalError(null);
+    setApprovalFailure(null);
     try {
       await approve({
         sessionId: session.sessionId,
         generationRevision: session.generationRevision,
       });
-    } catch {
-      setApprovalError(
-        "Could not continue. Wait for Agent to finish, then try again."
-      );
+    } catch (error) {
+      setApprovalFailure({
+        revisionKey,
+        message:
+          error instanceof ConvexError &&
+          typeof error.data === "string" &&
+          error.data.trim()
+            ? error.data.trim()
+            : "Could not continue. Wait for Agent to finish, then try again.",
+      });
     } finally {
       setIsApproving(false);
     }
-  }, [approve, isApproving, session, approvalDisabled]);
+  }, [approve, isApproving, session, approvalDisabled, revisionKey]);
   const handleCheckout = useCallback(
     async (
       tier: "hobby" | "base" | "pro",

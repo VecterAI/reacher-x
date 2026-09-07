@@ -12,7 +12,7 @@ import {
 import { workflow as workflowManager } from "./lib/workflow";
 import type { WorkflowId, WorkflowStatus } from "@convex-dev/workflow";
 import { createThread, saveMessage, listStreams } from "@convex-dev/agent";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { logger } from "../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
@@ -361,7 +361,9 @@ async function finalizeSetupSessionReady(
 ) {
   if (session.status === "ready") return { success: true as const };
   if (session.refineFromWorkspace)
-    throw new Error("Use workspace settings to update an existing workspace.");
+    throw new ConvexError(
+      "Use workspace settings to update an existing workspace."
+    );
   if (
     session.flowVersion !== 2 ||
     session.approvedGenerationRevision !== session.generationRevision
@@ -1637,17 +1639,21 @@ async function approveSetupExamplesForSession(
     session.status !== "awaiting_icp_confirmation" ||
     session.generationRevision !== generationRevision
   ) {
-    throw new Error(
+    throw new ConvexError(
       "These examples have changed. Review the latest examples before continuing."
     );
   }
   if (session.refineFromWorkspace)
-    throw new Error("Use workspace settings to update an existing workspace.");
+    throw new ConvexError(
+      "Use workspace settings to update an existing workspace."
+    );
   const profiles = normalizeWorkspaceProfiles(session.generatedProfiles ?? []);
   validateWorkspaceProfiles(profiles);
   validateSyntheticProfileExamples(profiles);
   if (!session.improvedDescription || !session.targetingSpec)
-    throw new Error("Targeting is not ready. Generate the examples again.");
+    throw new ConvexError(
+      "Targeting is not ready. Generate the examples again."
+    );
   const now = getCurrentUTCTimestamp();
   const workspaceName = formatWorkspaceName(session.draftName);
   const flow = await ctx.runQuery(
@@ -1709,7 +1715,7 @@ export const approveSetupGeneration = mutation({
       includeStatuses: ["streaming"],
     });
     if (streams.length)
-      throw new Error("Wait for Agent to finish before continuing.");
+      throw new ConvexError("Wait for Agent to finish before continuing.");
     return approveSetupExamplesForSession(
       ctx,
       session,

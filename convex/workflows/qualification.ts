@@ -619,7 +619,8 @@ export const runQualificationWorkflow = internalAction({
     if (
       !prospect ||
       prospect.workspaceId !== args.workspaceId ||
-      prospect.qualificationStatus !== "pending" ||
+      (prospect.qualificationStatus !== undefined &&
+        prospect.qualificationStatus !== "pending") ||
       prospect.status === "archived"
     ) {
       return { workflowId: "" };
@@ -672,7 +673,8 @@ export const startQualificationWorkflowAtomically = internalMutation({
       workspace.deletionStartedAt ||
       prospect.workspaceId !== args.workspaceId ||
       prospect.status === "archived" ||
-      prospect.qualificationStatus !== "pending"
+      (prospect.qualificationStatus !== undefined &&
+        prospect.qualificationStatus !== "pending")
     ) {
       return { workflowId: "" };
     }
@@ -692,6 +694,7 @@ export const startQualificationWorkflowAtomically = internalMutation({
     );
     await ctx.db.patch(prospect._id, {
       qualificationWorkflowId: String(workflowId),
+      qualificationStatus: "pending",
       updatedAt: getCurrentUTCTimestamp(),
     });
     return { workflowId: String(workflowId) };

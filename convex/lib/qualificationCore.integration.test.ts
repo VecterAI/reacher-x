@@ -93,6 +93,7 @@ function response(
 }
 afterEach(() => {
   vi.resetAllMocks();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 describe("evidence-backed qualification verification", () => {
@@ -208,6 +209,10 @@ describe("direct strong qualification and profile evidence", () => {
   test.each(["profile", "either", "activity"] as const)(
     "profile evidence respects %s criterion requirements",
     async (evidence) => {
+      // Old workers lack URL.parse during a Node runtime rollout.
+      vi.spyOn(URL, "parse").mockImplementation(() => {
+        throw new TypeError("URL.parse is unavailable");
+      });
       const id = "profile:linkedin:ACo123";
       const resultObject = response().object as Record<string, unknown>;
       vi.mocked(robustGenerateObject).mockResolvedValueOnce({

@@ -304,7 +304,10 @@ export async function qualifyProspectCore(
     platform === "linkedin" &&
     profileEvidence.text.trim()
   ) {
-    const url = URL.parse(profileEvidence.url);
+    // Node 20 workers can briefly remain active during the Node 22 rollout.
+    const url = URL.canParse(profileEvidence.url)
+      ? new URL(profileEvidence.url)
+      : null;
     if (
       url &&
       url.protocol === "https:" &&

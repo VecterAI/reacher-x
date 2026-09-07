@@ -2,6 +2,7 @@
 // Shared Zod schemas for agent tools
 
 import { z } from "zod";
+import { hasSyntheticProfileExamples } from "../../lib/syntheticProfileCore";
 
 // ============================================================================
 // ICP Schema
@@ -22,6 +23,13 @@ export const syntheticProfileExamplesSchema = z
     })
   )
   .length(2)
+  .refine(
+    (syntheticExamples) => hasSyntheticProfileExamples({ syntheticExamples }),
+    {
+      message:
+        "Return one Twitter example (bio at most 160 characters) and one LinkedIn example (bio at most 300 characters), with nonblank names, titles, and bios.",
+    }
+  )
   .describe(
     "Exactly two fictional profiles of this ONE persona: one twitter and one linkedin. Natural first-person social bios, not qualification summaries. No real identities, links, or contact information."
   );

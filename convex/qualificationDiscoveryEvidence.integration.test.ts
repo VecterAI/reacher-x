@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { listWorkspaceProspectSummariesPage } from "./prospectSummaries";
 import { internal, api } from "./_generated/api";
 import schema from "./schema";
 import { isRecord } from "./lib/typeGuards";
@@ -134,8 +135,71 @@ describe("qualification evidence persistence", () => {
     expect(page.page).toHaveLength(1);
     const row = page.page[0];
     if (!isRecord(row)) throw new Error("Missing summary row");
-    expect(row.qualificationReasoning).toBe(rationale);
-    expect(detail?.qualificationReasoning).toBe(rationale);
+    expect(row.qualificationReasoning).toBeUndefined();
+    expect(detail?.qualificationReasoning).toBeUndefined();
     expect(detail?.qualificationScore).toBe(91);
   });
+});
+
+test.each(["best_fit_first", "individuals_first"] as const)(
+  "%s summaries never load full legacy prospect documents",
+  async (sortBy) => {
+    const { t, prospectId, workspaceId } = await setup();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(prospectId, {
+        qualificationStatus: "qualified",
+        qualificationScore: 90,
+        prospectType: "individual",
+      });
+      await ctx.db.insert(
+        "prospectSummaries",
+        buildProspectSummaryRecord((await ctx.db.get(prospectId))!)
+      );
+      const originalGet = ctx.db.get.bind(ctx.db);
+      const get = vi.spyOn(ctx.db, "get").mockImplementation((...args) => {
+        if (args.includes(prospectId))
+          throw new Error("Unexpected full document hydration");
+        return originalGet(...args);
+      });
+      const result = await listWorkspaceProspectSummariesPage(ctx.db, {
+        workspaceId,
+        status: "new",
+        visibilityMode: "all",
+        prospectType: "individual",
+        sortBy,
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      expect(result.page).toHaveLength(1);
+      expect(result.page[0].qualificationReasoning).toBeUndefined();
+      expect(get).not.toHaveBeenCalledWith(prospectId);
+      get.mockRestore();
+    });
+  }
+);
+test("new saved reasoning is present in both summary and detail without a legacy fallback", async () => {
+  const { t, prospectId, workspaceId } = await setup();
+  const reasoning = "Creates product tutorials. https://example.test/source";
+  await t.run(async (ctx) => {
+    await ctx.db.patch(prospectId, {
+      qualificationStatus: "qualified",
+      qualificationScore: 92,
+      qualificationReasoning: reasoning,
+    });
+    await ctx.db.insert(
+      "prospectSummaries",
+      buildProspectSummaryRecord((await ctx.db.get(prospectId))!)
+    );
+  });
+  const viewer = t.withIdentity({ subject: "evidence-owner" });
+  const page = await viewer.query(api.prospects.getWorkspaceProspects, {
+    workspaceId,
+    paginationOpts: { cursor: null, numItems: 10 },
+  });
+  const row = page.page[0];
+  if (!isRecord(row)) throw new Error("Missing summary row");
+  expect(row.qualificationReasoning).toBe(reasoning);
+  expect(
+    (await viewer.query(api.prospects.getProspect, { prospectId }))
+      ?.qualificationReasoning
+  ).toBe(reasoning);
 });

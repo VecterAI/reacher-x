@@ -72,6 +72,14 @@ export async function collectQualificationDiscoveryEvidence(
     throw new Error(
       "[QualificationEvidence] Provider returned a different profile"
     );
+  const username =
+    getStringProperty(profile, "username")?.trim() || identifiers.username;
+  const urn = getStringProperty(profile, "urn")?.trim();
+  if (!username || !/^[\p{L}\p{N}_-]+$/u.test(username) || !urn) {
+    throw new Error(
+      "[QualificationEvidence] Provider profile is missing a valid public username or URN"
+    );
+  }
   const profileData = {
     ...sanitizeLinkedInProfileForWorkflow(profile),
     // Retain actual responsibilities; the generic workflow sanitizer keeps only company names.
@@ -83,12 +91,12 @@ export async function collectQualificationDiscoveryEvidence(
         4000
       ),
     })),
-    url: `https://www.linkedin.com/in/${encodeURIComponent(profile.username || identifiers.username || profile.urn)}`,
+    url: `https://www.linkedin.com/in/${encodeURIComponent(username)}`,
   };
   const activity = await ctx.runAction(
     internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
     {
-      urn: profile.urn,
+      urn,
       maxPosts: 10,
     }
   );

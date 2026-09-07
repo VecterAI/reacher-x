@@ -190,3 +190,45 @@ describe("people-search qualification evidence acquisition", () => {
     expect(mock.runMutation).toHaveBeenCalledOnce();
   });
 });
+
+test.each([
+  { ...profile, username: undefined },
+  { ...profile, username: "urn:li:fsd_profile:ACo123" },
+  { ...profile, username: "bad/name" },
+  { ...profile, urn: undefined },
+  { ...profile, urn: "   " },
+])(
+  "incomplete provider identifiers do not fetch posts or persist fabricated URLs",
+  async (incompleteProfile) => {
+    const mock = context();
+    mock.runAction
+      .mockReset()
+      .mockResolvedValueOnce({ success: true, profile: incompleteProfile });
+    const seed = {
+      ...prospect,
+      linkedinUserUrn: undefined,
+      data: { urn: String(profile.id) },
+    };
+    // Identity can still be verified through the stable numeric provider ID.
+    await expect(
+      collectQualificationDiscoveryEvidence(mock.ctx, seed)
+    ).rejects.toThrow("valid public username or URN");
+    expect(mock.runAction).toHaveBeenCalledOnce();
+    expect(mock.runMutation).not.toHaveBeenCalled();
+  }
+);
+test("a known username remains usable when the provider returns only the matching URN", async () => {
+  const mock = context();
+  mock.runAction
+    .mockReset()
+    .mockResolvedValueOnce({
+      success: true,
+      profile: { ...profile, username: undefined },
+    })
+    .mockResolvedValueOnce({ posts: [] });
+  const result = await collectQualificationDiscoveryEvidence(
+    mock.ctx,
+    prospect
+  );
+  expect(result?.profileData.url).toBe("https://www.linkedin.com/in/educator");
+});
