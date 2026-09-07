@@ -412,7 +412,8 @@ export function normalizeAnalyticsWindow(
 }
 
 export function createTrendBucketSet(
-  normalizedWindow: NormalizedAnalyticsWindow
+  normalizedWindow: NormalizedAnalyticsWindow,
+  options?: { maxBuckets: number }
 ): TrendBucketSet {
   const { current, granularity, timeZone } = normalizedWindow;
   const buckets: TrendBucket[] = [];
@@ -431,8 +432,20 @@ export function createTrendBucketSet(
       });
     }
   } else {
-    const bucketDays =
+    const baseBucketDays =
       granularity === "monthly" ? 30 : granularity === "weekly" ? 7 : 1;
+    const bucketDays = options
+      ? Math.max(
+          baseBucketDays,
+          Math.ceil(
+            getTimeZoneInclusiveDayCount(
+              current.startMs,
+              current.endMs,
+              timeZone
+            ) / Math.max(1, Math.floor(options.maxBuckets))
+          )
+        )
+      : baseBucketDays;
     let bucketStart = current.startMs;
 
     while (bucketStart < current.endMs) {

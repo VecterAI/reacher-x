@@ -12,6 +12,10 @@ import {
 } from "./lib/accessHelpers";
 import {
   agentOpsMemorySortValidator,
+  agentOpsDashboardReadArgs,
+  agentOpsMetricSliceValidator,
+  agentOpsDashboardSummaryValidator,
+  agentOpsActivityItemValidator,
   agentOpsTabValidator,
   analyticsDateRangeValidator,
   queryCandidateStatusValidator,
@@ -52,6 +56,12 @@ import {
   getWorkspaceAnalyticsAggregateRows,
 } from "./lib/workspaceReportingAggregate";
 import { isWorkspaceReportingAggregateReady } from "./lib/workspaceReportingRollout";
+
+import {
+  getAgentOpsDashboardWindow,
+  getAgentOpsTrendSlice,
+} from "./lib/agentOpsDashboardCore";
+import { readAgentOpsDashboardMetrics } from "./lib/agentOpsDashboardReadCore";
 
 const AGENT_OPS_ACTIVITY_MEMORY_LIMIT = 80;
 const AGENT_OPS_MEMORY_PAGE_SIZE_MAX = 100;
@@ -979,6 +989,86 @@ export const getAgentOpsMemoryInventoryCountInternal = internalQuery({
     }),
 });
 
+/** New clients subscribe to these bounded queries directly, never through a parent query. */
+async function requireAgentOpsReportingWindow(
+  ctx: QueryCtx,
+  args: {
+    workspaceId: Id<"workspaces">;
+  } & Parameters<typeof getAgentOpsDashboardWindow>[0]
+) {
+  const { workspace } = await requireOwnedWorkspaceContext(
+    ctx,
+    args.workspaceId
+  );
+  if (!(await isWorkspaceReportingAggregateReady(ctx.db, args.workspaceId))) {
+    throw new Error(
+      "Realtime reporting is still being prepared for this workspace"
+    );
+  }
+  return getAgentOpsDashboardWindow({
+    ...args,
+    timeZone: workspace.reportingTimeZone ?? args.timeZone,
+  });
+}
+
+export const getAgentOpsDashboardSummary = query({
+  args: agentOpsDashboardReadArgs,
+  returns: agentOpsDashboardSummaryValidator,
+  handler: async (ctx, args) => {
+    const { normalizedWindow } = await requireAgentOpsReportingWindow(
+      ctx,
+      args
+    );
+    const metrics = await readAgentOpsDashboardMetrics(ctx, {
+      ...args,
+      kind: "summary",
+      windows: [normalizedWindow.current, normalizedWindow.previous],
+    });
+    return { ...metrics, timeZone: normalizedWindow.timeZone };
+  },
+});
+
+export const getAgentOpsDashboardTrendSlice = query({
+  args: { ...agentOpsDashboardReadArgs, offset: v.number() },
+  returns: agentOpsMetricSliceValidator,
+  handler: async (ctx, args) => {
+    const { normalizedWindow } = await requireAgentOpsReportingWindow(
+      ctx,
+      args
+    );
+    return readAgentOpsDashboardMetrics(ctx, {
+      ...args,
+      kind: "trend",
+      windows: getAgentOpsTrendSlice(normalizedWindow, args.offset),
+    });
+  },
+});
+
+export const getAgentOpsDashboardActivity = query({
+  args: agentOpsDashboardReadArgs,
+  returns: v.array(agentOpsActivityItemValidator),
+  handler: async (
+    ctx,
+    args
+  ): Promise<
+    ReturnType<typeof buildAgentOpsDashboardData>["activity"]["feed"]
+  > => {
+    const { normalizedWindow, bucketSet } =
+      await requireAgentOpsReportingWindow(ctx, args);
+    const activity = await ctx.runQuery(
+      internal.agentOps.getAgentOpsActivitySnapshotInternal,
+      { workspaceId: args.workspaceId, ...normalizedWindow.current }
+    );
+    return buildAgentOpsDashboardData({
+      ...activity,
+      currentWindow: normalizedWindow.current,
+      previousWindow: normalizedWindow.previous,
+      bucketSet: { ...bucketSet, buckets: [] },
+    }).activity.feed;
+  },
+});
+
+// Retained for already-open clients during backend-first deployment.
 export const getAgentOpsDashboard = query({
   args: {
     workspaceId: v.id("workspaces"),

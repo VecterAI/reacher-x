@@ -3008,3 +3008,42 @@ export const learningEntryReferenceValidator = v.object({
   targetingFingerprint: v.optional(v.string()),
   sourceId: v.optional(v.string()),
 });
+
+// Bounded, independently subscribed Agent Ops reporting reads.
+export const agentOpsDashboardReadArgs = {
+  workspaceId: v.id("workspaces"),
+  range: analyticsDateRangeValidator,
+  tab: agentOpsTabValidator,
+  timeZone: v.optional(v.string()),
+  fromDate: v.optional(v.string()),
+  toDate: v.optional(v.string()),
+  nowMs: v.number(),
+};
+export const agentOpsMetricSliceValidator = v.object({
+  analytics: v.array(v.array(v.number())),
+  agentOps: v.array(v.array(v.number())),
+});
+export const agentOpsDashboardSummaryValidator = v.object({
+  ...agentOpsMetricSliceValidator.fields,
+  timeZone: v.string(),
+});
+export const agentOpsActivityItemValidator = v.object({
+  id: v.string(),
+  kind: v.union(
+    v.literal("event"),
+    v.literal("run"),
+    v.literal("memory"),
+    v.literal("suggestion")
+  ),
+  title: v.string(),
+  description: v.string(),
+  status: v.string(),
+  timestamp: v.number(),
+  severity: v.union(
+    v.literal("default"),
+    v.literal("warning"),
+    v.literal("destructive"),
+    v.literal("success")
+  ),
+  linkedEntity: v.union(v.string(), v.null()),
+});

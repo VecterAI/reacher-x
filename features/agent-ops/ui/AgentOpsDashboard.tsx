@@ -12,6 +12,7 @@ import {
   StatsOverview,
   type StatMetricData,
 } from "@/features/analytics/ui/components";
+import { useAgentOpsRealtimeDashboard } from "../hooks/useAgentOpsRealtimeDashboard";
 import { getDefaultAgentOpsData } from "../lib/defaults";
 import {
   usePreferredShellQueryArgs,
@@ -178,8 +179,7 @@ export function AgentOpsDashboard() {
     workspaceId ? { workspaceId } : "skip"
   );
   const reportingReady = reportingStatusQuery.data?.ready === true;
-  const realtimeDashboardQuery = useQueryWithStatus(
-    api.agentOps.getAgentOpsDashboard,
+  const realtimeDashboardQuery = useAgentOpsRealtimeDashboard(
     workspaceId && reportingReady
       ? {
           workspaceId,
