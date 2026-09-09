@@ -1,0 +1,91 @@
+---
+title: "Build a small review queue before adding automation"
+description: "An example engineering walkthrough with TypeScript, JSON, shell commands, plain text, and a long code line."
+category: engineering
+date: "2025-03-16"
+tags: [example, content-preview]
+draft: false
+---
+
+_Example post for reviewing the blog design. The scenario and publication date are illustrative._
+
+## Model the decision
+
+A review queue should record why a conversation was included. In this standalone example, each item has an identifier, a short explanation, and one of three statuses.
+
+```typescript title="review-queue.ts"
+type ReviewStatus = "new" | "reviewed" | "dismissed";
+
+type ReviewItem = {
+  id: string;
+  reason: string;
+  status: ReviewStatus;
+};
+
+const queue: ReviewItem[] = [
+  {
+    id: "sample-001",
+    reason: "Asked how to keep track of follow-ups after a demo",
+    status: "new",
+  },
+];
+
+function pendingItems(items: ReviewItem[]) {
+  return items.filter((item) => item.status === "new");
+}
+```
+
+The `reason` should be readable without opening the implementation. It is useful to a reviewer; a number such as `0.92` needs more context.
+
+### Inspect a saved item
+
+```json title="sample-item.json"
+{
+  "id": "sample-001",
+  "status": "new",
+  "reason": "Asked how to keep track of follow-ups after a demo",
+  "evidence": {
+    "kind": "explicit-question",
+    "reviewRequired": true
+  }
+}
+```
+
+### Run a local check
+
+These commands belong to the fictional example project. They are not setup instructions for ReacherX.
+
+```bash title="Terminal"
+mkdir review-queue-example
+cd review-queue-example
+printf '%s\n' 'Ready to review sample conversations'
+```
+
+## Make failures understandable
+
+<BlogCallout title="Keep the item available">
+
+If saving fails, keep the reviewer’s decision visible and let them try again. Do not silently move the item to another list.
+
+</BlogCallout>
+
+```text title="Example error"
+Could not save your review. Your changes are still here. Try again.
+```
+
+## Keep long lines inside the code block
+
+The following example intentionally uses one long line so you can check horizontal scrolling on a phone.
+
+```typescript title="long-line.ts"
+const explanation =
+  "The person explicitly described losing track of follow-ups after product demos, asked for a simpler workflow, and mentioned that their current notes are spread across a spreadsheet and two inboxes.";
+```
+
+A code block without a language still needs readable spacing and a working copy action:
+
+```
+new -> read the context -> decide -> save the review
+```
+
+The next step is a [small manual review](/blog/example-weekly-review), using the same reasons a reader can see here.

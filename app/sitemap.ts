@@ -2,6 +2,12 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { MetadataRoute } from "next";
+import { getBlogPosts } from "@/features/blog/lib/blogPosts";
+import {
+  getPublishedBlogCategories,
+  blogCategoryHref,
+  blogHref,
+} from "@/features/blog/lib/blogHelpers";
 
 const BASE_URL = "https://reacherx.com";
 
@@ -38,6 +44,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     },
   ];
+
+  const posts = await getBlogPosts();
+  baseEntries.push(
+    { url: `${BASE_URL}/blog` },
+    ...getPublishedBlogCategories(posts).map((category) => ({
+      url: `${BASE_URL}${blogCategoryHref(category.slug)}`,
+    })),
+    ...posts.map((post) => ({
+      url: `${BASE_URL}${blogHref(post.slug)}`,
+      lastModified: `${post.updated ?? post.date}T00:00:00Z`,
+    }))
+  );
 
   try {
     if (!process.env.NEXT_PUBLIC_CONVEX_URL) {

@@ -1,0 +1,79 @@
+---
+title: "Explain a workflow with images, motion, and a short video"
+description: "An example media article with a captioned image, an uncaptioned image, a GIF, a captioned widescreen clip, and square video."
+category: tutorials
+date: "2025-03-14"
+tags: [example, content-preview]
+draft: false
+---
+
+_Example post for reviewing the blog design. The scenario and publication date are illustrative._
+
+## Show the whole sequence first
+
+A reader should understand the steps before watching a demonstration. This existing sample diagram has three: describe the people, find a conversation, and review the context.
+
+<BlogImage
+  src="/blog-media/reading-demo.png"
+  alt="A diagram showing Describe, Find, and Review in three adjacent panels."
+  width={900}
+  height={480}
+  caption="The whole workflow in one view. Each step gives the next one more context."
+/>
+
+## Use animation for a short sequence
+
+Press Play animation to follow the three steps. The animation starts only when you choose to play it.
+
+<BlogGif
+  src="/blog-media/reading-demo.gif"
+  poster="/blog-media/reading-demo.png"
+  alt="Describe, Find, and Review light up in sequence."
+  width={900}
+  height={480}
+  caption="One pass through the workflow, shown as a looping animation."
+/>
+
+## Add a video when timing matters
+
+This six-second, silent example uses captions to describe the action. Try playback, seeking, and the captions control.
+
+<BlogVideo
+  src="/blog-media/reading-demo.mp4"
+  poster="/blog-media/reading-demo.png"
+  title="A three-step workflow with captions"
+  width={900}
+  height={480}
+  captions="/blog-media/reading-demo.vtt"
+  caption="A widescreen video with captions. The player follows the article width."
+/>
+
+### Compare a square recording
+
+This clip is reused from the historical v3.0 post. It demonstrates the square player layout; it does not represent a new release.
+
+<BlogVideo
+  src="/blog-media/reacherx-v3/keywords.mp4"
+  poster="/blog-media/reading-demo.png"
+  title="Historical keyword suggestions demonstration"
+  width={720}
+  height={720}
+  caption="A square recording retains its original shape at the same article width."
+/>
+
+## An image without a caption
+
+Sometimes the paragraph already explains everything the reader needs. This repeated sample image intentionally has no caption so you can compare the spacing.
+
+<BlogImage
+  src="/blog-media/reading-demo.png"
+  alt="The same three-step workflow diagram, shown without a caption."
+  width={900}
+  height={480}
+/>
+
+<BlogCallout title="Keep the explanation in the article too">
+
+The text should still make sense when a reader skips the video. Name the action, explain the result, and give them a clear next step.
+
+</BlogCallout>

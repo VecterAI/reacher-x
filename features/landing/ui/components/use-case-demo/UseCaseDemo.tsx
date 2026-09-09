@@ -12,10 +12,7 @@ import type { Doc } from "@/convex/_generated/dataModel";
 import { ProfileProvider } from "@/features/profile/contexts/TwitterProfileContext";
 import { PanelStackProvider } from "@/features/prospects/contexts/PanelStackContext";
 import { getProspectSuccessEmptyStateCopy } from "@/features/prospects/lib/prospectEmptyStateCopy";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/shared/ui/components/ToggleGroup";
+import { PillSelector } from "@/shared/ui/components/pill-navigation/PillSelector";
 import { AccountBoxIcon, ArchiveIcon } from "@/shared/ui/components/icons";
 import { getDemoUseCaseLabels } from "./demoLabels";
 import { DemoShellProvider, getDemoWorkspaces } from "./demoShellContext";
@@ -151,30 +148,15 @@ export function UseCaseDemo() {
   return (
     <div>
       {/* Use case switcher (landing chrome, not part of the mock UI) */}
-      <div className="scroll-fade-x scrollbar-none overflow-x-auto [overflow-y:clip] [&::-webkit-scrollbar]:hidden">
-        <ToggleGroup
-          type="single"
-          value={activeUseCase}
-          variant="outline"
-          size="sm"
-          className="w-max justify-start gap-1"
-          aria-label="Use cases"
-          onValueChange={(value) => {
-            if (!value) return;
-            setActiveUseCase(value as UseCaseDemoKey);
-          }}
-        >
-          {USE_CASE_DEMO_DATASETS.map((entry) => (
-            <ToggleGroupItem
-              key={entry.key}
-              value={entry.key}
-              className="bg-background text-muted-foreground data-[state=on]:border-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:hover:bg-accent data-[state=on]:hover:text-accent-foreground rounded-full px-2.5"
-            >
-              {entry.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
+      <PillSelector
+        label="Use cases"
+        value={activeUseCase}
+        onValueChange={setActiveUseCase}
+        items={USE_CASE_DEMO_DATASETS.map((entry) => ({
+          value: entry.key,
+          label: entry.label,
+        }))}
+      />
 
       <div className="mt-8">
         <UseCaseDemoFrame>

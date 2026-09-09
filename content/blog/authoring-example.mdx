@@ -1,0 +1,58 @@
+---
+title: Authoring example — not published
+description: A private draft demonstrating the available blog content blocks.
+category: tutorials
+date: "2026-09-08"
+draft: true
+tags:
+  - example
+---
+
+This draft is excluded from public pages, metadata, feeds, images, search, and Markdown endpoints. Preview changes locally by temporarily setting `draft` to `false`; restore it before publishing.
+
+## Images
+
+<BlogImage
+  src="/mux-product-demo-video-thumbnail-1.jpg"
+  alt="ReacherX demo preview"
+  caption="Describe what the reader should notice."
+  width={1047}
+  height={675}
+/>
+
+## Video
+
+The surrounding text should also explain what the video demonstrates. For spoken videos, provide a captions file using the `captions` prop and a written transcript.
+
+<BlogVideo
+  width={1920}
+  height={1080}
+  src="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Ne4o1rZgyRbrWdIGZK0sCkx5o6azDVPMBptAj"
+  poster="/mux-product-demo-video-thumbnail-1.jpg"
+  title="ReacherX product demonstration"
+  caption="Product demonstration. Use the controls to play or pause."
+/>
+
+## Code
+
+```typescript
+const audience = {
+  role: "Founder",
+  context: "B2B software",
+};
+```
+
+## More blocks
+
+<BlogCallout title="A useful note">
+
+Keep callouts brief and relevant to the next step.
+
+</BlogCallout>
+
+> A quotation can emphasize an idea without interrupting the article.
+
+| Feature | Support                        |
+| ------- | ------------------------------ |
+| Code    | Highlighted with copy controls |
+| Media   | Images and videos              |

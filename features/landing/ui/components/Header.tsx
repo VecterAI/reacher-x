@@ -116,6 +116,7 @@ function getInitials(name?: string) {
 }
 
 const NAV_LINKS = [
+  { href: "/blog", label: "Blog", isAnchor: false },
   { href: "/use-cases", label: "Use cases", isAnchor: false },
   { href: "/threads", label: "Threads", isAnchor: false },
   {
@@ -787,7 +788,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         scrolled ? "border-border border-b" : "border-b border-transparent"
       )}
     >
-      <div className="mx-auto flex w-full max-w-[1288px] items-center justify-between px-4 md:grid md:grid-cols-[1fr_auto_1fr]">
+      <div className="mx-auto flex w-full max-w-[1288px] items-center justify-between px-4 xl:grid xl:grid-cols-[1fr_auto_1fr]">
         {/* Left side: Brand */}
         <div className="flex min-w-0 items-center gap-4 justify-self-start">
           <LandingWordmark />
@@ -795,7 +796,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
 
         {/* Desktop nav */}
         <nav
-          className="hidden items-center gap-6 justify-self-center md:flex"
+          className="hidden items-center gap-6 justify-self-center xl:flex"
           aria-label="Main navigation"
         >
           {NAV_LINKS.map(({ href, label, isAnchor }) => {
@@ -820,7 +821,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         </nav>
 
         {/* Desktop right side */}
-        <div className="hidden min-w-[280px] items-center justify-end gap-2 justify-self-end md:flex">
+        <div className="hidden min-w-[280px] items-center justify-end gap-2 justify-self-end xl:flex">
           <GitHubButton starsCount={githubStarsCount} />
           <Separator orientation="vertical" className="h-6" />
 
@@ -856,9 +857,11 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         </div>
 
         {/* Mobile right side */}
-        <div className="flex items-center gap-2 md:hidden">
-          <GitHubButton starsCount={githubStarsCount} />
-          <Separator orientation="vertical" className="h-6" />
+        <div className="flex shrink-0 items-center gap-2 xl:hidden">
+          <div className="hidden items-center gap-2 sm:flex">
+            <GitHubButton starsCount={githubStarsCount} />
+            <Separator orientation="vertical" className="h-6" />
+          </div>
           <Button
             variant="ghost"
             onClick={() => setIsDrawerOpen(true)}

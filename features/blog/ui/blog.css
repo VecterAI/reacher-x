@@ -1,0 +1,124 @@
+.blog-prose {
+  font-size: 1.125rem;
+  line-height: 1.5556;
+  overflow-wrap: anywhere;
+}
+.blog-prose > p {
+  margin-block: 1.25rem;
+  text-wrap: pretty;
+}
+.blog-prose > :first-child {
+  margin-top: 0;
+}
+.blog-prose :where(h2, h3, h4) {
+  scroll-margin-top: 7rem;
+  text-wrap: balance;
+  font-weight: 500;
+}
+.blog-prose h2 {
+  margin: 3rem 0 1.25rem;
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+.blog-prose h3 {
+  margin: 2rem 0 1rem;
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+.blog-prose h4 {
+  margin: 1.5rem 0 1rem;
+  font-size: 1.125rem;
+}
+.blog-prose > :where(ul, ol),
+.blog-prose [data-footnotes] > ol {
+  margin-block: 1.5rem;
+  padding-left: 1.5rem;
+}
+.blog-prose ul {
+  list-style: disc;
+}
+.blog-prose ol {
+  list-style: decimal;
+}
+.blog-prose li {
+  margin-block: 0.5rem;
+  padding-left: 0.25rem;
+  text-wrap: pretty;
+}
+.blog-prose li > :where(ul, ol) {
+  margin-top: 0.5rem;
+  padding-left: 1.25rem;
+}
+.blog-prose strong {
+  font-weight: 600;
+}
+.blog-prose a {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.blog-prose :where(h2, h3, h4) a {
+  text-decoration: none;
+}
+.blog-prose :where(h2, h3, h4) a:hover {
+  text-decoration: underline;
+}
+.blog-prose blockquote {
+  margin-block: 2rem;
+  border-left: 2px solid hsl(var(--border));
+  padding-left: 1.25rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+.blog-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  overflow-wrap: normal;
+}
+.blog-prose :where(th, td) {
+  border-bottom: 1px solid hsl(var(--border));
+  padding: 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  font-variant-numeric: tabular-nums;
+}
+.blog-prose th {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.blog-prose td {
+  min-width: 10rem;
+  max-width: 24rem;
+}
+.blog-prose .blog-table-number {
+  min-width: 0;
+  width: 1%;
+  white-space: nowrap;
+}
+.blog-prose tbody tr:last-child td {
+  border-bottom: 0;
+}
+.blog-prose [data-footnotes] {
+  margin-top: 2rem;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+.blog-prose :where([data-footnote-ref], [data-footnotes] li) {
+  scroll-margin-top: 7rem;
+}
+.blog-prose :where(pre, code) {
+  font-family: var(--font-geist-mono), monospace;
+}
+.blog-prose hr {
+  margin-block: 2rem;
+  border-color: hsl(var(--border));
+}
+.blog-code pre {
+  background: transparent !important;
+}
+.dark .blog-code :where(pre, span) {
+  color: var(--shiki-dark) !important;
+  background-color: transparent !important;
+}

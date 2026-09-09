@@ -1,0 +1,61 @@
+---
+draft: true
+title: A starting point for exploring the codebase
+description: >-
+  Where the interface, agent tools, workflows, and backend logic live in ReacherX’s open-source
+  repository.
+category: engineering
+date: "2026-09-08"
+tags:
+  - open source
+  - code
+  - architecture
+  - nextjs
+  - convex
+featured: false
+---
+
+ReacherX is built with Next.js, React, and Convex. If you want to understand how the product works or contribute a change, start with the boundary between the interface and the agent's work.
+
+## Start with the repository
+
+Clone the source to explore it locally:
+
+```bash title="Terminal"
+git clone https://github.com/VecterAI/reacher-x.git
+cd reacher-x
+```
+
+Follow the repository’s [README](https://github.com/VecterAI/reacher-x/blob/main/README.md) for setup requirements. A clone alone doesn't configure the services used by the running application.
+
+## Find the right layer
+
+| Location            | What to look for                      |
+| ------------------- | ------------------------------------- |
+| `app/`              | Next.js routes and layouts            |
+| `features/`         | Feature-specific interfaces and hooks |
+| `shared/`           | Shared components and utilities       |
+| `convex/agents/`    | Agent definitions and tools           |
+| `convex/workflows/` | Durable orchestration                 |
+| `convex/lib/`       | Reusable backend logic                |
+
+Agent tools provide a focused interface to the model. Workflows coordinate multi-step operations. Core functions hold the reusable business logic.
+
+## Search before adding a helper
+
+A small change is easier to maintain when it follows an existing pattern. Before creating a utility, search for related functions in `shared/` and `convex/lib/`.
+
+```bash
+rg "getCurrentUTCTimestamp" shared convex
+rg --files features | head
+```
+
+<BlogCallout title="Read the project guidance">
+
+Check the repository’s agent instructions and Convex guidelines before changing backend behavior. They describe the patterns and validation rules used by this project.
+
+</BlogCallout>
+
+## Keep contributions focused
+
+A focused change is easier to review and verify. Explain the problem, the resulting behavior, and how you tested it. For questions or ideas, start with a [GitHub issue](https://github.com/VecterAI/reacher-x/issues).

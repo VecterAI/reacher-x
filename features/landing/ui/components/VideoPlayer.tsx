@@ -13,6 +13,8 @@ interface VideoPlayerProps {
   ariaLabel?: string;
   className?: string;
   poster?: string;
+  preload?: React.VideoHTMLAttributes<HTMLVideoElement>["preload"];
+  children?: React.ReactNode;
   onError?: React.ReactEventHandler<HTMLVideoElement>;
 }
 
@@ -29,6 +31,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   ariaLabel,
   className,
   poster,
+  preload = "metadata",
+  children,
   onError,
   ...props
 }) => {
@@ -68,7 +72,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         className="h-full w-full object-contain"
         aria-label={ariaLabel}
         playsInline
-        preload="metadata"
+        preload={preload}
         poster={poster}
         onError={onError}
         {...({
@@ -81,6 +85,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         {resolvedHlsUrl ? (
           <source src={resolvedHlsUrl} type="application/x-mpegURL" />
         ) : null}
+        {children}
         Your browser does not support HTML5 video.
       </video>
     </MediaTheme>

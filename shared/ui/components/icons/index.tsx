@@ -4722,3 +4722,31 @@ export const PsychologyAltIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+export const RssIcon: React.FC<IconProps> = ({ className, ...props }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="currentColor"
+    className={className}
+    {...props}
+  >
+    <circle cx="3" cy="13" r="1.5" />
+    <path d="M2 6v2a6 6 0 0 1 6 6h2a8 8 0 0 0-8-8Zm0-4v2a10 10 0 0 1 10 10h2A12 12 0 0 0 2 2Z" />
+  </svg>
+);
+
+export const MarkdownIcon: React.FC<IconProps> = ({ className, ...props }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="currentColor"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    {...props}
+  >
+    <path d="M10.6693 9.99935L12.6693 7.99935L11.9693 7.28268L11.1693 8.08268V5.99935H10.1693V8.08268L9.36927 7.28268L8.66927 7.99935L10.6693 9.99935ZM1.33594 13.3327V2.66602H14.6693V13.3327H1.33594ZM2.66927 11.9993H13.3359V3.99935H2.66927V11.9993ZM3.66927 9.99935H4.66927V6.99935H5.33594V8.99935H6.33594V6.99935H7.0026V9.99935H8.0026V5.99935H3.66927V9.99935Z" />
+  </svg>
+);

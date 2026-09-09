@@ -50,6 +50,7 @@ const FOOTER_COLUMNS = [
   {
     title: "Resources",
     links: [
+      { label: "Blog", href: "/blog" },
       { label: "Threads", href: "/threads" },
       { label: "Book a demo", href: "#book-demo" },
       { label: "Contact", href: "mailto:creativecoder.crco@gmail.com" },

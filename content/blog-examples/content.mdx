@@ -1,0 +1,107 @@
+---
+title: A closer look at blog content
+description: Images, motion, code, and notes in the same article. Use this page to check how a post will look before you publish.
+category: engineering
+date: "2026-09-08"
+draft: true
+---
+
+A tutorial needs room for screenshots and instructions. An engineering post needs readable code. This preview puts those blocks together so you can inspect them in light and dark mode, on a phone or a larger screen.
+
+## Images and captions
+
+A caption should tell the reader what to notice. This diagram follows a conversation from a description to a review.
+
+<BlogImage
+  src="/blog-media/reading-demo.png"
+  alt="Three steps: describe the people you need, find a relevant conversation, then review the context."
+  width={900}
+  height={480}
+  caption="Start with a description. Read the conversation before deciding how to respond."
+/>
+
+## An animated example
+
+Press Play animation to see each step. Motion stays paused until you choose to play it.
+
+<BlogGif
+  src="/blog-media/reading-demo.gif"
+  poster="/blog-media/reading-demo.png"
+  alt="The Describe, Find, and Review steps light up in order."
+  width={900}
+  height={480}
+  caption="A short loop of the same workflow."
+/>
+
+## Video with captions
+
+This six-second video has no audio. Its captions describe each step. Use the player controls to play, pause, seek, or show captions.
+
+<BlogVideo
+  width={900}
+  height={480}
+  src="/blog-media/reading-demo.mp4"
+  poster="/blog-media/reading-demo.png"
+  title="From a description to a reviewed conversation"
+  captions="/blog-media/reading-demo.vtt"
+  caption="A silent diagram with captions. Original example made for this preview."
+/>
+
+### Text version
+
+1. Describe the people you need.
+2. Find a relevant public conversation.
+3. Read the context before reaching out.
+
+## Code you can copy
+
+The filename stays above the code. Long lines scroll inside the block rather than widening the article.
+
+```typescript title="audience.ts"
+const audience = {
+  role: "Founder",
+  context: "Building a B2B product",
+  need: "Looking for a simpler way to find customers",
+};
+
+const brief = `${audience.role} · ${audience.context} · ${audience.need}`;
+console.log(brief);
+```
+
+Use inline code such as `audience.role` for names that belong in code.
+
+```bash title="Terminal"
+pnpm test:blog
+```
+
+```text title="A long line"
+Describe the people you need, include the problem they are talking about, and explain the context that would make a conversation relevant before deciding whether to reach out.
+```
+
+## Notes without the clutter
+
+<BlogCallout title="Read the project guidance">
+
+Check the repository's agent instructions before changing the code. They explain where shared components belong and which helpers already exist.
+
+Keep a change focused enough that someone else can understand why it was made.
+
+</BlogCallout>
+
+A note should sit close to the instruction it explains. It should not feel like a second page inside the article.
+
+> A useful reply starts with understanding what the person asked for.
+
+## Tables and numbers
+
+These are illustrative values for checking the layout, not product results.
+
+| Step                   | Example count | What to review              |
+| ---------------------- | ------------: | --------------------------- |
+| Conversations found    |           128 | Whether the topic matches   |
+| Relevant conversations |            24 | The person's stated need    |
+| Replies to review      |             6 | Whether the draft is useful |
+
+## Links and longer headings that wrap across more than one line on a phone
+
+Try a section link in the contents list, [return to the blog](/blog), or read [the v3.0 announcement](/blog/reacherx-v3-public-beta). Each route should remain easy to use with a keyboard.
