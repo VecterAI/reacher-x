@@ -24,12 +24,13 @@ export function ThreadMenu({
   profileUrl,
   className,
 }: {
-  tweetUrl: string;
+  tweetUrl?: string;
   profileUrl: string;
   className?: string;
 }) {
   const handleCopyLink = (event: React.MouseEvent) => {
     event.stopPropagation();
+    if (!tweetUrl) return;
     navigator.clipboard.writeText(tweetUrl).then(
       () =>
         toast.success("Copied!", {
@@ -44,6 +45,7 @@ export function ThreadMenu({
 
   const handleViewTweet = (event: React.MouseEvent) => {
     event.stopPropagation();
+    if (!tweetUrl) return;
     window.open(tweetUrl, "_blank");
   };
 
@@ -68,15 +70,19 @@ export function ThreadMenu({
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleViewTweet}>
-          <ExitToAppIcon className="fill-current" aria-hidden="true" />
-          Open on X/Twitter
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleCopyLink}>
-          <LinkIcon className="fill-current" aria-hidden="true" />
-          Copy link
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
+        {tweetUrl && (
+          <>
+            <DropdownMenuItem onClick={handleViewTweet}>
+              <ExitToAppIcon className="fill-current" aria-hidden="true" />
+              Open on X/Twitter
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleCopyLink}>
+              <LinkIcon className="fill-current" aria-hidden="true" />
+              Copy link
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem onClick={handleViewProfile}>
           <AccountCircleIcon className="fill-current" aria-hidden="true" />
           View profile

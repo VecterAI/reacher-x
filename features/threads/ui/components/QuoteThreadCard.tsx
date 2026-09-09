@@ -1,6 +1,10 @@
 "use client";
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { buildTwitterPostUrl } from "@/shared/lib/twitter/contracts";
+import {
+  shouldIgnorePostCardClick,
+  shouldIgnorePostCardKeyDown,
+} from "@/features/webapp/lib/postNavigation";
 import { cn } from "@/shared/lib/utils";
 import { formatRelativeTime } from "@/shared/lib/utils";
 import { TweetMedia } from "@/features/threads/ui/components/TweetMedia";
@@ -34,9 +38,14 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
   className,
   loading = false,
 }) => {
-  const router = useRouter();
   const media = tweet?.entities?.media;
-  const tweetUrl = `https://x.com/${tweet?.user?.screen_name}/status/${tweet?.id_str}`;
+  const tweetId = tweet?.id_str || (tweet?.id ? String(tweet.id) : "");
+  const tweetUrl = tweetId
+    ? buildTwitterPostUrl({
+        postId: tweetId,
+        authorHandle: tweet?.user?.screen_name,
+      })
+    : undefined;
   const profileUrl = `https://x.com/${tweet?.user?.screen_name}`;
   // const screenName = tweet?.user?.screen_name || ""; // not used in quote card
 
@@ -86,18 +95,11 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
   const highlightedBody = highlightInReactTree(parsedBody, highlightQuery);
 
   const handleCardNavigate = (e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement | null;
-    if (!target) return;
-    const interactive = target.closest(
-      "a,button,[role=button],video,media-chrome"
-    ) as HTMLElement | null;
-    if (interactive && interactive !== e.currentTarget) return;
+    if (shouldIgnorePostCardClick(e)) return;
     e.stopPropagation();
 
-    const id =
-      tweet?.conversation_id_str || tweet?.id_str || String(tweet?.id || "");
-    if (!id) return;
-    router.push(`/threads/${id}`);
+    if (!tweetUrl) return;
+    window.open(tweetUrl, "_blank", "noopener,noreferrer");
   };
 
   if (loading) {
@@ -136,16 +138,10 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
       tabIndex={0}
       onClick={handleCardNavigate}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          const synthetic = {
-            ...e,
-            target: e.target as EventTarget & HTMLElement,
-            currentTarget: e.currentTarget as EventTarget & HTMLDivElement,
-            stopPropagation: () => {},
-          } as unknown as React.MouseEvent<HTMLDivElement>;
-          handleCardNavigate(synthetic);
-        }
+        if (shouldIgnorePostCardKeyDown(e) || !tweetUrl) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.open(tweetUrl, "_blank", "noopener,noreferrer");
       }}
       className={cn(
         "group block w-full cursor-pointer rounded-xl border transition-colors",

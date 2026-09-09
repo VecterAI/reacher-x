@@ -1184,15 +1184,6 @@ export default defineSchema({
     twitter: v.optional(v.string()),
   }).index("by_email", ["email"]),
 
-  publicThreads: defineTable({
-    threadId: v.string(),
-    position: v.number(),
-    isActive: v.boolean(),
-  })
-    .index("by_threadId", ["threadId"])
-    .index("by_position", ["position"])
-    .index("by_isActive_position", ["isActive", "position"]),
-
   publicTestimonials: defineTable({
     tweetId: v.string(),
     position: v.number(),

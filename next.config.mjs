@@ -8,11 +8,6 @@ const nextConfig = {
   async redirects() {
     return [
       {
-        source: "/home/threads/:path*",
-        destination: "/threads/:path*",
-        permanent: true,
-      },
-      {
         source: "/home/use-cases",
         destination: "/use-cases",
         permanent: true,

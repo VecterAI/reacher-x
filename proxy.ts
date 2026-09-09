@@ -7,7 +7,6 @@ const PUBLIC_PATH_PATTERNS = [
   /^\/logout(?:\/complete)?$/,
   /^\/callback$/,
   /^\/home(?:\/.*)?$/,
-  /^\/threads(?:\/.*)?$/,
   /^\/use-cases$/,
   /^\/pricing$/,
   /^\/api\/describe-url$/,

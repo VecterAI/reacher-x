@@ -4,11 +4,6 @@ import type {
   Tweet,
   User,
 } from "../../features/threads/types";
-import type { Thread } from "../../features/threads/types";
-import {
-  getCurrentUTCTimestamp,
-  parseIsoToTimestamp,
-} from "../../shared/lib/utils/time/timeUtils";
 
 const X_POST_FIELDS = [
   "author_id",
@@ -58,9 +53,6 @@ const X_MEDIA_FIELDS = [
   "variants",
   "width",
 ] as const;
-
-const TIMELINE_FETCH_PAGE_SIZE = 100;
-const PUBLIC_THREAD_TIMELINE_SCAN_PAGES = 30;
 
 function getXAppBearerToken(): string {
   const value = process.env.X_API_BEARER_TOKEN?.trim();
@@ -521,24 +513,6 @@ async function fetchXAppJson(path: string, params?: URLSearchParams) {
   return payload;
 }
 
-function getTweetCreatedAtTimestamp(tweet: Pick<Tweet, "tweet_created_at">) {
-  const parsed = tweet.tweet_created_at
-    ? parseIsoToTimestamp(tweet.tweet_created_at)
-    : undefined;
-  return typeof parsed === "number" ? parsed : getCurrentUTCTimestamp();
-}
-
-function getNextToken(meta: unknown): string | undefined {
-  if (!isRecord(meta)) {
-    return undefined;
-  }
-  return (
-    asString(meta.nextToken) ??
-    asString(meta.next_token) ??
-    asString(meta.paginationToken)
-  );
-}
-
 export function normalizePublicTweetIds(tweetIds: string[]): string[] {
   const deduped = new Set<string>();
 
@@ -580,84 +554,4 @@ export async function fetchPublicTweetsFromXApi(
     const tweet = tweetsById.get(tweetId);
     return tweet ? [tweet] : [];
   });
-}
-
-export async function fetchPublicThreadFromXApi(
-  threadId: string
-): Promise<Thread | null> {
-  const rootParams = buildXHydrationParams();
-  const rootResponse = await fetchXAppJson(
-    `/2/tweets/${encodeURIComponent(threadId)}`,
-    rootParams
-  );
-  const rootTweets = mapPostsResponseToLegacyTweets(rootResponse);
-  const rootTweet =
-    rootTweets.find((tweet) => tweet.id_str === threadId) ?? rootTweets[0];
-
-  if (!rootTweet?.id_str) {
-    return null;
-  }
-
-  const conversationId = rootTweet.conversation_id_str ?? rootTweet.id_str;
-  const authorId =
-    rootTweet.user?.id_str ??
-    asString(
-      (rootResponse.data as Record<string, unknown> | undefined)?.author_id
-    );
-  if (!authorId) {
-    return {
-      threadId,
-      postedAt: getTweetCreatedAtTimestamp(rootTweet),
-      tweets: [rootTweet],
-    };
-  }
-
-  const rootTimestamp = getTweetCreatedAtTimestamp(rootTweet);
-  const tweetsById = new Map<string, Tweet>([[rootTweet.id_str, rootTweet]]);
-  let paginationToken: string | undefined;
-
-  for (let page = 0; page < PUBLIC_THREAD_TIMELINE_SCAN_PAGES; page += 1) {
-    const params = buildXHydrationParams();
-    params.set("max_results", String(TIMELINE_FETCH_PAGE_SIZE));
-    if (paginationToken) {
-      params.set("pagination_token", paginationToken);
-    }
-
-    const response = await fetchXAppJson(
-      `/2/users/${encodeURIComponent(authorId)}/tweets`,
-      params
-    );
-    const pageTweets = mapPostsResponseToLegacyTweets(response);
-
-    for (const tweet of pageTweets) {
-      if (!tweet.id_str || tweet.conversation_id_str !== conversationId) {
-        continue;
-      }
-      tweetsById.set(tweet.id_str, tweet);
-    }
-
-    const oldestPageTimestamp = pageTweets.reduce((oldest, tweet) => {
-      const createdAt = getTweetCreatedAtTimestamp(tweet);
-      return createdAt < oldest ? createdAt : oldest;
-    }, Number.POSITIVE_INFINITY);
-
-    paginationToken = getNextToken((response as { meta?: unknown }).meta);
-    if (
-      !paginationToken ||
-      (Number.isFinite(oldestPageTimestamp) &&
-        oldestPageTimestamp <= rootTimestamp)
-    ) {
-      break;
-    }
-  }
-
-  const tweets = Array.from(tweetsById.values()).sort((left, right) => {
-    return getTweetCreatedAtTimestamp(left) - getTweetCreatedAtTimestamp(right);
-  });
-
-  return {
-    threadId,
-    postedAt: tweets.length > 0 ? getTweetCreatedAtTimestamp(tweets[0]) : 0,
-    tweets,
-  };
 }

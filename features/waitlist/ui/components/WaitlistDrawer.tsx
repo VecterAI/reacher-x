@@ -15,7 +15,6 @@ import { WaitlistForm } from "@/features/waitlist/ui/components/WaitlistForm";
 import { AvatarStack } from "@/shared/ui/components/AvatarStack";
 import { useWaitlistUsers } from "@/features/waitlist/hooks/useWaitlistUsers";
 import Link from "next/link";
-import { NavLink } from "../../../landing/ui/components/NavLink";
 import { AvatarStackSkeleton } from "../../../landing/ui/components/AvatarStackSkeleton";
 import {
   waitlistSchema,
@@ -80,14 +79,6 @@ export function WaitlistDrawer() {
                   >
                     Join Discord ↗
                   </Link>
-                  <NavLink
-                    href="/threads"
-                    size="lg"
-                    className="text-muted-foreground mt-4 mb-4 block font-normal md:mb-0"
-                    activeClassName="underline font-medium text-primary"
-                  >
-                    Threads ↗
-                  </NavLink>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-12">

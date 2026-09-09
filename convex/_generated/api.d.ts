@@ -190,7 +190,7 @@ import type * as lib_prospectingHelpers from "../lib/prospectingHelpers.js";
 import type * as lib_prospectingSchedulingCore from "../lib/prospectingSchedulingCore.js";
 import type * as lib_providerReliability from "../lib/providerReliability.js";
 import type * as lib_publicSocialCore from "../lib/publicSocialCore.js";
-import type * as lib_publicThreadXCore from "../lib/publicThreadXCore.js";
+import type * as lib_publicTweetXCore from "../lib/publicTweetXCore.js";
 import type * as lib_qualificationAuditApplyCore from "../lib/qualificationAuditApplyCore.js";
 import type * as lib_qualificationAuditCore from "../lib/qualificationAuditCore.js";
 import type * as lib_qualificationCore from "../lib/qualificationCore.js";
@@ -572,7 +572,7 @@ declare const fullApi: ApiFromModules<{
   "lib/prospectingSchedulingCore": typeof lib_prospectingSchedulingCore;
   "lib/providerReliability": typeof lib_providerReliability;
   "lib/publicSocialCore": typeof lib_publicSocialCore;
-  "lib/publicThreadXCore": typeof lib_publicThreadXCore;
+  "lib/publicTweetXCore": typeof lib_publicTweetXCore;
   "lib/qualificationAuditApplyCore": typeof lib_qualificationAuditApplyCore;
   "lib/qualificationAuditCore": typeof lib_qualificationAuditCore;
   "lib/qualificationCore": typeof lib_qualificationCore;

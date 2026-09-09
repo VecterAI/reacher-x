@@ -502,15 +502,11 @@ export const deleteThreadLocalRowsInternal = internalMutation({
   returns: v.object({ deleted: v.number() }),
   handler: async (ctx, args) => {
     const n = WORKSPACE_DELETE_BATCH_SIZE;
-    const [controls, publicLinks, contexts, selections, usage, raw, requests] =
+    const [controls, contexts, selections, usage, raw, requests] =
       await Promise.all([
         ctx.db
           .query("threadHelperAiControls")
           .withIndex("by_thread", (q) => q.eq("threadId", args.threadId))
-          .take(n),
-        ctx.db
-          .query("publicThreads")
-          .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
           .take(n),
         ctx.db
           .query("agentMessageContexts")
@@ -539,7 +535,6 @@ export const deleteThreadLocalRowsInternal = internalMutation({
       ]);
     let deleted = 0;
     deleted += await deleteDocuments(ctx, controls);
-    deleted += await deleteDocuments(ctx, publicLinks);
     deleted += await deleteDocuments(ctx, contexts);
     deleted += await deleteDocuments(ctx, selections);
     deleted += await deleteDocuments(ctx, usage);

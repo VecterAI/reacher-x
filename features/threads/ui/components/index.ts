@@ -9,7 +9,6 @@
 export { default as GalleryViewer } from "./GalleryViewer";
 export { default as MediaViewerDrawer } from "./MediaViewerDrawer";
 export { QuoteThreadCard } from "./QuoteThreadCard";
-export { RecentThreads } from "./RecentThreads";
 export { ThreadBody } from "./ThreadBody";
 export { ThreadCard } from "./ThreadCard";
 export { ThreadFooter } from "./ThreadFooter";

@@ -70,16 +70,6 @@ export const WaitlistConfirmationEmail = () => {
                   https://discord.gg/APWe9Fvn
                 </Link>
               </li>
-              <li className="mt-4">
-                <strong>Read my threads:</strong> I’ve been writing about
-                ReacherX and why I think it’s important. ⇾{" "}
-                <Link
-                  href="/threads"
-                  className="tracking-custom font-mono text-[1rem] leading-[150%] text-neutral-500 underline underline-offset-4"
-                >
-                  reacherx.com/threads
-                </Link>
-              </li>
             </ul>
             <Text className="mt-4 text-[1rem] leading-[150%]">
               Thanks for joining the wait-list!

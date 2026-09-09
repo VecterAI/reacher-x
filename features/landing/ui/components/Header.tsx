@@ -117,7 +117,6 @@ function getInitials(name?: string) {
 
 const NAV_LINKS = [
   { href: "/use-cases", label: "Use cases", isAnchor: false },
-  { href: "/threads", label: "Threads", isAnchor: false },
   {
     href: "mailto:creativecoder.crco@gmail.com",
     label: "Contact",
