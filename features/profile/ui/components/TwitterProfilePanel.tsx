@@ -73,6 +73,7 @@ function dedupeTweets<T extends { id_str?: string; id?: number }>(
 }
 
 function renderTimelineSection(args: {
+  offline?: boolean;
   activeTab: ProfileMode;
   value: ProfileMode;
   tweets: TweetType[];
@@ -131,7 +132,12 @@ function renderTimelineSection(args: {
             }
             className="px-4 py-2"
           >
-            <Tweet tweet={tweet} characterLimit={280} showThread={true} />
+            <Tweet
+              tweet={tweet}
+              characterLimit={280}
+              showThread={true}
+              readOnly={args.offline}
+            />
           </div>
         ))}
 
@@ -187,7 +193,11 @@ export function TwitterProfilePanel({
   onOpenConversationAction,
   onBackAction,
   disableMobileDrawer = false,
+  localActions,
 }: {
+  localActions?: {
+    onFollowAction: (action: "follow" | "unfollow") => Promise<void>;
+  };
   className?: string;
   mobile?: boolean;
   prospectId?: string;
@@ -214,7 +224,7 @@ export function TwitterProfilePanel({
   const { openProfile: openNestedProfile } = useTwitterProfileNavigation();
   const isMobile = useIsMobile();
   const dmState = useProspectDmState(prospectId, {
-    enabled: Boolean(prospectId && onOpenConversationAction),
+    enabled: !localActions && Boolean(prospectId && onOpenConversationAction),
     platform: "twitter",
   });
 
@@ -231,9 +241,18 @@ export function TwitterProfilePanel({
     [timelines.quotes]
   );
 
-  const postsMerged = useTwitterTimelineEngagementMerge(postsTimeline);
-  const repliesMerged = useTwitterTimelineEngagementMerge(repliesTimeline);
-  const quotesMerged = useTwitterTimelineEngagementMerge(quotesTimeline);
+  const postsMerged = useTwitterTimelineEngagementMerge(
+    postsTimeline,
+    !localActions
+  );
+  const repliesMerged = useTwitterTimelineEngagementMerge(
+    repliesTimeline,
+    !localActions
+  );
+  const quotesMerged = useTwitterTimelineEngagementMerge(
+    quotesTimeline,
+    !localActions
+  );
 
   const username = profile?.screen_name || profile?.username;
   const profileUrl = username ? `https://x.com/${username}` : undefined;
@@ -273,13 +292,15 @@ export function TwitterProfilePanel({
     relationship?.resolution === "verified" && relationship.badge === "mutual";
   const dmEligibility = React.useMemo(
     () =>
-      dmState.data?.eligibility ?? {
+      (localActions
+        ? { enabled: true, reasonLabel: "" }
+        : dmState.data?.eligibility) ?? {
         enabled: false,
         reasonLabel: dmState.loading
           ? "Checking DM availability on X/Twitter..."
           : "DM eligibility unavailable right now.",
       },
-    [dmState.data?.eligibility, dmState.loading]
+    [localActions, dmState.data?.eligibility, dmState.loading]
   );
 
   if (!isOpen) {
@@ -453,6 +474,7 @@ export function TwitterProfilePanel({
                         </div>
 
                         <TwitterProfileActionButtons
+                          onFollowAction={localActions?.onFollowAction}
                           profileUserId={profile.id_str}
                           username={username}
                           profileUrl={profileUrl}
@@ -611,6 +633,7 @@ export function TwitterProfilePanel({
                 </div>
 
                 {renderTimelineSection({
+                  offline: Boolean(localActions),
                   activeTab,
                   value: "posts",
                   tweets: postsMerged,
@@ -621,6 +644,7 @@ export function TwitterProfilePanel({
                   nextCursor: cursors.posts,
                 })}
                 {renderTimelineSection({
+                  offline: Boolean(localActions),
                   activeTab,
                   value: "replies",
                   tweets: repliesMerged,
@@ -631,6 +655,7 @@ export function TwitterProfilePanel({
                   nextCursor: cursors.replies,
                 })}
                 {renderTimelineSection({
+                  offline: Boolean(localActions),
                   activeTab,
                   value: "quotes",
                   tweets: quotesMerged,

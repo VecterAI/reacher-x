@@ -17,7 +17,7 @@
     "test:convex": "vitest run --config vitest.config.ts",
     "test:plan-batch": "tsx --test tests/plan-batch-core.test.ts tests/agent-thread-target-selection.test.ts tests/plan-batch-copy.test.ts && vitest run --config vitest.config.ts",
     "test:targeted": "tsx --test tests/plan-usage-and-analytics.test.ts",
-    "test:blog": "tsx --test tests/blog.test.ts tests/auth-routes.test.ts tests/auth-bootstrap-wiring.test.ts tests/post-auth-bootstrap.test.ts tests/landing-auth-touchpoints.test.ts",
+    "test:blog": "tsx --test tests/blog.test.ts tests/blog-editorial.test.ts tests/blog-demo.test.ts tests/auth-routes.test.ts tests/auth-bootstrap-wiring.test.ts tests/post-auth-bootstrap.test.ts tests/landing-auth-touchpoints.test.ts",
     "test:blog:http": "tsx --test tests/blog-http.test.ts"
   },
   "dependencies": {

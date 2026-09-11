@@ -1,0 +1,170 @@
+.blog-app-demo-figure {
+  margin: 2.5rem 0;
+}
+.blog-app-demo {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  isolation: isolate;
+  overflow: clip;
+  border-radius: 6px;
+  outline: none;
+  background: #a4a4a4;
+  border: 1px solid hsl(var(--border));
+}
+.blog-app-demo-background {
+  position: absolute;
+  inset: -3%;
+  background: url("/blog-media/demo-background.svg") center / cover;
+  pointer-events: none;
+  will-change: transform;
+}
+.blog-app-demo-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #090909;
+  box-shadow:
+    0 32px 90px #08071366,
+    0 5px 22px #08071350,
+    0 0 0 1px #ffffff26;
+  will-change: transform;
+}
+.blog-app-demo-window iframe {
+  display: block;
+  border: 0;
+  max-width: none;
+}
+.blog-app-demo-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 2px #0004);
+}
+.blog-app-demo-controls {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(280px, calc(100% - 24px));
+  border-radius: 9px;
+  padding: 3px 6px;
+  color: white;
+  background: #18181845;
+  backdrop-filter: blur(18px) saturate(1.25);
+  box-shadow:
+    inset 0 0 0 1px #ffffff21,
+    0 2px 10px #0002;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease-out;
+}
+@media (hover: hover) {
+  .blog-app-demo:hover .blog-app-demo-controls {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.blog-app-demo-controls:has(:focus-visible),
+.blog-app-demo[data-touch-controls="true"] .blog-app-demo-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+.blog-app-demo-controls button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.blog-app-demo-controls button:hover {
+  background: #ffffff20;
+}
+.blog-app-demo-controls :focus-visible {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+.blog-app-demo-controls svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+.blog-app-demo-controls input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 18px;
+  accent-color: white;
+  cursor: pointer;
+}
+.blog-app-demo-expanded {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(100vw, calc(100dvh * 16 / 9));
+  height: auto;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 100vmax #000e;
+  z-index: 100;
+  border-radius: 0;
+}
+.blog-app-demo-expanded .blog-app-demo-window {
+  border-radius: 18px;
+}
+.blog-app-demo-click {
+  position: absolute;
+  pointer-events: none;
+  width: 32px;
+  height: 32px;
+  margin: -16px 0 0 -16px;
+  border: 2px solid #fff9;
+  border-radius: 50%;
+  background: #ffffff15;
+  animation: demo-click 450ms ease-out forwards;
+}
+@keyframes demo-click {
+  from {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+.blog-app-demo-caption {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 20px;
+  color: hsl(var(--muted-foreground));
+}
+@media (pointer: coarse) {
+  .blog-app-demo-controls button {
+    width: 44px;
+    height: 44px;
+  }
+  .blog-app-demo-controls input {
+    height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .blog-app-demo-click {
+    display: none;
+  }
+  .blog-app-demo-controls {
+    transition: none;
+  }
+}

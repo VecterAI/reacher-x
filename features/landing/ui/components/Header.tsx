@@ -972,7 +972,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
                     <TwitterIcon />
                   </SocialLink>
                   <SocialLink
-                    href="https://discord.gg/76dF9NPH"
+                    href="https://discord.gg/BQttyr8jY"
                     label="Discord"
                   >
                     <DiscordOutlineIcon />

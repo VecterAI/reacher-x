@@ -1,6 +1,6 @@
 # Publishing on the ReacherX blog
 
-Posts live in `content/blog/<slug>.mdx`. Use lowercase words separated by hyphens for the filename. Each file has YAML frontmatter between `---` lines, followed by MDX content. Start from `content/blog/authoring-example.mdx`.
+Posts live in `content/blog/<slug>.mdx`. Use lowercase words separated by hyphens for the filename. Each file has YAML frontmatter between `---` lines, followed by MDX content. Use the template below.
 
 ```mdx
 ---
@@ -22,9 +22,9 @@ Write the article here.
 
 ## Workflow
 
-1. Create or edit the file with Codex or your editor. Dates must be quoted YYYY-MM-DD strings. Choose `tutorials`, `engineering`, `announcements`, or `perspectives`.
+1. Create or edit the file with Codex or your editor. Dates must be quoted YYYY-MM-DD strings. Choose `tutorials` (Guides), `engineering`, `announcements` (Updates), `perspectives` (Founder Notes), `use-cases`, or `comparisons`. The three renamed labels retain their existing URLs.
 2. Run `pnpm dev` and open `/blog`. To preview a draft locally, temporarily set `draft` to `false` and use a date no later than today. Restore `draft: true` before sharing the branch if it should stay unpublished. There is deliberately no public draft-preview bypass.
-3. Run `pnpm test:blog`, Prettier, and `pnpm build`. Invalid metadata or missing published cover/social assets fail the build. Asset checks run before compilation, rather than during public requests. For HTTP checks, start `pnpm start --port 3107` in another terminal, then run `BLOG_TEST_URL=http://127.0.0.1:3107 pnpm test:blog:http`.
+3. Run `pnpm test:blog`, Prettier, and `pnpm build`. Invalid metadata or missing published cover/social assets fail the build. Asset checks run before compilation, rather than during public requests. For HTTP checks, start `pnpm start --port 3107` in another terminal, then run `BLOG_TEST_URL=http://127.0.0.1:3107 pnpm test:blog:http`. Run `BLOG_TEST_URL=http://127.0.0.1:3107 node --test tests/blog-browser.test.mjs` to check card navigation, browser history, and desktop/mobile alignment. This uses the pinned agent-browser CLI through npx.
 4. To publish, set `draft` to `false`, review the post, and use the existing Git/deployment workflow. A future date excludes a post; it is not a scheduling service. Deploy on or after that date.
 
 No publishing credentials or new database are needed. Never put secrets in content, including drafts: files are part of the repository and server build. Only compile trusted, reviewed MDX; MDX can execute JavaScript.
@@ -39,7 +39,7 @@ Every post automatically gets a canonical URL, title/description, author metadat
 - `featured`: reserved metadata; all listing cards currently use the same layout. Posts sort newest first, then by slug for equal dates.
 - The author is configured once in `features/blog/lib/blogHelpers.ts`.
 
-The cover and social image are independent. Listing and related cards display a cover when one is provided and a neutral placeholder when it is absent. The generated social PNG is a separate, fixed dark image for link previews.
+The cover and social image are independent. The main listing has text cards without a cover area. Explore cards display a cover when one is provided and a stable, post-specific gradient when it is absent. The gradient shifts on pointer hover; reduced-motion users get a gentle highlight without movement. The generated social PNG is a separate, fixed dark image for link previews.
 
 ## Content blocks
 
@@ -62,3 +62,26 @@ Custom MDX components need a readable equivalent in `blogBodyMarkdown` if they c
 The public page links remain available in server-rendered HTML. Live filtering uses only the small local post summary list; it never queries or downloads all records from Convex. The listing appends nine posts at a time using the application's shared infinite-scroll trigger, with its stock pending spinner and keyboard fallback. The `page` query parameter records how many batches are visible, so returning from an article restores the expanded list. Search and category changes start at the first batch.
 
 Tables preserve readable text columns and scroll horizontally inside the article when needed. Use Markdown's right-aligned columns (`---:`) for numeric data; these stay compact and use the site's monospace numbers. Headers stay together, while prose cells wrap. Footnotes remain inside the article margins with native reference and return links.
+
+## Curated reading paths
+
+Add `related: [first-slug, second-slug]` to frontmatter to set the two Explore cards in reading order. Use real published articles, never self-links, drafts, future posts, or demo content. Without enough valid choices, Explore fills from the same category first, then other eligible posts. Run `pnpm test:blog` after changing links.
+
+## Launch copy and media
+
+Use no em dashes in article titles, descriptions, or body copy. Keep examples clearly illustrative and keep beta limitations accurate. Each real article has a distinct editorial date; the three historical articles retain their original dates. The v4 announcement date is June 29, 2026. The current review date is recorded separately as `updated`.
+
+Use `BlogMediaPlaceholder` for founder-supplied captures, as described below. Reserve `BlogCallout` for actual article advice. The placeholder title and caption remain readable in Markdown exports.
+
+## Visible media placeholders
+
+Use a placeholder while waiting for a real capture:
+
+```mdx
+<BlogMediaPlaceholder
+  title="Switch between two workspaces"
+  caption="Show the active workspace name, separate audience settings, and different stage labels."
+/>
+```
+
+The component renders an amber container and a small caption below it in both themes. It has no fake image URL and makes no network request for a missing asset. Its title and caption are also included in the Markdown endpoint. Replace the component with the appropriate real media component, and change the production instruction into a caption written for the reader. Find remaining capture requests by searching `content/blog` for `BlogMediaPlaceholder`.

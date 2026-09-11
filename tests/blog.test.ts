@@ -42,6 +42,7 @@ test("metadata rejects incomplete posts, invalid categories/dates, and inaccessi
     { description: "" },
     { date: "2026-02-30" },
     { category: "unknown" },
+    { category: "demo-content" },
     { image: "/../secret.png", imageAlt: "x" },
     { image: "/cover.jpg" },
     { updated: "2020-01-01" },
@@ -200,8 +201,12 @@ test("blog route classification and content negotiation fail closed", async () =
 });
 
 test("launch articles preserve dates, source threads, and editorial categories", async () => {
-  const posts = (await getBlogPosts()).filter(
-    (post) => !post.slug.startsWith("example-")
+  const posts = (await getBlogPosts()).filter((post) =>
+    [
+      "reacherx-v3-public-beta",
+      "why-finding-customers-is-hard",
+      "finding-customers-should-be-easier",
+    ].includes(post.slug)
   );
   assert.deepEqual(
     posts.map(({ slug, date, category }) => ({ slug, date, category })),

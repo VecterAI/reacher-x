@@ -1,3 +1,61 @@
+.blog-gradient-cover {
+  background: var(--blog-gradient-ink);
+}
+.blog-gradient-cover::before,
+.blog-gradient-cover::after {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  pointer-events: none;
+}
+.blog-gradient-cover::before {
+  background:
+    radial-gradient(
+      ellipse at var(--blog-gradient-origin) 15%,
+      var(--blog-gradient-light),
+      transparent 55%
+    ),
+    linear-gradient(
+      var(--blog-gradient-angle),
+      var(--blog-gradient-ink) 10%,
+      var(--blog-gradient-color) 55%,
+      var(--blog-gradient-light)
+    );
+  transform: scale(1.05);
+}
+.blog-gradient-cover::after {
+  background: radial-gradient(
+    ellipse at 80% 90%,
+    var(--blog-gradient-light),
+    transparent 60%
+  );
+  opacity: 0.35;
+  transform: translate(8%, 8%);
+  transition: opacity 200ms ease;
+}
+.blog-card:focus-visible .blog-gradient-cover::after {
+  opacity: 0.65;
+}
+@media (hover: hover) and (pointer: fine) {
+  .blog-card:hover .blog-gradient-cover::after {
+    opacity: 0.65;
+  }
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+  .blog-gradient-cover::before,
+  .blog-gradient-cover::after {
+    transition:
+      transform 200ms ease-out,
+      opacity 200ms ease;
+  }
+  .blog-card:hover .blog-gradient-cover::before {
+    transform: translate(-4%, 3%) rotate(-8deg) scale(1.15);
+  }
+  .blog-card:hover .blog-gradient-cover::after {
+    transform: translate(-8%, -6%) scale(1.1);
+  }
+}
+
 .blog-prose {
   font-size: 1.125rem;
   line-height: 1.5556;

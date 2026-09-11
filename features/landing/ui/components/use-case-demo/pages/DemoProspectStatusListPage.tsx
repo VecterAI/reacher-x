@@ -1,23 +1,21 @@
-/**
- * DemoProspectStatusListPage
- * Faithful replica of the real Converts page (UseCaseSuccessPage) and
- * Archives page (app/(webapp)/archives/page.tsx), which share the same
- * structure: page header, search row with filter/sort icon buttons,
- * ProspectCard grid, and an in-flow profile panel. Runs on mock data.
- * Omitted vs real: WorkspacePlanLimitAlert (Convex-wired), filter/sort
- * side panels (wired), InfiniteScrollTrigger (no pagination in mock).
- */
+/** Production status-list components with local filtering and prospect actions. */
 "use client";
+import {
+  useDemoProspectList,
+  DemoProspectListPanels,
+} from "./useDemoProspectList";
 
 import * as React from "react";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
-import { normalizeProspectProfileData } from "@/features/prospects/lib/normalizeProspectProfileData";
+import { DemoProspectPanel } from "./DemoProspectPanel";
 import {
-  ProspectCard,
-  ProspectListEmptyState,
-  ProspectProfilePanel,
-} from "@/features/prospects";
+  useDemoProspectActions,
+  type DemoProspectView,
+} from "./useDemoProspectActions";
+import { useDemoShell } from "../demoShellContext";
+import type { DemoEditorialScenario } from "../demoEditorialHelpers";
+import { ProspectCard, ProspectListEmptyState } from "@/features/prospects";
 import { IconButtonWithIndicator } from "@/shared/ui/components/IconButtonWithIndicator";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { FilterAltIcon, SwapVertIcon } from "@/shared/ui/components/icons";
@@ -27,15 +25,13 @@ import {
   PageLayout,
 } from "@/features/webapp/ui/components";
 import { toDemoProspectSummary, USE_CASE_DEMO_PLANS } from "../useCaseDemoData";
-import { DemoOutreachPlanSection } from "./DemoOutreachPlanSection";
-import {
-  DEMO_PROSPECT_GRID_STYLE,
-  matchesProspectSearch,
-} from "./prospectListShared";
-
-type PlatformFilter = "all" | "twitter" | "linkedin";
+import { DEMO_PROSPECT_GRID_STYLE } from "./prospectListShared";
 
 export interface DemoProspectStatusListPageProps {
+  status: "converted" | "archived";
+  onStatusChange: (id: string, status: Doc<"prospects">["status"]) => void;
+  onOpenAgent: (prospect: Doc<"prospects">) => void;
+  editorialScenario?: DemoEditorialScenario;
   /** Status-filtered prospects to list (converted or archived). */
   prospects: Doc<"prospects">[];
   /** Page header title (pageLabels.converts / pageLabels.archives). */
@@ -50,51 +46,37 @@ export interface DemoProspectStatusListPageProps {
 
 export function DemoProspectStatusListPage({
   prospects,
+  status,
   title,
   searchPlaceholder,
   emptyState,
   entityLabelLower,
+  onStatusChange,
+  onOpenAgent,
+  editorialScenario,
 }: DemoProspectStatusListPageProps) {
+  const { labels } = useDemoShell();
+  const [panelView, setPanelView] = React.useState<DemoProspectView>("profile");
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [sortByScore, setSortByScore] = React.useState(false);
-  const [platformFilter, setPlatformFilter] =
-    React.useState<PlatformFilter>("all");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
 
   const trimmedQuery = searchQuery.trim().toLowerCase();
 
-  const visibleProspects = React.useMemo(() => {
-    const filtered = prospects.filter((prospect) => {
-      if (platformFilter !== "all" && prospect.platform !== platformFilter) {
-        return false;
-      }
-      return (
-        trimmedQuery === "" || matchesProspectSearch(prospect, trimmedQuery)
-      );
-    });
-    if (!sortByScore) {
-      return filtered;
-    }
-    return [...filtered].sort(
-      (a, b) => (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0)
-    );
-  }, [prospects, platformFilter, sortByScore, trimmedQuery]);
+  const list = useDemoProspectList(prospects, searchQuery, status);
+  const visibleProspects = list.prospects;
 
   const selectedProspect = selectedId
     ? (prospects.find((prospect) => prospect._id === selectedId) ?? null)
     : null;
-  const selectedProfileData = selectedProspect
-    ? normalizeProspectProfileData(selectedProspect)
-    : null;
-  const selectedPlan = selectedProspect
-    ? USE_CASE_DEMO_PLANS[selectedProspect._id]
-    : undefined;
-
-  const handleOpenFilters = () => {
-    setPlatformFilter((current) =>
-      current === "all" ? "twitter" : current === "twitter" ? "linkedin" : "all"
-    );
-  };
+  const actionsFor = useDemoProspectActions({
+    onStatusChange,
+    onOpenAgent,
+    onOpen: (id, view) => {
+      list.closePanels();
+      setSelectedId(id);
+      setPanelView(view);
+    },
+  });
 
   const browseMode = trimmedQuery === "";
   const showEmptyState = browseMode && visibleProspects.length === 0;
@@ -127,8 +109,11 @@ export function DemoProspectStatusListPage({
                 <div className="flex items-center gap-2">
                   <IconButtonWithIndicator
                     aria-label="Open filters"
-                    showIndicator={platformFilter !== "all"}
-                    onClick={handleOpenFilters}
+                    showIndicator={list.activeFilterCount > 0}
+                    onClick={() => {
+                      setSelectedId(null);
+                      list.openFilters();
+                    }}
                     type="button"
                     className="h-9 w-9"
                   >
@@ -136,8 +121,11 @@ export function DemoProspectStatusListPage({
                   </IconButtonWithIndicator>
                   <IconButtonWithIndicator
                     aria-label="Open sort"
-                    showIndicator={sortByScore}
-                    onClick={() => setSortByScore((current) => !current)}
+                    showIndicator={list.sortActive}
+                    onClick={() => {
+                      setSelectedId(null);
+                      list.openSort();
+                    }}
                     type="button"
                     className="h-9 w-9"
                   >
@@ -148,8 +136,11 @@ export function DemoProspectStatusListPage({
               <div className="mt-3 grid grid-cols-2 gap-2 md:hidden">
                 <IconButtonWithIndicator
                   aria-label="Open filters"
-                  showIndicator={platformFilter !== "all"}
-                  onClick={handleOpenFilters}
+                  showIndicator={list.activeFilterCount > 0}
+                  onClick={() => {
+                    setSelectedId(null);
+                    list.openFilters();
+                  }}
                   type="button"
                   size="xs"
                   className="w-full justify-center gap-1.5"
@@ -159,8 +150,11 @@ export function DemoProspectStatusListPage({
                 </IconButtonWithIndicator>
                 <IconButtonWithIndicator
                   aria-label="Open sort"
-                  showIndicator={sortByScore}
-                  onClick={() => setSortByScore((current) => !current)}
+                  showIndicator={list.sortActive}
+                  onClick={() => {
+                    setSelectedId(null);
+                    list.openSort();
+                  }}
                   type="button"
                   size="xs"
                   className="w-full justify-center gap-1.5"
@@ -197,8 +191,13 @@ export function DemoProspectStatusListPage({
                           )}
                           highlightKeywords={prospect.matchedKeywords}
                           mode="ui_preview"
-                          showMenu={false}
-                          onClick={() => setSelectedId(prospect._id)}
+                          actions={actionsFor(prospect)}
+                          entityLabel={labels.entitySingular}
+                          onClick={() => {
+                            list.closePanels();
+                            setPanelView("profile");
+                            setSelectedId(prospect._id);
+                          }}
                         />
                       </li>
                     ))}
@@ -210,27 +209,17 @@ export function DemoProspectStatusListPage({
         </PageContent>
       </PageLayout>
 
-      {selectedProspect && selectedProfileData ? (
-        <aside className="border-border flex h-full w-[380px] shrink-0 flex-col border-l">
-          <ProspectProfilePanel
-            prospect={selectedProfileData}
-            mode="ui_preview"
-            onBack={() => setSelectedId(null)}
-            disableMobileDrawer
-            className="max-w-none"
-            renderOutreachPlanSection={
-              selectedPlan
-                ? () => (
-                    <DemoOutreachPlanSection
-                      plan={selectedPlan}
-                      prospectId={selectedProspect._id}
-                    />
-                  )
-                : undefined
-            }
-          />
-        </aside>
+      {selectedProspect ? (
+        <DemoProspectPanel
+          key={`${selectedId}:${panelView}`}
+          prospect={selectedProspect}
+          actions={actionsFor(selectedProspect)}
+          initialView={panelView}
+          editorialScenario={editorialScenario}
+          onBack={() => setSelectedId(null)}
+        />
       ) : null}
+      <DemoProspectListPanels list={list} />
     </div>
   );
 }

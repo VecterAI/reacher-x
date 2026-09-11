@@ -32,6 +32,8 @@ test("anonymous blog index and all category pages return readable HTML", async (
     "/blog/category/perspectives",
     "/blog/category/tutorials",
     "/blog/category/engineering",
+    "/blog/category/use-cases",
+    "/blog/category/comparisons",
   ]) {
     const response = await request(path);
     assert.equal(response.status, 200, path);
@@ -80,6 +82,17 @@ test("draft, unknown, malformed and invalid category URLs return actual HTTP 404
     "/blog/authoring-example/opengraph-image",
     "/blog/not-a-post",
     "/blog/category/no-such-category",
+    "/blog/category/demo-content",
+    "/blog/example-context-before-reply",
+    "/blog/example-field-note",
+    "/blog/example-product-walkthrough",
+    "/blog/example-release-note",
+    "/blog/example-review-queue",
+    "/blog/example-targeting-brief",
+    "/blog/example-weekly-review",
+    "/blog/explore-the-reacherx-codebase",
+    "/blog/welcome-to-the-reacherx-blog",
+    "/blog/write-a-better-targeting-brief",
     "/blog/a/b/c",
     "/blog/UPPERCASE",
     "/blog/not-a-post.png",
@@ -125,7 +138,7 @@ test("feeds and sitemap contain published URLs and exclude drafts", async () => 
     assert.equal(response.status, 200, path);
     const content = await response.text();
     assert.match(content, /reacherx-v3-public-beta/);
-    assert.doesNotMatch(content, /authoring-example/);
+    assert.doesNotMatch(content, /authoring-example|example-|demo-content/);
   }
   const robots = await request("/robots.txt");
   assert.equal(robots.status, 200);
@@ -141,7 +154,7 @@ test("existing private routes still redirect anonymous requests to authenticatio
 });
 
 test("wide tables preserve column headers, numeric alignment, and keyboard access", async () => {
-  const response = await request("/blog/example-weekly-review");
+  const response = await request("/blog/examples/content");
   assert.equal(response.status, 200);
   const html = await response.text();
   const tables = [...html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/g)];
@@ -150,20 +163,18 @@ test("wide tables preserve column headers, numeric alignment, and keyboard acces
     html,
     /role="region" aria-label="Scrollable table" tabindex="0"/
   );
-  const headers = [...tables[0][1].matchAll(/<th\b([^>]*)>/g)];
+  const headers = [...tables[1][1].matchAll(/<th\b([^>]*)>/g)];
   assert.equal(headers.length, 6);
   assert.ok(
     headers.every(([, attributes]) => attributes.includes('scope="col"'))
   );
-  assert.match(tables[0][1], /text-align:right[^>]*blog-table-number/);
-  assert.match(tables[0][1], /1,280/);
-  assert.match(tables[0][1], /No conversations collected yet/);
+  assert.match(tables[1][1], /text-align:right[^>]*blog-table-number/);
+  assert.match(tables[1][1], /1,280/);
+  assert.match(tables[1][1], /No conversations collected yet/);
 });
 
-test("footnotes have valid reference and return targets and short posts omit contents", async () => {
-  const html = await (
-    await request("/blog/example-context-before-reply")
-  ).text();
+test("footnotes have valid reference and return targets", async () => {
+  const html = await (await request("/blog/examples/content")).text();
   const reference = html.match(
     /<a href="#([^"]+)" id="([^"]+)" data-footnote-ref/
   );
@@ -171,8 +182,6 @@ test("footnotes have valid reference and return targets and short posts omit con
   assert.ok(html.includes(`id="${reference[1]}"`));
   assert.ok(html.includes(`href="#${reference[2]}" data-footnote-backref`));
   assert.match(html, /data-footnotes/);
-  const shortPost = await (await request("/blog/example-field-note")).text();
-  assert.doesNotMatch(shortPost, /aria-label="On this page"/);
 });
 
 test("the public preview has media, is noindex, and stays out of discovery", async () => {
@@ -242,15 +251,69 @@ test("original release videos stream anonymously from the site", async () => {
 });
 
 test("article task checkboxes have visible native labels", async () => {
-  const response = await request("/blog/example-targeting-brief");
+  const response = await request("/blog/examples/content");
   assert.equal(response.status, 200);
   const html = await response.text();
   const labels = [
     ...html.matchAll(/<label><input type="checkbox"[^>]*>(.*?)<\/label>/g),
   ];
   assert.equal(labels.length, 4);
-  assert.ok(labels[0][1].includes("The role is clear."));
-  assert.ok(
-    labels[3][1].includes("Someone else can explain the brief in one sentence.")
-  );
+  assert.ok(labels[0][1].includes("The heading is visible."));
+  assert.ok(labels[3][1].includes("The layout works on a phone."));
+});
+
+test("all real articles render their curated Explore paths and equivalent readable Markdown", async () => {
+  const posts = await getBlogPosts();
+  for (const post of posts) {
+    const html = await (await request(`/blog/${post.slug}`)).text();
+    const explore = html.match(
+      /<section aria-labelledby="related-posts"[\s\S]*?<\/section>/
+    )?.[0];
+    assert.ok(explore, post.slug);
+    const targets = [...explore.matchAll(/href="\/blog\/([a-z0-9-]+)"/g)].map(
+      (match) => match[1]
+    );
+    assert.deepEqual(targets, post.related, post.slug);
+    assert.doesNotMatch(explore, /example-|demo-content/);
+    const response = await request(`/blog/${post.slug}/markdown`);
+    assert.equal(response.status, 200, post.slug);
+    const markdown = await response.text();
+    assert.ok(markdown.startsWith(`# ${post.title}`), post.slug);
+    for (const heading of post.headings)
+      assert.ok(
+        markdown.includes(heading.text),
+        `${post.slug}: ${heading.text}`
+      );
+    if (post.content.includes("BlogMediaPlaceholder")) {
+      assert.match(markdown, /Media placeholder:/);
+      assert.match(html, /<figure[^>]*data-media-placeholder/);
+      assert.match(html, /bg-amber-100/);
+      assert.match(html, /<figcaption[^>]*>[\s\S]*?<\/figcaption>/);
+    }
+    assert.doesNotMatch(
+      markdown,
+      /<BlogCallout|<BlogVideo|<BlogImage|<BlogMediaPlaceholder/
+    );
+    const data = JSON.parse(
+      html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)![1]
+    );
+    assert.equal(data.datePublished, `${post.date}T00:00:00Z`);
+    assert.equal(data.dateModified, `${post.updated ?? post.date}T00:00:00Z`);
+  }
+});
+
+test("invalid pagination and special search input still return accessible listing HTML", async () => {
+  for (const query of [
+    "page=-1",
+    "page=0",
+    "page=99999",
+    "page=banana",
+    "q=%3Cscript%3E",
+    "q=%E6%97%A5%E6%9C%AC",
+    "q=%20%20",
+  ]) {
+    const response = await request(`/blog?${query}`);
+    assert.equal(response.status, 200, query);
+    assert.match(await response.text(), /id="blog-content"/);
+  }
 });

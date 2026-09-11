@@ -16,12 +16,15 @@ function dedupeSortedTweetIds(tweets: Tweet[]): string[] {
   ).sort();
 }
 
-export function useTwitterTimelineEngagementMerge(tweets: Tweet[]) {
+export function useTwitterTimelineEngagementMerge(
+  tweets: Tweet[],
+  enabled = true
+) {
   const tweetIds = React.useMemo(() => dedupeSortedTweetIds(tweets), [tweets]);
 
   const engagements = useQuery(
     api.twitterEngagement.getEngagementsForPosts,
-    tweetIds.length > 0 ? { postIds: tweetIds } : "skip"
+    enabled && tweetIds.length > 0 ? { postIds: tweetIds } : "skip"
   );
 
   const authorIds = React.useMemo(() => {
@@ -37,7 +40,7 @@ export function useTwitterTimelineEngagementMerge(tweets: Tweet[]) {
 
   const followings = useQuery(
     api.twitterEngagement.getFollowingsForTargets,
-    authorIds.length > 0 ? { targetUserIds: authorIds } : "skip"
+    enabled && authorIds.length > 0 ? { targetUserIds: authorIds } : "skip"
   );
 
   return React.useMemo(

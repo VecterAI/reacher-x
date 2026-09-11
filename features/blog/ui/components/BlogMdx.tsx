@@ -74,6 +74,28 @@ export function BlogImage({
   );
 }
 
+export function BlogMediaPlaceholder({
+  title,
+  caption,
+}: {
+  title: string;
+  caption: string;
+}) {
+  return (
+    <figure className="not-prose my-8" data-media-placeholder>
+      <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-amber-600/60 bg-amber-100 px-6 py-10 text-center text-amber-950 dark:border-amber-400/60 dark:bg-amber-950 dark:text-amber-100">
+        <span className="text-xs font-semibold tracking-widest uppercase">
+          Media placeholder
+        </span>
+        <p className="max-w-lg text-lg leading-7 font-medium">{title}</p>
+      </div>
+      <figcaption className="text-muted-foreground mt-3 text-sm leading-5">
+        {caption}
+      </figcaption>
+    </figure>
+  );
+}
+
 export function BlogCallout({
   children,
   title = "Good to know",

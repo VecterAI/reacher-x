@@ -3,11 +3,11 @@ import { parseIsoToTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
 export const BLOG_ORIGIN = "https://reacherx.com";
 export const BLOG_DESCRIPTION =
-  "Tutorials, engineering notes, and updates from ReacherX. Learn how to find the people you need.";
+  "Guides, use cases, comparisons, and notes from building ReacherX. Learn how to find the people you need.";
 export const BLOG_CATEGORIES = [
   {
     slug: "tutorials",
-    label: "Tutorials",
+    label: "Guides",
     description:
       "Practical guides to finding the people you need with ReacherX.",
   },
@@ -18,14 +18,25 @@ export const BLOG_CATEGORIES = [
   },
   {
     slug: "announcements",
-    label: "Announcements",
+    label: "Updates",
     description: "New releases and updates from ReacherX.",
   },
   {
     slug: "perspectives",
-    label: "Perspectives",
+    label: "Founder Notes",
+    description: "The experiences, beliefs, and decisions behind ReacherX.",
+  },
+  {
+    slug: "use-cases",
+    label: "Use Cases",
     description:
-      "Ideas and opinions on finding customers and building ReacherX.",
+      "Find customers, candidates, investors, partners, and other people you need.",
+  },
+  {
+    slug: "comparisons",
+    label: "Comparisons",
+    description:
+      "Compare ReacherX with other tools for finding and reaching people.",
   },
 ] as const;
 export type BlogCategory = (typeof BLOG_CATEGORIES)[number]["slug"];
@@ -59,9 +70,15 @@ export const blogMetadataSchema = z
       "engineering",
       "announcements",
       "perspectives",
+      "use-cases",
+      "comparisons",
     ]),
     date: dateSchema,
     updated: dateSchema.optional(),
+    related: z
+      .array(z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/))
+      .max(2)
+      .default([]),
     tags: z.array(z.string().trim().min(1)).default([]),
     draft: z.boolean().default(false),
     featured: z.boolean().default(false),
@@ -148,4 +165,29 @@ export function escapeBlogXml(value: string) {
         "'": "&apos;",
       })[char]!
   );
+}
+
+/** Preserve editorial order, then fill from other published posts. */
+export function getRelatedBlogPosts<T extends BlogPostSummary>(
+  post: T,
+  posts: T[]
+): T[] {
+  const candidates = posts.filter((candidate) => candidate.slug !== post.slug);
+  const selected = post.related.flatMap((slug) => {
+    const candidate = candidates.find((item) => item.slug === slug);
+    return candidate ? [candidate] : [];
+  });
+  const selectedSlugs = new Set(selected.map((candidate) => candidate.slug));
+  const fallback = candidates
+    .filter((candidate) => !selectedSlugs.has(candidate.slug))
+    .sort(
+      (a, b) =>
+        Number(b.category === post.category) -
+        Number(a.category === post.category)
+    );
+  return [
+    ...new Map(
+      [...selected, ...fallback].map((item) => [item.slug, item])
+    ).values(),
+  ].slice(0, 2);
 }

@@ -1,3 +1,4 @@
+import { BlogAppDemo } from "@/features/blog/ui/components/app-demo/BlogAppDemo";
 import { BlogVideo } from "@/features/blog/ui/components/BlogVideo";
 import { BlogGif } from "@/features/blog/ui/components/BlogGif";
 import type { MDXComponents } from "mdx/types";
@@ -5,6 +6,7 @@ import type { ComponentProps } from "react";
 import {
   BlogPre,
   BlogImage,
+  BlogMediaPlaceholder,
   BlogCallout,
   BlogAnchor,
   BlogInlineCode,
@@ -36,6 +38,8 @@ const components: MDXComponents = {
   code: BlogInlineCode,
   a: BlogAnchor,
   BlogImage,
+  BlogMediaPlaceholder,
+  BlogAppDemo,
   BlogVideo,
   BlogGif,
   BlogCallout,

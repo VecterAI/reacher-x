@@ -1,3 +1,4 @@
+import { getRelatedBlogPosts } from "@/features/blog/lib/blogHelpers";
 import { notFound } from "next/navigation";
 import { getBlogPost, getBlogPosts } from "@/features/blog/lib/blogPosts";
 import { blogPostMetadata } from "@/features/blog/lib/blogMetadata";
@@ -12,17 +13,11 @@ export async function generateMetadata({ params }: Props) {
   return blogPostMetadata(post);
 }
 export default async function BlogPostPage({ params }: Props) {
+  "use cache";
   const post = await getBlogPost((await params).slug);
   if (!post) notFound();
   const { default: Content } = await import(`@/content/blog/${post.slug}.mdx`);
-  const related = (await getBlogPosts())
-    .filter((candidate) => candidate.slug !== post.slug)
-    .sort(
-      (a, b) =>
-        Number(b.category === post.category) -
-        Number(a.category === post.category)
-    )
-    .slice(0, 2);
+  const related = getRelatedBlogPosts(post, await getBlogPosts());
   return (
     <BlogArticle post={post} related={related}>
       <Content />

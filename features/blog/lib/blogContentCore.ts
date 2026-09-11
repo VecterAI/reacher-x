@@ -134,6 +134,41 @@ export function blogBodyMarkdown(content: string): string {
           ];
         }
         const children = clean(node.children as Node[]);
+        if (node.name === "BlogAppDemo") {
+          return [
+            {
+              type: "paragraph",
+              children: [
+                {
+                  type: "text",
+                  value: `Interactive demo: ${attribute("title")}. ${attribute("caption") || "Fictional example data."}`,
+                },
+              ],
+            },
+          ];
+        }
+        if (node.name === "BlogMediaPlaceholder") {
+          return [
+            {
+              type: "paragraph",
+              children: [
+                {
+                  type: "strong",
+                  children: [
+                    {
+                      type: "text",
+                      value: `Media placeholder: ${attribute("title")}`,
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "paragraph",
+              children: [{ type: "text", value: attribute("caption") }],
+            },
+          ];
+        }
         if (node.name === "BlogCallout") {
           return [
             {

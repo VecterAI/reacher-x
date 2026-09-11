@@ -15,6 +15,8 @@
  */
 "use client";
 
+import { WorkspaceTransitionBar } from "@/features/webapp/ui/components/WorkspaceTransitionBar";
+import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
 import { getWorkspaceSystemStatusDotClassName } from "@/features/webapp/lib/workspaceSystemStatusTone";
@@ -120,6 +122,7 @@ function DemoShellLayout({
   return (
     <div className="flex h-full w-full min-w-0 flex-col">
       <DemoHeader onNavigate={onNavigate} />
+      <WorkspaceTransitionBar />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Sidebar (in-flow replica of the real fixed sidebar) */}
         <aside
@@ -252,7 +255,13 @@ function DemoSidebarHeader({
   collapsed: boolean;
   onNavigate: (page: DemoPageKey) => void;
 }) {
-  const { workspaces, activeWorkspace, setActiveWorkspaceId } = useDemoShell();
+  const { isTransitioning } = useWorkspaceTransition();
+  const {
+    workspaces,
+    activeWorkspace,
+    initialWorkspaceMenuOpen,
+    setActiveWorkspaceId,
+  } = useDemoShell();
 
   if (collapsed) {
     return (
@@ -282,8 +291,17 @@ function DemoSidebarHeader({
         <AddIcon className="fill-current" />
         New workspace
       </Button>
-      <Select value={activeWorkspace.id} onValueChange={setActiveWorkspaceId}>
-        <SelectTrigger size="sm" className="w-full gap-2">
+      <Select
+        disabled={isTransitioning}
+        defaultOpen={initialWorkspaceMenuOpen}
+        value={activeWorkspace.id}
+        onValueChange={setActiveWorkspaceId}
+      >
+        <SelectTrigger
+          aria-label="Switch workspace"
+          size="sm"
+          className="w-full gap-2"
+        >
           <FolderIcon className="h-4 w-4 shrink-0 fill-current" />
           <SelectValue className="min-w-0 flex-1 truncate" />
         </SelectTrigger>

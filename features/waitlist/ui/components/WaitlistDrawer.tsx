@@ -73,7 +73,7 @@ export function WaitlistDrawer() {
                     You&apos;re on the wait-list!
                   </DrawerTitle>
                   <Link
-                    href="https://discord.gg/76dF9NPH"
+                    href="https://discord.gg/BQttyr8jY"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-muted-foreground mt-4 inline-block text-xl hover:underline"

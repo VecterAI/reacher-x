@@ -10,7 +10,7 @@ import {
 } from "@/shared/ui/components/pill-navigation/Pill";
 import { SearchIcon, RssIcon } from "@/shared/ui/components/icons";
 import {
-  getBlogCategory,
+  getPublishedBlogCategories,
   blogCategoryHref,
   type BlogCategory,
 } from "../../lib/blogHelpers";
@@ -27,10 +27,8 @@ export function BlogToolbar({
 }) {
   const tabs = [
     { slug: undefined, label: "All" },
-    ...categories.map((slug) => ({
-      slug,
-      label: getBlogCategory(slug)!.label,
-    })),
+    // Cached page props can outlive a removed category during hot reload.
+    ...getPublishedBlogCategories(categories.map((category) => ({ category }))),
   ];
   return (
     <div className="mb-10 flex min-w-0 flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">

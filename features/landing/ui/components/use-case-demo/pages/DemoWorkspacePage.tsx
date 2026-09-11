@@ -120,6 +120,11 @@ const workspaceBodyColumnClassName =
 const DEMO_WORKSPACE_UPDATED_AT = "2026-01-12T00:00:00.000Z";
 const DEMO_DRAFT_PLAN_COUNT = 3;
 
+import {
+  getEditorialWorkspaceDescription,
+  type DemoEditorialScenario,
+} from "../demoEditorialHelpers";
+
 interface DemoWorkspaceProfile {
   useCaseKey: WorkspaceUseCaseKey;
   rawUserDescription: string;
@@ -286,9 +291,44 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
 
 function createDemoWorkspaceFormValues(
   workspaceName: string,
-  useCaseKey: UseCaseDemoKey
+  useCaseKey: UseCaseDemoKey,
+  editorialScenario?: DemoEditorialScenario
 ): WorkspacePageFormValues {
-  const profile = DEMO_WORKSPACE_PROFILES[useCaseKey];
+  const base = DEMO_WORKSPACE_PROFILES[useCaseKey];
+  const description = editorialScenario
+    ? getEditorialWorkspaceDescription(useCaseKey, editorialScenario)
+    : undefined;
+  const profile: DemoWorkspaceProfile = description
+    ? {
+        ...base,
+        rawUserDescription: description,
+        improvedDescription: description,
+        sourceUrl: "",
+        icps: (useCaseKey === "candidates"
+          ? editorialScenario === "workspaces"
+            ? [
+                "Product designer for complex interfaces",
+                "Designer with design-system experience",
+                "Early-stage product designer",
+              ]
+            : [
+                "Frontend engineer with accessibility experience",
+                "Engineer building complex web apps",
+                "Frontend engineer at a small product team",
+              ]
+          : [
+              "Founder looking for user feedback",
+              "Product lead at a small team",
+              "Developer building an early-stage app",
+            ]
+        ).map((title) => ({
+          title,
+          description,
+          painPoints: [],
+          channels: ["X/Twitter", "LinkedIn"],
+        })),
+      }
+    : base;
   return {
     name: workspaceName,
     useCaseKey: profile.useCaseKey,
@@ -353,10 +393,16 @@ function WorkspaceAgentSettingsRow({
   );
 }
 
-export function DemoWorkspacePage() {
+export function DemoWorkspacePage({
+  initialTab = "details",
+  editorialScenario,
+}: {
+  initialTab?: "details" | "profiles" | "agent";
+  editorialScenario?: DemoEditorialScenario;
+}) {
   const { activeWorkspace, useCaseKey } = useDemoShell();
   const [activeTab, setActiveTab] = useState<"details" | "profiles" | "agent">(
-    "details"
+    initialTab
   );
   const [isEditing, setIsEditing] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -371,7 +417,11 @@ export function DemoWorkspacePage() {
 
   const [persistedValues, setPersistedValues] =
     useState<WorkspacePageFormValues>(() =>
-      createDemoWorkspaceFormValues(activeWorkspace.name, useCaseKey)
+      createDemoWorkspaceFormValues(
+        activeWorkspace.name,
+        useCaseKey,
+        editorialScenario
+      )
     );
   const [agentAutonomyMode, setAgentAutonomyMode] = useState<
     "review_required" | "autonomous"

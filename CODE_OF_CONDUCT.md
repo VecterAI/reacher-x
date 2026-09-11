@@ -36,7 +36,7 @@ That is not meant to shut people down. It is part of keeping the project coheren
 If you experience or witness behavior that violates this Code of Conduct, contact Salman directly:
 
 - Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
-- Discord: [discord.gg/76dF9NPH](https://discord.gg/76dF9NPH)
+- Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
 
 Reports will be reviewed in good faith and handled as carefully as possible.
 

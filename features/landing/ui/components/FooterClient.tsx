@@ -85,7 +85,7 @@ const SOCIALS = [
     icon: <TwitterIcon />,
   },
   {
-    href: "https://discord.gg/76dF9NPH",
+    href: "https://discord.gg/BQttyr8jY",
     label: "Discord",
     icon: <DiscordOutlineIcon />,
   },

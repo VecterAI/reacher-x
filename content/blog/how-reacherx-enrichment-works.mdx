@@ -1,0 +1,57 @@
+---
+title: "How ReacherX builds a useful profile"
+description: "Follow enrichment from social data and evidence posts to profile details, contact sources, and planning context."
+category: engineering
+date: "2026-07-10"
+updated: "2026-09-10"
+related: ["how-reacherx-planning-works", "how-reacherx-qualification-works"]
+tags: ["engineering", "how reacherx enrichment works"]
+---
+
+After finding someone relevant, ReacherX needs enough information to explain who they are and help you approach them. Enrichment turns available social data and supporting posts into a more useful profile.
+
+It is not a promise to find every email address, phone number, or personal detail. Missing information and partial results are part of the data model.
+
+This walkthrough follows v4 beta at commit `8ea2662`.
+
+## Find the two main layers
+
+Start with [convex/workflows/enrichment.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workflows/enrichment.ts). `enrichmentWorkflow` checks the prospect, workspace, and workflow state, then chooses the platform-specific path.
+
+The shared extraction logic is in [convex/lib/enrichmentCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/enrichmentCore.ts). The workflow has internal actions such as `runTwitterEnrichmentCore` and `runLinkedInEnrichmentCore` so the core can run in the required Node.js environment.
+
+Keep that split when contributing. Fetching, scheduling, and saving belong to the orchestration path. Reusable interpretation and normalization should not be copied into every agent tool that asks to enrich someone.
+
+## Preserve evidence while shaping the profile
+
+The core result includes fields such as a short introduction, title, company, website, location, social links, and pain points with supporting posts. Contact fields include their source. Finance-related details, when present, also carry evidence posts.
+
+These fields should describe what the available information supports. An empty field is often more accurate than a plausible guess.
+
+The core's `EnrichmentResult` type makes partial completion explicit:
+
+```ts
+enrichmentStatus: "enriched" | "partial" | "failed";
+```
+
+The workflow return type also includes `pending`. For example, it can skip an archived person and return their existing status, falling back to `pending` if none is set. That is separate from the core result above.
+
+Another useful helper is `convertToEvidencePosts`. It produces a consistent record with an ID, text, URL, platform, and optional original provider payload. The UI can show the source post while other parts of the system use a smaller, consistent representation.
+
+## Treat links and contact details as their own problem
+
+Profile websites may have shortened URLs or separate display text. The enrichment code uses shared URL helpers and Twitter profile-link resolution rather than displaying any string the model returns.
+
+Public contact discovery is handled through [convex/lib/contactDiscoveryCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/contactDiscoveryCore.ts). Read that path before changing how email or phone fields are filled. The source of a contact detail matters just as much as the field's presence.
+
+If you are fixing a profile link, preserve the difference between the destination URL and the text shown to a reader. If you are fixing missing evidence, follow the post conversion and deduplication path before changing the prompt.
+
+## Pass useful context to the next job
+
+After persisting enrichment, the workflow indexes relevant context for retrieval and records an enrichment memory event. It can then trigger automatic plan generation when the person is eligible and the current state permits it.
+
+Not every enrichment call must create a new plan. There are setup-preview paths, state checks, and existing-plan checks. A retry should not become an excuse to make a duplicate active plan.
+
+To investigate a bug, keep a small redacted provider response and the expected normalized result. Check both a complete response and one missing optional fields. Then verify the profile shows the source correctly and that downstream planning handles partial information.
+
+The next article explains [how outreach plans are prepared](/blog/how-reacherx-planning-works). The distinction is useful: enrichment tells the system what is known about someone; planning decides what to do with that information.

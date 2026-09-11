@@ -24,7 +24,10 @@ import { Separator } from "@/shared/ui/components/Separator";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Button } from "@/shared/ui/components/Button";
 import { usePanelStack } from "../../contexts/PanelStackContext";
-import { ProspectProfileHeader } from "./ProspectProfileHeader";
+import {
+  ProspectProfileHeader,
+  type ProspectProfileHeaderProps,
+} from "./ProspectProfileHeader";
 import { PipelineTimeline, type PipelineStage } from "./PipelineTimeline";
 import { ProspectDetailsCard } from "./ProspectDetailsCard";
 import type { ProspectContactSource } from "@/shared/lib/utils/contact/contactUtils";
@@ -93,6 +96,9 @@ export interface ProspectProfileData {
 }
 
 export interface ProspectProfilePanelProps {
+  preview?: ProspectProfileHeaderProps["preview"];
+  initialTab?: ProfileTab;
+  onOpenConversation?: () => void;
   /** Prospect data to display */
   prospect?: ProspectProfileData;
   /** Loading state */
@@ -143,12 +149,15 @@ export function ProspectProfilePanel({
   onOpenTwitterProfile,
   onOpenLinkedInProfile,
   renderOutreachPlanSection,
+  preview,
+  initialTab = "overview",
+  onOpenConversation,
 }: ProspectProfilePanelProps) {
   const { entitySingular } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
   const { popPanel, pushPanel } = usePanelStack();
   const { openProfile } = useTwitterProfileNavigation();
-  const [activeTab, setActiveTab] = React.useState<ProfileTab>("overview");
+  const [activeTab, setActiveTab] = React.useState<ProfileTab>(initialTab);
   const [showFullIntro, setShowFullIntro] = React.useState(false);
   const isMobile = useIsMobile();
   const isUiPreview = mode === "ui_preview";
@@ -293,6 +302,10 @@ export function ProspectProfilePanel({
   }, [handleLinkedInProfileClick, handleTwitterClick, prospect]);
 
   const handleOpenDmPanel = () => {
+    if (onOpenConversation) {
+      onOpenConversation();
+      return;
+    }
     if (!prospect?.id) {
       return;
     }
@@ -361,6 +374,7 @@ export function ProspectProfilePanel({
                   onViewPlatformProfile={handleViewPlatformProfile}
                   onOpenDmPanel={handleOpenDmPanel}
                   mode={mode}
+                  preview={preview}
                 />
 
                 {/* Outreach Plan Section - directly under header */}
@@ -510,6 +524,7 @@ export function ProspectProfilePanel({
                   {/* Relevant Activity Tab */}
                   <TabsContent value="relevant-activity" className="mt-0">
                     <RelevantActivityTab
+                      offline={isReadOnlyPreview}
                       prospectId={prospect.id}
                       platform={prospect.platform || "twitter"}
                       evidencePosts={relevantActivityPosts}

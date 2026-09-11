@@ -80,3 +80,9 @@ export function getDemoUseCaseLabels(key: UseCaseDemoKey): DemoUseCaseLabels {
     discoveryVerb: realKey === "recruiting" ? "sourcing" : "finding",
   };
 }
+
+export function getDemoWorkspaceUseCaseKey(
+  key: UseCaseDemoKey
+): WorkspaceUseCaseKey {
+  return REAL_USE_CASE_BY_DEMO_KEY[key] ?? "recruiting";
+}

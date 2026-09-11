@@ -14,7 +14,7 @@ import { buttonVariants } from "@/shared/ui/components/Button";
 import { cn } from "@/shared/lib/utils";
 import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 
-const DISCORD_SERVER_URL = "https://discord.gg/76dF9NPH";
+const DISCORD_SERVER_URL = "https://discord.gg/BQttyr8jY";
 
 const CARDS = [
   {

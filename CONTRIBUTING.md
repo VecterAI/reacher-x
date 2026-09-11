@@ -6,7 +6,7 @@ ReacherX is an open-source agent product focused on finding the right people, bu
 
 ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-source-program) program. Learn more about Convex at [convex.link/coss](https://convex.link/coss).
 
-[README](./README.md) · [Configuration](./docs/configuration.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/76dF9NPH) · [Email Salman](mailto:creativecoder.crco@gmail.com)
+[README](./README.md) · [Configuration](./docs/configuration.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/BQttyr8jY) · [Email Salman](mailto:creativecoder.crco@gmail.com)
 
 Supporting repo policies:
 
@@ -29,7 +29,7 @@ That is important here because feature work usually benefits from brainstorming 
 Reach out here:
 
 - Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
-- Discord: [discord.gg/76dF9NPH](https://discord.gg/76dF9NPH)
+- Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
 - LinkedIn: [linkedin.com/in/noobships](https://www.linkedin.com/in/noobships)
 - GitHub Issues: [github.com/VecterAI/reacher-x/issues](https://github.com/VecterAI/reacher-x/issues)
 
@@ -203,7 +203,7 @@ Run the focused test commands that cover your change as well. Keep editor/LSP di
 ## Where To Ask Questions
 
 - GitHub Issues: [github.com/VecterAI/reacher-x/issues](https://github.com/VecterAI/reacher-x/issues)
-- Discord: [discord.gg/76dF9NPH](https://discord.gg/76dF9NPH)
+- Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
 - Email Salman directly: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
 
 For anything roadmap-related, feature-related, or exploratory, direct contact is preferred.
