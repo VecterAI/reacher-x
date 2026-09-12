@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction } from "convex/react";
+import { useQueryWithStatus } from "@/shared/hooks/useQueryWithStatus";
 import { parseAsString, useQueryStates } from "nuqs";
 import { api } from "@/convex/_generated/api";
 import { showStyleSyncIssueToast } from "@/features/linked-accounts/lib/styleSyncIssueToast";
@@ -30,8 +31,6 @@ export type TwitterConnectionStatus = {
 export interface UseXAccountConnectionOptions {
   /** Full callback URL for OAuth return (e.g. settings page). */
   callbackUrl?: string;
-  /** Resolve at click time so client-only routes (e.g. agent) work without SSR URL. */
-  resolveCallbackUrl?: () => string;
   /** When false, skips loading X status (e.g. not yet authenticated). */
   enabled?: boolean;
   /** When true, shows a one-time recoverable style-sync toast on Connected Accounts. */
@@ -42,7 +41,6 @@ export interface UseXAccountConnectionOptions {
 
 export function useXAccountConnection({
   callbackUrl,
-  resolveCallbackUrl,
   enabled = true,
   showStyleSyncIssueToast: shouldShowStyleSyncIssueToast = false,
   onConnected,
@@ -66,13 +64,16 @@ export function useXAccountConnection({
   const shownStyleSyncIssueKeyRef = useRef<string | null>(null);
   const styleSyncRefreshTimeoutsRef = useRef<number[]>([]);
 
-  const [xStatus, setXStatus] = useState<TwitterConnectionStatus | null>(null);
-  const [hasResolvedInitialStatus, setHasResolvedInitialStatus] =
-    useState(false);
+  const statusQuery = useQueryWithStatus(
+    api.connectedAccounts.getConnectionSnapshot,
+    enabled ? { platform: "twitter" } : "skip"
+  );
+  const xStatus =
+    statusQuery.data?.platform === "twitter" ? statusQuery.data : null;
   const [statusError, setStatusError] = useState<string | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   // Keep the populated list visible during post-connect background rechecks.
-  const statusLoading = enabled && !hasResolvedInitialStatus;
+  const statusLoading = enabled && statusQuery.isPending;
 
   useEffect(() => {
     getXStatusRef.current = getXStatus;
@@ -110,22 +111,13 @@ export function useXAccountConnection({
       return;
     }
     try {
-      const nextStatus = await getXStatusRef.current({});
-      setXStatus(nextStatus);
+      await getXStatusRef.current({});
       setStatusError(null);
     } catch (err) {
       logger.warn("Failed to load X connection status:", err);
       setStatusError(
         err instanceof Error ? err.message : "Unable to load X/Twitter status."
       );
-    } finally {
-      setHasResolvedInitialStatus(true);
-    }
-  }, [enabled]);
-
-  useEffect(() => {
-    if (!enabled) {
-      setHasResolvedInitialStatus(false);
     }
   }, [enabled]);
 
@@ -180,6 +172,8 @@ export function useXAccountConnection({
       return;
     }
 
+    if (!enabled) return;
+
     if (error) {
       clearOauthParams();
       toast.error("Unable to connect X/Twitter", {
@@ -208,13 +202,14 @@ export function useXAccountConnection({
     authExchangeKeyRef.current = exchangeKey;
 
     void (async () => {
+      const previousConnectedAccountId = connectedAccountIdRef.current;
       try {
         setIsMutating(true);
         const nextStatus = await completeXConnection({
           code: oauthCode,
           state: oauthState,
         });
-        if (connectedAccountIdRef.current !== nextStatus.connectedAccountId) {
+        if (previousConnectedAccountId !== nextStatus.connectedAccountId) {
           try {
             await clearXChatBrowserData();
           } catch (cleanupError) {
@@ -224,7 +219,6 @@ export function useXAccountConnection({
             );
           }
         }
-        setXStatus(nextStatus);
         setStatusError(null);
         toast.success("Connected X/Twitter account", {
           description: "Your X/Twitter account is ready.",
@@ -260,7 +254,6 @@ export function useXAccountConnection({
     try {
       setIsMutating(true);
       const returnTo =
-        resolveCallbackUrl?.() ??
         callbackUrl ??
         (typeof window !== "undefined"
           ? `${window.location.origin}${window.location.pathname}`
@@ -285,7 +278,7 @@ export function useXAccountConnection({
       });
       setIsMutating(false);
     }
-  }, [callbackUrl, getXConnectLink, resolveCallbackUrl]);
+  }, [callbackUrl, getXConnectLink]);
 
   const handleDisconnectX = useCallback(async () => {
     try {
@@ -314,7 +307,7 @@ export function useXAccountConnection({
   return {
     xStatus,
     statusLoading,
-    statusError,
+    statusError: statusError ?? statusQuery.error?.message ?? null,
     isMutating,
     refreshStatus,
     handleConnectX,

@@ -1267,22 +1267,6 @@ export const startAutoPlanGeneration = internalAction({
     userId: v.id("users"),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
-    const limitState = await ctx.runQuery(
-      internal.workflows.prospecting.checkProspectLimitInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
-    );
-    if (limitState.limitReached) {
-      await ctx.runAction(
-        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
-        {
-          workspaceId: args.workspaceId,
-        }
-      );
-      return { workId: "" };
-    }
-
     return { workId: await enqueueAutoPlanGeneration(ctx, args) };
   },
 });
@@ -1293,16 +1277,6 @@ export const enqueueEligibleAutoPlansForWorkspace = internalAction({
     userId: v.id("users"),
   },
   handler: async (ctx, args): Promise<{ enqueuedCount: number }> => {
-    const limitState = await ctx.runQuery(
-      internal.workflows.prospecting.checkProspectLimitInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
-    );
-    if (limitState.limitReached) {
-      return { enqueuedCount: 0 };
-    }
-
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
       workspaceId: args.workspaceId,
     });

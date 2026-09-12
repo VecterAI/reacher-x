@@ -1,5 +1,7 @@
 "use client";
 
+import { useApproveOutreachPlan } from "@/shared/hooks/useApproveOutreachPlan";
+
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -47,7 +49,7 @@ export function OutreachPlanSection({
   const prospect = prospectQuery.data;
   const isArchived = prospect?.status === "archived";
 
-  const approvePlan = useMutation(api.outreach.approvePlan);
+  const { approvePlan, isApproving } = useApproveOutreachPlan();
   const resumePlan = useMutation(api.outreach.resumePlan);
   const pausePlan = useMutation(api.outreach.pausePlan);
   const deletePlan = useMutation(api.outreach.deletePlan);
@@ -122,6 +124,7 @@ export function OutreachPlanSection({
   const { plan, tasks } = planData;
   const resolvedThreadId = activeThread?.threadId ?? plan.threadId;
   const isDraft = plan.status === "draft";
+  const canStart = plan.status === "approved" && !plan.workflowId;
   const isExecuting = plan.status === "executing";
   const isResumable =
     plan.status === "paused" || plan.status === "blocked_auth";
@@ -205,19 +208,21 @@ export function OutreachPlanSection({
     <OutreachPlanCard
       variant="current"
       status={plan.status}
+      readiness={planData?.readiness}
+      canStart={canStart}
       rationale={plan.strategy.rationale}
       tasks={tasks}
       prospectId={prospectId}
       threadId={resolvedThreadId}
       onEdit={handleEdit}
       onDeletePlan={handleDeletePlan}
-      onApprove={isDraft ? handleApprovePlan : undefined}
+      onApprove={isDraft || canStart ? handleApprovePlan : undefined}
       onPause={isExecuting ? handlePause : undefined}
       onResume={isResumable ? handleResume : undefined}
       onApproveTask={handleApproveTask}
       onViewTask={handleViewTask}
       onTaskClick={handleTaskClick}
-      actionsDisabled={isArchived}
+      actionsDisabled={isArchived || isApproving}
     />
   );
 }

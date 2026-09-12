@@ -3091,3 +3091,36 @@ export const workspacePlanUsageValidator = v.object({
   noticeDismissed: v.boolean(),
   limitReached: v.boolean(),
 });
+
+export const outreachReadinessValidator = v.object({
+  requiredPlatforms: v.array(prospectPlatformValidator),
+  missingPlatforms: v.array(prospectPlatformValidator),
+});
+
+const accountConnectionSnapshotFields = {
+  isConnected: v.boolean(),
+  connectedAccountId: v.optional(v.string()),
+  accountId: v.optional(v.string()),
+  screenName: v.optional(v.string()),
+  name: v.optional(v.string()),
+  displayName: v.optional(v.string()),
+  publicIdentifier: v.optional(v.string()),
+  profileImageUrl: v.optional(v.string()),
+  connectedAt: v.optional(v.number()),
+  missingScopes: v.optional(v.array(v.string())),
+  styleSyncIssue: v.optional(
+    v.object({ key: v.string(), lastError: v.optional(v.string()) })
+  ),
+};
+export const accountConnectionSnapshotValidator = v.union(
+  v.object({
+    ...accountConnectionSnapshotFields,
+    platform: v.literal("twitter"),
+    status: xAccountStatusValidator,
+  }),
+  v.object({
+    ...accountConnectionSnapshotFields,
+    platform: v.literal("linkedin"),
+    status: linkedinAccountStatusValidator,
+  })
+);

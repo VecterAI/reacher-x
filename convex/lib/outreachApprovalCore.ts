@@ -5,6 +5,8 @@ import { approvePlan } from "./outreachCore";
 import { requireProspectEligibleForOutreach } from "./accessHelpers";
 import { recordMemoryWorkflowEvent } from "./memoryCore";
 
+import { getPlanReadiness, requirePlanAccounts } from "./outreachReadinessCore";
+
 export async function startOutreachPlanExecution(
   ctx: MutationCtx,
   planId: Id<"outreachPlans">,
@@ -28,6 +30,14 @@ export async function startOutreachPlanExecution(
   }
   requireProspectEligibleForOutreach(prospect);
 
+  if (options?.approvalSource === "autonomy") {
+    const readiness = await getPlanReadiness(ctx, plan);
+    if (readiness.missingPlatforms.length)
+      return { started: false, status: plan.status };
+  } else {
+    await requirePlanAccounts(ctx, plan);
+  }
+
   if (plan.status === "draft") {
     await approvePlan(ctx, planId);
   }
@@ -45,11 +55,22 @@ export async function startOutreachPlanExecution(
     },
   });
 
-  await ctx.scheduler.runAfter(
-    options?.runAfterMs ?? 0,
-    internal.workflows.outreach.startOutreachWorkflow,
-    { planId }
-  );
+  if (
+    options?.runAfterMs === undefined &&
+    options?.approvalSource !== "autonomy"
+  ) {
+    // Approval and durable startup share one transaction. If startup fails,
+    // the plan remains a draft and the caller gets the error.
+    await ctx.runMutation(internal.workflows.outreach.startOutreachWorkflow, {
+      planId,
+    });
+  } else {
+    await ctx.scheduler.runAfter(
+      options?.runAfterMs ?? 0,
+      internal.workflows.outreach.startOutreachWorkflow,
+      { planId }
+    );
+  }
 
   return { started: true, status: "approved" };
 }

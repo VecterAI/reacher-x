@@ -550,3 +550,12 @@ body[data-scroll-locked] {
   -webkit-mask-size: 100% 100%;
   mask-size: 100% 100%;
 }
+
+@keyframes shimmer {
+  from {
+    background-position: 200% center;
+  }
+  to {
+    background-position: -200% center;
+  }
+}

@@ -1,3 +1,7 @@
+import {
+  getPlanReadiness,
+  requirePlanAccounts,
+} from "./lib/outreachReadinessCore";
 // convex/outreach.ts
 // Public queries and internal mutations for outreach system
 // Following existing patterns from prospects.ts
@@ -788,6 +792,7 @@ export const getProspectPlan = query({
 
     return {
       plan: activePlan.plan,
+      readiness: await getPlanReadiness(ctx, activePlan.plan),
       tasks,
     };
   },
@@ -813,6 +818,7 @@ export const getPlanById = query({
 
     return {
       plan,
+      readiness: await getPlanReadiness(ctx, plan),
       tasks: buildOutreachPlanViewTasks(tasks, prospect),
     };
   },
@@ -1843,7 +1849,7 @@ export const resumePlan = mutation({
       .first();
     if (waitingManualTask) {
       throw new Error(
-        "This plan is waiting for a manual X reply that ReacherX is monitoring automatically"
+        "This plan is waiting for a manual X/Twitter reply that ReacherX is monitoring automatically"
       );
     }
     const waitingConnectionTask = await ctx.db
@@ -1858,6 +1864,7 @@ export const resumePlan = mutation({
       );
     }
 
+    await requirePlanAccounts(ctx, plan);
     const prospectResume = await ctx.db.get(plan.prospectId);
     if (!prospectResume) {
       throw new Error("Prospect not found");
@@ -2032,7 +2039,7 @@ export const setPlanLifecycleInternal = internalMutation({
         .first();
       if (waitingManualTask) {
         throw new Error(
-          "This plan is waiting for a manual X reply that ReacherX is monitoring automatically"
+          "This plan is waiting for a manual X/Twitter reply that ReacherX is monitoring automatically"
         );
       }
       const waitingConnectionTask = await ctx.db
@@ -2046,6 +2053,7 @@ export const setPlanLifecycleInternal = internalMutation({
           "This plan is waiting for a LinkedIn connection; ReacherX will resume it automatically"
         );
       }
+      await requirePlanAccounts(ctx, plan);
       await ctx.db.patch(planId, {
         status: "approved",
         updatedAt: getCurrentUTCTimestamp(),

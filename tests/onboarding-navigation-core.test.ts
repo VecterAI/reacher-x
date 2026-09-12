@@ -147,3 +147,27 @@ test("query comparison is order-independent but value-sensitive", () => {
     false
   );
 });
+
+test("setup allows the central connected accounts page and its OAuth callback", () => {
+  for (const currentQueryString of [
+    "",
+    "linkedin_status=success&account_id=test",
+    "code=test&state=test",
+  ]) {
+    assert.deepEqual(
+      resolveOnboardingNavigationAction({
+        ...base,
+        pathname: "/settings/connected-accounts",
+        currentQueryString,
+      }),
+      { kind: "none" }
+    );
+  }
+  assert.deepEqual(
+    resolveOnboardingNavigationAction({
+      ...base,
+      pathname: "/settings/other",
+    }),
+    { kind: "replace", href: base.targetLockedUrl }
+  );
+});

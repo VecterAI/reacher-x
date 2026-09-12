@@ -1,5 +1,6 @@
 "use client";
 
+import type { OutreachReadiness } from "@/convex/lib/outreachReadinessCore";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -32,6 +33,10 @@ export function useOutreachPlanPreviewState<TTask>({
 }): {
   resolvedPlanPreview: OutreachPlanPreviewState<TTask> | null;
   isPending: boolean;
+  readiness?: OutreachReadiness;
+  canStart: boolean;
+  prospectId?: string;
+  threadId?: string;
 } {
   const { isReady: isConvexReady, isLoading: isConvexReadyLoading } =
     useConvexReady();
@@ -59,5 +64,11 @@ export function useOutreachPlanPreviewState<TTask>({
       isPending,
     }),
     isPending,
+    readiness: livePlanQuery.data?.readiness,
+    canStart:
+      livePlanQuery.data?.plan.status === "approved" &&
+      !livePlanQuery.data.plan.workflowId,
+    prospectId: livePlanQuery.data?.plan.prospectId,
+    threadId: livePlanQuery.data?.plan.threadId,
   };
 }

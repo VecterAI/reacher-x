@@ -1060,6 +1060,15 @@ export const runEnrichmentWorkflow = internalAction({
       }
     }
 
+    const capacity = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      { workspaceId: args.workspaceId }
+    );
+    if (capacity.limitReached) {
+      await releaseClaim();
+      return { workflowId: "" };
+    }
+
     let wfId = "";
     try {
       wfId = String(
@@ -1146,6 +1155,12 @@ export const startEnrichment = internalAction({
     if (!prospect) {
       return { workId: "" };
     }
+
+    const capacity = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      { workspaceId: args.workspaceId }
+    );
+    if (capacity.limitReached) return { workId: "" };
 
     const paidEligibility = await ctx.runQuery(
       internal.plans.getPaidFeatureEligibilityByUserId,

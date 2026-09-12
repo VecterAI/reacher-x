@@ -75,7 +75,7 @@ test("X account replacement and disconnect clear XChat browser data", () => {
   assert.equal(connection.match(/catch \(cleanupError\)/g)?.length, 2);
   assert.match(
     connection,
-    /connectedAccountIdRef\.current !== nextStatus\.connectedAccountId[\s\S]*?await clearXChatBrowserData\(\)[\s\S]*?Failed to clear XChat browser data after X account change:[\s\S]*?setXStatus\(nextStatus\)/
+    /previousConnectedAccountId !== nextStatus\.connectedAccountId[\s\S]*?await clearXChatBrowserData\(\)[\s\S]*?Failed to clear XChat browser data after X account change:[\s\S]*?setStatusError\(null\)/
   );
   assert.match(
     connection,

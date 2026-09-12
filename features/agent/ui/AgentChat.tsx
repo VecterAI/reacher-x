@@ -1,5 +1,8 @@
 "use client";
 
+import { useApproveOutreachPlan } from "@/shared/hooks/useApproveOutreachPlan";
+import { TextShimmer } from "@/shared/ui/components/TextShimmer";
+
 /**
  * AgentChat - Main agent chat interface with streaming support
  *
@@ -533,7 +536,13 @@ function LivePlanPreviewCard({
   onApprovePlan: (planId: string) => void;
   onDeletePlan: (planId: string) => void | Promise<void>;
 }) {
-  const { resolvedPlanPreview } = useOutreachPlanPreviewState({
+  const {
+    resolvedPlanPreview,
+    readiness,
+    canStart,
+    prospectId: liveProspectId,
+    threadId: liveThreadId,
+  } = useOutreachPlanPreviewState({
     planId,
     fallbackStatus,
     fallbackRationale,
@@ -548,11 +557,15 @@ function LivePlanPreviewCard({
     <OutreachPlanCard
       variant="preview"
       status={resolvedPlanPreview.status}
+      readiness={readiness}
+      canStart={canStart}
+      prospectId={liveProspectId}
+      threadId={liveThreadId}
       rationale={resolvedPlanPreview.rationale}
       tasks={resolvedPlanPreview.tasks}
       actionsDisabled={resolvedPlanPreview.actionsDisabled}
       onApprove={
-        resolvedPlanPreview.status === "draft" && planId
+        (resolvedPlanPreview.status === "draft" || canStart) && planId
           ? () => {
               onApprovePlan(planId);
             }
@@ -563,7 +576,8 @@ function LivePlanPreviewCard({
         onOpenPlanPanel
           ? {
               label: "Show plan",
-              onClick: () => onOpenPlanPanel(prospectId ?? null),
+              onClick: () =>
+                onOpenPlanPanel(liveProspectId ?? prospectId ?? null),
               disabled: resolvedPlanPreview.showPlanDisabled,
               title: resolvedPlanPreview.showPlanDisabled
                 ? "This plan has been deleted"
@@ -683,7 +697,7 @@ function ToolCallVisualization({
   onOpenWorkspaceProfilePanel?: (requestId: string) => void;
   supersededArtifactKeysByToolCallId?: ReadonlyMap<string, ReadonlySet<string>>;
 }) {
-  const approvePlan = useMutation(api.outreach.approvePlan);
+  const { approvePlan } = useApproveOutreachPlan();
   const deletePlan = useMutation(api.outreach.deletePlan);
 
   if (!toolCalls.length) return null;
@@ -1059,7 +1073,11 @@ function ReasoningSection({
                       )
                     }
                   >
-                    Thinking
+                    {isStreaming ? (
+                      <TextShimmer>Thinking</TextShimmer>
+                    ) : (
+                      "Thinking"
+                    )}
                   </StepsTrigger>
                   <StepsContent>
                     <StepsItem>{step}</StepsItem>

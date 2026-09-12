@@ -3102,6 +3102,7 @@ export default defineSchema({
     status: workspacePlanStartStatusValidator,
     autonomyMode: workspaceAgentAutonomyModeValidator,
     snapshotAt: v.number(),
+    planStartCursor: v.optional(v.string()),
     targetPlanCount: v.number(),
     targetPlanCountIsCapped: v.boolean(),
     startedPlanCount: v.number(),

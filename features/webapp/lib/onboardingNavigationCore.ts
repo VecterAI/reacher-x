@@ -61,7 +61,10 @@ export function resolveOnboardingNavigationAction(args: {
     new URLSearchParams(args.currentQueryString).get("action") ===
       "newWorkspace";
 
-  if (args.isDevelopmentSetupPreview) {
+  if (
+    args.isDevelopmentSetupPreview ||
+    args.pathname === "/settings/connected-accounts"
+  ) {
     return { kind: "none" };
   }
 

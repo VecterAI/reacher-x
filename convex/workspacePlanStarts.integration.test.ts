@@ -6,6 +6,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { createOutreachPlan } from "./lib/outreachCore";
 import schema from "./schema";
+import { X_CORE_SCOPES } from "./lib/xScopes";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -39,6 +40,24 @@ async function seedWorkspace(
     const userId = await ctx.db.insert("users", {
       workosUserId,
       email: `${suffix}@example.com`,
+    });
+    await ctx.db.insert("xAccounts", {
+      userId,
+      xUserId: "fixture-x",
+      username: "fixture",
+      accessToken: "fixture-token",
+      refreshToken: "fixture-refresh",
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      grantedScopes: [...X_CORE_SCOPES],
+      tokenType: "bearer",
+      status: "connected",
+      updatedAt: 1,
+    });
+    await ctx.db.insert("linkedinAccounts", {
+      userId,
+      accountId: "fixture-linkedin",
+      status: "connected",
+      updatedAt: 1,
     });
     const workspaceId = await ctx.db.insert("workspaces", {
       userId,
