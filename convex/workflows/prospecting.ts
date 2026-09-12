@@ -1,3 +1,4 @@
+import { notifyWorkspacePlanLimitReached } from "../lib/planLimitNotificationCore";
 import { getLearningTargetingFingerprint } from "../lib/learningTargetingHelpers";
 // convex/workflows/prospecting.ts
 // Continuous 24/7 prospecting workflow using Convex Workflow component
@@ -922,6 +923,9 @@ export const updateWorkflowStatus = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = getCurrentUTCTimestamp();
+    if (args.status === "limit_reached") {
+      await notifyWorkspacePlanLimitReached(ctx, args.workspaceId);
+    }
     await ctx.db.patch(args.workspaceId, {
       prospectingWorkflowStatus: args.status,
       ...(args.workflowId !== undefined && {

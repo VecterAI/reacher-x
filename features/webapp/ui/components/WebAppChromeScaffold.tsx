@@ -1,3 +1,5 @@
+import { WorkspacePlanUsageProvider } from "@/features/billing/ui/components/WorkspacePlanUsageProvider";
+import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { Suspense, type CSSProperties, type ReactNode } from "react";
 import {
   Sidebar,
@@ -27,29 +29,32 @@ const desktopSidebarStyle = {
 export function WebAppChromeScaffold({ children }: WebAppChromeScaffoldProps) {
   return (
     <UISidebarProvider defaultOpen={DEFAULT_SIDEBAR_OPEN}>
-      <SidebarWrapper>
-        <Header />
-        <Suspense fallback={null}>
-          <WorkspaceActivityTracker />
-        </Suspense>
-        <WorkspaceTransitionBar />
-        <div className="w-full pt-12">
-          <div className="flex h-[calc(100dvh-3rem-var(--rx-backend-status-banner-height))] min-h-0 overflow-hidden">
-            <Sidebar collapsible="icon" style={desktopSidebarStyle}>
-              <Suspense fallback={<SidebarHeaderSkeleton />}>
-                <SidebarHeader />
-              </Suspense>
-              <SidebarContentWrapper>
-                <SidebarNavigation />
-              </SidebarContentWrapper>
-              <SidebarFooter />
-            </Sidebar>
-            <main className="flex h-full min-h-0 w-full flex-col overflow-auto">
-              {children}
-            </main>
+      <WorkspacePlanUsageProvider>
+        <SidebarWrapper>
+          <Header />
+          <Suspense fallback={null}>
+            <WorkspaceActivityTracker />
+          </Suspense>
+          <WorkspaceTransitionBar />
+          <div className="w-full pt-12">
+            <div className="flex h-[calc(100dvh-3rem-var(--rx-backend-status-banner-height))] min-h-0 overflow-hidden">
+              <Sidebar collapsible="icon" style={desktopSidebarStyle}>
+                <Suspense fallback={<SidebarHeaderSkeleton />}>
+                  <SidebarHeader />
+                </Suspense>
+                <SidebarContentWrapper>
+                  <SidebarNavigation />
+                </SidebarContentWrapper>
+                <SidebarFooter />
+              </Sidebar>
+              <main className="flex h-full min-h-0 w-full flex-col overflow-auto">
+                <WorkspacePlanLimitAlert />
+                <div className="min-h-0 flex-1">{children}</div>
+              </main>
+            </div>
           </div>
-        </div>
-      </SidebarWrapper>
+        </SidebarWrapper>
+      </WorkspacePlanUsageProvider>
     </UISidebarProvider>
   );
 }

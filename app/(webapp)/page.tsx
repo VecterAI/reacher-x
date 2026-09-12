@@ -29,7 +29,6 @@ import {
   PageHeader,
   PageContent,
 } from "@/features/webapp/ui/components";
-import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { Button } from "@/shared/ui/components/Button";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
@@ -945,7 +944,6 @@ export default function ProspectsPage() {
         <PageHeader title={pageLabels.entities} />
         <PageContent className="flex min-h-0 min-w-0 flex-1 flex-col p-0">
           <ScrollArea className="min-w-0 flex-1">
-            <WorkspacePlanLimitAlert className="mx-4 mt-4" />
             {setupStatusQuery.isError ? (
               <div className="px-4 pt-4">
                 <div className="rounded-lg border border-dashed p-6 text-center">

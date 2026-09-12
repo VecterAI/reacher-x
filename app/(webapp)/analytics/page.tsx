@@ -7,7 +7,6 @@ import {
   PageContent,
 } from "@/features/webapp/ui/components";
 import { AnalyticsDashboard } from "@/features/analytics/ui/AnalyticsDashboard";
-import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 
 export default function AnalyticsPage() {
@@ -17,7 +16,6 @@ export default function AnalyticsPage() {
     <PageLayout className="flex max-w-none flex-col overflow-hidden border-none">
       <PageHeader title={pageLabels.analytics} />
       <PageContent className="scroll-fade min-h-0 flex-1 overflow-y-auto p-4">
-        <WorkspacePlanLimitAlert className="mb-4" />
         <AnalyticsDashboard />
       </PageContent>
     </PageLayout>

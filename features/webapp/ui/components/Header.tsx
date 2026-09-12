@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceUsageIndicator } from "@/features/billing/ui/components/WorkspaceUsageIndicator";
+
 import * as React from "react";
 import Link from "next/link";
 import { Slot } from "@radix-ui/react-slot";
@@ -485,6 +487,7 @@ export function Header({
           aria-label="Navigation menu"
         >
           {styleStatusBadge ? <li>{styleStatusBadge}</li> : null}
+          <WorkspaceUsageIndicator />
           {workspaceSystemStatus ? (
             <li>
               <WorkspaceSystemStatusTrigger status={workspaceSystemStatus} />

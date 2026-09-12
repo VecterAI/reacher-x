@@ -37,7 +37,6 @@ import { OutreachPlanSection } from "./OutreachPlanSection";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 import { useTwitterProfileNavigation } from "@/features/webapp/ui/components/tweet/useTwitterProfileNavigation";
-import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import { getTwitterPostId } from "@/shared/lib/twitter/contracts";
 import type { TwitterUrlEntity } from "@/shared/lib/twitter/profileLinks";
@@ -338,9 +337,6 @@ export function ProspectProfilePanel({
           viewportClassName="pb-8"
         >
           <PageContent>
-            {mode === "default" ? (
-              <WorkspacePlanLimitAlert className="mx-4 mt-4" />
-            ) : null}
             {loading ? (
               <ProfileSkeleton />
             ) : prospect ? (

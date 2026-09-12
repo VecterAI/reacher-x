@@ -18,7 +18,6 @@ import {
   PageHeader,
   PageContent,
 } from "@/features/webapp/ui/components";
-import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { Button } from "@/shared/ui/components/Button";
 import { IconButtonWithIndicator } from "@/shared/ui/components/IconButtonWithIndicator";
@@ -273,7 +272,6 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
         <PageHeader title={pageLabels.converts} />
         <PageContent className="flex min-h-0 flex-1 flex-col p-0">
           <ScrollArea className="min-w-0 flex-1">
-            <WorkspacePlanLimitAlert className="mx-4 mt-4" />
             {setupStatusQuery.isError ? (
               <div className="px-4 pt-4">
                 <div className="rounded-lg border border-dashed p-6 text-center">

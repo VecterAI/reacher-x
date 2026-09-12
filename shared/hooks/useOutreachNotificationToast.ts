@@ -89,6 +89,7 @@ function getNotificationToastVariant(
     case "plan_completed":
     case "plan_batch_completed":
       return "success";
+    case "plan_limit_reached":
     case "plan_batch_partial":
       return "warning";
     case "social_action_failed":

@@ -364,6 +364,19 @@ h6 {
   letter-spacing: -0.04em; /* -4% as 'em' */
 }
 
+@keyframes workspace-usage-fill {
+  from {
+    stroke-dasharray: 0 1;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .workspace-usage-progress {
+    animation: workspace-usage-fill 600ms ease-out;
+  }
+}
+
 .font-pixel-square {
   font-family: var(--font-geist-pixel-square), sans-serif;
 }
