@@ -31,7 +31,6 @@ import { SearchIcon, AddIcon } from "@/shared/ui/components/icons";
 import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import { ThreadCard, type ThreadData } from "./ThreadCard";
 import { ThreadCardSkeleton } from "./ThreadCardSkeleton";
-import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import type { ThreadSearchResult } from "@/shared/types/search";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { useConvexReady } from "@/shared/hooks/useConvexReady";
@@ -316,8 +315,6 @@ export function HistoryPanel({
         <PageContent className="flex min-h-0 flex-1 flex-col">
           {/* Thread list */}
           <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
-            <WorkspacePlanLimitAlert className="mx-4 mt-4" />
-
             {/* Search */}
             <div className="mt-4 mb-0 px-4">
               <div className="relative">

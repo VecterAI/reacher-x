@@ -11,7 +11,6 @@ import {
   PageLayout,
   PageScrollArea,
 } from "@/features/webapp/ui/components";
-import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { NotificationsInbox } from "@/features/webapp/ui/components/notifications/NotificationsInbox";
 import type { NotificationItem } from "@/features/webapp/ui/components/notifications/NotificationsInbox";
 import { Button } from "@/shared/ui/components/Button";
@@ -129,7 +128,6 @@ export default function NotificationsPage() {
           <PageContent
             className={`${NOTIFICATIONS_BODY_COLUMN_CLASS_NAME} pt-4 pb-6`}
           >
-            <WorkspacePlanLimitAlert className="mx-4 mb-4" />
             {(notificationWorkspaceError ||
               shellStateQuery.isError ||
               notificationQueryError) && (

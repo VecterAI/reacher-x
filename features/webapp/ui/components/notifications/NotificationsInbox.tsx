@@ -130,6 +130,7 @@ function getNotificationIcon(type: NotificationItem["type"]) {
     case "plan_batch_ready":
     case "plan_batch_started":
       return <NotificationsIcon className="fill-current" />;
+    case "plan_limit_reached":
     case "social_action_failed":
     case "plan_batch_partial":
     case "plan_batch_failed":

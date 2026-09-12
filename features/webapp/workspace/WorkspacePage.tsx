@@ -26,7 +26,6 @@ import {
   PageContent,
   PageScrollArea,
 } from "@/features/webapp/ui/components";
-import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { Button } from "@/shared/ui/components/Button";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { CharacterCounter } from "@/shared/ui/components/CharacterCounter";
@@ -722,7 +721,6 @@ export default function WorkspacePage() {
                   )}
 
                   <div className="px-4">
-                    <WorkspacePlanLimitAlert className="mb-4" />
                     <TabsContent value="details" className="mt-0">
                       {isEditing ? (
                         <Alert className="mb-4">

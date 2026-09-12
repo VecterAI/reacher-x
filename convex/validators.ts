@@ -2138,6 +2138,7 @@ export const prospectActivityTypeValidator = v.union(
 
 // Notification type
 export const outreachNotificationTypeValidator = v.union(
+  v.literal("plan_limit_reached"),
   v.literal("prospects_found"),
   v.literal("outreach_sent"),
   v.literal("prospect_replied"),
@@ -3075,4 +3076,18 @@ export const agentOpsActivityItemValidator = v.object({
     v.literal("success")
   ),
   linkedEntity: v.union(v.string(), v.null()),
+});
+
+export const workspacePlanUsageValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  workspaceName: v.string(),
+  entityPlural: v.string(),
+  discoveryVerb: v.string(),
+  tier: planTierValidator,
+  used: v.union(v.number(), v.null()),
+  limit: v.number(),
+  cycleEnd: v.number(),
+  noticeKey: v.string(),
+  noticeDismissed: v.boolean(),
+  limitReached: v.boolean(),
 });

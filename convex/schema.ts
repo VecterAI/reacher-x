@@ -391,6 +391,7 @@ export default defineSchema({
     // Timestamps
     lastGeneratedAt: v.optional(v.number()),
     setupCompletedAt: v.optional(v.number()), // v4: When setup wizard finished
+    dismissedPlanUsageNoticeKey: v.optional(v.string()),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
     reportingTimeZone: v.optional(v.string()),

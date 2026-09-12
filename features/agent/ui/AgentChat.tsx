@@ -196,7 +196,6 @@ import { SetupOnboardingInlineCard } from "./components/SetupOnboardingInlineCar
 import { SetupOnboardingCardMenu } from "./components/SetupOnboardingCardMenu";
 import { XChatUnlockCard } from "./components/xchat-history";
 import { getLockedXChatToolEvidence } from "@/features/agent/lib/xChatToolEvidence";
-import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 import { resolveUrlDescriptionStatusText } from "@/shared/lib/urls/urlDescriptionStatus";
@@ -3614,15 +3613,6 @@ export function AgentChat({
                       "flex min-h-full flex-col justify-center"
                   )}
                 >
-                  {!isSetupRoute ? (
-                    <MessageScrollerItem
-                      messageId="plan-limit"
-                      className="mb-4"
-                    >
-                      <WorkspacePlanLimitAlert />
-                    </MessageScrollerItem>
-                  ) : null}
-
                   {visibleSetupDisplayMessages.map((message) => (
                     <MessageScrollerItem
                       key={message.key}
