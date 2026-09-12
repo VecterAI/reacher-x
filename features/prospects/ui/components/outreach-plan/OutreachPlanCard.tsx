@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import type { OutreachReadiness } from "@/convex/lib/outreachReadinessCore";
+import { PlanAccountNotice, PlanConnectButton } from "./PlanAccountConnection";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
 import { cn } from "@/shared/lib/utils";
@@ -18,7 +20,7 @@ import { TaskItem, type TaskItemMode } from "./TaskItem";
 const PLAN_STATUS_LABELS: Record<string, string> = {
   loading: "Syncing...",
   draft: "Waiting approval",
-  approved: "Ready",
+  approved: "Starting",
   executing: "Executing",
   paused: "Paused",
   blocked_auth: "Reconnect required",
@@ -59,6 +61,8 @@ export interface OutreachPlanCardFooterAction {
 
 export interface OutreachPlanCardProps {
   status: string;
+  readiness?: OutreachReadiness;
+  canStart?: boolean;
   rationale?: string;
   tasks: OutreachPlanCardTask[];
   variant?: OutreachPlanCardVariant;
@@ -167,12 +171,18 @@ function getVariantDefaults(
   }
 }
 
-export function getOutreachPlanStatusLabel(status: string): string {
+export function getOutreachPlanStatusLabel(
+  status: string,
+  canStart = false
+): string {
+  if (status === "approved" && canStart) return "Ready";
   return PLAN_STATUS_LABELS[status] || status;
 }
 
 export function OutreachPlanCard({
   status,
+  readiness,
+  canStart = false,
   rationale,
   tasks,
   variant = "current",
@@ -220,6 +230,7 @@ export function OutreachPlanCard({
     defaultTasksExpanded ?? defaults.defaultTasksExpanded
   );
 
+  const missingPlatforms = readiness?.missingPlatforms ?? [];
   const isDraft = status === "draft";
   const isExecuting = status === "executing";
   const isPaused = status === "paused";
@@ -234,7 +245,7 @@ export function OutreachPlanCard({
     (isPaused && !hasWaitingManual && !hasWaitingConnection) || isBlockedAuth;
   const hasMenuActions = !!onEdit || !!onDeletePlan;
   const hasPrimaryAction =
-    (isDraft && !!onApprove) ||
+    ((isDraft || canStart) && !!onApprove) ||
     (isExecuting && !!onPause) ||
     (isResumable && !!onResume);
   const hasHeaderActions = hasPrimaryAction || hasMenuActions;
@@ -257,21 +268,30 @@ export function OutreachPlanCard({
             <Badge variant="outline" className="shrink-0 text-xs font-normal">
               {hasWaitingManual
                 ? "Manual reply needed"
-                : getOutreachPlanStatusLabel(status)}
+                : getOutreachPlanStatusLabel(status, canStart)}
             </Badge>
           </div>
 
           {hasHeaderActions && (
             <div className="flex shrink-0 items-center gap-1">
-              {isDraft && onApprove && (
-                <Button
-                  size="xs"
-                  variant="secondary"
-                  onClick={onApprove}
+              {(isDraft || canStart || isResumable) &&
+              missingPlatforms.length > 0 ? (
+                <PlanConnectButton
+                  platform={missingPlatforms[0]}
                   disabled={actionsDisabled}
-                >
-                  Approve
-                </Button>
+                />
+              ) : (
+                (isDraft || canStart) &&
+                onApprove && (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={onApprove}
+                    disabled={actionsDisabled}
+                  >
+                    {canStart ? "Start" : "Approve"}
+                  </Button>
+                )
               )}
               {isExecuting && onPause && (
                 <Button
@@ -283,7 +303,7 @@ export function OutreachPlanCard({
                   Pause
                 </Button>
               )}
-              {isResumable && onResume && (
+              {isResumable && onResume && missingPlatforms.length === 0 && (
                 <Button
                   size="xs"
                   variant="secondary"
@@ -324,6 +344,15 @@ export function OutreachPlanCard({
               {strategyExpanded ? "Show less" : "Show more"}
             </Button>
           )}
+        </div>
+      )}
+
+      {(isDraft || canStart || isResumable) && missingPlatforms.length > 0 && (
+        <div className="px-4 pb-4">
+          <PlanAccountNotice
+            platforms={missingPlatforms}
+            approvalRequired={isDraft}
+          />
         </div>
       )}
 

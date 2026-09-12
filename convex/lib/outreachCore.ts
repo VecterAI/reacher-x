@@ -1,3 +1,4 @@
+import { getOutreachReadiness } from "./outreachReadinessCore";
 // convex/lib/outreachCore.ts
 // Core business logic for outreach operations
 // Layer 3: Core Logic (following Three-Layer Architecture from AGENT_CONTEXT.txt)
@@ -517,9 +518,15 @@ export async function createOutreachPlan(
     ctx,
     input.workspaceId
   );
+  const accountReadiness = await getOutreachReadiness(
+    ctx,
+    input.userId,
+    prospect.platform,
+    input.tasks
+  );
   const initialPlanStatus =
     (agentSettings?.autonomyMode ?? DEFAULT_WORKSPACE_AGENT_AUTONOMY_MODE) ===
-    "autonomous"
+      "autonomous" && accountReadiness.missingPlatforms.length === 0
       ? "approved"
       : "draft";
   const platform: OutreachMediaPlatform =

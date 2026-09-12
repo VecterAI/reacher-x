@@ -1,3 +1,4 @@
+import { getPlanReadiness } from "../lib/outreachReadinessCore";
 // convex/workflows/outreach.ts
 // Outreach plan execution workflow
 // Triggered when plan is approved
@@ -6,7 +7,7 @@
 import { v } from "convex/values";
 import { workflow as workflowManager } from "../lib/workflow";
 import { internal } from "../_generated/api";
-import { internalAction } from "../lib/functionBuilders";
+import { internalAction, internalMutation } from "../lib/functionBuilders";
 import { Doc } from "../_generated/dataModel";
 import { getProspectDisplayFields } from "../lib/notificationHelpers";
 import { logger } from "../../shared/lib/logger";
@@ -711,10 +712,11 @@ function getTaskDelay(timing: { type: string; value?: string }): number {
 // Workflow Starter
 // ============================================================================
 
-export const startOutreachWorkflow = internalAction({
+export const startOutreachWorkflow = internalMutation({
   args: {
     planId: v.id("outreachPlans"),
   },
+  returns: v.object({ workflowId: v.string() }),
   handler: async (ctx, args): Promise<{ workflowId: string }> => {
     const planData = await ctx.runQuery(internal.outreach.getPlanInternal, {
       planId: args.planId,
@@ -723,19 +725,15 @@ export const startOutreachWorkflow = internalAction({
       return { workflowId: "" };
     }
 
-    const limitState = await ctx.runQuery(
-      internal.workflows.prospecting.checkProspectLimitInternal,
-      {
-        workspaceId: planData.plan.workspaceId,
-      }
-    );
-    if (limitState.limitReached) {
-      await ctx.runAction(
-        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
-        {
-          workspaceId: planData.plan.workspaceId,
-        }
-      );
+    if (!["approved", "executing"].includes(planData.plan.status)) {
+      return { workflowId: "" };
+    }
+    const readiness = await getPlanReadiness(ctx, planData.plan);
+    if (readiness.missingPlatforms.length) {
+      await ctx.runMutation(internal.outreach.updatePlanStatus, {
+        planId: args.planId,
+        status: "blocked_auth",
+      });
       return { workflowId: "" };
     }
 
@@ -767,7 +765,8 @@ export const startOutreachWorkflow = internalAction({
       {
         planId: args.planId,
         executionGeneration: planData.plan.executionGeneration ?? 0,
-      }
+      },
+      { startAsync: true }
     );
 
     // Store workflowId on plan for sendEvent later

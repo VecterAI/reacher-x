@@ -24,11 +24,11 @@ export function TextShimmer({
     <Component
       className={cn(
         "bg-size-[200%_auto] bg-clip-text font-medium text-transparent",
-        "animate-[shimmer_4s_infinite_linear]",
+        "motion-reduce:text-muted-foreground animate-[shimmer_4s_infinite_linear] motion-reduce:animate-none motion-reduce:bg-none",
         className
       )}
       style={{
-        backgroundImage: `linear-gradient(to right, var(--muted-foreground) ${50 - dynamicSpread}%, var(--foreground) 50%, var(--muted-foreground) ${50 + dynamicSpread}%)`,
+        backgroundImage: `linear-gradient(to right, hsl(var(--muted-foreground)) ${50 - dynamicSpread}%, hsl(var(--foreground)) 50%, hsl(var(--muted-foreground)) ${50 + dynamicSpread}%)`,
         animationDuration: `${duration}s`,
       }}
       {...props}

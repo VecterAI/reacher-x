@@ -1,3 +1,4 @@
+import { getPlanReadiness } from "./outreachReadinessCore";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -258,16 +259,21 @@ export async function processWorkspacePlanStartBatch(
     return;
   }
 
-  const drafts = await ctx.db
+  const page = await ctx.db
     .query("outreachPlans")
     .withIndex("by_workspace_status", (q) =>
-      q.eq("workspaceId", run.workspaceId).eq("status", "draft")
+      q
+        .eq("workspaceId", run.workspaceId)
+        .eq("status", "draft")
+        .lte("_creationTime", run.snapshotAt)
     )
     .order("asc")
-    .take(PLAN_START_BATCH_SIZE);
-  const snapshotDrafts = drafts.filter(
-    (plan) => plan._creationTime <= run.snapshotAt
-  );
+    .paginate({
+      numItems: PLAN_START_BATCH_SIZE,
+      cursor: run.planStartCursor ?? null,
+    });
+  const snapshotDrafts = page.page;
+  await ctx.db.patch(run._id, { planStartCursor: page.continueCursor });
 
   if (snapshotDrafts.length === 0) {
     await completeRunBranch(ctx, run, { planStartCompleted: true });
@@ -300,6 +306,11 @@ export async function processWorkspacePlanStartBatch(
       continue;
     }
 
+    if ((await getPlanReadiness(ctx, plan)).missingPlatforms.length) {
+      skippedPlanCount += 1;
+      continue;
+    }
+
     const result = await startOutreachPlanExecution(ctx, plan._id, {
       runAfterMs: index * PLAN_START_STAGGER_MS,
       approvalSource:
@@ -307,10 +318,13 @@ export async function processWorkspacePlanStartBatch(
     });
     if (result.started) {
       startedPlanCount += 1;
+    } else {
+      skippedPlanCount += 1;
     }
   }
 
   await completeRunBranch(ctx, run, {
+    planStartCompleted: page.isDone,
     startedPlanCountDelta: startedPlanCount,
     skippedPlanCountDelta: skippedPlanCount,
   });

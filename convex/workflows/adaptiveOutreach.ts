@@ -50,9 +50,12 @@ export const adaptiveOutreachWorkflow = workflow.define({
     );
 
     if (result.applied && result.outcome === "continue" && result.planId) {
-      await step.runAction(internal.workflows.outreach.startOutreachWorkflow, {
-        planId: result.planId,
-      });
+      await step.runMutation(
+        internal.workflows.outreach.startOutreachWorkflow,
+        {
+          planId: result.planId,
+        }
+      );
     }
 
     return {

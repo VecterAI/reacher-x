@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { runLinkedInProfileRequest } from "@/shared/lib/linkedin/profileRequests";
 import { useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -402,6 +403,8 @@ export function LinkedInProfilePanel({
         .join(":")
     : undefined;
   const profileCacheKey = prospectId ?? identityCacheKey;
+  const [resolvedProfileSource, setResolvedProfileSource] =
+    React.useState(profileCacheKey);
   const [loading, setLoading] = React.useState(
     externalLoading || (!profile && Boolean(profileCacheKey) && !externalError)
   );
@@ -426,10 +429,13 @@ export function LinkedInProfilePanel({
   const [pendingConnectionAction, setPendingConnectionAction] =
     React.useState(false);
 
+  const profileRequestVersion = React.useRef(0);
   const loadProfile = React.useCallback(
     async (force = false) => {
+      const requestVersion = ++profileRequestVersion.current;
       if (!profileCacheKey) {
         setResolvedProfile(profile ?? null);
+        setResolvedProfileSource(profileCacheKey);
         setLoading(false);
         setError(externalError);
         setNextPostsCursor(profile?.recentPostsCursor ?? null);
@@ -438,6 +444,7 @@ export function LinkedInProfilePanel({
 
       if (profile) {
         setResolvedProfile(profile);
+        setResolvedProfileSource(profileCacheKey);
         setLoading(false);
         setError(externalError);
         setNextPostsCursor(profile.recentPostsCursor ?? null);
@@ -453,6 +460,7 @@ export function LinkedInProfilePanel({
         : undefined;
       if (cached) {
         setResolvedProfile(cached.profile);
+        setResolvedProfileSource(profileCacheKey);
         setLoading(false);
         setError(undefined);
         setNextPostsCursor(cached.profile.recentPostsCursor ?? null);
@@ -462,13 +470,14 @@ export function LinkedInProfilePanel({
       const existingRequest = linkedInProfileInflight.get(profileCacheKey);
       const request =
         existingRequest ??
-        (prospectId
-          ? (getLinkedInProfile({
-              prospectId,
-            }) as Promise<LinkedInProfileData | null>)
-          : (getLinkedInIdentityProfile({
-              identity,
-            }) as Promise<LinkedInProfileData | null>)
+        runLinkedInProfileRequest(
+          prospectId
+            ? (getLinkedInProfile({
+                prospectId,
+              }) as Promise<LinkedInProfileData | null>)
+            : (getLinkedInIdentityProfile({
+                identity,
+              }) as Promise<LinkedInProfileData | null>)
         ).finally(() => {
           linkedInProfileInflight.delete(profileCacheKey);
         });
@@ -480,6 +489,7 @@ export function LinkedInProfilePanel({
       try {
         setLoading(true);
         const result = await request;
+        if (requestVersion !== profileRequestVersion.current) return;
         if (!result) {
           throw new Error("Could not load LinkedIn profile.");
         }
@@ -492,9 +502,11 @@ export function LinkedInProfilePanel({
           initialPostsRequestedRef.current.delete(result.urn);
         }
         setResolvedProfile(result);
+        setResolvedProfileSource(profileCacheKey);
         setError(undefined);
         setNextPostsCursor(result.recentPostsCursor ?? null);
       } catch (err) {
+        if (requestVersion !== profileRequestVersion.current) return;
         setResolvedProfile(null);
         setNextPostsCursor(null);
         setError(
@@ -503,7 +515,7 @@ export function LinkedInProfilePanel({
             : "Could not load LinkedIn profile."
         );
       } finally {
-        setLoading(false);
+        if (requestVersion === profileRequestVersion.current) setLoading(false);
       }
     },
     [
@@ -518,10 +530,21 @@ export function LinkedInProfilePanel({
   );
 
   React.useEffect(() => {
+    setLoadingMorePosts(false);
     void loadProfile();
+    return () => {
+      profileRequestVersion.current += 1;
+    };
   }, [loadProfile]);
 
-  const profileData = resolvedProfile ?? profile ?? null;
+  const profileData =
+    resolvedProfileSource === profileCacheKey
+      ? (resolvedProfile ?? profile ?? null)
+      : (profile ?? null);
+  // Snapshot data for a request without restarting it when another request
+  // updates a different part of the profile.
+  const readProfileSnapshot = React.useEffectEvent(() => profileData);
+  const readIdentitySnapshot = React.useEffectEvent(() => identity);
 
   React.useEffect(() => {
     setConnectionState(profileData?.connectionStatus);
@@ -561,7 +584,8 @@ export function LinkedInProfilePanel({
 
   React.useEffect(() => {
     const profileUrn = profileData?.urn;
-    const requestedProfileData = profileData;
+    const requestedProfileData = readProfileSnapshot();
+    const requestedIdentity = readIdentitySnapshot();
     if (
       !profileCacheKey ||
       !requestedProfileData ||
@@ -580,17 +604,19 @@ export function LinkedInProfilePanel({
 
     void (async () => {
       try {
-        const result = (await (prospectId
-          ? getLinkedInProfilePostsPage({
-              prospectId,
-              profileUrn,
-              limit: 10,
-            })
-          : getLinkedInIdentityProfilePostsPage({
-              identity,
-              profileUrn,
-              limit: 10,
-            }))) as {
+        const result = (await runLinkedInProfileRequest(
+          prospectId
+            ? getLinkedInProfilePostsPage({
+                prospectId,
+                profileUrn,
+                limit: 10,
+              })
+            : getLinkedInIdentityProfilePostsPage({
+                identity: requestedIdentity,
+                profileUrn,
+                limit: 10,
+              })
+        )) as {
           posts?: UnifiedPost[];
           nextCursor?: string | null;
           error?: string;
@@ -636,14 +662,14 @@ export function LinkedInProfilePanel({
 
     return () => {
       cancelled = true;
+      initialPostsRequestedRef.current.delete(profileUrn);
     };
   }, [
     getLinkedInProfilePostsPage,
     getLinkedInIdentityProfilePostsPage,
-    identity,
+    identityCacheKey,
     loading,
     profileCacheKey,
-    profileData,
     profileData?.urn,
     prospectId,
     recentPosts.length,
@@ -663,7 +689,7 @@ export function LinkedInProfilePanel({
 
   React.useEffect(() => {
     const relationshipKey = profileData?.urn ?? profileData?.username;
-    const requestedProfileData = profileData;
+    const requestedProfileData = readProfileSnapshot();
     if (
       !prospectId ||
       !requestedProfileData ||
@@ -741,11 +767,11 @@ export function LinkedInProfilePanel({
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
+      relationshipRequestedRef.current.delete(relationshipKey);
     };
   }, [
     getLinkedInProfileRelationship,
     loading,
-    profileData,
     profileData?.relationshipStatusKnown,
     profileData?.urn,
     profileData?.username,
@@ -791,26 +817,30 @@ export function LinkedInProfilePanel({
       return;
     }
 
+    const requestVersion = profileRequestVersion.current;
     try {
       setLoadingMorePosts(true);
       setPostsError(undefined);
-      const result = (await (prospectId
-        ? getLinkedInProfilePostsPage({
-            prospectId,
-            profileUrn: profileData.urn,
-            cursor: nextPostsCursor,
-            limit: 20,
-          })
-        : getLinkedInIdentityProfilePostsPage({
-            identity,
-            profileUrn: profileData.urn,
-            cursor: nextPostsCursor,
-            limit: 20,
-          }))) as {
+      const result = (await runLinkedInProfileRequest(
+        prospectId
+          ? getLinkedInProfilePostsPage({
+              prospectId,
+              profileUrn: profileData.urn,
+              cursor: nextPostsCursor,
+              limit: 20,
+            })
+          : getLinkedInIdentityProfilePostsPage({
+              identity,
+              profileUrn: profileData.urn,
+              cursor: nextPostsCursor,
+              limit: 20,
+            })
+      )) as {
         posts?: UnifiedPost[];
         nextCursor?: string | null;
         error?: string;
       };
+      if (requestVersion !== profileRequestVersion.current) return;
       if (result.error) {
         setPostsError(result.error);
         return;
@@ -836,13 +866,15 @@ export function LinkedInProfilePanel({
       }
       setNextPostsCursor(nextCursor);
     } catch (loadMoreError) {
+      if (requestVersion !== profileRequestVersion.current) return;
       const message = getLinkedInProfilePostsFailureMessage(loadMoreError);
       setPostsError(message);
       toast.error("Could not load more LinkedIn posts", {
         description: message,
       });
     } finally {
-      setLoadingMorePosts(false);
+      if (requestVersion === profileRequestVersion.current)
+        setLoadingMorePosts(false);
     }
   }, [
     getLinkedInProfilePostsPage,

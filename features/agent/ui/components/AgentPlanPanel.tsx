@@ -1,5 +1,8 @@
 "use client";
 
+import { useApproveOutreachPlan } from "@/shared/hooks/useApproveOutreachPlan";
+
+import { PlanConnectButton } from "@/features/prospects/ui/components/outreach-plan/PlanAccountConnection";
 import { useCallback } from "react";
 import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
@@ -77,9 +80,10 @@ export function AgentPlanPanel({
     isConvexReady ? { prospectId: prospectId as Id<"prospects"> } : "skip"
   );
   const prospectArchived = prospectQuery.data?.status === "archived";
-  const headerPlanActionsDisabled = prospectQuery.isPending || prospectArchived;
+  const { approvePlan, isApproving } = useApproveOutreachPlan();
+  const headerPlanActionsDisabled =
+    prospectQuery.isPending || prospectArchived || isApproving;
 
-  const approvePlan = useMutation(api.outreach.approvePlan);
   const pausePlan = useMutation(api.outreach.pausePlan);
   const resumePlan = useMutation(api.outreach.resumePlan);
   const deletePlan = useMutation(api.outreach.deletePlan);
@@ -92,6 +96,7 @@ export function AgentPlanPanel({
   const plan = planData?.plan;
   const tasks = planData?.tasks ?? [];
   const isDraft = plan?.status === "draft";
+  const canStart = plan?.status === "approved" && !plan.workflowId;
   const isExecuting = plan?.status === "executing";
   const isResumable =
     plan?.status === "paused" || plan?.status === "blocked_auth";
@@ -159,22 +164,30 @@ export function AgentPlanPanel({
           titleSuffix={
             plan ? (
               <Badge variant="outline" className="text-xs font-normal">
-                {getOutreachPlanStatusLabel(plan.status)}
+                {getOutreachPlanStatusLabel(plan.status, canStart)}
               </Badge>
             ) : null
           }
           actions={
             plan ? (
               <div className="flex items-center gap-1">
-                {isDraft && (
-                  <Button
-                    size="xs"
-                    variant="secondary"
-                    onClick={handleApprovePlan}
+                {(isDraft || canStart || isResumable) &&
+                planData?.readiness.missingPlatforms.length ? (
+                  <PlanConnectButton
+                    platform={planData.readiness.missingPlatforms[0]}
                     disabled={headerPlanActionsDisabled}
-                  >
-                    Approve
-                  </Button>
+                  />
+                ) : (
+                  (isDraft || canStart) && (
+                    <Button
+                      size="xs"
+                      variant="secondary"
+                      onClick={handleApprovePlan}
+                      disabled={headerPlanActionsDisabled}
+                    >
+                      {canStart ? "Start" : "Approve"}
+                    </Button>
+                  )
                 )}
                 {isExecuting && (
                   <Button
@@ -186,16 +199,17 @@ export function AgentPlanPanel({
                     Pause
                   </Button>
                 )}
-                {isResumable && (
-                  <Button
-                    size="xs"
-                    variant="secondary"
-                    onClick={handleResumePlan}
-                    disabled={headerPlanActionsDisabled}
-                  >
-                    Resume
-                  </Button>
-                )}
+                {isResumable &&
+                  !planData?.readiness.missingPlatforms.length && (
+                    <Button
+                      size="xs"
+                      variant="secondary"
+                      onClick={handleResumePlan}
+                      disabled={headerPlanActionsDisabled}
+                    >
+                      Resume
+                    </Button>
+                  )}
                 <PlanActionMenu
                   onEdit={handleEditPlan}
                   onDelete={handleDeletePlan}
@@ -240,6 +254,8 @@ export function AgentPlanPanel({
                 variant="panel"
                 showHeader={false}
                 status={plan.status}
+                readiness={planData?.readiness}
+                canStart={canStart}
                 rationale={plan.strategy.rationale}
                 strategyLabel="Strategy"
                 tasksLabel="Tasks"

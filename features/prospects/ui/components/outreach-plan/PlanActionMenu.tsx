@@ -100,7 +100,6 @@ export function PlanActionMenu({
               Edit
             </DropdownMenuItem>
           ) : null}
-          {onEdit && onDelete ? <DropdownMenuSeparator /> : null}
           {onDelete ? (
             <DropdownMenuItem
               disabled={disabled}
@@ -110,7 +109,7 @@ export function PlanActionMenu({
               }}
             >
               <DeleteIcon className="fill-current" />
-              Delete plan
+              Delete
             </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>

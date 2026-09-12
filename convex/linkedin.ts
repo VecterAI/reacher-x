@@ -1,5 +1,7 @@
 "use node";
 
+import { toConnectionStatus } from "./lib/linkedinConnectionStateCore";
+
 import { v, type Infer } from "convex/values";
 import { action, internalAction } from "./lib/functionBuilders";
 import { api, components, internal } from "./_generated/api";
@@ -839,34 +841,6 @@ function normalizeLinkedInStatus(args: {
     return "restricted" as const;
   }
   return "connected" as const;
-}
-
-function toConnectionStatus(account: any | null): LinkedInConnectionStatus {
-  if (!account) {
-    return {
-      isConnected: false,
-      status: "disconnected",
-    };
-  }
-
-  return {
-    isConnected: account.status === "connected",
-    status: account.status,
-    accountId: account.accountId,
-    providerId: account.providerId,
-    entityUrn: account.entityUrn,
-    username: account.username,
-    publicIdentifier: account.publicIdentifier,
-    displayName: account.displayName,
-    headline: account.headline,
-    profileImageUrl: account.profileImageUrl,
-    publicProfileUrl: account.publicProfileUrl,
-    premiumFeatures: account.premiumFeatures ?? [],
-    connectedAt:
-      typeof account._creationTime === "number"
-        ? account._creationTime
-        : undefined,
-  };
 }
 
 async function attachLinkedInStyleSyncIssue(

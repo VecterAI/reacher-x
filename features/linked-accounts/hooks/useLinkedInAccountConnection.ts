@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction } from "convex/react";
+import { useQueryWithStatus } from "@/shared/hooks/useQueryWithStatus";
 import { parseAsString, useQueryStates } from "nuqs";
 import { api } from "@/convex/_generated/api";
 import { showStyleSyncIssueToast } from "@/features/linked-accounts/lib/styleSyncIssueToast";
 import { logger } from "@/shared/lib/logger";
 import { toast } from "sonner";
+import { finishLinkedInConnection } from "@/features/linked-accounts/lib/linkedinConnectionHelpers";
 
 export type LinkedInConnectionStatus = {
   isConnected: boolean;
@@ -36,20 +38,19 @@ export type LinkedInConnectionStatus = {
 
 export interface UseLinkedInAccountConnectionOptions {
   callbackUrl?: string;
-  resolveCallbackUrl?: () => string;
   enabled?: boolean;
   showStyleSyncIssueToast?: boolean;
 }
 
 export function useLinkedInAccountConnection({
   callbackUrl,
-  resolveCallbackUrl,
   enabled = true,
   showStyleSyncIssueToast: shouldShowStyleSyncIssueToast = false,
 }: UseLinkedInAccountConnectionOptions) {
-  const linkedinApi = (api as any).linkedin;
-  const [{ linkedin_status }, setParams] = useQueryStates({
+  const linkedinApi = api.linkedin;
+  const [{ linkedin_status, account_id }, setParams] = useQueryStates({
     linkedin_status: parseAsString,
+    account_id: parseAsString,
   });
 
   const getLinkedInStatus = useAction(linkedinApi.getLinkedInConnectionStatus);
@@ -61,14 +62,19 @@ export function useLinkedInAccountConnection({
   const shownStyleSyncIssueKeyRef = useRef<string | null>(null);
   const styleSyncRefreshTimeoutsRef = useRef<number[]>([]);
 
-  const [linkedinStatus, setLinkedInStatus] =
-    useState<LinkedInConnectionStatus | null>(null);
-  const [hasResolvedInitialStatus, setHasResolvedInitialStatus] =
-    useState(false);
+  const statusQuery = useQueryWithStatus(
+    api.connectedAccounts.getConnectionSnapshot,
+    enabled ? { platform: "linkedin" } : "skip"
+  );
+  const linkedinStatus =
+    statusQuery.data?.platform === "linkedin" ? statusQuery.data : null;
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const finalizedCallbackRef = useRef(false);
+  const finalizingRef = useRef(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   // Keep the populated list visible during post-connect background rechecks.
-  const statusLoading = enabled && !hasResolvedInitialStatus;
+  const statusLoading = enabled && statusQuery.isPending;
 
   useEffect(() => {
     getLinkedInStatusRef.current = getLinkedInStatus;
@@ -89,6 +95,7 @@ export function useLinkedInAccountConnection({
     setParams(
       {
         linkedin_status: null,
+        account_id: null,
       },
       { history: "replace" }
     );
@@ -101,23 +108,16 @@ export function useLinkedInAccountConnection({
 
     try {
       const nextStatus = await getLinkedInStatusRef.current({});
-      setLinkedInStatus(nextStatus);
-      setStatusError(null);
+      if (!finalizedCallbackRef.current) setStatusError(null);
       return nextStatus;
     } catch (err) {
       logger.warn("Failed to load LinkedIn connection status:", err);
-      setStatusError(
-        err instanceof Error ? err.message : "Unable to load LinkedIn status."
-      );
+      if (!finalizedCallbackRef.current) {
+        setStatusError(
+          err instanceof Error ? err.message : "Unable to load LinkedIn status."
+        );
+      }
       return null;
-    } finally {
-      setHasResolvedInitialStatus(true);
-    }
-  }, [enabled]);
-
-  useEffect(() => {
-    if (!enabled) {
-      setHasResolvedInitialStatus(false);
     }
   }, [enabled]);
 
@@ -167,75 +167,64 @@ export function useLinkedInAccountConnection({
     });
   }, [linkedinStatus, shouldShowStyleSyncIssueToast]);
 
+  const retryConnection = useCallback(async () => {
+    if (finalizingRef.current) return;
+    finalizingRef.current = true;
+    setIsFinalizing(true);
+    setStatusError(null);
+    try {
+      await finishLinkedInConnection(() =>
+        syncLinkedInConnectionRef.current({})
+      );
+      toast.success("Connected LinkedIn account");
+      schedulePostConnectStatusChecks();
+    } catch (error) {
+      setStatusError(
+        error instanceof Error
+          ? error.message
+          : "Could not finish connecting LinkedIn. Try again."
+      );
+    } finally {
+      finalizingRef.current = false;
+      setIsFinalizing(false);
+      clearQueryParams();
+    }
+  }, [clearQueryParams, schedulePostConnectStatusChecks]);
+
   useEffect(() => {
-    if (!linkedin_status || !enabled) {
+    if (!enabled || finalizedCallbackRef.current) return;
+    if (
+      !linkedin_status &&
+      !account_id &&
+      linkedinStatus?.status !== "connecting"
+    )
+      return;
+    finalizedCallbackRef.current = true;
+    if (linkedin_status && linkedin_status !== "success") {
+      clearQueryParams();
+      toast.error("Unable to connect LinkedIn", {
+        description: "LinkedIn authorization was cancelled or failed.",
+      });
       return;
     }
-
-    void (async () => {
-      try {
-        setIsMutating(true);
-        if (linkedin_status === "success") {
-          setLinkedInStatus((previous) => ({
-            ...previous,
-            isConnected: true,
-            status: "connecting",
-          }));
-          setStatusError(null);
-          toast.success("Connected LinkedIn account", {
-            description: "LinkedIn is finishing its initial sync.",
-          });
-          schedulePostConnectStatusChecks();
-          clearQueryParams();
-          setIsMutating(false);
-          void syncLinkedInConnectionRef
-            .current({})
-            .then((nextStatus) => {
-              setLinkedInStatus(nextStatus);
-              setStatusError(null);
-            })
-            .catch(async (err) => {
-              logger.error("Failed to finalize LinkedIn connection:", err);
-              setStatusError(
-                err instanceof Error ? err.message : "Please try again."
-              );
-              const refreshed = await refreshStatus();
-              if (!refreshed) {
-                setLinkedInStatus((previous) =>
-                  previous?.status === "connecting" ? null : previous
-                );
-              }
-            });
-          return;
-        } else {
-          await refreshStatus();
-          toast.error("Unable to connect LinkedIn", {
-            description: "LinkedIn authorization was cancelled or failed.",
-          });
-        }
-      } catch (err) {
-        logger.error("Failed to finalize LinkedIn connection:", err);
-        toast.error("Unable to connect LinkedIn", {
-          description: err instanceof Error ? err.message : "Please try again.",
-        });
-      } finally {
-        clearQueryParams();
-        setIsMutating(false);
-      }
-    })();
+    void retryConnection();
   }, [
-    clearQueryParams,
-    enabled,
     linkedin_status,
-    refreshStatus,
-    schedulePostConnectStatusChecks,
+    account_id,
+    linkedinStatus?.status,
+    enabled,
+    clearQueryParams,
+    retryConnection,
   ]);
+
+  useEffect(() => {
+    if (linkedinStatus?.status === "connected") setStatusError(null);
+  }, [linkedinStatus?.status]);
 
   const handleConnectLinkedIn = useCallback(async () => {
     try {
       setIsMutating(true);
       const returnTo =
-        resolveCallbackUrl?.() ??
         callbackUrl ??
         (typeof window !== "undefined"
           ? `${window.location.origin}${window.location.pathname}`
@@ -261,21 +250,15 @@ export function useLinkedInAccountConnection({
       });
       setIsMutating(false);
     }
-  }, [callbackUrl, getLinkedInConnectLink, resolveCallbackUrl]);
+  }, [callbackUrl, getLinkedInConnectLink]);
 
   const handleDisconnectLinkedIn = useCallback(async () => {
-    const previousStatus = linkedinStatus;
     try {
       setIsMutating(true);
-      setLinkedInStatus({
-        isConnected: false,
-        status: "disconnected",
-      });
       setStatusError(null);
       await disconnectLinkedIn({});
       toast.success("Disconnected LinkedIn account");
     } catch (err) {
-      setLinkedInStatus(previousStatus);
       logger.error("Failed to disconnect LinkedIn account:", err);
       toast.error("Unable to disconnect LinkedIn", {
         description: err instanceof Error ? err.message : "Please try again.",
@@ -283,14 +266,16 @@ export function useLinkedInAccountConnection({
     } finally {
       setIsMutating(false);
     }
-  }, [disconnectLinkedIn, linkedinStatus]);
+  }, [disconnectLinkedIn]);
 
   return {
     linkedinStatus,
     statusLoading,
-    statusError,
+    statusError: statusError ?? statusQuery.error?.message ?? null,
+    isFinalizing,
     isMutating,
     refreshStatus,
+    retryConnection,
     handleConnectLinkedIn,
     handleDisconnectLinkedIn,
   };

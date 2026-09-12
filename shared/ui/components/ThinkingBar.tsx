@@ -1,5 +1,6 @@
 "use client";
 
+import { TextShimmer } from "./TextShimmer";
 import { cn } from "@/lib/utils";
 import { ChevronRightIcon } from "@/shared/ui/components/icons";
 
@@ -31,13 +32,11 @@ export function ThinkingBar({
           onClick={onClick}
           className="flex items-center gap-1 text-sm transition-opacity hover:opacity-80"
         >
-          <span className="text-muted-foreground font-medium">{text}</span>
+          <TextShimmer>{text}</TextShimmer>
           <ChevronRightIcon className="text-muted-foreground size-4 fill-current" />
         </button>
       ) : (
-        <span className="text-muted-foreground cursor-default font-medium">
-          {text}
-        </span>
+        <TextShimmer className="cursor-default">{text}</TextShimmer>
       )}
       {onStop ? (
         <button

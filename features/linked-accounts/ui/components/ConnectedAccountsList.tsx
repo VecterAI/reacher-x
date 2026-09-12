@@ -22,6 +22,7 @@ export interface ConnectedAccountsListProps {
   onDisconnectX: () => void;
   onConnectLinkedIn: () => void;
   onDisconnectLinkedIn: () => void;
+  onRetryLinkedIn?: () => void;
   /** When true, omit Disconnect (e.g. onboarding). */
   hideXDisconnect?: boolean;
   hideLinkedInDisconnect?: boolean;
@@ -38,6 +39,7 @@ export function ConnectedAccountsList({
   onDisconnectX,
   onConnectLinkedIn,
   onDisconnectLinkedIn,
+  onRetryLinkedIn,
   hideXDisconnect,
   hideLinkedInDisconnect,
 }: ConnectedAccountsListProps) {
@@ -208,7 +210,16 @@ export function ConnectedAccountsList({
             }
 
             if (linkedinStatus?.status === "connecting") {
-              return (
+              return onRetryLinkedIn ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={onRetryLinkedIn}
+                >
+                  Retry
+                </Button>
+              ) : (
                 <span className="text-muted-foreground shrink-0 text-xs whitespace-nowrap">
                   Finishing connection…
                 </span>

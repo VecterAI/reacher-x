@@ -362,7 +362,13 @@ function PlanPreviewArtifactCard({
 }) {
   const { onOpenPlanPanel, onApprovePlan, onDeletePlan } =
     useAgentArtifactActions();
-  const { resolvedPlanPreview } = useOutreachPlanPreviewState({
+  const {
+    resolvedPlanPreview,
+    readiness,
+    canStart,
+    prospectId: liveProspectId,
+    threadId: liveThreadId,
+  } = useOutreachPlanPreviewState({
     planId: props.planId,
     fallbackStatus: props.status,
     fallbackRationale: props.rationale,
@@ -377,11 +383,17 @@ function PlanPreviewArtifactCard({
     <OutreachPlanCard
       variant="preview"
       status={resolvedPlanPreview.status}
+      readiness={readiness}
+      canStart={canStart}
+      prospectId={liveProspectId}
+      threadId={liveThreadId}
       rationale={resolvedPlanPreview.rationale}
       tasks={resolvedPlanPreview.tasks}
       actionsDisabled={resolvedPlanPreview.actionsDisabled}
       onApprove={
-        resolvedPlanPreview.status === "draft" && props.planId && onApprovePlan
+        (resolvedPlanPreview.status === "draft" || canStart) &&
+        props.planId &&
+        onApprovePlan
           ? () => {
               void onApprovePlan(props.planId!);
             }

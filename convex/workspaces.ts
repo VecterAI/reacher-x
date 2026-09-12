@@ -53,7 +53,6 @@ import {
 } from "../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
 import { deleteWorkspaceCascade } from "./lib/deleteWorkspaceCascade";
-import { isPaidPlanTier } from "./lib/planConstants";
 import type { Id } from "./_generated/dataModel";
 import {
   doesSetupSessionReserveEntitlementSlot,
@@ -982,7 +981,6 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
       }
     );
     const capacityBlocked = limitState.limitReached;
-    const paidPlanActive = isPaidPlanTier(limitState.tier);
 
     if (capacityBlocked) {
       if (workspace.prospectingWorkflowStatus === "running") {
@@ -1059,15 +1057,22 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
           );
         }
 
-        if (
-          paidPlanActive &&
-          needsEnrichment &&
-          !prospect.enrichmentWorkflowId
-        ) {
-          await ctx.runAction(internal.workflows.enrichment.startEnrichment, {
-            prospectId: prospect._id,
-            workspaceId: args.workspaceId,
-          });
+        if (needsEnrichment && prospect.enrichmentWorkflowId) {
+          try {
+            await workflow.cancel(ctx, prospect.enrichmentWorkflowId as any);
+            await ctx.runMutation(
+              internal.prospects.replaceEnrichmentWorkflowIdIfMatchesInternal,
+              {
+                prospectId: prospect._id,
+                expectedWorkflowId: prospect.enrichmentWorkflowId,
+              }
+            );
+          } catch (error) {
+            console.warn("[WorkspaceCapacity] Could not cancel enrichment", {
+              prospectId: prospect._id,
+              error,
+            });
+          }
         }
       }
 

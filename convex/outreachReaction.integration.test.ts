@@ -13,6 +13,7 @@ import {
   normalizeOutreachReactionTarget,
 } from "./lib/outreachReactionCore";
 import schema from "./schema";
+import { X_CORE_SCOPES } from "./lib/xScopes";
 
 const modules = import.meta.glob("./**/*.ts");
 const polarComponentModules = import.meta.glob(
@@ -56,6 +57,24 @@ async function seedEntities(
     const userId = await ctx.db.insert("users", {
       workosUserId: `reaction-${suffix}`,
       email: `reaction-${suffix}@example.com`,
+    });
+    await ctx.db.insert("xAccounts", {
+      userId,
+      xUserId: "fixture-x",
+      username: "fixture",
+      accessToken: "fixture-token",
+      refreshToken: "fixture-refresh",
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      grantedScopes: [...X_CORE_SCOPES],
+      tokenType: "bearer",
+      status: "connected",
+      updatedAt: 1,
+    });
+    await ctx.db.insert("linkedinAccounts", {
+      userId,
+      accountId: "fixture-linkedin",
+      status: "connected",
+      updatedAt: 1,
     });
     const workspaceId = await ctx.db.insert("workspaces", {
       userId,
@@ -448,7 +467,7 @@ describe("reaction approval workflow", () => {
       return createdPlanId;
     });
 
-    await t.action(internal.workflows.outreach.startOutreachWorkflow, {
+    await t.mutation(internal.workflows.outreach.startOutreachWorkflow, {
       planId,
     });
     await t.finishAllScheduledFunctions(vi.runAllTimers);

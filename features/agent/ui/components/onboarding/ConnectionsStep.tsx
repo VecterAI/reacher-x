@@ -7,9 +7,7 @@ import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components"
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { LinkedInConnectNoticeDialog } from "@/features/linked-accounts/ui/components";
-import { useXAccountConnection } from "@/features/linked-accounts/hooks/useXAccountConnection";
-import { useLinkedInAccountConnection } from "@/features/linked-accounts/hooks/useLinkedInAccountConnection";
+import { useRouter } from "next/navigation";
 import { useQueryWithStatus } from "@/shared/hooks";
 import { ConnectionsStepContent } from "./ConnectionsStepContent";
 
@@ -24,51 +22,29 @@ export function ConnectionsStep({
   sessionId,
   onCompleteStep,
 }: ConnectionsStepProps) {
-  const [linkedInDialogOpen, setLinkedInDialogOpen] = useState(false);
+  const router = useRouter();
   const [isCompletingStep, setIsCompletingStep] = useState(false);
   const completionSessionIdRef = useRef<string | null>(null);
   const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
   const { user, loading: workosLoading } = useWorkosAuth();
 
-  const resolveCallbackUrl = useCallback(() => {
-    if (typeof window === "undefined") {
-      return "";
-    }
-    const url = new URL(window.location.href);
-    url.searchParams.delete("code");
-    url.searchParams.delete("state");
-    url.searchParams.delete("error");
-    url.searchParams.delete("error_description");
-    return `${url.origin}${url.pathname}${url.search}`;
-  }, []);
-
-  const {
-    xStatus,
-    statusLoading: xStatusLoading,
-    statusError: xStatusError,
-    isMutating: xIsMutating,
-    handleConnectX,
-    handleDisconnectX,
-  } = useXAccountConnection({
-    resolveCallbackUrl,
-    enabled: isAuthenticated,
-  });
-  const {
-    linkedinStatus,
-    statusLoading: linkedInStatusLoading,
-    statusError: linkedInStatusError,
-    isMutating: linkedInIsMutating,
-    handleConnectLinkedIn,
-    handleDisconnectLinkedIn,
-  } = useLinkedInAccountConnection({
-    resolveCallbackUrl,
-    enabled: isAuthenticated,
-  });
-
   const currentUserQuery = useQueryWithStatus(
     api.users.getCurrentUser,
     isAuthenticated ? {} : "skip"
   );
+  const accountsEnabled = isAuthenticated && !!currentUserQuery.data;
+
+  const xQuery = useQueryWithStatus(
+    api.connectedAccounts.getConnectionSnapshot,
+    accountsEnabled ? { platform: "twitter" } : "skip"
+  );
+  const linkedinQuery = useQueryWithStatus(
+    api.connectedAccounts.getConnectionSnapshot,
+    accountsEnabled ? { platform: "linkedin" } : "skip"
+  );
+  const xStatus = xQuery.data?.platform === "twitter" ? xQuery.data : null;
+  const linkedinStatus =
+    linkedinQuery.data?.platform === "linkedin" ? linkedinQuery.data : null;
 
   const completeSetupConnections = useMutation(
     api.setupSessions.completeSetupConnections
@@ -78,12 +54,11 @@ export function ConnectionsStep({
     convexLoading ||
     workosLoading ||
     (isAuthenticated && currentUserQuery.isPending) ||
-    xStatusLoading ||
-    linkedInStatusLoading;
-  const statusError = [xStatusError, linkedInStatusError]
+    (accountsEnabled && (xQuery.isPending || linkedinQuery.isPending));
+  const statusError = [xQuery.error?.message, linkedinQuery.error?.message]
     .filter(Boolean)
     .join(" · ");
-  const isMutating = xIsMutating || linkedInIsMutating || isCompletingStep;
+  const isMutating = isCompletingStep;
 
   const googleEmail = user?.email || "user@gmail.com";
   const googleConnectedAt = currentUserQuery.data?._creationTime
@@ -134,18 +109,12 @@ export function ConnectionsStep({
   );
 
   useEffect(() => {
-    if (!sessionId || pageLoading || xIsMutating || !canContinue) {
+    if (!sessionId || pageLoading || !canContinue) {
       return;
     }
 
     void persistConnectionsStep({ connectedX: true });
-  }, [
-    canContinue,
-    pageLoading,
-    persistConnectionsStep,
-    sessionId,
-    xIsMutating,
-  ]);
+  }, [canContinue, pageLoading, persistConnectionsStep, sessionId]);
 
   const handleConnectLater = useCallback(async () => {
     if (!sessionId) {
@@ -185,10 +154,11 @@ export function ConnectionsStep({
         isGoogleConnected,
         xStatus,
         linkedinStatus,
-        onConnectX: handleConnectX,
-        onDisconnectX: handleDisconnectX,
-        onConnectLinkedIn: () => setLinkedInDialogOpen(true),
-        onDisconnectLinkedIn: handleDisconnectLinkedIn,
+        onConnectX: () => router.push("/settings/connected-accounts"),
+        onDisconnectX: () => router.push("/settings/connected-accounts"),
+        onConnectLinkedIn: () => router.push("/settings/connected-accounts"),
+        onRetryLinkedIn: () => router.push("/settings/connected-accounts"),
+        onDisconnectLinkedIn: () => router.push("/settings/connected-accounts"),
       }}
       statusError={statusError}
       isMutating={isMutating}
@@ -196,23 +166,6 @@ export function ConnectionsStep({
       continueDisabled={!canContinue || !sessionId || isCompletingStep}
       onContinue={() => void handleContinue()}
       onConnectLater={() => void handleConnectLater()}
-    >
-      <LinkedInConnectNoticeDialog
-        open={linkedInDialogOpen}
-        isSubmitting={linkedInIsMutating}
-        onCancel={() => setLinkedInDialogOpen(false)}
-        onContinue={() => {
-          setLinkedInDialogOpen(false);
-          void handleConnectLinkedIn();
-        }}
-        onOpenPasswordReset={() => {
-          window.open(
-            "https://www.linkedin.com/checkpoint/rp/request-password-reset",
-            "_blank",
-            "noopener,noreferrer"
-          );
-        }}
-      />
-    </ConnectionsStepContent>
+    />
   );
 }
