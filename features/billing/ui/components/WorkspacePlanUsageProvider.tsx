@@ -9,17 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import type { Id } from "@/convex/_generated/dataModel";
-import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import type { Infer } from "convex/values";
 import { useConvexAuth } from "convex/react";
 import { usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { workspacePlanUsageValidator } from "@/convex/validators";
-import {
-  usePreferredShellQueryArgs,
-  useQueryWithStatus,
-  useReportingQueryNow,
-} from "@/shared/hooks";
+import { usePreferredShellQueryArgs, useQueryWithStatus } from "@/shared/hooks";
+import { useWorkspaceUsageClock } from "./useWorkspaceUsageClock";
 
 export type WorkspacePlanUsage = Infer<typeof workspacePlanUsageValidator>;
 const WorkspacePlanUsageContext = createContext<{
@@ -40,7 +36,6 @@ export function WorkspacePlanUsageProvider({
     api.shell.getAppShellState,
     isAuthenticated ? shellArgs : "skip"
   );
-  const { queryNowMs, refreshQueryNowMs } = useReportingQueryNow();
   const workspaceId =
     shell.data?.activeContextType === "workspace"
       ? (shell.data.workspaceSystemStatus?.workspaceId as
@@ -48,14 +43,21 @@ export function WorkspacePlanUsageProvider({
           | undefined)
       : null;
   const available = Boolean(workspaceId) && pathname !== "/agent/setup";
+  const {
+    clock,
+    error: clockError,
+    refresh,
+  } = useWorkspaceUsageClock(isAuthenticated && available);
   const query = useQueryWithStatus(
     api.workspacePlanUsage.getCurrent,
-    available && workspaceId ? { workspaceId, nowMs: queryNowMs } : "skip"
+    available && workspaceId && clock
+      ? { workspaceId, nowMs: clock.nowMs }
+      : "skip"
   );
   // Keep the current workspace's notice mounted during clock refreshes.
   // A workspace change, denied query, or sign-out must never reuse its data.
   const scope = available ? workspaceId : null;
-  const data = query.isError ? null : query.data;
+  const data = query.isError || clockError ? null : query.data;
   const [resolved, setResolved] = useState({ scope, data });
   if (
     resolved.scope !== scope ||
@@ -70,44 +72,29 @@ export function WorkspacePlanUsageProvider({
     : null;
   const cycleEnd = usage?.cycleEnd;
   useEffect(() => {
-    // Convex keeps usage live. Only change the query clock after a missed reset,
-    // rather than unloading the query on every window focus.
-    const refreshWhenVisible = () => {
-      if (
-        document.visibilityState === "visible" &&
-        cycleEnd !== undefined &&
-        queryNowMs < cycleEnd &&
-        getCurrentUTCTimestamp() >= cycleEnd
-      ) {
-        refreshQueryNowMs();
-      }
-    };
-    window.addEventListener("focus", refreshWhenVisible);
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => {
-      window.removeEventListener("focus", refreshWhenVisible);
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-    };
-  }, [cycleEnd, queryNowMs, refreshQueryNowMs]);
-  useEffect(() => {
-    // Paid cycles can end between the reporting hook's hourly refreshes.
+    // Device wall-clock changes must not move the billing-cycle timer.
     const delay =
-      cycleEnd === undefined ? null : cycleEnd + 1 - getCurrentUTCTimestamp();
+      cycleEnd === undefined || !clock || clock.nowMs > cycleEnd
+        ? null
+        : Math.max(
+            0,
+            cycleEnd + 1 - clock.nowMs - (performance.now() - clock.receivedAt)
+          );
     const timer =
       delay !== null && delay >= 0 && delay <= 2_147_483_647
-        ? window.setTimeout(refreshQueryNowMs, delay)
+        ? window.setTimeout(refresh, delay)
         : undefined;
     return () => {
       window.clearTimeout(timer);
     };
-  }, [cycleEnd, refreshQueryNowMs]);
+  }, [cycleEnd, clock, refresh]);
   const value = useMemo(
     () => ({
       usage,
       available,
-      unavailable: query.isError,
+      unavailable: query.isError || clockError,
     }),
-    [available, usage, query.isError]
+    [available, usage, query.isError, clockError]
   );
   return (
     <WorkspacePlanUsageContext.Provider value={value}>

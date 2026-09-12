@@ -100,6 +100,124 @@ async function fixture(
 }
 
 describe("workspace plan usage", () => {
+  test("server-issued query time keeps month-boundary usage and dismissal in the same cycle", async () => {
+    const { owner, workspaceId } = await fixture();
+    const serverNow = Date.UTC(2026, 8, 30, 23, 59);
+    vi.setSystemTime(serverNow);
+    const nowMs = await owner.action(api.workspacePlanUsage.getServerTime, {});
+    expect(nowMs).toBe(serverNow);
+    const usage = (await owner.query(api.workspacePlanUsage.getCurrent, {
+      workspaceId,
+      nowMs,
+    }))!;
+    expect(usage).toMatchObject({
+      used: 100,
+      limitReached: true,
+      cycleEnd: Date.UTC(2026, 9, 1) - 1,
+    });
+    await owner.mutation(api.workspacePlanUsage.dismissNotice, {
+      workspaceId,
+      noticeKey: usage.noticeKey,
+    });
+    expect(
+      await owner.query(api.workspacePlanUsage.getCurrent, {
+        workspaceId,
+        nowMs,
+      })
+    ).toMatchObject({ noticeDismissed: true });
+    vi.setSystemTime(Date.UTC(2026, 9, 1, 0, 1));
+    const nextNowMs = await owner.action(
+      api.workspacePlanUsage.getServerTime,
+      {}
+    );
+    expect(
+      await owner.query(api.workspacePlanUsage.getCurrent, {
+        workspaceId,
+        nowMs: nextNowMs,
+      })
+    ).toMatchObject({ used: 0, limitReached: false, noticeDismissed: false });
+  });
+  test("server-issued query time respects the actual subscription expiry", async () => {
+    const { t, owner, workspaceId, userId } = await fixture();
+    const start = Date.UTC(2026, 8, 5);
+    const end = Date.UTC(2026, 9, 5);
+    await t.mutation(components.polar.lib.createProduct, {
+      product: {
+        id: "clock-product",
+        createdAt: new Date(start).toISOString(),
+        modifiedAt: null,
+        name: "Hobby",
+        description: null,
+        recurringInterval: "month",
+        isRecurring: true,
+        isArchived: false,
+        organizationId: "clock-test",
+        prices: [],
+        medias: [],
+      },
+    });
+    await t.mutation(components.polar.lib.insertCustomer, {
+      userId,
+      id: "clock-customer",
+    });
+    await t.mutation(components.polar.lib.updateSubscription, {
+      subscription: {
+        id: "clock-subscription",
+        customerId: "clock-customer",
+        createdAt: new Date(start).toISOString(),
+        modifiedAt: null,
+        amount: 1000,
+        currency: "usd",
+        recurringInterval: "month",
+        status: "active",
+        currentPeriodStart: new Date(start).toISOString(),
+        currentPeriodEnd: new Date(end).toISOString(),
+        cancelAtPeriodEnd: false,
+        startedAt: new Date(start).toISOString(),
+        endedAt: null,
+        productId: "clock-product",
+        checkoutId: null,
+        metadata: {},
+      },
+    });
+    vi.setSystemTime(end - 60_000);
+    const nowMs = await owner.action(api.workspacePlanUsage.getServerTime, {});
+    const usage = (await owner.query(api.workspacePlanUsage.getCurrent, {
+      workspaceId,
+      nowMs,
+    }))!;
+    expect(usage).toMatchObject({
+      cycleEnd: end,
+      used: 100,
+      limitReached: true,
+    });
+    await owner.mutation(api.workspacePlanUsage.dismissNotice, {
+      workspaceId,
+      noticeKey: usage.noticeKey,
+    });
+    expect(
+      await owner.query(api.workspacePlanUsage.getCurrent, {
+        workspaceId,
+        nowMs,
+      })
+    ).toMatchObject({ noticeDismissed: true });
+    vi.setSystemTime(end + 60_000);
+    const nextNowMs = await owner.action(
+      api.workspacePlanUsage.getServerTime,
+      {}
+    );
+    expect(
+      await owner.query(api.workspacePlanUsage.getCurrent, {
+        workspaceId,
+        nowMs: nextNowMs,
+      })
+    ).toMatchObject({
+      cycleEnd: Date.UTC(2026, 10, 1) - 1,
+      used: 0,
+      limitReached: false,
+      noticeDismissed: false,
+    });
+  });
   test.each([0, 99, 100, 105])("matches /usage at %i used", async (used) => {
     const { owner, workspaceId } = await fixture(used);
     const usage = await owner.query(api.workspacePlanUsage.getCurrent, {

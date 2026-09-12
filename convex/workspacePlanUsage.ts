@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation } from "./lib/functionBuilders";
+import { action, query, mutation } from "./lib/functionBuilders";
 import { workspacePlanUsageValidator } from "./validators";
 import { getOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import { getUserFromIdentity } from "./lib/userUtils";
@@ -17,6 +17,13 @@ import {
 import { getPlanUsageNoticeKey } from "../shared/lib/planUsagePresentation";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
+/** Supplies query time without trusting the device clock or reading time in a query. */
+export const getServerTime = action({
+  args: {},
+  returns: v.number(),
+  handler: async () => getCurrentUTCTimestamp(),
+});
+
 export const getCurrent = query({
   args: { workspaceId: v.id("workspaces"), nowMs: v.number() },
   returns: v.union(workspacePlanUsageValidator, v.null()),
@@ -33,6 +40,8 @@ export const getCurrent = query({
       polar.getCurrentSubscription(ctx, { userId: user._id }),
       isWorkspaceReportingAggregateReady(ctx.db, workspace._id),
     ]);
+    // The provider obtains nowMs from getServerTime; it is not the device clock.
+    // Keeping it explicit preserves Convex query caching and reactivity.
     const window = computeUsageCycleWindow({
       now: args.nowMs,
       tier: plan.tier,
