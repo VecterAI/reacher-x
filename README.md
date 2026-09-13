@@ -10,7 +10,7 @@ Open-source △ Agent that helps anyone find the right people and reach them acr
   <a href="https://convex.link/coss"><img alt="convex open source" src="https://img.shields.io/badge/convex-open%20source-EE342F?style=flat-square&logo=convex&logoColor=white"></a>
 </p>
 
-[Live site](https://reacherx.com) · [Configuration](./docs/configuration.md) · [Contributing](./CONTRIBUTING.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/76dF9NPH) · [Email Salman](mailto:creativecoder.crco@gmail.com)
+[Live site](https://reacherx.com) · [Configuration](./docs/configuration.md) · [Contributing](./CONTRIBUTING.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/BQttyr8jY) · [Email Salman](mailto:creativecoder.crco@gmail.com)
 
 ## Built with Convex
 
@@ -76,7 +76,7 @@ The product story here follows the same flow as the `/home` landing experience:
 - Running your own ReacherX deployment is part of the intended value of the project; full functionality requires your own external provider accounts.
 - If you want to shape product direction, feature ideas, or implementation approach, contact Salman directly.
 - Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
-- Discord: [discord.gg/76dF9NPH](https://discord.gg/76dF9NPH)
+- Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
 - GitHub Issues: [github.com/VecterAI/reacher-x/issues](https://github.com/VecterAI/reacher-x/issues)
 
 For feature ideas and bigger changes, please reach out first so we can brainstorm and align before you spend time building.
@@ -195,7 +195,7 @@ Repo health files:
 If you want to work on a new feature, roadmap item, or architectural change, please contact Salman first:
 
 - Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
-- Discord: [discord.gg/76dF9NPH](https://discord.gg/76dF9NPH)
+- Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
 - LinkedIn: [linkedin.com/in/noobships](https://www.linkedin.com/in/noobships)
 
 That upfront conversation is important for this project because many contributions touch product direction, agent behavior, workflow design, and platform strategy.

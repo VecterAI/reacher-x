@@ -32,6 +32,7 @@ export interface EvidencePostsPanelProps {
   className?: string;
   onBack?: () => void;
   readOnly?: boolean;
+  offline?: boolean;
 }
 
 export function EvidencePostsPanel({
@@ -42,6 +43,7 @@ export function EvidencePostsPanel({
   className,
   onBack,
   readOnly = false,
+  offline = false,
 }: EvidencePostsPanelProps) {
   const { popPanel, pushPanel } = usePanelStack();
 
@@ -88,11 +90,12 @@ export function EvidencePostsPanel({
         >
           <PageContent>
             <EvidencePostsList
+              offline={offline}
               prospectId={prospectId}
               posts={posts}
               platform={platform}
               readOnly={readOnly}
-              onPostSelect={handlePostSelect}
+              onPostSelect={offline ? undefined : handlePostSelect}
             />
           </PageContent>
         </ScrollArea>

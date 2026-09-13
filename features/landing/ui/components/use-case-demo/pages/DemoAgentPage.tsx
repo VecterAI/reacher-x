@@ -991,11 +991,28 @@ function DemoHistoryPanel({
 // DemoAgentPage
 // ============================================================================
 
-export function DemoAgentPage() {
+export function DemoAgentPage({
+  prospect,
+}: {
+  prospect?: import("@/convex/_generated/dataModel").Doc<"prospects">;
+}) {
   const { useCaseKey, labels } = useDemoShell();
-  const dataset =
+  const baseDataset =
     USE_CASE_DEMO_DATASETS.find((entry) => entry.key === useCaseKey) ??
     USE_CASE_DEMO_DATASETS[0];
+  const dataset = React.useMemo(
+    () =>
+      prospect
+        ? {
+            ...baseDataset,
+            prospects: [
+              prospect,
+              ...baseDataset.prospects.filter((p) => p._id !== prospect._id),
+            ],
+          }
+        : baseDataset,
+    [baseDataset, prospect]
+  );
   const entityPluralLower = labels.entityPlural.toLowerCase();
   const showcasePlan = React.useMemo(
     () => buildShowcasePlan(dataset),
@@ -1112,6 +1129,7 @@ export function DemoAgentPage() {
       }}
     >
       <ComposerEditor
+        inlineAutocompleteContext={{ enabled: false }}
         className="min-h-10 text-sm"
         initialContent={buildSerializedTextState("")}
         placeholder={

@@ -1,0 +1,75 @@
+.marketing-proof-window {
+  overflow: hidden;
+}
+.marketing-proof-track {
+  display: flex;
+  width: max-content;
+  animation: marketing-proof-drift 70s linear infinite;
+}
+.marketing-proof-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 48px;
+  padding-right: 48px;
+}
+.marketing-proof-window:hover .marketing-proof-track,
+.marketing-proof-window:focus-within .marketing-proof-track {
+  animation-play-state: paused;
+}
+@keyframes marketing-proof-drift {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce), (hover: none) {
+  .marketing-proof-window {
+    overflow-x: auto;
+  }
+  .marketing-proof-track {
+    animation: none;
+  }
+  .marketing-proof-group[aria-hidden="true"] {
+    display: none;
+  }
+}
+.marketing-proof-post {
+  flex: none;
+  width: clamp(280px, 36vw, 440px);
+}
+.marketing-proof-post > article {
+  width: 100%;
+}
+@media (max-width: 639px) {
+  .marketing-proof-post {
+    width: min(360px, calc(100vw - 64px));
+  }
+  .marketing-proof-group {
+    gap: 28px;
+    padding-right: 28px;
+  }
+}
+
+.marketing-proof-window[data-single="true"] .marketing-proof-track {
+  animation: none;
+}
+.marketing-proof-post > article > div > div:last-child {
+  min-width: 0;
+}
+
+@media (max-width: 639px) {
+  /* Preserve author names by placing the date on its own line. */
+  .marketing-proof-post article header {
+    align-items: flex-start;
+  }
+  .marketing-proof-post article header > div:first-child {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .marketing-proof-post article header > div:first-child > div:first-child {
+    flex-basis: 100%;
+  }
+  .marketing-proof-post article section > .flex.justify-between > a {
+    padding-inline: 2px;
+    gap: 4px;
+  }
+}

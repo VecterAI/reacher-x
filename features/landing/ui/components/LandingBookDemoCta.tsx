@@ -70,7 +70,10 @@ export function LandingBookDemoCta({
       type="button"
       variant={variant}
       size={size}
-      className={cn(className)}
+      className={cn(
+        size !== "xs" && size !== "xsIcon" && "rounded-full",
+        className
+      )}
       {...calTriggerProps}
     >
       Book a demo

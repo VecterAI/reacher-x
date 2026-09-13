@@ -194,7 +194,7 @@ interface MakeProspectOptions {
   gender?: "woman" | "man";
 }
 
-function makeProspect(options: MakeProspectOptions): Doc<"prospects"> {
+export function makeProspect(options: MakeProspectOptions): Doc<"prospects"> {
   const {
     key,
     platform,
@@ -271,6 +271,7 @@ function makeProspect(options: MakeProspectOptions): Doc<"prospects"> {
     displayName,
     title,
     briefIntro,
+    qualificationReasoning: briefIntro,
     prospectType: "individual",
     qualificationScore,
     qualificationStatus: "qualified",
@@ -2385,6 +2386,7 @@ export function toDemoProspectSummary(
     displayName: prospect.displayName ?? "Unknown",
     title: prospect.title,
     briefIntro: prospect.briefIntro,
+    qualificationReasoning: prospect.qualificationReasoning,
     websiteUrl: prospect.websiteUrl,
     websiteHref: prospect.websiteHref,
     websiteDisplayText: prospect.websiteDisplayText,

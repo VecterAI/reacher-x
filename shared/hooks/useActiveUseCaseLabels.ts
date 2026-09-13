@@ -169,11 +169,13 @@ export function useActiveUseCaseLabels() {
     action === "newWorkspace"
       ? DEFAULT_WORKSPACE_USE_CASE_KEY
       : persistedUseCaseKey;
-  const activeUseCaseKey = isSetupRoute
-    ? (optimisticSetupUseCaseKey ??
-      setupDraft?.useCaseKey ??
-      setupFallbackUseCaseKey)
-    : persistedUseCaseKey;
+  const activeUseCaseKey =
+    labelsCtx?.scopedUseCaseKey ??
+    (isSetupRoute
+      ? (optimisticSetupUseCaseKey ??
+        setupDraft?.useCaseKey ??
+        setupFallbackUseCaseKey)
+      : persistedUseCaseKey);
 
   const activeUseCase = useMemo(
     () => getWorkspaceUseCase(activeUseCaseKey),

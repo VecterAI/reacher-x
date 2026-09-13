@@ -8,6 +8,12 @@
  */
 export const LANDING_VARIANTS = [
   {
+    href: "/home/preview/network",
+    id: "network",
+    label: "Network",
+    name: "Build your network",
+  },
+  {
     href: "/home",
     id: "live",
     label: "Live",
@@ -36,6 +42,9 @@ export function resolveLandingVariantId(
   if (exact) {
     return exact.id;
   }
+
+  if (pathname === "/home/preview" || pathname.startsWith("/home/preview/"))
+    return null;
 
   // Longest href first so `/home/v2` wins over `/home`.
   const ranked = LANDING_VARIANTS.toSorted(

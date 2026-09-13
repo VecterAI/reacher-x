@@ -9,19 +9,19 @@ export const homepageFaqItems: FaqItem[] = [
     id: "what-is-reacherx",
     question: "What is ReacherX?",
     answer:
-      "ReacherX is an open-source Agent that helps you reach the right people on X/Twitter and LinkedIn.",
+      "ReacherX is an open-source AI agent that finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
   },
   {
     id: "why-agent",
-    question: "Why do you call ReacherX an Agent?",
+    question: "Do I need sales experience to use it?",
     answer:
-      "Because it does more than search. It keeps running in the background, qualifies people, reads context, drafts outreach, and improves from your feedback.",
+      "No. Describe your project and who you want to reach. The agent asks questions, researches people, and helps you plan what to say. You can review its work and give feedback.",
   },
   {
     id: "how-does-it-know",
     question: "How does ReacherX know who to reach?",
     answer:
-      "You tell Agent who you want to reach in plain English, or give it a URL. It turns that into search strategies, watches for real signals, and qualifies people based on fit and context.",
+      "Describe who you want to meet or share your project URL. The agent develops search criteria, researches profiles and posts, and explains why each person fits.",
   },
   {
     id: "platform-support",
@@ -31,27 +31,27 @@ export const homepageFaqItems: FaqItem[] = [
   },
   {
     id: "account-safety",
-    question: "Will connecting my social accounts get me banned?",
+    question: "How should I use my connected accounts?",
     answer:
-      "No. Connecting your accounts alone will not get them banned. ReacherX is designed for personalized, human-paced outreach, but if you use it to spam people, blast generic messages, or force unnatural volume, your accounts can still be at risk.",
+      "Use relevant, personal outreach and follow each platform's rules. Review messages and sending activity, and avoid bulk or repetitive outreach. ReacherX cannot guarantee that a platform will never restrict an account.",
   },
   {
     id: "runs-24-7",
-    question: "Does ReacherX really run 24/7?",
+    question: "Does it keep working when I close the browser?",
     answer:
-      "Yes. Agent keeps searching, qualifying, and surfacing new people in the background.",
+      "Yes. A running workspace can keep discovering and researching people in the background. Usage limits, disconnected accounts, or a paused workspace can stop work. You can check its status and pause or resume it in the app.",
   },
   {
     id: "approval",
     question: "Does ReacherX send anything without approval?",
     answer:
-      "No. Replies, DMs, invites, and other actions stay under your control. Nothing sends without your approval.",
+      "Sending approvals are on by default. If you turn them off in workspace settings, supported replies and DMs can send without another approval. You can review the settings and pause the agent at any time.",
   },
   {
     id: "different-from-other-tools",
     question: "How is ReacherX different from other outreach tools?",
     answer:
-      "Most tools help you build lists or automate sequences. ReacherX is an open-source Agent that works from live social context, learns over time, and helps you reach the right people with more relevance.",
+      "You work with an agent in a conversation. It uses profiles and posts to research people, prepares outreach plans, and uses your saved feedback to guide later work. You can inspect the research and edit the plans.",
   },
   {
     id: "open-source",

@@ -1,11 +1,6 @@
 import Link from "next/link";
 import type { FaqItem } from "@/features/landing/lib/faqs";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/shared/ui/components/Accordion";
+import { FaqsAccordion } from "./FaqsAccordion";
 
 export function FaqsSection({
   items,
@@ -17,24 +12,7 @@ export function FaqsSection({
   /** "split" puts a sticky heading + contact column left of the accordion. */
   layout?: "centered" | "split";
 }) {
-  const accordion = (
-    <Accordion type="single" collapsible>
-      {items.map((item) => (
-        <AccordionItem
-          key={item.id}
-          value={item.id}
-          className="last:border-b-0"
-        >
-          <AccordionTrigger className="gap-6 py-5 text-left text-base font-medium hover:no-underline focus-visible:underline focus-visible:ring-0 md:text-lg">
-            {item.question}
-          </AccordionTrigger>
-          <AccordionContent className="text-muted-foreground pb-5 text-sm leading-6 md:text-base">
-            {item.answer}
-          </AccordionContent>
-        </AccordionItem>
-      ))}
-    </Accordion>
-  );
+  const accordion = <FaqsAccordion items={items} />;
 
   const contact = (
     <p className="text-muted-foreground mt-6 text-sm md:text-base">

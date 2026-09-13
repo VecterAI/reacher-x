@@ -142,7 +142,6 @@ test("all SocialAPI HTTP calls route through the tracked fetch helper", () => {
     "convex/styleAnalysisActions.ts",
     "convex/interactionsActions.ts",
     "convex/outreachRecovery.ts",
-    "convex/lib/publicSocialCore.ts",
     "convex/agents/outreach/tools/socialContextShared.ts",
     "convex/integrations/twitter/searchPosts.ts",
     "convex/integrations/twitter/searchUserPosts.ts",

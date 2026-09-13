@@ -344,6 +344,8 @@ function getFreshLinkedInProfileCache(cacheKey?: string) {
 // ---------------------------------------------------------------------------
 
 export interface LinkedInProfilePanelProps {
+  /** Uses supplied profile data and replaces the remote invite effect. */
+  localActions?: { onConnect: () => Promise<void> };
   prospectId?: string;
   identity?: LinkedInProfileIdentity;
   profile?: LinkedInProfileData | null;
@@ -357,6 +359,7 @@ export interface LinkedInProfilePanelProps {
 }
 
 export function LinkedInProfilePanel({
+  localActions,
   prospectId,
   identity,
   profile,
@@ -402,7 +405,9 @@ export function LinkedInProfilePanel({
         .filter(Boolean)
         .join(":")
     : undefined;
-  const profileCacheKey = prospectId ?? identityCacheKey;
+  const profileCacheKey = localActions
+    ? undefined
+    : (prospectId ?? identityCacheKey);
   const [resolvedProfileSource, setResolvedProfileSource] =
     React.useState(profileCacheKey);
   const [loading, setLoading] = React.useState(
@@ -562,7 +567,10 @@ export function LinkedInProfilePanel({
     () => profileData?.recentPosts ?? [],
     [profileData?.recentPosts]
   );
-  const mergedRecentPosts = useLinkedInPostEngagementMerge(recentPosts);
+  const mergedRecentPosts = useLinkedInPostEngagementMerge(
+    recentPosts,
+    !localActions
+  );
   const positions = profileData?.positions ?? [];
   const education = profileData?.education ?? [];
   const skills = profileData?.skills ?? [];
@@ -691,6 +699,7 @@ export function LinkedInProfilePanel({
     const relationshipKey = profileData?.urn ?? profileData?.username;
     const requestedProfileData = readProfileSnapshot();
     if (
+      localActions ||
       !prospectId ||
       !requestedProfileData ||
       !relationshipKey ||
@@ -770,6 +779,7 @@ export function LinkedInProfilePanel({
       relationshipRequestedRef.current.delete(relationshipKey);
     };
   }, [
+    localActions,
     getLinkedInProfileRelationship,
     loading,
     profileData?.relationshipStatusKnown,
@@ -923,11 +933,12 @@ export function LinkedInProfilePanel({
     try {
       setPendingConnectionAction(true);
       setConnectionState("pending");
-      await inviteLinkedInProspect({ prospectId });
+      if (localActions) await localActions.onConnect();
+      else await inviteLinkedInProspect({ prospectId });
       toast.success("LinkedIn invite sent", {
         description: "The connection request is now pending.",
       });
-      void loadProfile(true);
+      if (!localActions) void loadProfile(true);
     } catch (inviteError) {
       setConnectionState(previousConnectionState);
       toast.error("Could not send LinkedIn invite", {
@@ -941,6 +952,7 @@ export function LinkedInProfilePanel({
       setPendingConnectionAction(false);
     }
   }, [
+    localActions,
     connectionState,
     inviteLinkedInProspect,
     loadProfile,
@@ -1119,12 +1131,15 @@ export function LinkedInProfilePanel({
                   post={post}
                   prospectId={prospectId}
                   characterLimit={300}
-                  readOnly={false}
+                  readOnly={Boolean(localActions)}
+                  previewMode={Boolean(localActions)}
                   disableExternalNavigation
-                  onClick={() => openPostThread(post)}
+                  onClick={
+                    localActions ? undefined : () => openPostThread(post)
+                  }
                   commentBehavior="open_thread"
                   onToggleComments={(linkedinPost) =>
-                    openPostThread(linkedinPost)
+                    !localActions && openPostThread(linkedinPost)
                   }
                 />
               </div>

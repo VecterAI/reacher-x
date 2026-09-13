@@ -6,15 +6,15 @@ import { useRouter } from "next/navigation";
 import type { SerializedEditorState } from "lexical";
 import { toast } from "sonner";
 import { getOutboundMessageFailure } from "@/shared/lib/platforms/outboundMessageFailure";
-import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
 import { buildSerializedTextState } from "@/features/composer/lib/buildSerializedTextState";
-import { BaseComposer } from "@/features/composer/ui/components/BaseComposer";
 import {
-  DM_COMPOSER_CONTENT_EDITABLE_CLASS,
-  DM_COMPOSER_PLACEHOLDER_CLASS,
-} from "@/features/composer/ui/dmComposerClasses";
+  DmComposer,
+  DmComposerFrame,
+} from "@/features/composer/ui/components/DmComposer";
+import { LinkedInDmConversationMenu } from "./LinkedInDmConversationMenu";
+import { DmConversationHeader } from "./DmConversationHeader";
 import { useProspectLinkedInPanel } from "../../hooks/useProspectLinkedInPanel";
 import { enrichLinkedInReplyTargetFromAttachmentCache } from "../../hooks/useLinkedInConversationAttachment";
 import { getOutboundMessageMediaMetadata } from "../../lib/outboundMessageOperations";
@@ -35,25 +35,13 @@ import {
 import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
 import { cn } from "@/shared/lib/utils";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
-import {
-  ContentCopyIcon,
-  MoreHorizIcon,
-  OpenInNewIcon,
-  PersonIcon,
-} from "@/shared/ui/components/icons";
+
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftSync";
 import { resolveOutreachTaskApprovalUiState } from "@/shared/lib/outreach/taskApprovalHelpers";
 import { resolveTaskDmComposerState } from "@/shared/lib/outreach/taskDmComposerHelpers";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/shared/ui/components/DropdownMenu";
+
 import type {
   ComposerInitialMediaUpload,
   ComposerMediaKind,
@@ -285,16 +273,6 @@ export function LinkedInConversationPanel({
     },
   });
 
-  const handleCopyProfile = React.useCallback(() => {
-    if (!profileUrl) {
-      return;
-    }
-    navigator.clipboard.writeText(profileUrl).then(
-      () => toast.success("Copied profile link"),
-      () => toast.error("Unable to copy profile link")
-    );
-  }, [profileUrl]);
-
   const handleOpenLinkedIn = React.useCallback(() => {
     if (!profileUrl) {
       return;
@@ -384,7 +362,7 @@ export function LinkedInConversationPanel({
             toast.success("Plan approved.", {
               description: "The DM will be ready for approval next.",
             });
-            return;
+            return { preserveDraft: true as const };
           }
           await approveTaskWithEdits({
             taskId: taskId as Id<"outreachTasks">,
@@ -611,40 +589,11 @@ export function LinkedInConversationPanel({
       : undefined;
 
   const headerActions = (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="xsIcon" aria-label="Conversation menu">
-          <MoreHorizIcon className="fill-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {resolvedData?.prospect.profileUrl ? (
-          <DropdownMenuItem
-            onClick={onViewLinkedInProfile ?? handleOpenLinkedIn}
-          >
-            <OpenInNewIcon className="fill-current" aria-hidden />
-            View LinkedIn profile
-          </DropdownMenuItem>
-        ) : null}
-        {resolvedData?.prospect.profileUrl ? (
-          <DropdownMenuItem onClick={handleCopyProfile}>
-            <ContentCopyIcon className="fill-current" aria-hidden />
-            Copy profile link
-          </DropdownMenuItem>
-        ) : null}
-        {onViewProfile ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onViewProfile()}>
-              <PersonIcon className="fill-current" aria-hidden />
-              View profile
-            </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <LinkedInDmConversationMenu
+      profileUrl={profileUrl}
+      onViewLinkedInProfile={onViewLinkedInProfile ?? handleOpenLinkedIn}
+      onViewProfile={onViewProfile}
+    />
   );
 
   return (
@@ -655,23 +604,9 @@ export function LinkedInConversationPanel({
       )}
     >
       <PageLayout className="flex h-full max-w-[520px] flex-col md:w-full md:max-w-[520px]">
-        <PageHeader
-          title={resolvedData?.prospect.displayName ?? "LinkedIn messages"}
-          titleLeading={
-            resolvedData ? (
-              <ProspectPlatformAvatar platform="linkedin" badgeSize="xs">
-                <Avatar className="ring-border size-7 shrink-0 ring-1">
-                  <AvatarImage
-                    src={resolvedData.prospect.avatarUrl}
-                    alt={resolvedData.prospect.displayName}
-                  />
-                  <AvatarFallback>
-                    {resolvedData.prospect.displayName.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-              </ProspectPlatformAvatar>
-            ) : null
-          }
+        <DmConversationHeader
+          participant={resolvedData?.prospect}
+          platform="linkedin"
           onBack={onBack}
           actions={headerActions}
         />
@@ -836,7 +771,7 @@ export function LinkedInConversationPanel({
             </>
           ) : null}
 
-          <div className="bg-background shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-xl">
+          <DmComposerFrame>
             {replyingTo ? (
               <div className="mb-2">
                 <ConversationComposerReplyTarget
@@ -887,14 +822,12 @@ export function LinkedInConversationPanel({
                 )}
               </div>
             ) : null}
-            <BaseComposer
+            <DmComposer
               key={`linkedin-dm-composer:${prospectId}:${composerResetKey}`}
               currentUser={currentUser}
               initialContent={buildSerializedTextState(currentDraftText)}
               initialMediaUploads={initialMediaUploads}
-              placeholder="Type here."
               maxLength={LINKEDIN_DM_TEXT_MAX}
-              characterCountMode="raw"
               submitButtonText={
                 isTaskApprovalComposer
                   ? taskApprovalUi.submitButtonText
@@ -903,10 +836,6 @@ export function LinkedInConversationPanel({
               submitButtonVariant={isTaskApprovalComposer ? "text" : "icon"}
               submitOnEnter={!isTaskApprovalComposer}
               submitMode={isTaskApprovalComposer ? "confirmed" : "optimistic"}
-              toolbarPlacement="bottom"
-              showIdentityHeader={false}
-              showMediaDescription={false}
-              showMediaUpload
               allowedMediaKinds={["image", "gif", "video", "file"]}
               voiceNotePlatform={
                 isTaskApprovalComposer ? undefined : "linkedin"
@@ -920,10 +849,6 @@ export function LinkedInConversationPanel({
                 showEmoji: true,
                 showMedia: true,
               }}
-              showAvatar={false}
-              editorAreaClassName="min-h-10 text-sm"
-              contentEditableClassName={DM_COMPOSER_CONTENT_EDITABLE_CLASS}
-              composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
               inlineAutocompleteContext={{
                 surfaceLabel: "linkedin_dm_composer",
                 platform: "linkedin",
@@ -940,7 +865,6 @@ export function LinkedInConversationPanel({
                 remoteAllowedKinds: ["prospect", "post", "attachment"],
                 personTextMode: "label",
               }}
-              className="rounded-xl border p-2"
               onContentChange={(content) => {
                 setLocalDraftState({
                   sourceKey: draftSourceKey,
@@ -968,7 +892,7 @@ export function LinkedInConversationPanel({
                 ) : undefined
               }
             />
-          </div>
+          </DmComposerFrame>
         </div>
       </PageLayout>
     </aside>

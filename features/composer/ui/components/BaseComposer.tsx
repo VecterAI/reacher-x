@@ -61,7 +61,7 @@ import { useWorkspace } from "@/shared/hooks";
 import {
   useVoiceNoteRecorder,
   type VoiceNotePlatform,
-} from "../../hooks/useVoiceNoteRecorder";
+} from "@/features/composer/hooks/useVoiceNoteRecorder";
 import { VoiceNoteComposer, VoiceNoteTrigger } from "./voice-note-composer";
 
 function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
@@ -1176,14 +1176,14 @@ export function BaseComposer({
 
     setIsSubmitting(true);
     try {
-      await onSubmit?.(
+      const result = await onSubmit?.(
         contentForSubmit,
         mediaUrls,
         mediaDescriptions,
         mediaKinds,
         completedUploadsWithMetadata
       );
-      resetComposer();
+      if (!result?.preserveDraft) resetComposer();
     } catch (error) {
       console.error("[BaseComposer] Submit failed", error);
     } finally {

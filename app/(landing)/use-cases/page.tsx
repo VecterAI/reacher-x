@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { UseCasesDirectory } from "@/features/landing/ui/components/sections/UseCasesDirectory";
 
 export const metadata: Metadata = {
-  title: "Use Cases",
+  title: "Find the people you need",
+  alternates: { canonical: "https://reacherx.com/use-cases" },
   description:
     "Customers, candidates, investors, partners, creators, community members, podcast guests, and more. One agent that adapts to who you need.",
   openGraph: {

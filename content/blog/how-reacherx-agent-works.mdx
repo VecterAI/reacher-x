@@ -1,0 +1,60 @@
+---
+title: "A developer’s guide to the ReacherX codebase"
+description: "Understand the main data flow, find the right files, and choose a focused path into discovery, outreach, memory, or reporting."
+category: engineering
+date: "2026-09-08"
+updated: "2026-09-11"
+related: ["how-reacherx-discovery-works", "how-reacherx-adapts-to-use-cases"]
+
+tags: ["architecture", "codebase", "developers", "contributing", "Convex"]
+---
+
+If you've opened the repo and aren't sure where to start, pick one person shown in the app. Try to work out how they got there.
+
+Who searched for them? Why were they considered a match? Where did the details on their profile come from? That's a much more useful first trip through the code than trying to read every file.
+
+I'll use v4 beta at commit `8ea2662` here. The walkthroughs linked below point to that revision too.
+
+## Follow a person from search to conversation
+
+The workspace gives us the purpose of the search and the audience requirements. Discovery turns that into searches on the supported platforms. At this point we have possible matches. Qualification checks the evidence against the requirements, then enrichment builds a fuller profile for the people who pass.
+
+Planning works out how to approach a person. Outreach runs the plan, including waits, approvals, and responses to incoming activity.
+
+```text
+workspace -> discovery -> qualification -> enrichment -> planning -> outreach
+```
+
+That's the normal discovery path. A manually added person or a setup preview can enter somewhere else, so check the record's source before following it backwards.
+
+The other thing you'll see throughout is event recording. Some events feed Analytics and Agent observability. Some become input for the memory system, which can save lessons for later work.
+
+## Where does that code live?
+
+The app uses Next.js and React, with Convex for backend functions and data. Here's the map I would keep open while reading:
+
+| Location                                      | What belongs here                                                  |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `app/`                                        | Next.js routes and page composition                                |
+| `features/`                                   | Feature-specific interfaces, hooks, and supporting code            |
+| `shared/`                                     | Components and utilities used across features                      |
+| `convex/agents/tools/`                        | Tool inputs, context resolution, and calls to shared operations    |
+| `convex/workflows/`                           | Multi-step orchestration, waits, retries, and state checks         |
+| `convex/lib/`                                 | Shared business rules, normalization, scoring, and context helpers |
+| `convex/schema.ts` and `convex/validators.ts` | Stored data shape and shared validators                            |
+
+For example, an agent tool can ask to qualify someone, but the qualification rules shouldn't live inside that tool. Follow the call into the workflow and shared core. That's also where a fix should go if other callers need the same behavior.
+
+Before adding a helper, search for an existing one. The project already has shared time utilities and validators. Read the repository instructions before making changes.
+
+## Pick the part you want to understand
+
+- A strange search result: start with [discovery](/blog/how-reacherx-discovery-works), then follow it into [qualification](/blog/how-reacherx-qualification-works).
+- A missing or incorrect profile detail: read [enrichment](/blog/how-reacherx-enrichment-works).
+- A plan or message you didn't expect: read [planning](/blog/how-reacherx-planning-works) and [outreach execution](/blog/how-reacherx-outreach-runs).
+- An instruction the agent seems to remember: follow [memory](/blog/how-reacherx-memory-works).
+- A dashboard number you can't explain: read [reporting](/blog/how-reacherx-reporting-works).
+
+Each guide points to the implementation and gives you something specific to investigate. Keep the workspace ID in view as you trace a record. Check where IDs come from, and follow saved task state and provider results when you're checking whether a message actually sent. A generated draft alone won't tell you that.
+
+You don't need to understand the whole application before making a useful contribution. [Run it locally](/blog/run-reacherx-yourself), reproduce one problem, and follow the relevant path. If you get stuck, ask in [Discord](https://discord.gg/BQttyr8jY). I want people to be able to find their way around this project, and questions help me see where the explanation is missing.

@@ -51,6 +51,7 @@ const FOOTER_COLUMNS = [
     title: "Resources",
     links: [
       { label: "Threads", href: "/threads" },
+      { label: "Blog", href: "/blog" },
       { label: "Book a demo", href: "#book-demo" },
       { label: "Contact", href: "mailto:creativecoder.crco@gmail.com" },
     ],
@@ -84,7 +85,7 @@ const SOCIALS = [
     icon: <TwitterIcon />,
   },
   {
-    href: "https://discord.gg/76dF9NPH",
+    href: "https://discord.gg/BQttyr8jY",
     label: "Discord",
     icon: <DiscordOutlineIcon />,
   },
@@ -170,7 +171,12 @@ export function FooterClient({
     THEME_OPTIONS[0];
 
   const handleScrollToTop = React.useCallback(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({
+      top: 0,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+    });
   }, []);
 
   return (
@@ -239,21 +245,22 @@ export function FooterClient({
             </span>
             <div className="flex flex-wrap">
               {SOCIALS.map(({ href, label, icon }) => (
-                <a
+                <Button
+                  asChild
                   key={label}
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  variant="ghost"
+                  size="icon"
+                  className="[&_svg]:size-5"
                 >
-                  <Button
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     aria-label={`ReacherX on ${label}`}
-                    variant="ghost"
-                    size="icon"
-                    className="[&_svg]:size-5"
                   >
                     {icon}
-                  </Button>
-                </a>
+                  </a>
+                </Button>
               ))}
             </div>
           </div>
@@ -265,21 +272,22 @@ export function FooterClient({
           </span>
           <div className="flex flex-wrap">
             {SOCIALS.map(({ href, label, icon }) => (
-              <a
+              <Button
+                asChild
                 key={label}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
+                variant="ghost"
+                size="icon"
+                className="[&_svg]:size-5"
               >
-                <Button
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   aria-label={`ReacherX on ${label}`}
-                  variant="ghost"
-                  size="icon"
-                  className="[&_svg]:size-5"
                 >
                   {icon}
-                </Button>
-              </a>
+                </a>
+              </Button>
             ))}
           </div>
         </div>

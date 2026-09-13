@@ -38,7 +38,7 @@ import { VariantProofCarousel } from "./VariantProofCarousel";
  * heading-to-body mt-6. Whitespace separates sections; no dividers.
  */
 const DOCS_URL = "https://github.com/VecterAI/reacher-x/blob/main/README.md";
-const DISCORD_URL = "https://discord.gg/76dF9NPH";
+const DISCORD_URL = "https://discord.gg/BQttyr8jY";
 
 const FINDABLE_PEOPLE: Array<{ person: string; detail: string }> = [
   {

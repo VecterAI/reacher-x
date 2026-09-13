@@ -1,0 +1,37 @@
+.marketing-app-demo {
+  margin: 0;
+  min-width: 0;
+}
+.marketing-app-demo .blog-app-demo {
+  aspect-ratio: 1280 / 850;
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 18px;
+  isolation: isolate;
+}
+.marketing-app-demo .blog-app-demo-window {
+  background: hsl(var(--background));
+  box-shadow: none;
+  border-radius: 0;
+}
+.marketing-app-demo .blog-app-demo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to top, hsl(var(--background)), transparent 16%);
+}
+.marketing-app-demo .blog-app-demo-controls {
+  z-index: 1;
+  width: min(240px, calc(100% - 24px));
+}
+.marketing-app-demo .blog-app-demo-cursor svg {
+  width: 20px;
+  height: 26px;
+}
+@media (pointer: coarse) {
+  .marketing-app-demo .blog-app-demo-controls button {
+    width: 44px;
+    height: 44px;
+  }
+}

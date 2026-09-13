@@ -1,0 +1,48 @@
+---
+title: "Help build ReacherX"
+description: "An invitation to developers, designers, and testers: learn one part of the app and help make it easier to trust and use."
+category: engineering
+date: "2026-07-15"
+updated: "2026-09-11"
+related: ["run-reacherx-yourself", "how-reacherx-agent-works"]
+tags: ["contributing", "open source", "developers", "Discord", "community"]
+---
+
+Building solo sucks and is lonely. I always wanted friends with whom I could build cool things. In my real life, I couldn't find anyone who was excited about the things I was excited about, or someone who could stand shoulder to shoulder.
+
+When you're building alone, there's no one to keep you in check or guide you. You have a higher chance of ending up in the wrong place and going down a rabbit hole. So by open-sourcing ReacherX, my goal is to connect with people who care about the things I care about. I want to talk, exchange ideas, and learn from other people. I want to ask questions and answer questions.
+
+I've been working on this since mid-2023. I was studying for my BSCS at the time, working part time, and freelancing on Upwork as a designer and developer. Each time I tried to go full time, I ran low on cash and had to do something to make money. This June, I left my last company and finally went full time on ReacherX.
+
+There's a lot left to do. The idea of telling a tool what people you need and having it connect you with the right people sounds simple. Building it has taken me more than three years, and v4 is still beta. I want people to help improve these foundations and adapt them to their own needs.
+
+## Come talk to me
+
+[Join the Discord server](https://discord.gg/BQttyr8jY). Tell me what interests you, or what you tried and couldn't get working. You don't need to arrive with a pull request.
+
+I would like help from people who understand parts of this better than I do. Search, AI agents, background jobs, interface design, testing, documentation: there's work in all of them. There are also decisions I'd like to talk through before writing more code.
+
+## Where to look in the code
+
+Start with the [architecture overview](/blog/how-reacherx-agent-works). It explains the three layers: tools the agent can call, workflows that coordinate jobs, and core functions that do the work.
+
+Then pick the part you care about:
+
+- [Discovery](/blog/how-reacherx-discovery-works): where possible matches come from.
+- [Qualification](/blog/how-reacherx-qualification-works): how the system decides whether someone fits.
+- [Enrichment](/blog/how-reacherx-enrichment-works): turning outside data into a useful profile.
+- [Planning](/blog/how-reacherx-planning-works) and [outreach](/blog/how-reacherx-outreach-runs): preparing and carrying out the next steps.
+- [Memory](/blog/how-reacherx-memory-works): saved instructions and feedback.
+- [Reporting](/blog/how-reacherx-reporting-works): where the numbers come from.
+
+Each article points to files you can open. The [setup guide](/blog/run-reacherx-yourself) covers running a copy locally. If you get stuck, tell me which step failed and what it printed. That helps me fix the instructions too.
+
+## Before spending a week on a change
+
+Check the [issues](https://github.com/VecterAI/reacher-x/issues) and read [CONTRIBUTING.md](https://github.com/VecterAI/reacher-x/blob/main/CONTRIBUTING.md). Please discuss new features, roadmap work, integrations, agent-behavior changes, architecture changes, and major UX changes with me first. A small bug fix or typo doesn't need a long conversation.
+
+For a bug, show how to reproduce it. Explain what changed and how you checked the fix. Screenshots help with interface changes. Search for an existing helper before adding another one.
+
+If coding isn't your thing, try the app with a goal you understand and tell me which results were wrong. Clear feedback, a better instruction, or a walkthrough can help someone else use it.
+
+And if you want to help me keep working on this full time, there's [Patreon](https://www.patreon.com/cw/ReacherX). You can also star [the repository](https://github.com/VecterAI/reacher-x) or share it with a friend who might want to build with us.

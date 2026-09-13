@@ -1,0 +1,55 @@
+---
+title: "How ReacherX runs outreach and reacts to replies"
+description: "Follow durable tasks, approval events, waiting, retries, and the adaptive workflow that responds to new interactions."
+category: engineering
+date: "2026-07-12"
+updated: "2026-09-10"
+related: ["how-reacherx-memory-works", "how-reacherx-reporting-works"]
+tags: ["engineering", "how reacherx outreach runs"]
+---
+
+A plan can take longer than a web request. It may wait for approval, delay the next step, or change after someone replies. That work needs to survive a browser closing and avoid repeating actions when something retries.
+
+ReacherX uses durable workflows for this. The [Convex Workflow component](https://www.convex.dev/components/workflow) provides persistent steps, waits, and retries. The application still has to enforce its own task state and provider-side execution rules.
+
+This walkthrough follows v4 beta at commit `8ea2662`.
+
+## Follow one plan through the runner
+
+Open [convex/workflows/outreach.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workflows/outreach.ts) and start with `outreachPlanWorkflow`. It handles task types including `comment`, `react`, `dm`, `wait`, and `ask_human`.
+
+For an action that needs review, the workflow creates or obtains an approval signal and waits:
+
+```ts
+await step.awaitEvent({ id: approvalSignal.approvalEventId });
+```
+
+The approval event is part of persisted workflow state. It is not a browser promise that disappears on refresh. The task's stored approval context lets the app show the right message and source while the workflow is waiting.
+
+Wait tasks and requests for human input have their own event or timing behavior. Enabling autonomous outreach does not mean every waiting task is skipped.
+
+## Approval and execution are separate boundaries
+
+The workspace setting defaults to review required. Autonomous mode can approve and start supported work without another manual confirmation. The runner still checks task state and uses the execution path for the actual action.
+
+Read [convex/lib/outreachExecutionCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/outreachExecutionCore.ts) when investigating whether a provider operation ran. A UI card saying “approved” is not evidence that the platform accepted the message.
+
+Retries need particular care. A request may fail before sending, or the provider may accept it while the response is lost. Don't treat every exception as permission to send again. Inspect existing execution records and the recovery path for the specific action.
+
+## Let a reply change the plan
+
+[convex/workflows/adaptiveOutreach.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workflows/adaptiveOutreach.ts) handles a recorded interaction event. The flow claims the event, generates a decision, applies it, and may restart outreach for a continuing plan.
+
+The decision can continue, complete, or abandon the plan. Applying it can also be rejected because newer state has superseded the event. That prevents an older response from overwriting a later decision.
+
+This is a concrete part of “self-driving”: the application can respond to a new interaction and decide what work follows. It does not mean an unrestricted agent can ignore workspace instructions or every approval boundary.
+
+## Trace failures with the right record
+
+Keep the prospect, plan, task, workflow, interaction event, and provider result distinct in a bug report. They describe different parts of the same experience.
+
+Start with [convex/outreachRecovery.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/outreachRecovery.integration.test.ts), [convex/lib/outreachExecutionCore.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/outreachExecutionCore.test.ts), and [convex/outreachPanelContext.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/outreachPanelContext.integration.test.ts). Useful regressions exercise double approval, stale events, a retry after partial execution, and a plan changed while work was waiting.
+
+For manual verification, use a controlled test conversation and check the actual platform result as well as the UI state. Tests of formatting alone cannot prove that sending is correct.
+
+Next, read [how memory works](/blog/how-reacherx-memory-works) to see how recorded outcomes can inform later work, or [how reporting works](/blog/how-reacherx-reporting-works) to trace those outcomes into the dashboards.

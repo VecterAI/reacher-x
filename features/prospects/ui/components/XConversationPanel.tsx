@@ -6,15 +6,14 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import type { SerializedEditorState } from "lexical";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
 import { buildSerializedTextState } from "@/features/composer/lib/buildSerializedTextState";
-import { BaseComposer } from "@/features/composer/ui/components/BaseComposer";
 import {
-  DM_COMPOSER_CONTENT_EDITABLE_CLASS,
-  DM_COMPOSER_PLACEHOLDER_CLASS,
-} from "@/features/composer/ui/dmComposerClasses";
+  DmComposer,
+  DmComposerFrame,
+} from "@/features/composer/ui/components/DmComposer";
+import { DmConversationHeader } from "./DmConversationHeader";
 import { mergeXChatConversationMessages } from "../../lib/xChatConversationMessages";
 import { getOutboundMessageMediaMetadata } from "../../lib/outboundMessageOperations";
 import {
@@ -783,7 +782,7 @@ export function XConversationPanel({
             toast.success("Plan approved.", {
               description: "The DM will be ready for approval next.",
             });
-            return;
+            return { preserveDraft: true as const };
           }
           if (isXChatUnlocked) {
             // Validate and persist the exact approved draft before any
@@ -1213,31 +1212,9 @@ export function XConversationPanel({
       )}
     >
       <PageLayout className="flex h-full max-w-[520px] flex-col md:w-full md:max-w-[520px]">
-        <PageHeader
-          title={data?.prospect.displayName ?? "X/Twitter DM"}
-          titleLeading={
-            data ? (
-              <ProspectPlatformAvatar platform="twitter" badgeSize="xs">
-                <Avatar className="ring-border size-7 shrink-0 ring-1">
-                  <AvatarImage
-                    src={data.prospect.avatarUrl}
-                    alt={data.prospect.displayName}
-                  />
-                  <AvatarFallback>
-                    {data.prospect.displayName.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-              </ProspectPlatformAvatar>
-            ) : null
-          }
-          titleSuffix={
-            data?.prospect.verified ? (
-              <NewReleasesIcon
-                className="mr-0.5 size-3 shrink-0 fill-current"
-                aria-hidden="true"
-              />
-            ) : null
-          }
+        <DmConversationHeader
+          participant={data?.prospect}
+          platform="twitter"
           onBack={onBack}
           actions={headerActions}
         />
@@ -1402,7 +1379,7 @@ export function XConversationPanel({
           ) : null}
 
           {data && !shouldGateConversation ? (
-            <div className="bg-background shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-xl">
+            <DmComposerFrame>
               {replyingTo ? (
                 <div className="mb-2">
                   <ConversationComposerReplyTarget
@@ -1444,14 +1421,12 @@ export function XConversationPanel({
                   )}
                 </div>
               ) : null}
-              <BaseComposer
+              <DmComposer
                 key={`x-dm-composer:${prospectId}:${composerResetKey}`}
                 currentUser={currentUser}
                 initialContent={buildSerializedTextState(currentDraftText)}
                 initialMediaUploads={initialMediaUploads}
-                placeholder="Type here."
                 maxLength={X_DM_TEXT_MAX}
-                characterCountMode="raw"
                 submitButtonText={
                   isTaskApprovalComposer
                     ? taskApprovalUi.submitButtonText
@@ -1460,10 +1435,6 @@ export function XConversationPanel({
                 submitButtonVariant={isTaskApprovalComposer ? "text" : "icon"}
                 submitOnEnter={!isTaskApprovalComposer}
                 submitMode={isTaskApprovalComposer ? "confirmed" : "optimistic"}
-                toolbarPlacement="bottom"
-                showIdentityHeader={false}
-                showMediaDescription={false}
-                showMediaUpload
                 deferMediaUpload={isXChatUnlocked}
                 allowedMediaKinds={["image", "gif", "video"]}
                 voiceNotePlatform={
@@ -1480,10 +1451,6 @@ export function XConversationPanel({
                   showEmoji: true,
                   showMedia: true,
                 }}
-                showAvatar={false}
-                editorAreaClassName="min-h-10 text-sm"
-                contentEditableClassName={DM_COMPOSER_CONTENT_EDITABLE_CLASS}
-                composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
                 inlineAutocompleteContext={{
                   surfaceLabel: "x_dm_composer",
                   platform: "twitter",
@@ -1502,7 +1469,6 @@ export function XConversationPanel({
                     : ["prospect", "post", "attachment"],
                   personTextMode: "handle",
                 }}
-                className="rounded-xl border p-2"
                 onContentChange={(content) => {
                   setLocalDraftState({
                     sourceKey: draftSourceKey,
@@ -1530,7 +1496,7 @@ export function XConversationPanel({
                   ) : undefined
                 }
               />
-            </div>
+            </DmComposerFrame>
           ) : null}
         </div>
       </PageLayout>

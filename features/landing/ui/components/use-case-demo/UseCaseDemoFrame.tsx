@@ -16,8 +16,10 @@ import * as React from "react";
 // grid fits exactly 3 columns of min 20rem cards like the real desktop page.
 // 1280x850 canvas; small containers get a taller design height so the
 // scaled frame keeps more vertical room.
-const DESIGN_WIDTH = 1280;
-const DESIGN_HEIGHT = 850;
+import {
+  DEMO_DESIGN_WIDTH as DESIGN_WIDTH,
+  DEMO_DESIGN_HEIGHT as DESIGN_HEIGHT,
+} from "./demoPresentationHelpers";
 const DESIGN_HEIGHT_COMPACT = 900;
 const COMPACT_CONTAINER_WIDTH = 640;
 

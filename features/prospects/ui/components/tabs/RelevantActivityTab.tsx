@@ -42,6 +42,8 @@ export interface RelevantActivityTabProps {
   discoverySource?: "search_post" | "search_people" | "conversation_reply";
   /** Disables write actions and panel-expanding affordances */
   readOnly?: boolean;
+  /** Render supplied fixtures without hydration or engagement requests. */
+  offline?: boolean;
 }
 
 const POSTS_PER_PAGE = 10;
@@ -56,6 +58,7 @@ export function RelevantActivityTab({
   evidencePosts,
   discoverySource,
   readOnly = false,
+  offline = false,
 }: RelevantActivityTabProps) {
   const [visibleCount, setVisibleCount] = React.useState(POSTS_PER_PAGE);
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
@@ -100,7 +103,7 @@ export function RelevantActivityTab({
     return postIds;
   }, [platform, visibleCount, sortedPosts]);
   const { tweetsById, resultsById, error } = useHydratedTwitterPosts(
-    visibleTwitterPostIds
+    offline ? [] : visibleTwitterPostIds
   );
   const fallbackTweets = useTwitterTimelineEngagementMerge(
     React.useMemo(() => {
@@ -120,7 +123,8 @@ export function RelevantActivityTab({
         }
       }
       return tweets;
-    }, [platform, sortedPosts, visibleCount])
+    }, [platform, sortedPosts, visibleCount]),
+    !offline
   );
   const fallbackTweetsById = React.useMemo(() => {
     const tweetsById: Record<string, TweetType> = {};
@@ -142,7 +146,8 @@ export function RelevantActivityTab({
           typeof post === "object" &&
           (post as UnifiedPost).platform === "linkedin"
       );
-    }, [platform, visiblePosts])
+    }, [platform, visiblePosts]),
+    !offline
   );
   const linkedInPostsById = React.useMemo(() => {
     const postsById: Record<string, UnifiedPost> = {};
@@ -154,6 +159,7 @@ export function RelevantActivityTab({
     return postsById;
   }, [linkedInPosts]);
   const isInitialHydrationPending =
+    !offline &&
     platform === "twitter" &&
     visibleTwitterPostIds.some(
       (postId) => !tweetsById[postId] && !resultsById[postId]
@@ -206,6 +212,7 @@ export function RelevantActivityTab({
                       characterLimit={280}
                       showThread={true}
                       readOnly={readOnly}
+                      openBehavior={offline ? "none" : "auto"}
                     />
                   );
                 }
@@ -217,6 +224,7 @@ export function RelevantActivityTab({
                       characterLimit={280}
                       showThread={true}
                       readOnly={readOnly}
+                      openBehavior={offline ? "none" : "auto"}
                     />
                   );
                 }

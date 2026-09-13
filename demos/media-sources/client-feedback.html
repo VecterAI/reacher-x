@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>Fieldnote client feedback · fictional product walkthrough</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #f6f5f2;
+      color: #20211f;
+      font:
+        18px system-ui,
+        sans-serif;
+    }
+    header {
+      height: 76px;
+      display: flex;
+      align-items: center;
+      padding: 0 36px;
+      border-bottom: 1px solid #d9d9d2;
+      background: white;
+      gap: 24px;
+    }
+    header strong {
+      font-size: 24px;
+      letter-spacing: -1px;
+    }
+    header span {
+      color: #70736a;
+    }
+    header small {
+      margin-left: auto;
+      font-size: 15px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      height: 588px;
+      padding: 30px;
+      gap: 28px;
+    }
+    .art {
+      background: #193b32;
+      color: #f0eadb;
+      padding: 44px;
+      position: relative;
+      overflow: hidden;
+    }
+    .art small {
+      letter-spacing: 3px;
+    }
+    .art h1 {
+      font:
+        76px Georgia,
+        serif;
+      font-weight: 400;
+      line-height: 1;
+      margin: 68px 0 16px;
+    }
+    .art p {
+      font-size: 19px;
+      max-width: 280px;
+      line-height: 1.6;
+      color: #d2d9ce;
+    }
+    .circle {
+      position: absolute;
+      border: 1px solid #a3b394;
+      border-radius: 50%;
+      width: 300px;
+      height: 300px;
+      right: -80px;
+      bottom: -100px;
+    }
+    .circle:nth-child(2) {
+      right: -20px;
+      bottom: -170px;
+    }
+    .pin {
+      position: absolute;
+      top: 287px;
+      left: 370px;
+      border-radius: 50%;
+      background: #edca78;
+      color: #193b32;
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      box-shadow: 0 2px 9px #0004;
+    }
+    aside {
+      background: white;
+      padding: 24px;
+      border: 1px solid #deded7;
+      border-radius: 8px;
+    }
+    h2 {
+      font-size: 21px;
+      margin: 0 0 8px;
+    }
+    aside p {
+      color: #74776e;
+      font-size: 16px;
+      line-height: 1.5;
+      margin: 0 0 32px;
+    }
+    .label {
+      display: block;
+      font-size: 14px;
+      margin: 20px 0 8px;
+      color: #676a63;
+    }
+    .field {
+      padding: 12px;
+      border: 1px solid #c9cbc3;
+      border-radius: 5px;
+      font-size: 17px;
+      min-height: 46px;
+    }
+    .field.comment {
+      height: 128px;
+      line-height: 1.5;
+    }
+    .send {
+      padding: 12px 20px;
+      background: #203e34;
+      color: white;
+      border: 0;
+      border-radius: 5px;
+      font-size: 16px;
+      margin-top: 16px;
+    }
+    .posted {
+      display: none;
+      border-top: 1px solid #ddd;
+      padding-top: 20px;
+      margin-top: 22px;
+    }
+    .posted p {
+      color: #34392f;
+      font-size: 17px;
+      margin-top: 10px;
+    }
+    .done .form {
+      display: none;
+    }
+    .done .posted {
+      display: block;
+    }
+    .done h2:after {
+      content: " · 1";
+    }
+    footer {
+      height: 56px;
+      padding: 14px 30px;
+      background: white;
+      border-top: 1px solid #deded7;
+      font-size: 17px;
+      display: flex;
+      justify-content: space-between;
+    }
+    footer small {
+      color: #777;
+      font-size: 13px;
+      padding-top: 3px;
+    }
+    #pointer {
+      position: absolute;
+      z-index: 3;
+      width: 25px;
+      height: 35px;
+      filter: drop-shadow(0 1px 2px #0006);
+    }
+  </style>
+  <header>
+    <strong>Fieldnote</strong><span>/</span
+    ><span>Northline · Brand concept</span
+    ><small>Client review · Anyone with the link</small>
+  </header>
+  <main>
+    <section class="art">
+      <small>NORTHLINE / BRAND DIRECTION 01</small>
+      <h1>Room to<br />grow.</h1>
+      <p>A quieter identity for the places we call home.</p>
+      <div class="circle"></div>
+      <div class="circle"></div>
+      <span class="pin">1</span>
+    </section>
+    <aside id="panel">
+      <h2>Comments</h2>
+      <p>Leave feedback directly on the design.<br />No account needed.</p>
+      <div class="form">
+        <label class="label">Your name</label>
+        <div class="field">Alex Morgan</div>
+        <label class="label">Comment on point 1</label>
+        <div class="field comment" id="comment"></div>
+        <button class="send">Post comment</button>
+      </div>
+      <div class="posted">
+        <strong>Alex Morgan</strong><small> · Just now</small>
+        <p>
+          The green feels right. Could we make the headline a little smaller?
+        </p>
+        <span style="font-size: 14px; color: #777">Reply · Resolve</span>
+      </div>
+    </aside>
+  </main>
+  <footer>
+    <span id="caption">Open the shared review link. No signup.</span
+    ><small>Fictional product and client data</small>
+  </footer>
+  <svg id="pointer" viewBox="0 0 25 35">
+    <path
+      d="M2 2v27l7-7 5 11 5-2-5-11h10Z"
+      fill="white"
+      stroke="#222"
+      stroke-width="2"
+    />
+  </svg>
+  <script>
+    const words =
+      "The green feels right. Could we make the headline a little smaller?";
+    window.renderAt = (t) => {
+      const typing = Math.max(
+        0,
+        Math.min(words.length, Math.floor((t - 1400) / 36))
+      );
+      document.querySelector("#comment").textContent = words.slice(0, typing);
+      document.querySelector("#panel").classList.toggle("done", t >= 4500);
+      document.querySelector("#caption").textContent =
+        t < 1400
+          ? "Open the shared review link. No signup."
+          : t < 4200
+            ? "Point to the design and leave a clear comment."
+            : "The comment stays with the design.";
+      const p = document.querySelector("#pointer");
+      let x = 401,
+        y = 365;
+      if (t >= 1000 && t < 1400) {
+        const a = (t - 1000) / 400;
+        x += a * 560;
+        y += a * 15;
+      } else if (t >= 1400 && t < 4100) {
+        x = 961;
+        y = 380;
+      } else if (t >= 4100) {
+        const a = Math.min(1, (t - 4100) / 300);
+        x = 961 - a * 2;
+        y = 380 + a * 140;
+      }
+      p.style.transform = `translate(${x}px,${y}px)`;
+      p.style.left = "0";
+      p.style.top = "0";
+    };
+    window.renderAt(0);
+  </script>
+</html>

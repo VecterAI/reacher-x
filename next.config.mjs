@@ -1,4 +1,6 @@
 // next.config.mjs
+import createMDX from "@next/mdx";
+import { fileURLToPath } from "node:url";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -8,9 +10,9 @@ const nextConfig = {
   async redirects() {
     return [
       {
-        source: "/home/threads/:path*",
-        destination: "/threads/:path*",
-        permanent: true,
+        source: "/home/preview",
+        destination: "/home/preview/network",
+        permanent: false,
       },
       {
         source: "/home/use-cases",
@@ -80,4 +82,22 @@ const nextConfig = {
   trailingSlash: false,
 };
 
-export default nextConfig;
+const withMDX = createMDX({
+  options: {
+    remarkPlugins: [
+      "remark-frontmatter",
+      "remark-gfm",
+      fileURLToPath(
+        new URL("./features/blog/lib/remarkBlogCode.mjs", import.meta.url)
+      ),
+    ],
+    rehypePlugins: [
+      "rehype-slug",
+      fileURLToPath(
+        new URL("./features/blog/lib/rehypeBlogTaskLists.mjs", import.meta.url)
+      ),
+    ],
+  },
+});
+
+export default withMDX(nextConfig);

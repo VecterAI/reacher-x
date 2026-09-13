@@ -99,6 +99,8 @@ import {
   LOGOUT_HREF,
   SETUP_SIGN_UP_HREF,
 } from "@/shared/lib/urls/authRoutes";
+import { MarketingNavigation } from "./marketing/MarketingNavigation";
+import { marketingPageWidth } from "./marketing/MarketingLayout";
 import { LandingAuthLink } from "./LandingAuthLink";
 import { LandingBookDemoCta, LandingBookDemoLink } from "./LandingBookDemoCta";
 
@@ -116,8 +118,11 @@ function getInitials(name?: string) {
 }
 
 const NAV_LINKS = [
+  { href: "/product", label: "Product", isAnchor: false },
+  { href: "/blog", label: "Blog", isAnchor: false },
+  { href: "/blog/category/comparisons", label: "Comparisons", isAnchor: false },
+  { href: "/about", label: "About", isAnchor: false },
   { href: "/use-cases", label: "Use cases", isAnchor: false },
-  { href: "/threads", label: "Threads", isAnchor: false },
   {
     href: "mailto:creativecoder.crco@gmail.com",
     label: "Contact",
@@ -787,40 +792,22 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         scrolled ? "border-border border-b" : "border-b border-transparent"
       )}
     >
-      <div className="mx-auto flex w-full max-w-[1288px] items-center justify-between px-4 md:grid md:grid-cols-[1fr_auto_1fr]">
+      <div
+        className={cn(
+          marketingPageWidth,
+          "flex items-center justify-between xl:grid xl:grid-cols-[1fr_auto_1fr]"
+        )}
+      >
         {/* Left side: Brand */}
         <div className="flex min-w-0 items-center gap-4 justify-self-start">
           <LandingWordmark />
         </div>
 
         {/* Desktop nav */}
-        <nav
-          className="hidden items-center gap-6 justify-self-center md:flex"
-          aria-label="Main navigation"
-        >
-          {NAV_LINKS.map(({ href, label, isAnchor }) => {
-            const active = isLinkActive(href, pathname);
-            const cls = cn(
-              "text-sm font-medium transition-colors underline-offset-[6px] decoration-2",
-              active
-                ? "text-foreground underline"
-                : "text-muted-foreground hover:text-foreground"
-            );
-
-            return isAnchor ? (
-              <a key={href} href={href} className={cls}>
-                {label}
-              </a>
-            ) : (
-              <Link key={href} href={href} className={cls}>
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
+        <MarketingNavigation />
 
         {/* Desktop right side */}
-        <div className="hidden min-w-[280px] items-center justify-end gap-2 justify-self-end md:flex">
+        <div className="hidden min-w-[280px] items-center justify-end gap-2 justify-self-end xl:flex">
           <GitHubButton starsCount={githubStarsCount} />
           <Separator orientation="vertical" className="h-6" />
 
@@ -856,9 +843,11 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         </div>
 
         {/* Mobile right side */}
-        <div className="flex items-center gap-2 md:hidden">
-          <GitHubButton starsCount={githubStarsCount} />
-          <Separator orientation="vertical" className="h-6" />
+        <div className="flex shrink-0 items-center gap-2 xl:hidden">
+          <div className="hidden items-center gap-2 sm:flex">
+            <GitHubButton starsCount={githubStarsCount} />
+            <Separator orientation="vertical" className="h-6" />
+          </div>
           <Button
             variant="ghost"
             onClick={() => setIsDrawerOpen(true)}
@@ -872,7 +861,10 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         {/* Mobile Drawer */}
         <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
           <DrawerContent>
-            <aside aria-label="Mobile navigation">
+            <aside
+              aria-label="Mobile navigation"
+              className="max-h-[85dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+            >
               <DrawerHeader className="flex items-center justify-between p-4">
                 <DrawerTitle>Menu</DrawerTitle>
                 <Button
@@ -969,7 +961,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
                     <TwitterIcon />
                   </SocialLink>
                   <SocialLink
-                    href="https://discord.gg/76dF9NPH"
+                    href="https://discord.gg/BQttyr8jY"
                     label="Discord"
                   >
                     <DiscordOutlineIcon />
@@ -1016,15 +1008,15 @@ function SocialLink({
   children: React.ReactNode;
 }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      <Button
+    <Button asChild variant="ghost" size="icon" className="[&_svg]:size-5">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
         aria-label={`ReacherX on ${label}`}
-        variant="ghost"
-        size="icon"
-        className="[&_svg]:size-5"
       >
         {children}
-      </Button>
-    </a>
+      </a>
+    </Button>
   );
 }

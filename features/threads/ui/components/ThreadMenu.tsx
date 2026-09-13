@@ -24,12 +24,13 @@ export function ThreadMenu({
   profileUrl,
   className,
 }: {
-  tweetUrl: string;
-  profileUrl: string;
+  tweetUrl?: string;
+  profileUrl?: string;
   className?: string;
 }) {
   const handleCopyLink = (event: React.MouseEvent) => {
     event.stopPropagation();
+    if (!tweetUrl) return;
     navigator.clipboard.writeText(tweetUrl).then(
       () =>
         toast.success("Copied!", {
@@ -44,12 +45,14 @@ export function ThreadMenu({
 
   const handleViewTweet = (event: React.MouseEvent) => {
     event.stopPropagation();
+    if (!tweetUrl) return;
     window.open(tweetUrl, "_blank");
   };
 
   const handleViewProfile = (event: React.MouseEvent) => {
     event.stopPropagation();
-    window.open(profileUrl, "_blank");
+    if (!profileUrl) return;
+    window.open(profileUrl, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -68,19 +71,25 @@ export function ThreadMenu({
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleViewTweet}>
-          <ExitToAppIcon className="fill-current" aria-hidden="true" />
-          Open on X/Twitter
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleCopyLink}>
-          <LinkIcon className="fill-current" aria-hidden="true" />
-          Copy link
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleViewProfile}>
-          <AccountCircleIcon className="fill-current" aria-hidden="true" />
-          View profile
-        </DropdownMenuItem>
+        {tweetUrl && (
+          <>
+            <DropdownMenuItem onClick={handleViewTweet}>
+              <ExitToAppIcon className="fill-current" aria-hidden="true" />
+              Open on X/Twitter
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleCopyLink}>
+              <LinkIcon className="fill-current" aria-hidden="true" />
+              Copy link
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {profileUrl && (
+          <DropdownMenuItem onClick={handleViewProfile}>
+            <AccountCircleIcon className="fill-current" aria-hidden="true" />
+            View profile
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

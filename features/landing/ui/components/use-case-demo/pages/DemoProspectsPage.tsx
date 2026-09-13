@@ -1,52 +1,38 @@
-/**
- * DemoProspectsPage
- * Faithful replica of the real prospects home (app/(webapp)/page.tsx):
- * ProspectsToolbar with stage tabs (labels adapt to the demo use case),
- * the pending prospects feed bar in its desktop presentation, ProspectCard
- * grid fed by summary read-model records (so plan-state badges render like
- * the real list), and an in-flow profile panel that pushes the grid aside.
- * Prospects with a demo plan also show the OutreachPlanSection-equivalent
- * inside the panel (the real OutreachPlanSection is Convex-wired).
- * Omitted vs real: WorkspacePlanLimitAlert and WorkspaceSystemStatusFeedBar
- * (Convex-wired), filter/sort side panels (wired), InfiniteScrollTrigger.
- */
 "use client";
+import {
+  useDemoProspectList,
+  DemoProspectListPanels,
+} from "./useDemoProspectList";
+import { DemoProspectPanel } from "./DemoProspectPanel";
+import {
+  useDemoProspectActions,
+  type DemoProspectView,
+} from "./useDemoProspectActions";
+/**
+ * Production list components backed by a local dataset and local action adapters.
+ * Subscription-driven limits, discovery updates, and pagination are not simulated.
+ */
 
 import * as React from "react";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { getProspectDisplayData } from "@/features/prospects/lib/getProspectDisplayData";
-import { normalizeProspectProfileData } from "@/features/prospects/lib/normalizeProspectProfileData";
 import {
   PendingProspectsFeedBar,
   ProspectCard,
-  ProspectListFilterPanel,
-  ProspectListSortPanel,
-  ProspectProfilePanel,
   ProspectsToolbar,
   type ProspectsToolbarStageCounts,
   type ProspectsToolbarTab,
 } from "@/features/prospects";
 import {
-  createDefaultProspectListFilters,
-  type ProspectListFilters,
-} from "@/features/prospects/lib/prospectListFilters";
-import {
-  DEFAULT_PROSPECT_LIST_SORT,
-  type ProspectListSortOption,
-} from "@/features/prospects/lib/prospectListSort";
-import {
-  DESKTOP_PANEL_BORDER_CLASS_NAME,
   PageContent,
   PageHeader,
   PageLayout,
 } from "@/features/webapp/ui/components";
+import { type DemoEditorialScenario } from "../demoEditorialHelpers";
+import type { DemoPresentation } from "../demoPresentationHelpers";
 import { useDemoShell } from "../demoShellContext";
 import { toDemoProspectSummary, USE_CASE_DEMO_PLANS } from "../useCaseDemoData";
-import { DemoOutreachPlanSection } from "./DemoOutreachPlanSection";
-import {
-  DEMO_PROSPECT_GRID_STYLE,
-  matchesProspectSearch,
-} from "./prospectListShared";
+import { DEMO_PROSPECT_GRID_STYLE } from "./prospectListShared";
 
 const NO_TAB_ATTENTION: Record<ProspectsToolbarTab, boolean> = {
   new: false,
@@ -61,35 +47,34 @@ const DESKTOP_FEED_BAR_CLASS_NAME =
 
 export function DemoProspectsPage({
   prospects,
+  presentation,
+  onStatusChange,
+  editorialScenario,
+  onViewChange,
+  onOpenAgent,
 }: {
   prospects: Doc<"prospects">[];
+  onOpenAgent: (prospect: Doc<"prospects">) => void;
+  presentation?: DemoPresentation;
+  onStatusChange: (id: string, status: Doc<"prospects">["status"]) => void;
+  editorialScenario?: DemoEditorialScenario;
+  onViewChange?: (view: string) => void;
 }) {
   const { labels } = useDemoShell();
+  const [panelView, setPanelView] = React.useState<DemoProspectView>(
+    presentation?.conversation ? "conversation" : "profile"
+  );
   const entityPluralLower = labels.entityPlural.toLowerCase();
-  const [activeTab, setActiveTab] = React.useState<ProspectsToolbarTab>("new");
+  const [activeTab, setActiveTab] = React.useState<ProspectsToolbarTab>(
+    presentation?.listTab ?? "new"
+  );
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [selectedId, setSelectedId] = React.useState<string | null>(
+    presentation?.selected ? (prospects[0]?._id ?? null) : null
+  );
   const [feedMerged, setFeedMerged] = React.useState(false);
 
-  // Filter/sort state mirrors the real page (useProspectListFilters /
-  // useProspectListSort) but stays local: draft edits apply on Apply.
-  const defaultFilters = React.useMemo(
-    () => createDefaultProspectListFilters([0, 100]),
-    []
-  );
-  const [appliedFilters, setAppliedFilters] =
-    React.useState<ProspectListFilters>(defaultFilters);
-  const [draftFilters, setDraftFilters] =
-    React.useState<ProspectListFilters>(defaultFilters);
-  const [filterPanelOpen, setFilterPanelOpen] = React.useState(false);
-  const [sortPanelOpen, setSortPanelOpen] = React.useState(false);
-  const [appliedSort, setAppliedSort] = React.useState<ProspectListSortOption>(
-    DEFAULT_PROSPECT_LIST_SORT
-  );
-  const [draftSort, setDraftSort] = React.useState<ProspectListSortOption>(
-    DEFAULT_PROSPECT_LIST_SORT
-  );
-
+  const list = useDemoProspectList(prospects, searchQuery, activeTab);
   const stageTabs = React.useMemo(
     () => [
       { id: "new" as const, label: labels.stageLabels.new },
@@ -99,37 +84,7 @@ export function DemoProspectsPage({
     [labels]
   );
 
-  const trimmedQuery = searchQuery.trim().toLowerCase();
-
-  const searchFiltered = React.useMemo(
-    () =>
-      prospects.filter((prospect) => {
-        if (
-          appliedFilters.platform !== "all" &&
-          prospect.platform !== appliedFilters.platform
-        ) {
-          return false;
-        }
-        if (
-          appliedFilters.prospectType !== "both" &&
-          (prospect.prospectType ?? "individual") !==
-            appliedFilters.prospectType
-        ) {
-          return false;
-        }
-        const score = prospect.qualificationScore ?? 0;
-        if (
-          score < appliedFilters.fitScoreRange[0] ||
-          score > appliedFilters.fitScoreRange[1]
-        ) {
-          return false;
-        }
-        return (
-          trimmedQuery === "" || matchesProspectSearch(prospect, trimmedQuery)
-        );
-      }),
-    [prospects, appliedFilters, trimmedQuery]
-  );
+  const searchFiltered = list.prospects;
 
   const tabCounts = React.useMemo<ProspectsToolbarStageCounts>(
     () => ({
@@ -145,63 +100,44 @@ export function DemoProspectsPage({
     [searchFiltered]
   );
 
-  const visibleProspects = React.useMemo(() => {
-    const filtered = searchFiltered.filter(
-      (prospect) => prospect.status === activeTab
-    );
-    const sorted = [...filtered];
-    switch (appliedSort) {
-      case "best_fit_first":
-        sorted.sort(
-          (a, b) => (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0)
-        );
-        break;
-      case "lowest_fit_first":
-        sorted.sort(
-          (a, b) => (a.qualificationScore ?? 0) - (b.qualificationScore ?? 0)
-        );
-        break;
-      case "newest_first":
-        sorted.sort((a, b) => b._creationTime - a._creationTime);
-        break;
-      case "oldest_first":
-        sorted.sort((a, b) => a._creationTime - b._creationTime);
-        break;
-      default:
-        break;
-    }
-    return sorted;
-  }, [activeTab, searchFiltered, appliedSort]);
-
-  const filtersEqual = (a: ProspectListFilters, b: ProspectListFilters) =>
-    JSON.stringify(a) === JSON.stringify(b);
-  const activeFilterCount =
-    (appliedFilters.platform !== "all" ? 1 : 0) +
-    (appliedFilters.prospectType !== "both" ? 1 : 0) +
-    (appliedFilters.datePreset !== "all_time" ? 1 : 0) +
-    (appliedFilters.fitScoreRange[0] !== defaultFilters.fitScoreRange[0] ||
-    appliedFilters.fitScoreRange[1] !== defaultFilters.fitScoreRange[1]
-      ? 1
-      : 0);
+  const visibleProspects = searchFiltered.filter((p) => p.status === activeTab);
 
   const selectedProspect = selectedId
     ? (prospects.find((prospect) => prospect._id === selectedId) ?? null)
     : null;
-  const selectedProfileData = selectedProspect
-    ? normalizeProspectProfileData(selectedProspect)
-    : null;
-  const selectedPlan = selectedProspect
-    ? USE_CASE_DEMO_PLANS[selectedProspect._id]
-    : undefined;
+  const actionsFor = useDemoProspectActions({
+    onStatusChange,
+    onOpenAgent,
+    onOpen: (id, view) => {
+      list.closePanels();
+      setSelectedId(id);
+      setPanelView(view);
+      onViewChange?.(view);
+    },
+  });
+  const openedShare = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const id = new URLSearchParams(window.location.hash.slice(1)).get(
+      "prospect"
+    );
+    if (
+      id &&
+      openedShare.current !== id &&
+      prospects.some((p) => p._id === id)
+    ) {
+      openedShare.current = id;
+      setSelectedId(id);
+    }
+  }, [prospects]);
 
   const pendingPreview = React.useMemo(
     () =>
-      prospects.slice(0, 2).map((prospect) => ({
+      (editorialScenario ? [] : prospects.slice(0, 2)).map((prospect) => ({
         prospectId: prospect._id as string,
         displayName: getProspectDisplayData(prospect).displayName,
         avatarUrl: getProspectDisplayData(prospect).avatarUrl,
       })),
-    [prospects]
+    [prospects, editorialScenario]
   );
 
   return (
@@ -218,25 +154,25 @@ export function DemoProspectsPage({
             tabCounts={tabCounts}
             tabAttention={NO_TAB_ATTENTION}
             searchPlaceholder={`Search ${entityPluralLower}...`}
-            filterActiveCount={activeFilterCount}
-            sortActive={appliedSort !== DEFAULT_PROSPECT_LIST_SORT}
+            filterActiveCount={list.activeFilterCount}
+            sortActive={list.sortActive}
             onOpenFilters={() => {
-              setDraftFilters(appliedFilters);
-              setFilterPanelOpen(true);
+              setSelectedId(null);
+              list.openFilters();
             }}
             onOpenSort={() => {
-              setDraftSort(appliedSort);
-              setSortPanelOpen(true);
+              setSelectedId(null);
+              list.openSort();
             }}
             disabled={false}
             className="px-4 pt-4"
           />
 
           <div className="flex flex-col gap-4 px-4 pt-4 pb-8">
-            {!feedMerged ? (
+            {!feedMerged && pendingPreview.length > 0 ? (
               <div className="flex w-full flex-col gap-4 md:max-w-lg">
                 <PendingProspectsFeedBar
-                  pendingCount={2}
+                  pendingCount={pendingPreview.length}
                   pendingCountCapped={false}
                   preview={pendingPreview}
                   entityPluralLower={entityPluralLower}
@@ -264,8 +200,14 @@ export function DemoProspectsPage({
                       )}
                       highlightKeywords={prospect.matchedKeywords}
                       mode="ui_preview"
-                      showMenu={false}
-                      onClick={() => setSelectedId(prospect._id)}
+                      actions={actionsFor(prospect)}
+                      entityLabel={labels.entitySingular}
+                      onClick={() => {
+                        list.closePanels();
+                        setPanelView("profile");
+                        setSelectedId(prospect._id);
+                        onViewChange?.("profile");
+                      }}
                     />
                   </li>
                 ))}
@@ -275,67 +217,22 @@ export function DemoProspectsPage({
         </PageContent>
       </PageLayout>
 
-      {selectedProspect && selectedProfileData ? (
-        <aside className="border-border flex h-full w-[380px] shrink-0 flex-col border-l">
-          <ProspectProfilePanel
-            prospect={selectedProfileData}
-            mode="ui_preview"
-            onBack={() => setSelectedId(null)}
-            disableMobileDrawer
-            className="max-w-none"
-            renderOutreachPlanSection={
-              selectedPlan
-                ? () => (
-                    <DemoOutreachPlanSection
-                      plan={selectedPlan}
-                      prospectId={selectedProspect._id}
-                    />
-                  )
-                : undefined
-            }
-          />
-        </aside>
+      {selectedProspect ? (
+        <DemoProspectPanel
+          key={`${selectedId}:${panelView}`}
+          prospect={selectedProspect}
+          actions={actionsFor(selectedProspect)}
+          initialView={panelView}
+          presentation={presentation}
+          editorialScenario={editorialScenario}
+          onBack={() => {
+            setSelectedId(null);
+            onViewChange?.("prospects");
+          }}
+        />
       ) : null}
 
-      <ProspectListFilterPanel
-        open={filterPanelOpen}
-        onClose={() => setFilterPanelOpen(false)}
-        onApply={() => {
-          setAppliedFilters(draftFilters);
-          setFilterPanelOpen(false);
-        }}
-        onReset={() => {
-          setDraftFilters(defaultFilters);
-          setAppliedFilters(defaultFilters);
-          setFilterPanelOpen(false);
-        }}
-        canApply={!filtersEqual(draftFilters, appliedFilters)}
-        canReset={!filtersEqual(draftFilters, defaultFilters)}
-        workspaceId={null}
-        status={activeTab}
-        defaultFilters={defaultFilters}
-        draftFilters={draftFilters}
-        onDraftFiltersChange={setDraftFilters}
-        className={DESKTOP_PANEL_BORDER_CLASS_NAME}
-      />
-      <ProspectListSortPanel
-        open={sortPanelOpen}
-        onClose={() => setSortPanelOpen(false)}
-        onApply={() => {
-          setAppliedSort(draftSort);
-          setSortPanelOpen(false);
-        }}
-        onReset={() => {
-          setDraftSort(DEFAULT_PROSPECT_LIST_SORT);
-          setAppliedSort(DEFAULT_PROSPECT_LIST_SORT);
-          setSortPanelOpen(false);
-        }}
-        canApply={draftSort !== appliedSort}
-        canReset={draftSort !== DEFAULT_PROSPECT_LIST_SORT}
-        draftSort={draftSort}
-        onDraftSortChange={setDraftSort}
-        className={DESKTOP_PANEL_BORDER_CLASS_NAME}
-      />
+      <DemoProspectListPanels list={list} />
     </div>
   );
 }
