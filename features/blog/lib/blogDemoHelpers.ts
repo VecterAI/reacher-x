@@ -1,13 +1,40 @@
+import { BATCH_DEMO_SHOTS } from "./batchDemoShots";
+import { SETUP_DEMO_SHOTS } from "./setupDemoShots";
+import {
+  VOICE_DEMO_SHOTS,
+  DM_DEMO_SHOTS,
+  AUTOCOMPLETE_DEMO_SHOTS,
+  MEDIA_DEMO_SHOTS,
+} from "./conversationDemoShots";
+import {
+  AUTOMATION_DEMO_SHOTS,
+  ANALYTICS_DEMO_SHOTS,
+  OBSERVABILITY_DEMO_SHOTS,
+  MEMORY_DEMO_SHOTS,
+} from "./reportingDemoShots";
+import { AUDIENCE_DEMO_IDS } from "./blogDemoCatalog";
+import { AUDIENCE_DEMO_SHOTS } from "./audienceDemoShots";
 import {
   DEMO_DESIGN_WIDTH,
   DEMO_DESIGN_HEIGHT,
-  type DemoPresentation,
 } from "@/features/landing/ui/components/use-case-demo/demoPresentationHelpers";
 
 export const BLOG_DEMO_IDS = [
+  "send-voice-notes",
+  "create-plans-for-several-people",
+  "getting-started-with-reacherx",
+  "manage-dm-conversations",
+  "introducing-reacherx-v4",
+  "outreach-with-images-and-video",
+  "write-with-autocomplete",
   "find-candidates",
   "manage-people-with-reacherx",
   "workspaces-explained",
+  ...AUDIENCE_DEMO_IDS,
+  "what-reacherx-does-automatically",
+  "read-your-reacherx-analytics",
+  "teach-reacherx-what-you-want",
+  "understand-agent-observability",
 ] as const;
 export type BlogDemoId = (typeof BLOG_DEMO_IDS)[number];
 export interface DemoCamera {
@@ -19,6 +46,10 @@ export interface DemoCamera {
 export interface DemoTarget {
   selector: string;
   text?: string;
+  containsText?: string;
+  within?: { selector: string; containsText: string };
+  /** Frame the union of matching elements when used as a camera focus. */
+  all?: boolean;
 }
 export interface DemoRect {
   x: number;
@@ -26,14 +57,19 @@ export interface DemoRect {
   width: number;
   height: number;
 }
+export interface DemoAction extends DemoTarget {
+  input?: string;
+  inputMode?: "replace" | "append";
+  key?: string;
+}
 export interface BlogDemoShot {
   label: string;
   duration: number;
-  /** Checkpoint used only for seeking, replay, and resuming after manual exploration. */
-  app: DemoPresentation;
   camera: DemoCamera;
   focus?: DemoTarget;
-  action?: DemoTarget;
+  /** Visible outcome required before presenting this scene. */
+  waitFor?: DemoTarget;
+  action?: DemoAction;
 }
 // Pointer travel takes 1050ms; activate 50ms after it reaches the target.
 export const BLOG_DEMO_CLICK_AT_MS = 1100;
@@ -43,171 +79,180 @@ const WORKSPACE_SWITCH_DURATION_MS = 2000;
 const wide = { x: 640, y: 425, zoom: 1, mobileZoom: 1 };
 const profile = { x: 1020, y: 400, zoom: 1.8, mobileZoom: 2.5 };
 const sidebar = { x: 150, y: 160, zoom: 2.1, mobileZoom: 3 };
-const button = (text: string): DemoTarget => ({ selector: "button", text });
 const tab = (text: string): DemoTarget => ({ selector: '[role="tab"]', text });
 const menuItem = (text: string): DemoTarget => ({
   selector: '[role="menuitem"]',
   text,
 });
-const switcher = { selector: '[aria-label="Switch workspace"]' };
+const switcher = { selector: '[role="combobox"]' };
 const firstPerson = {
   selector: '[data-prospect-id="use_case_demo_candidates_1"]',
 };
 const profileMenu = { selector: '[aria-label="Profile menu"]' };
-const plan = { selector: "[data-demo-plan]" };
-const candidates: DemoPresentation = {
-  useCase: "candidates",
-  page: "prospects",
-};
-const selected = { ...candidates, selected: true };
-const menu = { ...selected, profileMenu: true };
-
-/** Each click changes the same local state a visitor changes. Checkpoints are not playback. */
+const plan = { selector: "aside article" };
+const FIND_CANDIDATES_SHOTS: readonly BlogDemoShot[] = [
+  {
+    label: "Your hiring workspace",
+    duration: 2200,
+    camera: wide,
+  },
+  {
+    label: "Start with a clear role",
+    duration: 3200,
+    camera: { ...wide, zoom: 1.65, mobileZoom: 2.5 },
+    focus: { selector: 'textarea[name="rawUserDescription"]' },
+  },
+  {
+    label: "Open the candidates",
+    duration: CLICK_SHOT_DURATION_MS,
+    camera: sidebar,
+    action: { selector: "a", text: "Candidates" },
+  },
+  {
+    label: "Review a relevant match",
+    duration: CLICK_SHOT_DURATION_MS,
+    camera: { ...wide, zoom: 1.65, mobileZoom: 2.5 },
+    action: firstPerson,
+  },
+  {
+    label: "Check the evidence",
+    duration: CLICK_SHOT_DURATION_MS,
+    camera: profile,
+    action: tab("Relevant activity"),
+  },
+  {
+    label: "Read the work behind the match",
+    duration: 3200,
+    camera: profile,
+    focus: { selector: '[role="tabpanel"]' },
+  },
+  {
+    label: "Return to the overview",
+    duration: CLICK_SHOT_DURATION_MS,
+    camera: profile,
+    action: tab("Overview"),
+  },
+  {
+    label: "Review the outreach plan",
+    duration: 3200,
+    camera: profile,
+    focus: plan,
+  },
+  {
+    label: "Ready to reach out",
+    duration: 2600,
+    camera: wide,
+  },
+];
+/** Stories contain camera direction and DOM actions, never alternate app state. */
 export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
-  "find-candidates": [
+  ...AUDIENCE_DEMO_SHOTS,
+  "send-voice-notes": VOICE_DEMO_SHOTS,
+  "create-plans-for-several-people": BATCH_DEMO_SHOTS,
+  "getting-started-with-reacherx": SETUP_DEMO_SHOTS,
+  "manage-dm-conversations": DM_DEMO_SHOTS,
+  "introducing-reacherx-v4": [
+    ...FIND_CANDIDATES_SHOTS.slice(0, -1),
     {
-      label: "Your hiring workspace",
-      duration: 2200,
-      app: { useCase: "candidates", page: "workspace" },
-      camera: wide,
-    },
-    {
-      label: "Start with a clear role",
-      duration: 3200,
-      app: { useCase: "candidates", page: "workspace" },
-      camera: { ...wide, zoom: 1.65, mobileZoom: 2.5 },
-      focus: { selector: 'textarea[name="rawUserDescription"]' },
-    },
-    {
-      label: "Open the candidates",
-      duration: CLICK_SHOT_DURATION_MS,
-      app: { useCase: "candidates", page: "workspace" },
-      camera: sidebar,
-      action: button("Candidates"),
-    },
-    {
-      label: "Review a relevant match",
-      duration: CLICK_SHOT_DURATION_MS,
-      app: candidates,
-      camera: { ...wide, zoom: 1.65, mobileZoom: 2.5 },
-      action: firstPerson,
-    },
-    {
-      label: "Check the evidence",
-      duration: CLICK_SHOT_DURATION_MS,
-      app: selected,
+      label: "Open the conversation options",
+      duration: 1500,
       camera: profile,
-      action: tab("Relevant activity"),
+      action: profileMenu,
     },
     {
-      label: "Read the work behind the match",
-      duration: 3200,
-      app: { ...selected, profileTab: "relevant-activity" },
+      label: "Follow the LinkedIn conversation",
+      duration: 1500,
       camera: profile,
-      focus: { selector: '[role="tabpanel"]' },
+      action: menuItem("Message on LinkedIn"),
     },
     {
-      label: "Return to the overview",
-      duration: CLICK_SHOT_DURATION_MS,
-      app: { ...selected, profileTab: "relevant-activity" },
+      label: "Read the sent introduction and the reply",
+      duration: 4000,
       camera: profile,
-      action: tab("Overview"),
+      focus: { selector: '[role="log"] article', all: true },
     },
     {
-      label: "Review the outreach plan",
-      duration: 3200,
-      app: selected,
-      camera: profile,
-      focus: plan,
-    },
-    {
-      label: "Ready to reach out",
+      label: "From a clear goal to a conversation",
       duration: 2600,
-      app: selected,
       camera: wide,
     },
   ],
+  "outreach-with-images-and-video": MEDIA_DEMO_SHOTS,
+  "write-with-autocomplete": AUTOCOMPLETE_DEMO_SHOTS,
+  "what-reacherx-does-automatically": AUTOMATION_DEMO_SHOTS,
+  "teach-reacherx-what-you-want": MEMORY_DEMO_SHOTS,
+  "read-your-reacherx-analytics": ANALYTICS_DEMO_SHOTS,
+  "understand-agent-observability": OBSERVABILITY_DEMO_SHOTS,
+  "find-candidates": FIND_CANDIDATES_SHOTS,
   "manage-people-with-reacherx": [
     {
       label: "Your candidates",
       duration: 2200,
-      app: candidates,
       camera: wide,
     },
     {
       label: "Open the candidate",
       duration: CLICK_SHOT_DURATION_MS,
-      app: candidates,
       camera: { ...wide, zoom: 1.5, mobileZoom: 2.4 },
       action: firstPerson,
     },
     {
       label: "Open the profile menu",
       duration: CLICK_SHOT_DURATION_MS,
-      app: selected,
       camera: profile,
       action: profileMenu,
     },
     {
       label: "Open the conversation",
       duration: CLICK_SHOT_DURATION_MS,
-      app: menu,
       camera: profile,
-      action: menuItem("DM on X/Twitter"),
+      action: menuItem("Message on LinkedIn"),
     },
     {
-      label: "Read the reply",
+      label: "Read the conversation",
       duration: 4000,
-      app: { ...selected, conversation: true },
-      camera: profile,
-      focus: { selector: '[data-slot="message-scroller-item"]' },
+      camera: { ...profile, zoom: 1.65, mobileZoom: 2.3 },
+      focus: { selector: '[role="log"] article', all: true },
     },
     {
       label: "Return to the profile",
       duration: CLICK_SHOT_DURATION_MS,
-      app: { ...selected, conversation: true },
       camera: profile,
-      action: { selector: '[data-demo-profile] button[aria-label="Go back"]' },
+      action: { selector: 'aside button[aria-label="Go back"]' },
     },
     {
       label: "Update the hiring stage",
       duration: CLICK_SHOT_DURATION_MS,
-      app: selected,
       camera: profile,
       action: profileMenu,
     },
     {
       label: "Mark Interviewing",
       duration: CLICK_SHOT_DURATION_MS,
-      app: menu,
       camera: profile,
       action: menuItem('Mark "Interviewing"'),
     },
     {
       label: "Return to candidates",
       duration: CLICK_SHOT_DURATION_MS,
-      app: { ...selected, status: "in_progress" },
       camera: profile,
-      action: { selector: '[data-demo-profile] button[aria-label="Go back"]' },
+      action: { selector: 'aside button[aria-label="Go back"]' },
     },
     {
       label: "Find them in Interviewing",
       duration: CLICK_SHOT_DURATION_MS,
-      app: { ...candidates, status: "in_progress" },
       camera: { ...wide, zoom: 1.65, mobileZoom: 2.5 },
       action: tab("Interviewing"),
     },
     {
-      label: "The stage and count are updated",
+      label: "The candidate is now Interviewing",
       duration: 2600,
-      app: { ...candidates, status: "in_progress", listTab: "in_progress" },
       camera: { ...wide, zoom: 1.6, mobileZoom: 2.5 },
       focus: firstPerson,
     },
     {
       label: "Your updated candidate list",
       duration: 2600,
-      app: { ...candidates, status: "in_progress", listTab: "in_progress" },
       camera: wide,
     },
   ],
@@ -215,48 +260,43 @@ export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
     {
       label: "Your hiring workspace",
       duration: 2200,
-      app: candidates,
       camera: wide,
     },
     {
       label: "Switch your workspace",
       duration: CLICK_SHOT_DURATION_MS,
-      app: candidates,
       camera: sidebar,
       action: switcher,
     },
     {
       label: "Choose People to try the app",
       duration: WORKSPACE_SWITCH_DURATION_MS,
-      app: { ...candidates, workspaceMenu: true },
       camera: sidebar,
       action: { selector: '[role="option"]', text: "People to try the app" },
     },
     {
       label: "Same page, different people",
+      waitFor: { selector: '[data-prospect-id="use_case_demo_customers_1"]' },
       duration: 2600,
-      app: { useCase: "customers", page: "prospects" },
       camera: { ...wide, zoom: 1, mobileZoom: 1.6 },
       focus: { selector: "main" },
     },
     {
       label: "Switch back to hiring",
       duration: CLICK_SHOT_DURATION_MS,
-      app: { useCase: "customers", page: "prospects" },
       camera: sidebar,
       action: switcher,
     },
     {
       label: "Choose Hire a designer",
       duration: WORKSPACE_SWITCH_DURATION_MS,
-      app: { useCase: "customers", page: "prospects", workspaceMenu: true },
       camera: sidebar,
       action: { selector: '[role="option"]', text: "Hire a designer" },
     },
     {
       label: "Your candidates are still here",
+      waitFor: firstPerson,
       duration: 2600,
-      app: candidates,
       camera: wide,
     },
   ],

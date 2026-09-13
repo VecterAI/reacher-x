@@ -61,7 +61,7 @@ import { useWorkspace } from "@/shared/hooks";
 import {
   useVoiceNoteRecorder,
   type VoiceNotePlatform,
-} from "../../hooks/useVoiceNoteRecorder";
+} from "@/features/composer/hooks/useVoiceNoteRecorder";
 import { VoiceNoteComposer, VoiceNoteTrigger } from "./voice-note-composer";
 
 function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {

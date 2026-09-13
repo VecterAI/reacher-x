@@ -1,10 +1,10 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import {
   isBlogDemoId,
   BLOG_DEMO_IDS,
 } from "@/features/blog/lib/blogDemoHelpers";
-import { BlogDemoApp } from "@/features/blog/ui/components/app-demo/BlogDemoApp";
+import { getBlogDemoUrl } from "@/features/blog/lib/blogDemoUrl";
 export const metadata: Metadata = {
   title: "ReacherX demo",
   robots: { index: false, follow: false },
@@ -19,5 +19,5 @@ export default async function DemoPage({
 }) {
   const { scenario } = await params;
   if (!isBlogDemoId(scenario)) notFound();
-  return <BlogDemoApp key={scenario} scenario={scenario} />;
+  redirect(getBlogDemoUrl(scenario));
 }

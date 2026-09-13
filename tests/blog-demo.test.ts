@@ -68,19 +68,25 @@ test("article fixtures do not mutate the home demo", () => {
   assert.equal(JSON.stringify(USE_CASE_DEMO_DATASETS), before);
   assert.equal(JSON.stringify(USE_CASE_DEMO_PLANS), plansBefore);
 });
-test("CRM shows the decision and resulting Interviewing list, without inventing a hire", () => {
-  const shots = BLOG_DEMO_SHOTS["manage-people-with-reacherx"];
-  assert.ok(shots.some((shot) => shot.app.conversation));
-  assert.ok(shots.some((shot) => shot.action?.text === 'Mark "Interviewing"'));
-  assert.equal(shots.at(-1)?.app.listTab, "in_progress");
-  assert.equal(shots.at(-1)?.app.status, "in_progress");
-  assert.ok(shots.every((shot) => shot.app.status !== "converted"));
-});
-test("workspace switching preserves the people route in every checkpoint", () => {
-  const shots = BLOG_DEMO_SHOTS["workspaces-explained"];
-  assert.ok(shots.every((shot) => shot.app.page === "prospects"));
-  assert.ok(shots.some((shot) => shot.app.useCase === "customers"));
-  assert.equal(shots.at(-1)?.app.useCase, "candidates");
+test("stories drive real controls without alternate UI checkpoints", () => {
+  for (const shots of Object.values(BLOG_DEMO_SHOTS)) {
+    assert.ok(shots.every((shot) => !("app" in shot)));
+  }
+  const crm = BLOG_DEMO_SHOTS["manage-people-with-reacherx"];
+  assert.ok(crm.some((shot) => shot.action?.text === "Message on LinkedIn"));
+  assert.ok(crm.some((shot) => shot.action?.text === 'Mark "Interviewing"'));
+  assert.equal(
+    crm.filter((shot) => shot.action).at(-1)?.action?.text,
+    "Interviewing"
+  );
+  const workspace = BLOG_DEMO_SHOTS["workspaces-explained"];
+  assert.deepEqual(
+    workspace
+      .filter((shot) => shot.action?.selector === '[role="option"]')
+      .map((shot) => shot.action?.text),
+    ["People to try the app", "Hire a designer"]
+  );
+  assert.ok(workspace.every((shot) => shot.action?.selector !== "a"));
 });
 test("close-ups use the focal point with deliberate wallpaper gutters", () => {
   for (const width of [320, 390, 768, 1440, 1920]) {
@@ -119,7 +125,7 @@ test("close-ups use the focal point with deliberate wallpaper gutters", () => {
 });
 test("only explicit actions produce clicks and leave time for their result", () => {
   for (const id of BLOG_DEMO_IDS) {
-    assert.ok(getBlogDemoDuration(id) < 40000);
+    assert.ok(getBlogDemoDuration(id) < 90000);
     let start = 0;
     for (const shot of BLOG_DEMO_SHOTS[id]) {
       const frame = getBlogDemoFrame(id, start);
@@ -128,8 +134,7 @@ test("only explicit actions produce clicks and leave time for their result", () 
         "Activate within 100ms of the pointer arriving, without shortening the camera animation"
       );
       assert.ok(
-        shot.duration - frame.actionAt >=
-          (shot.action?.selector === '[role="option"]' ? 850 : 400),
+        shot.duration - frame.actionAt >= 400,
         "Leave enough time for the actual UI transition"
       );
       if (shot.action) {

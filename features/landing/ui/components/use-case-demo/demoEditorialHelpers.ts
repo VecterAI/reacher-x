@@ -8,7 +8,8 @@ import {
 export type DemoEditorialScenario = "hiring" | "workspaces";
 export function getEditorialDemoDataset(
   key: UseCaseDemoKey,
-  scenario?: DemoEditorialScenario
+  scenario?: DemoEditorialScenario,
+  platform: "twitter" | "linkedin" = "twitter"
 ) {
   const dataset =
     USE_CASE_DEMO_DATASETS.find((entry) => entry.key === key) ??
@@ -57,7 +58,7 @@ export function getEditorialDemoDataset(
     prospects: [
       makeProspect({
         key: "candidates_1",
-        platform: "twitter",
+        platform,
         displayName: "Isabelle Fontaine",
         handle: "isafontaine",
         title: designer ? "Product designer" : "Senior frontend engineer",

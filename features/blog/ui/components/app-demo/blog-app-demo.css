@@ -33,6 +33,15 @@
     0 0 0 1px #ffffff26;
   will-change: transform;
 }
+.blog-app-demo-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  clip-path: inset(0 round 12px);
+  /* Composite the iframe with its rounded clip at fractional camera scales. */
+  mask-image: linear-gradient(white, white);
+}
 .blog-app-demo-window iframe {
   display: block;
   border: 0;
@@ -122,6 +131,9 @@
 }
 .blog-app-demo-expanded .blog-app-demo-window {
   border-radius: 18px;
+}
+.blog-app-demo-expanded .blog-app-demo-clip {
+  clip-path: inset(0 round 18px);
 }
 .blog-app-demo-click {
   position: absolute;

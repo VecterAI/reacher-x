@@ -1,0 +1,6 @@
+@import "../../../app/globals.css";
+
+/* Scan imported production components without editing production Tailwind configuration. */
+@source "../../../features";
+@source "../../../shared";
+@source "../../../app";

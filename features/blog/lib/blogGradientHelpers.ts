@@ -1,14 +1,14 @@
 import type { CSSProperties } from "react";
 import { createStableHash } from "@/convex/lib/memoryHelpers";
 
-// Vivid Explore covers: deep color, saturated midtone, luminous accent.
+// Neutral Explore covers, from charcoal through silver.
 const BLOG_GRADIENT_PALETTES = [
-  ["#004ce6", "#00c9a7", "#d4ff00"],
-  ["#a5003f", "#ff3e54", "#ffb000"],
-  ["#1721a8", "#0066ff", "#00e5ff"],
-  ["#006149", "#3cdb37", "#ebff00"],
-  ["#6600bd", "#ec008c", "#ff805b"],
-  ["#b51d00", "#ff6a00", "#ffe600"],
+  ["#171717", "#525252", "#d4d4d4"],
+  ["#262626", "#737373", "#e5e5e5"],
+  ["#0a0a0a", "#404040", "#a3a3a3"],
+  ["#171717", "#737373", "#d4d4d4"],
+  ["#262626", "#525252", "#a3a3a3"],
+  ["#404040", "#a3a3a3", "#e5e5e5"],
 ] as const;
 
 /** Keep a post's palette and composition stable across pages and hydration. */

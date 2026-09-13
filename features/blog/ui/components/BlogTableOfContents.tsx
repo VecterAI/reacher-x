@@ -23,8 +23,7 @@ export function BlogTableOfContents({ headings }: { headings: BlogHeading[] }) {
             className={cn(
               "text-muted-foreground hover:text-foreground focus-visible:outline-ring -ml-px block border-l border-transparent py-2 pl-3 text-sm leading-5 focus-visible:outline-2 focus-visible:outline-offset-2",
               heading.depth === 3 && "pl-6",
-              activeId === heading.id &&
-                "border-foreground text-foreground font-medium"
+              activeId === heading.id && "border-foreground text-foreground"
             )}
           >
             {heading.text}

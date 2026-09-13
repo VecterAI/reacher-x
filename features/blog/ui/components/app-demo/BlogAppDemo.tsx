@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   animate,
   motion,
@@ -34,11 +40,17 @@ import {
   type DemoRect,
 } from "@/features/blog/lib/blogDemoHelpers";
 import { useDemoHostScroll } from "./useDemoHostScroll";
+import { useDemoHostFocus } from "./useDemoHostFocus";
 import { useDemoExpansion } from "./useDemoExpansion";
 import "./blog-app-demo.css";
+import { useTheme } from "next-themes";
+import { getBlogDemoUrl } from "@/features/blog/lib/blogDemoUrl";
 
 const IDLE_RESUME_MS = 4000;
 const CINEMATIC_EASE = [0.22, 1, 0.36, 1] as const;
+const subscribeToOrigin = () => () => {};
+const readParentOrigin = () => window.location.origin;
+const readServerOrigin = () => null;
 type Playback = "playing" | "paused" | "interactive";
 function readRect(value: unknown): DemoRect | undefined {
   if (!isRecord(value)) return;
@@ -71,11 +83,29 @@ export function BlogAppDemo(props: BlogAppDemoProps) {
 }
 
 function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
+  const { resolvedTheme } = useTheme();
+  const parentOrigin = useSyncExternalStore(
+    subscribeToOrigin,
+    readParentOrigin,
+    readServerOrigin
+  );
+  const demoUrl = getBlogDemoUrl(
+    scenario,
+    undefined,
+    parentOrigin ?? undefined
+  );
+  const demoOrigin = new URL(demoUrl).origin;
   const root = useRef<HTMLElement>(null),
     iframe = useRef<HTMLIFrameElement>(null),
     progress = useRef<HTMLInputElement>(null);
+  const [rootNode, setRootNode] = useState<HTMLElement | null>(null);
+  const attachRoot = useCallback((node: HTMLElement | null) => {
+    root.current = node;
+    setRootNode(node);
+  }, []);
   const [expanded, setExpanded] = useState(false),
     [ready, setReady] = useState(false),
+    [prepared, setPrepared] = useState(false),
     [shotIndex, setShotIndex] = useState(0);
   const [playback, setPlayback] = useState<Playback>("playing"),
     [error, setError] = useState<string | null>(null),
@@ -114,6 +144,7 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
     actionSent: false,
     manual: false,
     ready: false,
+    bridgeId: undefined as string | undefined,
     visible: false,
     playback: "playing" as Playback,
     editing: false,
@@ -121,6 +152,7 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
     waitingTime: 0,
     retries: 0,
     visibleSince: 0,
+    lastConnect: 0,
   });
   const shot = BLOG_DEMO_SHOTS[scenario][shotIndex];
   const duration = getBlogDemoFrame(scenario, 0).duration;
@@ -144,10 +176,15 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
           revision: runtime.current.revision,
           ...extra,
         },
-        window.location.origin
+        demoOrigin
       ),
-    []
+    [demoOrigin]
   );
+  const syncHostFocus = useDemoHostFocus(root, send);
+  useEffect(() => {
+    if (ready && (resolvedTheme === "light" || resolvedTheme === "dark"))
+      send("reacherx:theme", { theme: resolvedTheme });
+  }, [ready, resolvedTheme, send]);
   const prepare = useCallback(
     (index: number, reset: boolean) => {
       const r = runtime.current;
@@ -155,6 +192,7 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
       r.index = index;
       r.revision += 1;
       r.prepared = false;
+      setPrepared(false);
       r.actionSent = false;
       r.waitingTime = 0;
       setShotIndex(index);
@@ -183,13 +221,14 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
     r.editing = false;
     setError(null);
     setClick(null);
+    setCamera(DEMO_WIDE_CAMERA);
     if (!r.ready && iframe.current) {
       r.visibleSince = performance.now();
-      iframe.current.src = `/home/demo/${scenario}`;
+      iframe.current.contentWindow?.location.replace(demoUrl);
     }
     prepare(0, true);
     changePlayback(reducedMotion ? "paused" : "playing");
-  }, [prepare, changePlayback, reducedMotion, scenario]);
+  }, [prepare, changePlayback, reducedMotion, demoUrl]);
 
   const pause = useCallback(() => {
     // Moving focus to player controls can dismiss an iframe's Radix menu.
@@ -222,7 +261,7 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
   );
 
   useEffect(() => {
-    const node = root.current;
+    const node = rootNode;
     if (!node) return;
     const resize = new ResizeObserver(([entry]) => {
       if (entry)
@@ -231,10 +270,13 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
           height: entry.contentRect.height,
         });
     });
+    // Fullscreen is visibly present even if an intersection notification from
+    // the prior inline layout arrives late. Reobserve when that layout changes.
+    if (expanded) runtime.current.visible = true;
     const visibility = new IntersectionObserver(
       ([entry]) => {
-        runtime.current.visible = entry.isIntersecting;
-        if (entry.isIntersecting && !runtime.current.visibleSince)
+        runtime.current.visible = expanded || entry.isIntersecting;
+        if (runtime.current.visible && !runtime.current.visibleSince)
           runtime.current.visibleSince = performance.now();
       },
       { threshold: 0.15 }
@@ -245,7 +287,7 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
       resize.disconnect();
       visibility.disconnect();
     };
-  }, []);
+  }, [rootNode, expanded]);
   useEffect(() => {
     if (reducedMotion) changePlayback("paused");
   }, [reducedMotion, changePlayback]);
@@ -285,12 +327,23 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
     const message = (event: MessageEvent<unknown>) => {
       if (
         event.source !== iframe.current?.contentWindow ||
-        event.origin !== window.location.origin ||
+        event.origin !== demoOrigin ||
         !isRecord(event.data)
       )
         return;
       const r = runtime.current;
       if (event.data.type === "reacherx:ready") {
+        syncHostFocus(true);
+        if (resolvedTheme === "light" || resolvedTheme === "dark")
+          send("reacherx:theme", { theme: resolvedTheme });
+        const bridgeId =
+          typeof event.data.bridgeId === "string"
+            ? event.data.bridgeId
+            : undefined;
+        if (r.ready && r.bridgeId === bridgeId) return;
+        // A setup navigation may replace the embedded document. Restore the
+        // current scene for that new bridge, while ignoring heartbeat replies.
+        r.bridgeId = bridgeId;
         r.ready = true;
         setReady(true);
         prepare(getBlogDemoFrame(scenario, r.time).index, true);
@@ -328,6 +381,7 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
       if (event.data.type === "reacherx:prepared") {
         restoreScroll();
         r.prepared = true;
+        setPrepared(true);
         if (r.manual) return;
         const currentShot = BLOG_DEMO_SHOTS[scenario][r.index];
         setCamera(
@@ -359,6 +413,9 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
     return () => window.removeEventListener("message", message);
   }, [
     scenario,
+    resolvedTheme,
+    send,
+    syncHostFocus,
     prepare,
     changePlayback,
     reducedMotion,
@@ -373,6 +430,7 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
     restoreScroll,
     cancelScroll,
     recover,
+    demoOrigin,
   ]);
 
   useEffect(() => {
@@ -382,6 +440,12 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
       const delta = previous ? Math.min(now - previous, 100) : 0;
       previous = now;
       const r = runtime.current;
+      // Either document can hydrate first. Retry the handshake until both
+      // message listeners are mounted instead of relying on a one-shot event.
+      if (!r.ready && r.visible && now - r.lastConnect > 500) {
+        r.lastConnect = now;
+        send("reacherx:connect");
+      }
       if (
         !r.ready &&
         r.visible &&
@@ -428,7 +492,7 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
       aria-label={`${title}. Interactive demonstration with fictional data.`}
     >
       <section
-        ref={root}
+        ref={attachRoot}
         tabIndex={-1}
         aria-label={title}
         role={expanded ? "dialog" : "region"}
@@ -436,6 +500,7 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
         className={`blog-app-demo ${expanded ? "blog-app-demo-expanded" : ""}`}
         data-demo-duration={duration}
         data-demo-ready={ready}
+        data-demo-prepared={prepared}
         data-demo-scenario={scenario}
         data-demo-state={playback}
         data-demo-error={error || undefined}
@@ -460,24 +525,30 @@ function BlogAppDemoPlayer({ scenario, title, caption }: BlogAppDemoProps) {
             scale,
           }}
         >
-          <iframe
-            ref={iframe}
-            src={`/home/demo/${scenario}`}
-            title={`${title} — interactive app`}
-            loading="lazy"
-            width={DEMO_DESIGN_WIDTH}
-            height={DEMO_DESIGN_HEIGHT}
-            sandbox="allow-scripts allow-same-origin"
-          />
-          {click && !reducedMotion ? (
-            <span
-              key={click.key}
-              aria-hidden="true"
-              className="blog-app-demo-click"
-              style={{ left: click.x, top: click.y }}
-              onAnimationEnd={() => setClick(null)}
-            />
-          ) : null}
+          <div className="blog-app-demo-clip">
+            {parentOrigin && (
+              <iframe
+                ref={iframe}
+                name={`reacherx-demo:${scenario}`}
+                src={demoUrl}
+                title={`${title} — interactive app`}
+                loading="lazy"
+                width={DEMO_DESIGN_WIDTH}
+                height={DEMO_DESIGN_HEIGHT}
+                sandbox="allow-scripts allow-same-origin"
+                allow="autoplay; microphone"
+              />
+            )}
+            {click && !reducedMotion ? (
+              <span
+                key={click.key}
+                aria-hidden="true"
+                className="blog-app-demo-click"
+                style={{ left: click.x, top: click.y }}
+                onAnimationEnd={() => setClick(null)}
+              />
+            ) : null}
+          </div>
         </motion.div>
         <motion.div
           aria-hidden="true"

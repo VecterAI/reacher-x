@@ -1,25 +1,56 @@
 import type { DemoRect, DemoTarget } from "./blogDemoHelpers";
 
 /** Targets resolve inside the demo document, including Radix portals. Never use authored pixels. */
-export function findDemoTarget(
+export function findDemoTargets(
   document: Document,
   target: DemoTarget
-): HTMLElement | undefined {
+): HTMLElement[] {
   return Array.from(
     document.querySelectorAll<HTMLElement>(target.selector)
-  ).find((element) => {
+  ).filter((element) => {
     const rect = element.getBoundingClientRect();
     const label = (element.textContent ?? "").replace(/\s+/g, " ").trim();
     return (
       rect.width > 0 &&
       rect.height > 0 &&
       !element.closest('[hidden], [aria-hidden="true"]') &&
+      (!target.within ||
+        element
+          .closest(target.within.selector)
+          ?.textContent?.includes(target.within.containsText)) &&
+      (target.containsText === undefined ||
+        label.includes(target.containsText)) &&
       (target.text === undefined ||
         label === target.text ||
         (element.getAttribute("role") === "tab" &&
           label.startsWith(target.text)))
     );
   });
+}
+export function findDemoTarget(
+  document: Document,
+  target: DemoTarget
+): HTMLElement | undefined {
+  return findDemoTargets(document, target)[0];
+}
+
+export function measureDemoFocus(
+  document: Document,
+  target: DemoTarget
+): DemoRect | undefined {
+  const matches = findDemoTargets(document, target);
+  const rects = (target.all ? matches : matches.slice(0, 1)).map(
+    measureDemoTarget
+  );
+  if (!rects.length) return undefined;
+  const x = Math.min(...rects.map((rect) => rect.x));
+  const y = Math.min(...rects.map((rect) => rect.y));
+  return {
+    x,
+    y,
+    width: Math.max(...rects.map((rect) => rect.x + rect.width)) - x,
+    height: Math.max(...rects.map((rect) => rect.y + rect.height)) - y,
+  };
 }
 export function measureDemoTarget(element: HTMLElement): DemoRect {
   const rect = element.getBoundingClientRect();
@@ -43,7 +74,10 @@ export function activateDemoTarget(element: HTMLElement) {
   };
   if (element.getAttribute("role") === "tab") {
     element.dispatchEvent(new MouseEvent("mousedown", init));
-  } else if (element.getAttribute("role") === "option") {
+  } else if (
+    element.getAttribute("role") === "option" &&
+    !element.matches("button")
+  ) {
     element.dispatchEvent(new PointerEvent("pointermove", init));
     element.dispatchEvent(new PointerEvent("pointerup", init));
   } else if (element.hasAttribute("aria-haspopup")) {
