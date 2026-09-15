@@ -4,3 +4,12 @@
 @source "../../../features";
 @source "../../../shared";
 @source "../../../app";
+
+/* Inactive embeds retain their rendered app without running decorative or
+   scroll-driven animations. Timeline controls remain owned by the host. */
+html[data-demo-ambient="paused"] *,
+html[data-demo-ambient="paused"] *::before,
+html[data-demo-ambient="paused"] *::after {
+  animation: none !important;
+  transition: none !important;
+}

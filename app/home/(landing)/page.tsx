@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import { APP_DESCRIPTION } from "@/shared/lib/metadata";
-import { LandingVariantV2 } from "@/features/landing/ui/components/variants/LandingVariantV2";
-import { getPublicTestimonials } from "@/features/landing/lib/getPublicTestimonials";
+import { MarketingHome } from "@/features/landing/ui/components/marketing/MarketingHome";
 
 export const metadata: Metadata = {
   description: APP_DESCRIPTION,
+  alternates: { canonical: "https://reacherx.com/home" },
   openGraph: {
     title: "🆁 ReacherX",
     description: APP_DESCRIPTION,
     images: ["/og-default.jpg"],
-    url: "https://reacherx.com",
+    url: "https://reacherx.com/home",
     type: "website",
   },
   twitter: {
@@ -21,7 +21,5 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  const testimonialsPromise = getPublicTestimonials(4);
-
-  return <LandingVariantV2 tweetsPromise={testimonialsPromise} />;
+  return <MarketingHome />;
 }

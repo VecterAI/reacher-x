@@ -26,6 +26,7 @@ import { createAppServices } from "./appServices";
 import { workosViewer } from "./appFixtures";
 import { isBlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 import { PlaybackBridge } from "./PlaybackBridge";
+import { AnimationActivityProvider } from "@/shared/contexts/AnimationActivityProvider";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
 
 import { installVoiceSample } from "./voiceSample";
@@ -43,6 +44,10 @@ function useLocalAuth() {
 export function AppEnvironment({ children }: { children: ReactNode }) {
   useLayoutEffect(() => installDemoHistory(window), []);
   const search = useSearchParams();
+  const [animationActive, setAnimationActive] = useState(false);
+  useEffect(() => {
+    if (window.parent === window) setAnimationActive(true);
+  }, []);
   const [theme, setTheme] = useState<"light" | "dark">();
   const [scenario] = useState(() => {
     const value =
@@ -77,45 +82,53 @@ export function AppEnvironment({ children }: { children: ReactNode }) {
       enableSystem
       forcedTheme={theme}
     >
-      <PlaybackBridge scenario={scenario} reset={reset} onTheme={setTheme} />
-      <div
-        data-demo-session={session.id}
-        style={{
-          visibility: window.parent !== window && !theme ? "hidden" : undefined,
-        }}
-      >
-        <AuthKitProvider
-          key={session.id}
-          initialAuth={{ user: workosViewer, sessionId: "demo_session" }}
-          onSessionExpired={false}
+      <PlaybackBridge
+        scenario={scenario}
+        reset={reset}
+        onTheme={setTheme}
+        onActivity={setAnimationActive}
+      />
+      <AnimationActivityProvider active={animationActive}>
+        <div
+          data-demo-session={session.id}
+          style={{
+            visibility:
+              window.parent !== window && !theme ? "hidden" : undefined,
+          }}
         >
-          <ConvexProviderWithAuth
-            client={services.client}
-            useAuth={useLocalAuth}
+          <AuthKitProvider
+            key={session.id}
+            initialAuth={{ user: workosViewer, sessionId: "demo_session" }}
+            onSessionExpired={false}
           >
-            <NuqsAdapter>
-              <ActiveUseCaseLabelsProvider initialUseCaseKey="recruiting">
-                <ProfileProvider>
-                  <ProspectProfileProvider>
-                    <WorkspaceTransitionProvider>
-                      {/* Sample workspaces are already populated. Background job
+            <ConvexProviderWithAuth
+              client={services.client}
+              useAuth={useLocalAuth}
+            >
+              <NuqsAdapter>
+                <ActiveUseCaseLabelsProvider initialUseCaseKey="recruiting">
+                  <ProfileProvider>
+                    <ProspectProfileProvider>
+                      <WorkspaceTransitionProvider>
+                        {/* Sample workspaces are already populated. Background job
                           notifications would invent events on each replay; real
                           user-action toasts still use the shared Toaster below. */}
-                      <Suspense fallback={null}>
-                        <OnboardingLockGuardProvider>
-                          {null}
-                        </OnboardingLockGuardProvider>
-                      </Suspense>
-                      <WebAppChromeScaffold>{children}</WebAppChromeScaffold>
-                    </WorkspaceTransitionProvider>
-                  </ProspectProfileProvider>
-                </ProfileProvider>
-              </ActiveUseCaseLabelsProvider>
-            </NuqsAdapter>
-            <Toaster {...(theme ? { theme } : {})} />
-          </ConvexProviderWithAuth>
-        </AuthKitProvider>
-      </div>
+                        <Suspense fallback={null}>
+                          <OnboardingLockGuardProvider>
+                            {null}
+                          </OnboardingLockGuardProvider>
+                        </Suspense>
+                        <WebAppChromeScaffold>{children}</WebAppChromeScaffold>
+                      </WorkspaceTransitionProvider>
+                    </ProspectProfileProvider>
+                  </ProfileProvider>
+                </ActiveUseCaseLabelsProvider>
+              </NuqsAdapter>
+              <Toaster {...(theme ? { theme } : {})} />
+            </ConvexProviderWithAuth>
+          </AuthKitProvider>
+        </div>
+      </AnimationActivityProvider>
     </ThemeProvider>
   );
 }

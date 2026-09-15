@@ -1,8 +1,12 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { useTransition } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { cn } from "@/shared/lib/utils";
+import { marketingPageWidth } from "@/features/landing/ui/components/marketing/MarketingLayout";
 import { BlogToolbar } from "./BlogToolbar";
 import { InfiniteScrollTrigger } from "@/shared/ui/components/InfiniteScrollTrigger";
 import {
@@ -15,10 +19,12 @@ import {
 import { BlogCard } from "./BlogCard";
 
 export function BlogIndex({
+  author,
   posts,
   categories,
   category,
 }: {
+  author?: ReactNode;
   posts: BlogPostSummary[];
   categories: readonly BlogCategory[];
   category?: BlogCategory;
@@ -46,7 +52,7 @@ export function BlogIndex({
     ease: [0.22, 1, 0.36, 1] as const,
   };
   return (
-    <div className="mx-auto max-w-7xl px-4 py-12 md:px-6 md:py-16">
+    <div className={cn(marketingPageWidth, "py-12 md:py-16")}>
       <h1 className="mb-8 text-4xl font-normal text-balance md:text-5xl">
         {category ? getBlogCategory(category)?.label : "Blog"}
       </h1>
@@ -86,7 +92,7 @@ export function BlogIndex({
           className="grid gap-x-8 gap-y-8 md:grid-cols-2 lg:grid-cols-3"
         >
           {visiblePosts.map((post) => (
-            <BlogCard key={post.slug} post={post} featured />
+            <BlogCard author={author} key={post.slug} post={post} featured />
           ))}
         </motion.div>
         <InfiniteScrollTrigger

@@ -1,5 +1,7 @@
 "use client";
 
+import { useAnimationActivity } from "@/shared/contexts/AnimationActivityProvider";
+
 import * as React from "react";
 import NumberFlow, {
   type Format,
@@ -38,6 +40,7 @@ export default function AnimatedNumber({
   style,
   ...rest
 }: AnimatedNumberProps) {
+  const active = useAnimationActivity();
   const isSupported = useIsSupported();
   const canAnimate = useCanAnimate({ respectMotionPreference: true });
 
@@ -60,7 +63,7 @@ export default function AnimatedNumber({
   );
 
   const [display, setDisplay] = React.useState<number>(() =>
-    animateOnMount ? 0 : rounded
+    active && animateOnMount ? 0 : rounded
   );
 
   // Sync displayed value when the computed number changes
@@ -68,7 +71,7 @@ export default function AnimatedNumber({
     setDisplay(rounded);
   }, [rounded]);
 
-  if (!isSupported || !canAnimate) {
+  if (!active || !isSupported || !canAnimate) {
     return (
       <span
         className={cn("inline-flex items-baseline", className)}

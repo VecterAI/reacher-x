@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
 /** Keep scripted controls from taking focus while the host owns navigation. */
 export function useDemoHostFocus(
   root: RefObject<HTMLElement | null>,
-  send: (type: string, extra: { active: boolean }) => void
+  send: (type: string, extra: { active: boolean }) => void,
+  suppressFocus = false
 ) {
   const previous = useRef<boolean | undefined>(undefined);
   const visible = useRef(true);
@@ -13,6 +14,7 @@ export function useDemoHostFocus(
   const sync = useCallback(
     (force = false) => {
       const active =
+        suppressFocus ||
         !visible.current ||
         scrolling.current ||
         Array.from(
@@ -31,7 +33,7 @@ export function useDemoHostFocus(
         send("reacherx:host-focus", { active });
       }
     },
-    [root, send]
+    [root, send, suppressFocus]
   );
   useEffect(() => {
     let scrollEnd: ReturnType<typeof setTimeout> | undefined;
@@ -52,8 +54,8 @@ export function useDemoHostFocus(
       attributes: true,
       attributeFilter: ["role", "data-state", "hidden", "aria-hidden", "inert"],
     });
-    const visibility = new IntersectionObserver(([entry]) => {
-      visible.current = entry?.isIntersecting ?? false;
+    const visibility = new IntersectionObserver((entries) => {
+      visible.current = entries.at(-1)?.isIntersecting ?? false;
       sync();
     });
     if (root.current) visibility.observe(root.current);

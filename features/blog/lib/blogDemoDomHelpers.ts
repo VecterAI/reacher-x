@@ -1,3 +1,4 @@
+import { isRecord, getNumberProperty } from "@/convex/lib/typeGuards";
 import type { DemoRect, DemoTarget } from "./blogDemoHelpers";
 
 /** Targets resolve inside the demo document, including Radix portals. Never use authored pixels. */
@@ -108,4 +109,23 @@ export function revealDemoTarget(element: HTMLElement) {
         target.bottom - viewport.bottom
       );
   }
+}
+
+export function readDemoRect(value: unknown): DemoRect | undefined {
+  if (!isRecord(value)) return;
+  const x = getNumberProperty(value, "x"),
+    y = getNumberProperty(value, "y"),
+    width = getNumberProperty(value, "width"),
+    height = getNumberProperty(value, "height");
+  if (
+    x === undefined ||
+    y === undefined ||
+    width === undefined ||
+    height === undefined ||
+    ![x, y, width, height].every(Number.isFinite) ||
+    width <= 0 ||
+    height <= 0
+  )
+    return;
+  return { x, y, width, height };
 }

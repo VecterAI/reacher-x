@@ -2,12 +2,11 @@ import { Suspense } from "react";
 import { MarketingFaq } from "./MarketingFaq";
 import { MarketingProof } from "./MarketingProof";
 import {
-  MarketingSimplicity,
   MarketingConnections,
+  MarketingAuthenticity,
   MarketingDevelopers,
 } from "./MarketingStory";
 import { LandingPromptCta } from "../LandingPromptCta";
-import { LandingBookDemoCta } from "../LandingBookDemoCta";
 import { marketingButton as buttonVariants } from "./MarketingLayout";
 import { MarketingHero } from "./MarketingLayout";
 import { MarketingWorkflow, MarketingFinish } from "./MarketingSections";
@@ -16,33 +15,32 @@ export function MarketingHome() {
   return (
     <>
       <MarketingHero
-        title="Build your network."
+        eyebrow="Your network is your net worth."
+        title="Reach the right people."
         actions={
-          <>
-            <a href="#find-people" className={buttonVariants()}>
-              See how it works
-            </a>
-            <LandingBookDemoCta variant="outline" />
-          </>
+          <a href="#how-it-works" className={buttonVariants()}>
+            See how it works
+          </a>
         }
       >
-        <p className="mb-7 text-base leading-7 text-pretty">
-          Find relevant people on X/Twitter and LinkedIn, research their
-          background, and plan your outreach with an AI agent.
+        <p className="text-base leading-7 text-pretty">
+          Tell ReacherX <strong>△</strong> Agent who you need to reach. It finds
+          the right people, explains why they fit, and helps you start the
+          conversation.
         </p>
-        <LandingPromptCta
-          placeholder="Describe your project and who you want to reach..."
-          showLabeledCta={false}
-        />
+        <div className="mt-7">
+          <LandingPromptCta
+            placeholder="Who are you looking for, and why?"
+            showLabeledCta={false}
+          />
+        </div>
       </MarketingHero>
       <Suspense fallback={null}>
         <MarketingProof />
       </Suspense>
-      <MarketingSimplicity />
-      <div className="pt-20 lg:pt-28">
-        <MarketingWorkflow />
-      </div>
+      <MarketingWorkflow />
       <MarketingConnections />
+      <MarketingAuthenticity />
       <MarketingDevelopers />
       <MarketingFaq />
       <MarketingFinish />

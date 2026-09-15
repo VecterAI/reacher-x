@@ -1,52 +1,45 @@
 import type { Metadata } from "next";
 import { MarketingFaq } from "@/features/landing/ui/components/marketing/MarketingFaq";
-import { MarketingHero } from "@/features/landing/ui/components/marketing/MarketingLayout";
+import { marketingPageWidth } from "@/features/landing/ui/components/marketing/MarketingLayout";
 import {
-  MarketingWorkflow,
-  MarketingFinish,
-} from "@/features/landing/ui/components/marketing/MarketingSections";
-import { LandingPromptCta } from "@/features/landing/ui/components/LandingPromptCta";
+  MarketingCapabilities,
+  MarketingCapabilityIndex,
+} from "@/features/landing/ui/components/marketing/MarketingProduct";
+import { MarketingFinish } from "@/features/landing/ui/components/marketing/MarketingSections";
+import { LandingPrimaryCta } from "@/features/landing/ui/components/LandingPrimaryCta";
 import { LandingBookDemoCta } from "@/features/landing/ui/components/LandingBookDemoCta";
-import { Button } from "@/shared/ui/components/Button";
 
 export const metadata: Metadata = {
-  title: "How ReacherX works",
+  title: "Product",
   description:
-    "Find people on X and LinkedIn, understand why they fit, and manage outreach with an AI agent and your own judgment.",
+    "Discovery, qualification, outreach plans, conversations, memory, and analytics on X/Twitter and LinkedIn, run by an AI agent with you in control.",
   alternates: { canonical: "https://reacherx.com/product" },
 };
 export default function ProductPage() {
   return (
-    <>
-      <MarketingHero
-        title={
-          <>
-            From the first search
-            <br />
-            to the next conversation.
-          </>
-        }
-        actions={
-          <>
-            <Button asChild className="rounded-full">
-              <a href="#find-people">See how it works</a>
-            </Button>
-            <LandingBookDemoCta variant="outline" />
-          </>
-        }
-      >
-        <p className="mb-7 max-w-sm text-base leading-7 text-pretty">
-          Research people, plan outreach, and manage conversations on X and
-          LinkedIn with an AI agent.
-        </p>
-        <LandingPromptCta
-          placeholder="Describe your project and the people you want to meet…"
-          showLabeledCta={false}
-        />
-      </MarketingHero>
-      <MarketingWorkflow />
+    <div className="overflow-x-clip">
+      <section className={`${marketingPageWidth} py-20 lg:py-36`}>
+        <div className="grid items-center gap-14 lg:grid-cols-2 lg:gap-24">
+          <h1 className="text-4xl leading-[1.02] font-normal tracking-[-0.03em] text-balance sm:text-6xl lg:text-7xl">
+            Find your people.
+          </h1>
+          <div className="lg:justify-self-end">
+            <p className="text-muted-foreground max-w-md text-lg leading-7 text-pretty">
+              ReacherX searches X/Twitter and LinkedIn around the clock,
+              researches every match, and drafts a personal introduction.
+              Nothing sends without you.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <LandingPrimaryCta />
+              <LandingBookDemoCta variant="outline" />
+            </div>
+          </div>
+        </div>
+      </section>
+      <MarketingCapabilities />
+      <MarketingCapabilityIndex />
       <MarketingFaq />
       <MarketingFinish />
-    </>
+    </div>
   );
 }

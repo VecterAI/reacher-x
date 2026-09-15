@@ -12,6 +12,7 @@ const demoOrigin = process.env.DEMO_TEST_URL ?? "http://localhost:3131";
 const parentOrigin = process.env.BLOG_TEST_URL ?? "http://localhost:3125";
 for (const scenario of [
   ...AUDIENCE_DEMO_IDS,
+  "how-reacherx-enrichment-works",
   "send-voice-notes",
   "create-plans-for-several-people",
   "getting-started-with-reacherx",

@@ -3,27 +3,16 @@
  */
 
 export { AvatarStackSkeleton } from "./AvatarStackSkeleton";
-export { FigureVideo } from "./FigureVideo";
 export { Footer } from "./Footer";
 export { Header } from "./Header";
-export { LandingAutoPlayProvider } from "./LandingAutoPlayProvider";
 export { LandingAuthLink } from "./LandingAuthLink";
 export {
   LandingBookDemoCta,
   LandingBookDemoInvite,
   LandingBookDemoLink,
 } from "./LandingBookDemoCta";
-export { LandingMuxBackgroundVideo } from "./LandingMuxBackgroundVideo";
-export { LandingMuxHoverPlayer } from "./LandingMuxHoverPlayer";
 export { LandingPrimaryCta } from "./LandingPrimaryCta";
 export { LandingPromptCta } from "./LandingPromptCta";
-export { LandingThreadCardSkeleton } from "./LandingThreadCardSkeleton";
 export { LandingWordmark } from "./LandingWordmark";
-export { LinkWrapper } from "./LinkWrapper";
-export { NavLink } from "./NavLink";
-export { PictureCarousel } from "./PictureCarousel";
-export { PromoCounter } from "./PromoCounter";
-export { ThemedFigureVideo } from "./ThemedFigureVideo";
-export { UserProfileCard } from "./UserProfileCard";
 export { UserProfileHeader } from "./UserProfileHeader";
 export { default as VideoPlayer } from "./VideoPlayer";

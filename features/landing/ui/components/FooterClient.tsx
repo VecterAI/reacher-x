@@ -39,7 +39,7 @@ const FOOTER_COLUMNS = [
   {
     title: "Product",
     links: [
-      { label: "Use cases", href: "/use-cases" },
+      { label: "Product", href: "/product" },
       { label: "Pricing", href: "/pricing" },
       {
         label: "Changelog",
@@ -50,7 +50,6 @@ const FOOTER_COLUMNS = [
   {
     title: "Resources",
     links: [
-      { label: "Threads", href: "/threads" },
       { label: "Blog", href: "/blog" },
       { label: "Book a demo", href: "#book-demo" },
       { label: "Contact", href: "mailto:creativecoder.crco@gmail.com" },

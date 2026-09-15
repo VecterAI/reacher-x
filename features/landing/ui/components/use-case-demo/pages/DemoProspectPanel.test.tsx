@@ -52,7 +52,11 @@ test("returning from a platform profile restores the demo's research scroll posi
           }
           actions={{} as ComponentProps<typeof DemoProspectPanel>["actions"]}
           onBack={() => {}}
-          presentation={{ profileScroll: 180 }}
+          presentation={{
+            useCase: "customers",
+            page: "prospects",
+            profileScroll: 180,
+          }}
         />
       )
     );

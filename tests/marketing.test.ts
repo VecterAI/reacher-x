@@ -74,7 +74,7 @@ test("marketing links reference real public blog posts and categories", () => {
     "features/landing/ui/components/FooterClient.tsx",
     "features/landing/ui/components/marketing/MarketingNavigation.tsx",
     "features/landing/ui/components/marketing/MarketingSections.tsx",
-    "app/(landing)/about/page.tsx",
+    "features/landing/ui/components/marketing/MarketingProduct.tsx",
   ]) {
     const source = readFileSync(path, "utf8");
     for (const match of source.matchAll(/"\/blog\/([a-z0-9-]+)"/g)) {
@@ -115,16 +115,25 @@ test("fixed demos keep the full desktop viewport and ignore every cinematic came
   }
 });
 
-test("only Network resolves as a marketing preview", async () => {
-  const { resolveLandingVariantId } =
-    await import("../features/landing/lib/landingVariants");
-  assert.equal(resolveLandingVariantId("/home/preview"), null);
-  assert.equal(resolveLandingVariantId("/home/preview/network"), "network");
-  assert.equal(resolveLandingVariantId("/home"), "live");
-  assert.equal(isInvalidMarketingPath("/home/preview/network"), false);
-  for (const retired of ["describe", "goals"]) {
-    const path = `/home/preview/${retired}`;
-    assert.equal(resolveLandingVariantId(path), null);
-    assert.equal(isInvalidMarketingPath(path), true);
+test("only the canonical homepage remains; variants have no routes", () => {
+  assert.equal(isInvalidMarketingPath("/home"), false);
+  for (const path of [
+    "/home/v0",
+    "/home/v2",
+    "/home/v3",
+    "/home/preview",
+    "/home/preview/network",
+    "/home/preview/goals",
+  ]) {
+    assert.equal(isInvalidMarketingPath(path), true, path);
+  }
+  for (const path of [
+    "app/home/(landing)/v0",
+    "app/home/(landing)/v2",
+    "app/home/(landing)/preview",
+    "features/landing/ui/components/variants",
+    "features/landing/lib/landingVariants.ts",
+  ]) {
+    assert.equal(existsSync(path), false, path);
   }
 });

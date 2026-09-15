@@ -235,7 +235,8 @@ export function TaskItem({
     <li
       className={cn(
         "border-t px-4 py-3",
-        rowIsClickable && "hover:bg-accent/50 cursor-pointer transition-colors",
+        rowIsClickable &&
+          "cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900",
         className
       )}
       onClick={rowIsClickable ? onClick : undefined}

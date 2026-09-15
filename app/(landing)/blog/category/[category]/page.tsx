@@ -1,3 +1,4 @@
+import { BlogAuthor } from "@/features/blog/ui/components/BlogAuthor";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import {
@@ -28,6 +29,7 @@ export async function generateMetadata({ params }: Props) {
 export default async function CategoryPage({ params }: Props) {
   const category = getBlogCategory((await params).category);
   if (!category) notFound();
+  const author = <BlogAuthor />;
   const allPosts = await getBlogPosts();
   const categories = getPublishedBlogCategories(allPosts).map(
     ({ slug }) => slug
@@ -42,6 +44,7 @@ export default async function CategoryPage({ params }: Props) {
     <Suspense
       fallback={
         <BlogIndexSkeleton
+          author={author}
           posts={posts}
           categories={categories}
           title={category.label}
@@ -49,6 +52,7 @@ export default async function CategoryPage({ params }: Props) {
       }
     >
       <BlogIndex
+        author={author}
         posts={posts}
         categories={categories}
         category={category.slug}

@@ -22,7 +22,6 @@ const PUBLIC_PATH_PATTERNS = [
   /^\/home(?:\/.*)?$/,
   /^\/use-cases(?:\/.*)?$/,
   /^\/product$/,
-  /^\/about$/,
   /^\/pricing$/,
   /^\/blog(?:\/.*)?$/,
   /^\/blog-media\/(?:reading-demo\.(?:mp4|vtt)|reacherx-v3\/[a-z-]+\.mp4)$/,
@@ -131,7 +130,7 @@ export const config = {
     // Blog URLs, including invalid file-like slugs, need the explicit 404 guard.
     "/blog/:path*",
     "/use-cases/:path*",
-    "/home/preview/:path*",
+    "/home/:path*",
     // Skip Next.js internals and all static files, unless found in search params
     "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     // Always run for API routes

@@ -6,15 +6,15 @@ import {
 } from "@/features/blog/lib/blogHelpers";
 import { summarizeBlogPost } from "@/features/blog/lib/blogPosts";
 import { blogPostStructuredData } from "@/features/blog/lib/blogMetadata";
-import { BlogAuthor } from "@/features/blog/ui/components/BlogAuthor";
+import { BlogAuthorDetails } from "./BlogAuthorDetails";
 import { BlogCard } from "@/features/blog/ui/components/BlogCard";
 import { BlogPostMenu } from "@/features/blog/ui/components/BlogPostMenu";
 import { BlogTableOfContents } from "@/features/blog/ui/components/BlogTableOfContents";
 import { BlogImage } from "@/features/blog/ui/components/BlogMdx";
-import { LandingAuthLink } from "@/features/landing/ui/components/LandingAuthLink";
+import { LandingPrimaryCta } from "@/features/landing/ui/components/LandingPrimaryCta";
 import { LandingBookDemoCta } from "@/features/landing/ui/components/LandingBookDemoCta";
-import { SETUP_SIGN_UP_HREF } from "@/shared/lib/urls/authRoutes";
-import { buttonVariants } from "@/shared/ui/components/Button";
+import { cn } from "@/shared/lib/utils";
+import { marketingPageWidth } from "@/features/landing/ui/components/marketing/MarketingLayout";
 
 import {
   Breadcrumb,
@@ -29,18 +29,20 @@ import type { ReactNode } from "react";
 import type { getBlogPosts } from "../../lib/blogPosts";
 type Post = Awaited<ReturnType<typeof getBlogPosts>>[number];
 export function BlogArticle({
+  author,
   post,
   children,
   related = [],
   preview = false,
 }: {
+  author?: ReactNode;
   post: Post;
   children: ReactNode;
   related?: Post[];
   preview?: boolean;
 }) {
   return (
-    <div className="mx-auto max-w-7xl px-4 py-12 md:px-6 md:py-16">
+    <div className={cn(marketingPageWidth, "py-12 md:py-16")}>
       <article className="mx-auto max-w-180">
         <header className="mb-12">
           <Breadcrumb className="mb-8">
@@ -75,9 +77,7 @@ export function BlogArticle({
           <p className="text-muted-foreground mt-5 text-lg leading-7 text-pretty">
             {post.description}
           </p>
-          <div className="mt-6">
-            <BlogAuthor />
-          </div>
+          <div className="mt-6">{author ?? <BlogAuthorDetails />}</div>
           <div className="text-muted-foreground mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
             <BlogMetadata post={post} readingTime />
             <BlogPostMenu
@@ -118,6 +118,7 @@ export function BlogArticle({
           <div className="grid gap-8 md:grid-cols-2">
             {related.map((item) => (
               <BlogCard
+                author={author}
                 key={item.slug}
                 post={summarizeBlogPost(item)}
                 showImage
@@ -131,12 +132,7 @@ export function BlogArticle({
           Find the people you need.
         </h2>
         <div className="flex flex-wrap items-center gap-3">
-          <LandingAuthLink
-            href={SETUP_SIGN_UP_HREF}
-            className={buttonVariants({ size: "sm" })}
-          >
-            Sign up
-          </LandingAuthLink>
+          <LandingPrimaryCta size="sm" />
           <LandingBookDemoCta variant="outline" size="sm" />
         </div>
       </section>

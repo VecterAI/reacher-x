@@ -16,7 +16,7 @@ test("every published story is wired to its own article; self-hosting remains ex
     assert.ok(body.includes(`scenario="${id}"`));
     assert.ok(!body.includes("<BlogMediaPlaceholder"));
   }
-  assert.equal(BLOG_DEMO_IDS.length, 21);
+  assert.equal(BLOG_DEMO_IDS.length, 22);
   assert.ok(
     (
       await readFile(

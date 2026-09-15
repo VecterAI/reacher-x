@@ -43,7 +43,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   baseEntries.push(
     { url: `${BASE_URL}/blog` },
     { url: `${BASE_URL}/product` },
-    { url: `${BASE_URL}/about` },
     ...MARKETING_USE_CASES.map(({ href }) => ({ url: `${BASE_URL}${href}` })),
     ...getPublishedBlogCategories(posts).map((category) => ({
       url: `${BASE_URL}${blogCategoryHref(category.slug)}`,

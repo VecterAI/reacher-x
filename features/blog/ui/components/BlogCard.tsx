@@ -1,16 +1,19 @@
+import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/shared/lib/utils";
 import { blogHref, type BlogPostSummary } from "../../lib/blogHelpers";
 import { BlogMetadata } from "./BlogMetadata";
-import { BlogAuthor } from "./BlogAuthor";
+import { BlogAuthorDetails } from "./BlogAuthorDetails";
 import { BlogGradientCover } from "./BlogGradientCover";
 
 export function BlogCard({
+  author,
   post,
   featured = false,
   showImage = false,
 }: {
+  author?: ReactNode;
   post: BlogPostSummary;
   featured?: boolean;
   showImage?: boolean;
@@ -18,12 +21,11 @@ export function BlogCard({
   const cover = showImage && post.image;
   return (
     <article className="min-w-0">
-      <Link
-        href={blogHref(post.slug)}
+      <div
         className={cn(
-          "blog-card focus-visible:outline-ring flex h-full flex-col focus-visible:outline-2 focus-visible:outline-offset-4",
+          "blog-card relative flex h-full flex-col",
           featured &&
-            "bg-muted/25 hover:bg-muted/50 transition-colors duration-200 motion-reduce:transition-none"
+            "bg-background transition-colors duration-200 hover:bg-neutral-50 motion-reduce:transition-none dark:bg-neutral-950 dark:hover:bg-neutral-900"
         )}
       >
         {cover ? (
@@ -54,7 +56,12 @@ export function BlogCard({
                 : "text-xl leading-7"
             )}
           >
-            {post.title}
+            <Link
+              href={blogHref(post.slug)}
+              className="focus-visible:outline-ring after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-offset-4"
+            >
+              {post.title}
+            </Link>
           </h2>
           {featured && (
             <p className="text-muted-foreground mt-auto pt-6 text-sm leading-5 text-pretty">
@@ -62,10 +69,10 @@ export function BlogCard({
             </p>
           )}
           <footer className={cn("pt-6", !featured && "mt-auto")}>
-            <BlogAuthor />
+            {author ?? <BlogAuthorDetails />}
           </footer>
         </div>
-      </Link>
+      </div>
     </article>
   );
 }

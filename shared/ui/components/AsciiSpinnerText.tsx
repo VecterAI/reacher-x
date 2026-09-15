@@ -1,5 +1,7 @@
 "use client";
 
+import { useAnimationActivity } from "@/shared/contexts/AnimationActivityProvider";
+
 import { useEffect, useState } from "react";
 
 type SpinnerVariant = "spinner" | "clock" | "ascii";
@@ -27,16 +29,18 @@ export function AsciiSpinnerText({
   intervalMs?: number;
   className?: string;
 }) {
+  const active = useAnimationActivity();
   const frames = VARIANT_FRAMES[variant];
   const interval = intervalMs ?? VARIANT_DEFAULT_INTERVAL[variant];
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
+    if (!active) return;
     const id = window.setInterval(() => {
       setFrame((f) => (f + 1) % frames.length);
     }, interval);
     return () => window.clearInterval(id);
-  }, [interval, frames.length]);
+  }, [active, interval, frames.length]);
 
   return (
     <span

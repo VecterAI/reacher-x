@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -21,7 +22,7 @@ import {
   CloseIcon as Close,
   RefreshIcon as Replay,
 } from "@/shared/ui/components/icons";
-import { isRecord, getNumberProperty } from "@/convex/lib/typeGuards";
+import { isRecord } from "@/convex/lib/typeGuards";
 import {
   DEMO_DESIGN_WIDTH,
   DEMO_DESIGN_HEIGHT,
@@ -37,7 +38,6 @@ import {
   getDemoTargetCamera,
   type BlogDemoId,
   type DemoCamera,
-  type DemoRect,
 } from "@/features/blog/lib/blogDemoHelpers";
 import { useDemoHostScroll } from "./useDemoHostScroll";
 import { useDemoHostFocus } from "./useDemoHostFocus";
@@ -46,36 +46,25 @@ import "./blog-app-demo.css";
 import { useTheme } from "next-themes";
 import { getBlogDemoUrl } from "@/features/blog/lib/blogDemoUrl";
 
+import { readDemoRect } from "@/features/blog/lib/blogDemoDomHelpers";
+
 const IDLE_RESUME_MS = 4000;
 const CINEMATIC_EASE = [0.22, 1, 0.36, 1] as const;
 const subscribeToOrigin = () => () => {};
 const readParentOrigin = () => window.location.origin;
 const readServerOrigin = () => null;
 type Playback = "playing" | "paused" | "interactive";
-function readRect(value: unknown): DemoRect | undefined {
-  if (!isRecord(value)) return;
-  const x = getNumberProperty(value, "x"),
-    y = getNumberProperty(value, "y"),
-    width = getNumberProperty(value, "width"),
-    height = getNumberProperty(value, "height");
-  if (
-    x === undefined ||
-    y === undefined ||
-    width === undefined ||
-    height === undefined ||
-    ![x, y, width, height].every(Number.isFinite) ||
-    width <= 0 ||
-    height <= 0
-  )
-    return;
-  return { x, y, width, height };
-}
 
 interface BlogAppDemoProps {
   scenario: BlogDemoId;
   title: string;
   caption: string;
   presentation?: "cinematic" | "fixed";
+  /** Card interaction controls automatic playback; explicit controls remain available. */
+  playbackActive?: boolean;
+  /** Carousel previews reserve pointer gestures for dragging; expand to use the app. */
+  interaction?: "inline" | "expanded";
+  loading?: "lazy" | "eager";
 }
 
 export function BlogAppDemo(props: BlogAppDemoProps) {
@@ -88,6 +77,9 @@ function BlogAppDemoPlayer({
   title,
   caption,
   presentation = "cinematic",
+  playbackActive,
+  interaction = "inline",
+  loading = "lazy",
 }: BlogAppDemoProps) {
   const { resolvedTheme } = useTheme();
   const parentOrigin = useSyncExternalStore(
@@ -113,11 +105,16 @@ function BlogAppDemoPlayer({
     [ready, setReady] = useState(false),
     [prepared, setPrepared] = useState(false),
     [shotIndex, setShotIndex] = useState(0);
-  const [playback, setPlayback] = useState<Playback>("playing"),
+  const [visible, setVisible] = useState(false);
+  const [documentActive, setDocumentActive] = useState(true);
+  const [playback, setPlayback] = useState<Playback>(
+      playbackActive === undefined ? "playing" : "paused"
+    ),
     [error, setError] = useState<string | null>(null),
     [touchControls, setTouchControls] = useState(false);
   const [camera, setCamera] = useState<DemoCamera>(DEMO_WIDE_CAMERA);
-  const [size, setSize] = useState({ width: 800, height: 450 });
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const placementSize = useRef(size);
   const [click, setClick] = useState<{
     x: number;
     y: number;
@@ -153,7 +150,7 @@ function BlogAppDemoPlayer({
     initialized: false,
     bridgeId: undefined as string | undefined,
     visible: false,
-    playback: "playing" as Playback,
+    playback: (playbackActive === undefined ? "playing" : "paused") as Playback,
     editing: false,
     lastInteraction: 0,
     waitingTime: 0,
@@ -161,6 +158,7 @@ function BlogAppDemoPlayer({
     visibleSince: 0,
     lastConnect: 0,
   });
+  const explicitPause = useRef(false);
   const shot = BLOG_DEMO_SHOTS[scenario][shotIndex];
   const duration = getBlogDemoFrame(scenario, 0).duration;
   useDemoExpansion(root, expanded, setExpanded);
@@ -187,7 +185,17 @@ function BlogAppDemoPlayer({
       ),
     [demoOrigin]
   );
-  const syncHostFocus = useDemoHostFocus(root, send);
+  const syncHostFocus = useDemoHostFocus(
+    root,
+    send,
+    interaction === "expanded" && !expanded
+  );
+  useEffect(() => {
+    if (ready)
+      send("reacherx:ambient", {
+        active: visible && documentActive && playback !== "paused",
+      });
+  }, [ready, visible, documentActive, playback, send]);
   useEffect(() => {
     if (ready && (resolvedTheme === "light" || resolvedTheme === "dark"))
       send("reacherx:theme", { theme: resolvedTheme });
@@ -210,6 +218,7 @@ function BlogAppDemoPlayer({
     [send, captureScroll]
   );
   const resume = useCallback(() => {
+    explicitPause.current = false;
     const r = runtime.current;
     r.retries = 0;
     if (r.manual || r.playback === "paused") {
@@ -221,7 +230,20 @@ function BlogAppDemoPlayer({
     }
     changePlayback("playing");
   }, [scenario, prepare, changePlayback]);
+  useEffect(() => {
+    if (playbackActive === undefined) return;
+    if (
+      (playbackActive || expanded) &&
+      !reducedMotion &&
+      !explicitPause.current
+    ) {
+      if (runtime.current.manual) resume();
+      else changePlayback("playing");
+    } else changePlayback("paused");
+  }, [playbackActive, expanded, reducedMotion, resume, changePlayback]);
+
   const restart = useCallback(() => {
+    explicitPause.current = false;
     const r = runtime.current;
     r.time = 0;
     r.retries = 0;
@@ -241,6 +263,7 @@ function BlogAppDemoPlayer({
   const pause = useCallback(() => {
     // Moving focus to player controls can dismiss an iframe's Radix menu.
     // Resume from this step's checkpoint instead of using stale menu state.
+    explicitPause.current = true;
     runtime.current.manual = true;
     changePlayback("paused");
   }, [changePlayback]);
@@ -268,9 +291,11 @@ function BlogAppDemoPlayer({
     [scenario, prepare, changePlayback]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = rootNode;
     if (!node) return;
+    const rect = node.getBoundingClientRect();
+    setSize({ width: rect.width, height: rect.height });
     const resize = new ResizeObserver(([entry]) => {
       if (entry)
         setSize({
@@ -282,9 +307,12 @@ function BlogAppDemoPlayer({
     // the prior inline layout arrives late. Reobserve when that layout changes.
     if (expanded) runtime.current.visible = true;
     const visibility = new IntersectionObserver(
-      ([entry]) => {
+      (entries) => {
+        const entry = entries.at(-1);
+        if (!entry) return;
         const r = runtime.current;
         const nextVisible = expanded || entry.isIntersecting;
+        if (!nextVisible) cancelScroll();
         if (r.visible && !nextVisible && r.ready && r.playback === "playing") {
           // Cancel work before offscreen Radix/editor focus can move the page.
           send("reacherx:suspend");
@@ -293,6 +321,7 @@ function BlogAppDemoPlayer({
           setPrepared(false);
         }
         r.visible = nextVisible;
+        setVisible(nextVisible);
         if (runtime.current.visible && !runtime.current.visibleSince)
           runtime.current.visibleSince = performance.now();
       },
@@ -304,18 +333,23 @@ function BlogAppDemoPlayer({
       resize.disconnect();
       visibility.disconnect();
     };
-  }, [rootNode, expanded, send]);
+  }, [rootNode, expanded, send, cancelScroll]);
   useEffect(() => {
     if (reducedMotion) changePlayback("paused");
   }, [reducedMotion, changePlayback]);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!size.width || !size.height) return;
+    const resized =
+      placementSize.current.width !== size.width ||
+      placementSize.current.height !== size.height;
+    placementSize.current = size;
     const placement = getBlogDemoPlacement(
       size.width,
       size.height,
       camera,
       presentation
     );
-    if (presentation === "fixed") {
+    if (presentation === "fixed" || resized) {
       x.set(placement.x);
       y.set(placement.y);
       scale.set(placement.scale);
@@ -363,6 +397,9 @@ function BlogAppDemoPlayer({
       const r = runtime.current;
       if (event.data.type === "reacherx:ready") {
         syncHostFocus(true);
+        send("reacherx:ambient", {
+          active: r.visible && !document.hidden && r.playback !== "paused",
+        });
         if (resolvedTheme === "light" || resolvedTheme === "dark")
           send("reacherx:theme", { theme: resolvedTheme });
         const bridgeId =
@@ -408,15 +445,18 @@ function BlogAppDemoPlayer({
         );
       }
       if (event.data.type === "reacherx:prepared") {
-        restoreScroll();
+        if (r.visible) restoreScroll();
         r.prepared = true;
         setPrepared(true);
         if (r.manual) return;
         const currentShot = BLOG_DEMO_SHOTS[scenario][r.index];
         setCamera(
-          getDemoTargetCamera(currentShot.camera, readRect(event.data.focus))
+          getDemoTargetCamera(
+            currentShot.camera,
+            readDemoRect(event.data.focus)
+          )
         );
-        const target = readRect(event.data.target);
+        const target = readDemoRect(event.data.target);
         if (target) {
           const options = {
             duration: reducedMotion ? 0 : 0.85,
@@ -428,8 +468,8 @@ function BlogAppDemoPlayer({
         }
       }
       if (event.data.type === "reacherx:acted") {
-        restoreScroll();
-        const rect = readRect(event.data.rect);
+        if (r.visible) restoreScroll();
+        const rect = readDemoRect(event.data.rect);
         if (rect && !r.manual)
           setClick({
             x: rect.x + rect.width / 2,
@@ -463,28 +503,37 @@ function BlogAppDemoPlayer({
   ]);
 
   useEffect(() => {
+    const update = () => setDocumentActive(!document.hidden);
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+
+  useEffect(() => {
+    if (ready || !visible || !documentActive || error) return;
+    // A paused card still connects and renders its initial app. It does not
+    // prepare or replay any timeline checkpoints until playback starts.
+    const connect = () => send("reacherx:connect");
+    connect();
+    const handshake = setInterval(connect, 500);
+    const timeout = setTimeout(() => {
+      setError("The demo could not load.");
+      changePlayback("paused");
+    }, 15000);
+    return () => {
+      clearInterval(handshake);
+      clearTimeout(timeout);
+    };
+  }, [ready, visible, documentActive, error, send, changePlayback]);
+
+  useEffect(() => {
+    if (!ready || !visible || !documentActive || playback === "paused") return;
     let animation = 0,
       previous = 0;
     const tick = (now: number) => {
       const delta = previous ? Math.min(now - previous, 100) : 0;
       previous = now;
       const r = runtime.current;
-      // Either document can hydrate first. Retry the handshake until both
-      // message listeners are mounted instead of relying on a one-shot event.
-      if (!r.ready && r.visible && now - r.lastConnect > 500) {
-        r.lastConnect = now;
-        send("reacherx:connect");
-      }
-      if (
-        !r.ready &&
-        r.visible &&
-        r.visibleSince &&
-        now - r.visibleSince > 15000
-      ) {
-        setError("The demo could not load.");
-        r.visibleSince = 0;
-        changePlayback("paused");
-      }
       if (r.ready && r.visible && !document.hidden && r.playback !== "paused") {
         if (!r.initialized && r.playback === "playing") {
           const frame = getBlogDemoFrame(scenario, r.time);
@@ -519,6 +568,10 @@ function BlogAppDemoPlayer({
     animation = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animation);
   }, [
+    ready,
+    visible,
+    documentActive,
+    playback,
     scenario,
     presentation,
     prepare,
@@ -536,13 +589,16 @@ function BlogAppDemoPlayer({
     >
       <section
         ref={attachRoot}
+        popover={expanded ? "manual" : undefined}
         tabIndex={-1}
         aria-label={title}
         role={expanded ? "dialog" : "region"}
         aria-modal={expanded || undefined}
         className={`blog-app-demo ${expanded ? "blog-app-demo-expanded" : ""}`}
         data-demo-presentation={presentation}
+        data-demo-interaction={interaction}
         data-demo-duration={duration}
+        data-demo-visible={visible}
         data-demo-ready={ready}
         data-demo-prepared={prepared}
         data-demo-scenario={scenario}
@@ -566,6 +622,7 @@ function BlogAppDemoPlayer({
           style={{
             width: DEMO_DESIGN_WIDTH,
             height: DEMO_DESIGN_HEIGHT,
+            visibility: ready && size.width > 0 ? "visible" : "hidden",
             x,
             y,
             scale,
@@ -578,7 +635,11 @@ function BlogAppDemoPlayer({
                 name={`reacherx-demo:${scenario}`}
                 src={demoUrl}
                 title={`${title} — interactive app`}
-                loading="lazy"
+                loading={loading}
+                tabIndex={
+                  interaction === "expanded" && !expanded ? -1 : undefined
+                }
+                inert={interaction === "expanded" && !expanded}
                 width={DEMO_DESIGN_WIDTH}
                 height={DEMO_DESIGN_HEIGHT}
                 sandbox="allow-scripts allow-same-origin"
@@ -617,7 +678,8 @@ function BlogAppDemoPlayer({
         </motion.div>
         {error && (
           <p role="status" className="blog-app-demo-error">
-            {error} Use Play demo to try again.
+            {error}
+            <span className="sr-only"> Use Play demo to try again.</span>
           </p>
         )}
         <div
@@ -651,6 +713,7 @@ function BlogAppDemoPlayer({
                   .slice(0, event.currentTarget.valueAsNumber)
                   .reduce((time, scene) => time + scene.duration, 0)
               );
+              explicitPause.current = true;
               // Seek to the scene checkpoint, before its action. The slider never fabricates later state.
               r.time = frame.start;
               r.retries = 0;
@@ -663,20 +726,18 @@ function BlogAppDemoPlayer({
               event.currentTarget.value = String(frame.index);
             }}
           />
-          {presentation === "cinematic" && (
-            <>
-              <button type="button" aria-label="Replay demo" onClick={restart}>
-                <Replay />
-              </button>
-              <button
-                type="button"
-                aria-label={expanded ? "Exit fullscreen demo" : "Expand demo"}
-                onClick={() => setExpanded((value) => !value)}
-              >
-                {expanded ? <Close /> : <Expand />}
-              </button>
-            </>
-          )}
+          <>
+            <button type="button" aria-label="Replay demo" onClick={restart}>
+              <Replay />
+            </button>
+            <button
+              type="button"
+              aria-label={expanded ? "Exit fullscreen demo" : "Expand demo"}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded ? <Close /> : <Expand />}
+            </button>
+          </>
         </div>
       </section>
       <figcaption

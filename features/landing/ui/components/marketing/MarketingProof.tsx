@@ -1,5 +1,5 @@
-import { ThreadCard } from "@/features/threads/ui/components/ThreadCard";
 import { MarketingMarquee } from "./MarketingMarquee";
+import { TestimonialCard } from "./TestimonialCard";
 import { getPublicTestimonials } from "@/features/landing/lib/getPublicTestimonials";
 import { marketingPageWidth } from "./MarketingLayout";
 import "./marketing-proof.css";
@@ -14,13 +14,11 @@ export async function MarketingProof() {
   );
   if (!tweets.length) return null;
   return (
-    <section aria-labelledby="marketing-proof-title" className="py-12 lg:py-20">
-      <div
-        className={`${marketingPageWidth} mb-10 flex items-end justify-between gap-5`}
-      >
+    <section aria-labelledby="marketing-proof-title" className="py-10 lg:py-14">
+      <div className={`${marketingPageWidth} mb-8`}>
         <h2
           id="marketing-proof-title"
-          className="text-3xl font-normal tracking-tight sm:text-4xl"
+          className="text-muted-foreground text-sm"
         >
           Early users, in their own words.
         </h2>
@@ -36,12 +34,7 @@ export async function MarketingProof() {
             >
               {tweets.map((tweet) => (
                 <div key={tweet.id_str} className="marketing-proof-post">
-                  <ThreadCard
-                    staticTweet={tweet}
-                    size="sm"
-                    characterLimit={280}
-                    className="[&_[data-orientation=vertical]]:hidden"
-                  />
+                  <TestimonialCard tweet={tweet} />
                 </div>
               ))}
             </div>

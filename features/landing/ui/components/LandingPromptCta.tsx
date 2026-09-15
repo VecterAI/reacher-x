@@ -58,8 +58,7 @@ import { LandingAuthLink } from "./LandingAuthLink";
 
 export { LANDING_PROMPT_STORAGE_KEY };
 
-const DEFAULT_PLACEHOLDER =
-  "Tell me about your project and the people you want to find...";
+const DEFAULT_PLACEHOLDER = "Tell me who you want to find and why...";
 
 interface LandingPromptCtaProps {
   authenticatedHref?: string;

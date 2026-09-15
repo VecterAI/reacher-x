@@ -45,16 +45,7 @@ import {
 } from "@/shared/ui/components/Select";
 import { CheckIcon } from "@/shared/ui/components/icons";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
-import {
-  LeadsCustomersUsersIcon,
-  PartnershipsIcon,
-  InvestorsIcon,
-  CandidatesIcon,
-  CommunityMembersIcon,
-  CreatorsIcon,
-  PodcastGuestsIcon,
-  ResearchParticipantsIcon,
-} from "@/features/agent/ui/components/onboarding/use-case-illustrations/icons";
+import { workspaceUseCaseIcons } from "@/shared/ui/components/icons/workspaceUseCaseIconHelpers";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { useQueryWithStatus } from "@/shared/hooks";
 import {
@@ -257,21 +248,6 @@ function TierCard({
   );
 }
 
-const useCaseIconByKey: Record<
-  WorkspaceUseCaseKey,
-  React.FC<React.SVGProps<SVGSVGElement>>
-> = {
-  customer_prospecting: LeadsCustomersUsersIcon,
-  recruiting: CandidatesIcon,
-  partnership_outreach: PartnershipsIcon,
-  investor_outreach: InvestorsIcon,
-  user_research_recruitment: ResearchParticipantsIcon,
-  creator_outreach: CreatorsIcon,
-  community_growth: CommunityMembersIcon,
-  podcast_speaker_sourcing: PodcastGuestsIcon,
-  general_outreach: LeadsCustomersUsersIcon,
-};
-
 /* -------------------------------------------------------------------------- */
 /*  Custom select item (icon left, check right)                                */
 /* -------------------------------------------------------------------------- */
@@ -375,7 +351,7 @@ export function PricingSection({
                     <UseCaseSelectItem
                       key={item.key}
                       value={item.key}
-                      icon={useCaseIconByKey[item.key]}
+                      icon={workspaceUseCaseIcons[item.key]}
                     >
                       {item.title}
                     </UseCaseSelectItem>
@@ -390,7 +366,7 @@ export function PricingSection({
               </SelectLabel>
               <UseCaseSelectItem
                 value="general_outreach"
-                icon={useCaseIconByKey.general_outreach}
+                icon={workspaceUseCaseIcons.general_outreach}
               >
                 Other
               </UseCaseSelectItem>

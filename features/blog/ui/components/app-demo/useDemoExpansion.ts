@@ -10,6 +10,10 @@ export function useDemoExpansion(
   useEffect(() => {
     if (!expanded) return;
     const before = document.activeElement;
+    const node = root.current;
+    // The top layer escapes the carousel transform/overflow while retaining
+    // the same iframe document and playback state.
+    node?.showPopover();
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const inertSiblings: Array<{ node: HTMLElement; inert: boolean }> = [];
@@ -51,6 +55,7 @@ export function useDemoExpansion(
     };
     document.addEventListener("keydown", escape);
     return () => {
+      if (node?.matches(":popover-open")) node.hidePopover();
       document.body.style.overflow = previousOverflow;
       inertSiblings.forEach(({ node, inert }) => {
         node.inert = inert;

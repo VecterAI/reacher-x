@@ -34,7 +34,7 @@ export function UseCasesDirectory() {
           LinkedIn.
         </p>
         <LandingPromptCta
-          placeholder="Tell us about your project and who you need…"
+          placeholder="Tell us who you need to find and why…"
           showLabeledCta={false}
         />
       </MarketingHero>

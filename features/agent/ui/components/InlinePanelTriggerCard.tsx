@@ -51,7 +51,7 @@ export function InlinePanelTriggerCard({
         <div
           role="button"
           tabIndex={0}
-          className="group border-border hover:bg-muted/30 focus-visible:ring-ring cursor-pointer overflow-hidden rounded-xl border p-2 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden"
+          className="group border-border focus-visible:ring-ring cursor-pointer overflow-hidden rounded-xl border p-2 transition-colors hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden dark:hover:bg-neutral-950"
           aria-label={getAriaLabel(panelMode)}
           onClick={handleActivate}
           onKeyDown={(event) => {

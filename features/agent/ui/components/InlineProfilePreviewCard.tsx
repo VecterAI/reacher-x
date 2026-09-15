@@ -343,7 +343,7 @@ export function InlineProfilePreviewCard({
           className={cn(
             "border-border bg-background overflow-hidden rounded-xl border",
             shouldOpenOnCardClick &&
-              "hover:bg-accent/30 focus-visible:ring-ring cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden"
+              "focus-visible:ring-ring cursor-pointer transition-colors hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden dark:hover:bg-neutral-950"
           )}
           {...cardInteractionProps}
         >
@@ -442,7 +442,7 @@ export function InlineProfilePreviewCard({
         className={cn(
           "border-border bg-background overflow-hidden rounded-xl border",
           shouldOpenOnCardClick &&
-            "hover:bg-accent/30 focus-visible:ring-ring cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden"
+            "focus-visible:ring-ring cursor-pointer transition-colors hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden dark:hover:bg-neutral-950"
         )}
         {...cardInteractionProps}
       >

@@ -159,7 +159,8 @@ export function EvidencePostsList({
           className={cn(
             "px-4 pb-2",
             index === 0 ? "pt-4" : "pt-2",
-            onPostSelect && "hover:bg-muted/30 cursor-pointer transition-colors"
+            onPostSelect &&
+              "cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-950"
           )}
           role={platform === "twitter" && onPostSelect ? "button" : undefined}
           tabIndex={platform === "twitter" && onPostSelect ? 0 : undefined}

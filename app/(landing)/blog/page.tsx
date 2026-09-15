@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { BlogAuthor } from "@/features/blog/ui/components/BlogAuthor";
 import { getPublishedBlogCategories } from "@/features/blog/lib/blogHelpers";
 import { Suspense } from "react";
 import { BlogIndex } from "@/features/blog/ui/components/BlogIndex";
@@ -9,7 +11,11 @@ export const metadata = {
   ...blogListingMetadata(),
   title: { absolute: "Blog" },
 };
-export default async function BlogPage() {
+export default function BlogPage() {
+  return <BlogPageContent author={<BlogAuthor />} />;
+}
+
+async function BlogPageContent({ author }: { author: ReactNode }) {
   "use cache";
   const posts = (await getBlogPosts()).map(summarizeBlogPost);
   const categories = getPublishedBlogCategories(posts).map(({ slug }) => slug);
@@ -17,9 +23,15 @@ export default async function BlogPage() {
   // local posts first keeps real article links in the prerendered fallback.
   return (
     <Suspense
-      fallback={<BlogIndexSkeleton posts={posts} categories={categories} />}
+      fallback={
+        <BlogIndexSkeleton
+          author={author}
+          posts={posts}
+          categories={categories}
+        />
+      }
     >
-      <BlogIndex posts={posts} categories={categories} />
+      <BlogIndex author={author} posts={posts} categories={categories} />
     </Suspense>
   );
 }

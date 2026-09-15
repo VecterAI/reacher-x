@@ -559,3 +559,14 @@ body[data-scroll-locked] {
     background-position: -200% center;
   }
 }
+
+/*
+  Marketing nav full-bleed panels: Radix NavigationMenu hard-codes
+  `position: relative` on its Root and List wrapper. Neutralize both so
+  NavigationMenu.Content anchors to the sticky header and can span the
+  viewport width edge to edge (Vercel-style dropdown).
+*/
+[data-rx-marketing-nav],
+[data-rx-marketing-nav] > div {
+  position: static !important;
+}

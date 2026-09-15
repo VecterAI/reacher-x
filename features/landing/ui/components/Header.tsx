@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 import { cn } from "@/shared/lib/utils";
 import { GITHUB_REPO_URL } from "@/features/landing/lib/github";
-import { Button, buttonVariants } from "@/shared/ui/components/Button";
+import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Separator } from "@/shared/ui/components/Separator";
@@ -94,15 +94,14 @@ import {
 } from "@/shared/lib/workspaceUseCases";
 import { getWorkspaceRoutes } from "@/shared/lib/workspaceRoutes";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
-import {
-  LOGIN_HREF,
-  LOGOUT_HREF,
-  SETUP_SIGN_UP_HREF,
-} from "@/shared/lib/urls/authRoutes";
+import { LOGIN_HREF, LOGOUT_HREF } from "@/shared/lib/urls/authRoutes";
 import { MarketingNavigation } from "./marketing/MarketingNavigation";
-import { marketingPageWidth } from "./marketing/MarketingLayout";
+import {
+  marketingButton,
+  marketingPageWidth,
+} from "./marketing/MarketingLayout";
 import { LandingAuthLink } from "./LandingAuthLink";
-import { LandingBookDemoCta, LandingBookDemoLink } from "./LandingBookDemoCta";
+import { LandingPrimaryCta } from "./LandingPrimaryCta";
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                   */
@@ -121,8 +120,6 @@ const NAV_LINKS = [
   { href: "/product", label: "Product", isAnchor: false },
   { href: "/blog", label: "Blog", isAnchor: false },
   { href: "/blog/category/comparisons", label: "Comparisons", isAnchor: false },
-  { href: "/about", label: "About", isAnchor: false },
-  { href: "/use-cases", label: "Use cases", isAnchor: false },
   {
     href: "mailto:creativecoder.crco@gmail.com",
     label: "Contact",
@@ -149,7 +146,7 @@ function GitHubButton({ starsCount }: { starsCount: number }) {
       rel="noopener noreferrer"
       aria-label={`View ReacherX on GitHub (${starsCount} stars)`}
       className={cn(
-        buttonVariants({ variant: "ghost", size: "xs" }),
+        marketingButton({ variant: "ghost", size: "sm" }),
         "gap-1.5"
       )}
     >
@@ -815,7 +812,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
             <Skeleton className="h-10 w-10 rounded-full" />
           ) : user ? (
             <>
-              <LandingBookDemoCta size="xs" />
+              <LandingPrimaryCta variant="outline" size="sm" />
               <Separator orientation="vertical" className="h-6" />
               <AvatarDropdown user={user} />
             </>
@@ -823,21 +820,14 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
             <>
               <LandingAuthLink
                 href={LOGIN_HREF}
-                className={buttonVariants({ variant: "ghost", size: "xs" })}
+                className={marketingButton({
+                  variant: "outline",
+                  size: "sm",
+                })}
               >
                 Log in
               </LandingAuthLink>
-              <LandingAuthLink
-                href={SETUP_SIGN_UP_HREF}
-                className={buttonVariants({
-                  variant: "outline",
-                  size: "xs",
-                })}
-              >
-                Sign up
-              </LandingAuthLink>
-              <Separator orientation="vertical" className="h-6" />
-              <LandingBookDemoCta size="xs" />
+              <LandingPrimaryCta size="sm" />
             </>
           )}
         </div>
@@ -877,37 +867,25 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
               </DrawerHeader>
 
               <menu className="flex flex-col items-start px-4 pb-4">
-                {/* Unauthenticated: auth actions above nav */}
-                {!loading && !user && (
-                  <>
-                    <li>
-                      <DrawerClose asChild>
-                        <LandingAuthLink
-                          href={LOGIN_HREF}
-                          className="text-foreground py-2 text-xl font-normal hover:underline"
-                        >
-                          Log in
-                        </LandingAuthLink>
-                      </DrawerClose>
-                    </li>
-                    <li>
-                      <DrawerClose asChild>
-                        <LandingAuthLink
-                          href={SETUP_SIGN_UP_HREF}
-                          className="text-foreground py-2 text-xl font-normal hover:underline"
-                        >
-                          Sign up
-                        </LandingAuthLink>
-                      </DrawerClose>
-                    </li>
-                    <Separator className="my-4" />
-                  </>
-                )}
-
-                <li>
-                  <DrawerClose asChild>
-                    <LandingBookDemoLink className="text-foreground py-2 text-xl font-normal hover:underline" />
-                  </DrawerClose>
+                <li className="mb-4 flex w-full items-center gap-2">
+                  {!loading && !user && (
+                    <DrawerClose asChild>
+                      <LandingAuthLink
+                        href={LOGIN_HREF}
+                        className={marketingButton({
+                          variant: "outline",
+                          className: "min-w-0 flex-1",
+                        })}
+                      >
+                        Log in
+                      </LandingAuthLink>
+                    </DrawerClose>
+                  )}
+                  <LandingPrimaryCta
+                    variant={user ? "outline" : "default"}
+                    className="min-w-0 flex-1"
+                    onClick={() => setIsDrawerOpen(false)}
+                  />
                 </li>
 
                 {NAV_LINKS.map(({ href, label, isAnchor }) => {

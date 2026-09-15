@@ -61,7 +61,7 @@ export const QuoteLinkedInCard: React.FC<QuoteLinkedInCardProps> = ({
   return (
     <div
       className={cn(
-        "group hover:bg-muted/50 block w-full min-w-0 cursor-pointer rounded-xl border p-2 transition-colors",
+        "group block w-full min-w-0 cursor-pointer rounded-xl border p-2 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900",
         className
       )}
       role="button"

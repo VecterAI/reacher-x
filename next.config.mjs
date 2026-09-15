@@ -10,11 +10,6 @@ const nextConfig = {
   async redirects() {
     return [
       {
-        source: "/home/preview",
-        destination: "/home/preview/network",
-        permanent: false,
-      },
-      {
         source: "/home/use-cases",
         destination: "/use-cases",
         permanent: true,

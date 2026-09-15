@@ -20,6 +20,7 @@ import {
 } from "@/features/landing/ui/components/use-case-demo/demoPresentationHelpers";
 
 export const BLOG_DEMO_IDS = [
+  "how-reacherx-enrichment-works",
   "send-voice-notes",
   "create-plans-for-several-people",
   "getting-started-with-reacherx",
@@ -183,6 +184,34 @@ export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
   "teach-reacherx-what-you-want": MEMORY_DEMO_SHOTS,
   "read-your-reacherx-analytics": ANALYTICS_DEMO_SHOTS,
   "understand-agent-observability": OBSERVABILITY_DEMO_SHOTS,
+  "how-reacherx-enrichment-works": [
+    { label: "Research attached to each person", duration: 2200, camera: wide },
+    {
+      label: "Open the researched profile",
+      duration: 1500,
+      camera: profile,
+      action: firstPerson,
+    },
+    {
+      label: "Profile details and qualification",
+      duration: 3500,
+      camera: profile,
+      focus: { selector: 'aside [role="tabpanel"]' },
+    },
+    {
+      label: "Check the supporting posts",
+      duration: 1500,
+      camera: profile,
+      action: tab("Relevant activity"),
+    },
+    {
+      label: "Evidence behind the qualification",
+      duration: 4000,
+      camera: profile,
+      focus: { selector: 'aside [role="tabpanel"]' },
+    },
+    { label: "Research in context", duration: 2600, camera: wide },
+  ],
   "find-candidates": FIND_CANDIDATES_SHOTS,
   "manage-people-with-reacherx": [
     {

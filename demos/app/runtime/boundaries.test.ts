@@ -38,7 +38,13 @@ test("production source never imports the isolated app or local services", async
   const root = resolve(import.meta.dirname, "../../..");
   for (const directory of ["app", "features", "shared", "convex"]) {
     const files = await readdir(resolve(root, directory), { recursive: true });
-    for (const file of files.filter((name) => /\.[cm]?[jt]sx?$/.test(name))) {
+    // Component tests intentionally exercise the isolated bridge. They are not
+    // production entry points and must not be mistaken for runtime imports.
+    for (const file of files.filter(
+      (name) =>
+        /\.[cm]?[jt]sx?$/.test(name) &&
+        !/\.(test|spec)\.[cm]?[jt]sx?$/.test(name)
+    )) {
       const source = await readFile(resolve(root, directory, file), "utf8");
       assert.doesNotMatch(
         source,

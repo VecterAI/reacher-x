@@ -19,9 +19,9 @@ test("offscreen demos remain inert when an external menu closes, and unlock only
     }
   );
   const send = vi.fn();
-  function Host() {
+  function Host({ suppressFocus = false }: { suppressFocus?: boolean }) {
     const ref = useRef<HTMLElement>(null);
-    useDemoHostFocus(ref, send);
+    useDemoHostFocus(ref, send, suppressFocus);
     return <section ref={ref} />;
   }
   const container = document.createElement("div");
@@ -37,7 +37,13 @@ test("offscreen demos remain inert when an external menu closes, and unlock only
     expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
       active: false,
     });
-    intersect(false);
+    notify?.(
+      [
+        { isIntersecting: true },
+        { isIntersecting: false },
+      ] as IntersectionObserverEntry[],
+      {} as IntersectionObserver
+    );
     expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
       active: true,
     });
@@ -71,11 +77,21 @@ test("offscreen demos remain inert when an external menu closes, and unlock only
     expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
       active: false,
     });
+    await act(async () => root.render(<Host suppressFocus />));
+    intersect(true);
+    expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
+      active: true,
+    });
+    await act(async () => root.render(<Host />));
+    intersect(true);
+    expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
+      active: false,
+    });
   } finally {
     vi.useRealTimers();
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
   }
-  expect(disconnect).toHaveBeenCalledOnce();
+  expect(disconnect).toHaveBeenCalledTimes(3);
 });

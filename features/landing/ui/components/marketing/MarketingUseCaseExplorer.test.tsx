@@ -1,64 +1,111 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
 import { MarketingUseCaseExplorer } from "./MarketingUseCaseExplorer";
 
-vi.mock("./MarketingDemo", () => ({
-  MarketingDemo: ({ scenario }: { scenario: string }) => (
+vi.mock("next/link", () => ({
+  default: ({ children, ...props }: { children: ReactNode }) => (
+    <a {...props}>{children}</a>
+  ),
+}));
+vi.mock("@/shared/ui/components/Carousel", () => ({
+  Carousel: ({
+    children,
+    setApi: _setApi,
+    ...props
+  }: {
+    children: ReactNode;
+    setApi?: unknown;
+  }) => <div {...props}>{children}</div>,
+  CarouselContent: ({
+    children,
+    className,
+    viewportClassName,
+  }: {
+    children: ReactNode;
+    className?: string;
+    viewportClassName?: string;
+  }) => (
+    <div className={viewportClassName}>
+      <div className={className}>{children}</div>
+    </div>
+  ),
+  CarouselItem: ({
+    children,
+    className,
+  }: {
+    children: ReactNode;
+    className?: string;
+  }) => <div className={className}>{children}</div>,
+}));
+vi.mock("@/features/blog/ui/components/app-demo/BlogAppDemo", () => ({
+  BlogAppDemo: ({ scenario }: { scenario: string }) => (
     <div data-demo={scenario} />
   ),
 }));
+
 let container: HTMLDivElement;
 let root: Root;
+let observers: IntersectionObserverCallback[];
+
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  observers = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(cb: IntersectionObserverCallback) {
+        observers.push(cb);
+      }
+      observe() {}
+      disconnect() {}
+    }
+  );
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root.render(<MarketingUseCaseExplorer />));
 });
+
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
 });
 
-test("each audience opens its own demo and destination without keeping hidden players mounted", async () => {
-  const tabs = Array.from(
-    container.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-  );
-  expect(tabs).toHaveLength(8);
-  for (const [index, tab] of tabs.entries()) {
-    await act(async () =>
-      tab.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true, button: 0 })
-      )
-    );
+test("renders one card per audience with its guide link", () => {
+  const cards = container.querySelectorAll("article");
+  expect(cards).toHaveLength(MARKETING_USE_CASES.length);
+  for (const [index, card] of cards.entries()) {
     const selected = MARKETING_USE_CASES[index];
-    expect(tab.getAttribute("aria-selected")).toBe("true");
-    const panel = document.getElementById(tab.getAttribute("aria-controls")!)!;
-    expect(panel.getAttribute("aria-labelledby")).toBe(tab.id);
-    expect(panel.querySelector("a")?.getAttribute("href")).toBe(selected.href);
-    expect(container.querySelectorAll("[data-demo]")).toHaveLength(1);
-    expect(panel.querySelector("[data-demo]")?.getAttribute("data-demo")).toBe(
-      selected.guide
+    expect(card.querySelector("a")?.getAttribute("href")).toBe(
+      selected.blogHref
     );
+    expect(card.querySelector("h3")?.textContent).toBe(selected.goal);
   }
 });
 
-test("keyboard activation changes the selected audience", async () => {
-  const tabs = Array.from(
-    container.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-  );
-  await act(async () => tabs[3].focus());
-  await act(async () =>
-    tabs[3].dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true })
-    )
-  );
-  expect(tabs[3].getAttribute("aria-selected")).toBe("true");
-  expect(tabs[0].getAttribute("aria-selected")).toBe("false");
+test("distant cards mount no demo until they become visible", async () => {
+  expect(container.querySelectorAll("[data-demo]")).toHaveLength(0);
+  // Two observers per card: visibility and preload. Reveal the first slide.
+  const reveal = (card: number, visible: boolean) => {
+    for (const offset of [0, 1]) {
+      observers[card * 2 + offset](
+        [{ isIntersecting: visible } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      );
+    }
+  };
+  await act(async () => reveal(0, true));
   expect(container.querySelectorAll("[data-demo]")).toHaveLength(1);
+  expect(
+    container.querySelector("[data-demo]")?.getAttribute("data-demo")
+  ).toBe(MARKETING_USE_CASES[0].guide);
+  await act(async () => reveal(1, true));
+  expect(container.querySelectorAll("[data-demo]")).toHaveLength(2);
+  expect(
+    container.querySelectorAll("[data-demo]")[1].getAttribute("data-demo")
+  ).toBe(MARKETING_USE_CASES[1].guide);
 });

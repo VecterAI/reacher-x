@@ -1,3 +1,4 @@
+import { BlogAuthor } from "@/features/blog/ui/components/BlogAuthor";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Metadata } from "next";
@@ -21,7 +22,12 @@ export default async function BlogContentPreview() {
   ]);
   const post = parseBlogPost(source, "content-preview");
   return (
-    <BlogArticle post={post} related={related.slice(0, 2)} preview>
+    <BlogArticle
+      author={<BlogAuthor />}
+      post={post}
+      related={related.slice(0, 2)}
+      preview
+    >
       <Content />
     </BlogArticle>
   );

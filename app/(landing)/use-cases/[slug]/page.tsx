@@ -8,12 +8,13 @@ import {
 import { LandingPromptCta } from "@/features/landing/ui/components/LandingPromptCta";
 import { MarketingFinish } from "@/features/landing/ui/components/marketing/MarketingSections";
 import { MarketingDemo } from "@/features/landing/ui/components/marketing/MarketingDemo";
-import { Button } from "@/shared/ui/components/Button";
-import { LandingBookDemoCta } from "@/features/landing/ui/components/LandingBookDemoCta";
 import {
   MarketingHero,
   MarketingFeature,
+  marketingButton as buttonVariants,
 } from "@/features/landing/ui/components/marketing/MarketingLayout";
+import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
+import { LandingBookDemoCta } from "@/features/landing/ui/components/LandingBookDemoCta";
 
 export function generateStaticParams() {
   return MARKETING_USE_CASES.map(({ slug }) => ({ slug }));
@@ -50,9 +51,9 @@ export default async function UseCasePage({
         title={item.heading}
         actions={
           <>
-            <Button asChild className="rounded-full">
-              <a href="#example">See it in action</a>
-            </Button>
+            <a href="#example" className={buttonVariants()}>
+              See it in action
+            </a>
             <LandingBookDemoCta variant="outline" />
           </>
         }
@@ -62,7 +63,7 @@ export default async function UseCasePage({
         </p>
         <LandingPromptCta
           key={item.slug}
-          placeholder="Tell the agent about your project and who you want to meet…"
+          placeholder="Tell the agent who you want to meet and why…"
           showLabeledCta={false}
         />
       </MarketingHero>
@@ -88,10 +89,8 @@ export default async function UseCasePage({
           href={`/blog/${item.guide}`}
           className="mt-6 inline-flex text-sm underline-offset-4 hover:underline"
         >
-          Read the walkthrough{" "}
-          <span aria-hidden="true" className="ml-2">
-            ↗
-          </span>
+          Read the walkthrough
+          <ArrowOutwardIcon className="ml-1 inline size-3.5 shrink-0 fill-current" />
         </Link>
       </MarketingFeature>
       <MarketingFinish />

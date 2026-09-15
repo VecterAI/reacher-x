@@ -15,13 +15,13 @@ export const homepageFaqItems: FaqItem[] = [
     id: "why-agent",
     question: "Do I need sales experience to use it?",
     answer:
-      "No. Describe your project and who you want to reach. The agent asks questions, researches people, and helps you plan what to say. You can review its work and give feedback.",
+      "No. Describe who you want to reach and why. The agent asks questions, researches people, and helps you plan what to say. You can review its work and give feedback.",
   },
   {
     id: "how-does-it-know",
     question: "How does ReacherX know who to reach?",
     answer:
-      "Describe who you want to meet or share your project URL. The agent develops search criteria, researches profiles and posts, and explains why each person fits.",
+      "Describe who you want to meet or share your website. The agent develops search criteria, researches profiles and posts, and explains why each person fits.",
   },
   {
     id: "platform-support",

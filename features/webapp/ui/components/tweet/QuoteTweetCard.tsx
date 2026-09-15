@@ -113,7 +113,9 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
       {...interactiveCardProps}
       className={cn(
         "group block w-full rounded-xl border p-2 transition-colors",
-        readOnly ? "cursor-default" : "hover:bg-muted/50 cursor-pointer",
+        readOnly
+          ? "cursor-default"
+          : "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-900",
         className
       )}
       aria-label={`View post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}

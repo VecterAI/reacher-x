@@ -90,12 +90,6 @@ importers:
       "@lexical/utils":
         specifier: ^0.45.0
         version: 0.45.0
-      "@mux/mux-background-video":
-        specifier: ^0.2.3
-        version: 0.2.3
-      "@mux/mux-player-react":
-        specifier: ^3.13.0
-        version: 3.13.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       "@nanostores/react":
         specifier: ^1.1.0
         version: 1.1.0(nanostores@1.3.0)(react@19.2.7)
@@ -237,9 +231,6 @@ importers:
       date-fns:
         specifier: ^4.4.0
         version: 4.4.0
-      embla-carousel-autoplay:
-        specifier: ^8.6.0
-        version: 8.6.0(embla-carousel@8.6.0)
       embla-carousel-react:
         specifier: ^8.6.0
         version: 8.6.0(react@19.2.7)
@@ -255,12 +246,6 @@ importers:
       geist:
         specifier: ^1.7.2
         version: 1.7.2(next@16.2.9(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))
-      hls-video-element:
-        specifier: ^1.5.11
-        version: 1.5.11
-      hls.js:
-        specifier: ^1.6.16
-        version: 1.6.16
       input-otp:
         specifier: ^1.4.2
         version: 1.4.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -2208,52 +2193,6 @@ packages:
     peerDependenciesMeta:
       "@cfworker/json-schema":
         optional: true
-
-  "@mux/mux-background-video@0.2.3":
-    resolution:
-      {
-        integrity: sha512-J5e8KxvdAvHTDVYBI3iuiyKn6P3JYmYiCgIaxTgN/E3L/DXSSUoaP8Tuifbt/q8bJQatBXQ6IBBsOtGKVJN/JA==,
-      }
-
-  "@mux/mux-data-google-ima@0.3.17":
-    resolution:
-      {
-        integrity: sha512-4wpH6dYybyZhqLn9qGn/+67Z8MZnQRAdqTFEEZw2bx61M9q01uPYYHxd8qwOnYtUGEeafsdTwVHVxKHGD3oc1A==,
-      }
-
-  "@mux/mux-player-react@3.13.0":
-    resolution:
-      {
-        integrity: sha512-7IkImo1H3rUYeuWHI/L0L7sGUqBvZCvptx3+4igc+P/V3WgqNFjOyQlcyxzxgXNtNNhGmkn5NaF3TU9DPbOmAQ==,
-      }
-    peerDependencies:
-      "@types/react": ^17.0.0 || ^17.0.0-0 || ^18 || ^18.0.0-0 || ^19 || ^19.0.0-0
-      "@types/react-dom": "*"
-      react: ^17.0.2 || ^17.0.0-0 || ^18 || ^18.0.0-0 || ^19 || ^19.0.0-0
-      react-dom: ^17.0.2 || ^17.0.2-0 || ^18 || ^18.0.0-0 || ^19 || ^19.0.0-0
-    peerDependenciesMeta:
-      "@types/react":
-        optional: true
-      "@types/react-dom":
-        optional: true
-
-  "@mux/mux-player@3.13.0":
-    resolution:
-      {
-        integrity: sha512-vh4CIMahUa29gys+mlfsOFKYKAKXxE07jSWk9WZxkdpGBW1fKfCQXlNxBoAIQlPa9Uk4MZuM3HVgqdW6aTuaZg==,
-      }
-
-  "@mux/mux-video@0.31.0":
-    resolution:
-      {
-        integrity: sha512-DvO2GynIJhPDc0LMuWvC144lCF+E07NI+chrg/vcRQlCf2fPdNNqCSMoaRdWu2S2v/Orsc85giT9K6GRbjbzgA==,
-      }
-
-  "@mux/playback-core@0.35.0":
-    resolution:
-      {
-        integrity: sha512-7Zi1EJ9sQNIUlQVBjJCXV0CB+rUVEsU3vNRElRV4xnD7dbpoioIAhe1SjZNBifjnK5aBKLDwQHypbnL3Cw3a5A==,
-      }
 
   "@nanostores/react@1.1.0":
     resolution:
@@ -5433,12 +5372,6 @@ packages:
         integrity: sha512-MMHtuAz9Ys840zAY5F4k6fV5GaivZ9sPk+nz0mY+GYVzRBnYkN0mpqkSR92oWRQ19yQWo4HvBV/FnC16AJX8MA==,
       }
 
-  castable-video@1.1.16:
-    resolution:
-      {
-        integrity: sha512-wBhe2dZu2afhewL3EaGgVYTyDsa9HvNhY98clMZkNzDrLelOValSrTaoMos9YX7PPBCrgpd1j6YmNyyI2Vbq3w==,
-      }
-
   ccount@2.0.1:
     resolution:
       {
@@ -5815,12 +5748,6 @@ packages:
     resolution:
       {
         integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==,
-      }
-
-  custom-media-element@1.4.6:
-    resolution:
-      {
-        integrity: sha512-/HRYqJOa1ob5ik4q7FIJVYxTJCFs/FL3+cQPAJjUf2uiqrDEzbTgB315gQ2rG8oK3w094W9m5tcB8S5Qah+caA==,
       }
 
   d3-array@3.2.4:
@@ -6234,14 +6161,6 @@ packages:
       {
         integrity: sha512-TaxwufTFDufvPEoXdhwVrA3UdFWBeWGkYoJ1K8ldF1xe6gKfth6iRNS5lTQ5JPNOHdGQm8PT1QYKUqFLCiUefQ==,
       }
-
-  embla-carousel-autoplay@8.6.0:
-    resolution:
-      {
-        integrity: sha512-OBu5G3nwaSXkZCo1A6LTaFMZ8EpkYbwIaH+bPqdBnDGQ2fh4+NbzjXjs2SktoPNKCtflfVMc75njaDHOYXcrsA==,
-      }
-    peerDependencies:
-      embla-carousel: 8.6.0
 
   embla-carousel-react@8.6.0:
     resolution:
@@ -7316,18 +7235,6 @@ packages:
         integrity: sha512-6pEjquH3rqaI6cYAXYPcz9MS4rY6R4ngRgrgfDshRptUZIc3lw0MCIJIGDj9++mfySOuPTHB4nrSW99BCvOPIA==,
       }
 
-  hls-video-element@1.5.11:
-    resolution:
-      {
-        integrity: sha512-tJJ65/52CDxj8XFyIve6zT9nVVdUIc6mqvKR25X0ycPKHk07rpjp4xxVteeCefDUBSf/tFLhlICFmn3KWj37xA==,
-      }
-
-  hls.js@1.6.16:
-    resolution:
-      {
-        integrity: sha512-VSIRpLfRwlAAdGL4wiTucx2ScRipo0ed1FBatWkyt832jC4CReKstga6yIhYVwGu9LOBjuX9wzmRMeQdBJtzEA==,
-      }
-
   hono@4.12.27:
     resolution:
       {
@@ -8396,12 +8303,6 @@ packages:
         integrity: sha512-4ai1ITN8wBhwugQcRgqe3tN0z6OSKGOXqHLNrS04MgKFfsLqu6Dm8MPq02pI9Y9ZKoXtFjIl85jOryIW9es3BA==,
       }
 
-  media-tracks@0.3.5:
-    resolution:
-      {
-        integrity: sha512-l54rkKXlLBt3ob3zOLWHcnjvwUmX5bNEZ70igyapOZZC9imzqBmq1oz8p2roiV04KhjblFIi2hetLPF1oYVLRA==,
-      }
-
   media-typer@1.1.0:
     resolution:
       {
@@ -8725,12 +8626,6 @@ packages:
     resolution:
       {
         integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==,
-      }
-
-  mux-embed@5.18.1:
-    resolution:
-      {
-        integrity: sha512-ePsHjiEKY+FgrSBiMmaF+LOtTQSSBWv/1zqpREQFN96JE93xlsArT/MEi30yKOE06MgjOlL70YI750molu3y7g==,
       }
 
   nanoid@3.3.11:
@@ -9293,12 +9188,6 @@ packages:
         integrity: sha512-nDywThFk1i4BQK4twPQ6TA4RT8bDY96yeuCVBWL3ePARCiEKDRSrNGbFIgUJpLp+XeIR65v8ra7WuJOFUBtkMA==,
       }
     engines: { node: ">=8" }
-
-  player.style@0.3.4:
-    resolution:
-      {
-        integrity: sha512-5O9bkbq0APQIkhptyZwp0gUgheCeImGPFo4hvPF2M5xBmgsUYzsUPHCfMye2xyeRE1zvQBKtziaC3jPgnHE1tw==,
-      }
 
   pngjs@5.0.0:
     resolution:
@@ -12723,45 +12612,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  "@mux/mux-background-video@0.2.3": {}
-
-  "@mux/mux-data-google-ima@0.3.17":
-    dependencies:
-      mux-embed: 5.18.1
-
-  "@mux/mux-player-react@3.13.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)":
-    dependencies:
-      "@mux/mux-player": 3.13.0(react@19.2.7)
-      "@mux/playback-core": 0.35.0
-      prop-types: 15.8.1
-      react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
-    optionalDependencies:
-      "@types/react": 19.2.17
-      "@types/react-dom": 19.2.3(@types/react@19.2.17)
-
-  "@mux/mux-player@3.13.0(react@19.2.7)":
-    dependencies:
-      "@mux/mux-video": 0.31.0
-      "@mux/playback-core": 0.35.0
-      media-chrome: 4.19.2(react@19.2.7)
-      player.style: 0.3.4(react@19.2.7)
-    transitivePeerDependencies:
-      - react
-
-  "@mux/mux-video@0.31.0":
-    dependencies:
-      "@mux/mux-data-google-ima": 0.3.17
-      "@mux/playback-core": 0.35.0
-      castable-video: 1.1.16
-      custom-media-element: 1.4.6
-      media-tracks: 0.3.5
-
-  "@mux/playback-core@0.35.0":
-    dependencies:
-      hls.js: 1.6.16
-      mux-embed: 5.18.1
-
   "@nanostores/react@1.1.0(nanostores@1.3.0)(react@19.2.7)":
     dependencies:
       nanostores: 1.3.0
@@ -14781,10 +14631,6 @@ snapshots:
 
   caniuse-lite@1.0.30001800: {}
 
-  castable-video@1.1.16:
-    dependencies:
-      custom-media-element: 1.4.6
-
   ccount@2.0.1: {}
 
   ce-la-react@0.3.2(react@19.2.7):
@@ -14979,8 +14825,6 @@ snapshots:
 
   csstype@3.2.3: {}
 
-  custom-media-element@1.4.6: {}
-
   d3-array@3.2.4:
     dependencies:
       internmap: 2.0.3
@@ -15173,10 +15017,6 @@ snapshots:
   electron-to-chromium@1.5.113: {}
 
   electron-to-chromium@1.5.387: {}
-
-  embla-carousel-autoplay@8.6.0(embla-carousel@8.6.0):
-    dependencies:
-      embla-carousel: 8.6.0
 
   embla-carousel-react@8.6.0(react@19.2.7):
     dependencies:
@@ -16070,14 +15910,6 @@ snapshots:
     dependencies:
       hermes-estree: 0.25.1
 
-  hls-video-element@1.5.11:
-    dependencies:
-      custom-media-element: 1.4.6
-      hls.js: 1.6.16
-      media-tracks: 0.3.5
-
-  hls.js@1.6.16: {}
-
   hono@4.12.27: {}
 
   html-to-text@9.0.5:
@@ -16710,8 +16542,6 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  media-tracks@0.3.5: {}
-
   media-typer@1.1.0: {}
 
   merge-descriptors@2.0.0: {}
@@ -16969,8 +16799,6 @@ snapshots:
       react-dom: 19.2.7(react@19.2.7)
 
   ms@2.1.3: {}
-
-  mux-embed@5.18.1: {}
 
   nanoid@3.3.11: {}
 
@@ -17296,12 +17124,6 @@ snapshots:
   pkg-up@3.1.0:
     dependencies:
       find-up: 3.0.0
-
-  player.style@0.3.4(react@19.2.7):
-    dependencies:
-      media-chrome: 4.19.2(react@19.2.7)
-    transitivePeerDependencies:
-      - react
 
   pngjs@5.0.0: {}
 

@@ -62,6 +62,9 @@ describe("routing after public thread removal", () => {
           redirect.destination.includes("threads")
       )
     ).toBe(false);
+    expect(
+      redirects.some((r) => /\/home\/(?:v\d+|preview)/.test(r.source))
+    ).toBe(false);
     expect(redirects).toContainEqual({
       source: "/home/pricing",
       destination: "/pricing",
@@ -71,13 +74,10 @@ describe("routing after public thread removal", () => {
 
   test.each([
     "/home",
-    "/home/v0",
     "/pricing",
     "/use-cases",
     "/use-cases/investors",
     "/product",
-    "/about",
-    "/home/preview/network",
     "/login",
     "/signup",
     "/callback",
@@ -136,6 +136,11 @@ describe("marketing routes reject invalid paths before streaming", () => {
     "/use-cases/customers/extra",
     "/use-cases/__proto__",
     "/use-cases/missing.png",
+    "/home/v0",
+    "/home/v2",
+    "/home/v2/nested",
+    "/home/preview",
+    "/home/preview/network",
     "/home/preview/missing",
     "/home/preview/describe",
     "/home/preview/goals",
@@ -149,4 +154,36 @@ describe("marketing routes reject invalid paths before streaming", () => {
     expect(await response.text()).toContain("Explore use cases");
     expect(mocks.handleAuthkitProxy).not.toHaveBeenCalled();
   });
+});
+
+test("authenticated root still opens the dashboard", async () => {
+  mocks.authkit.mockResolvedValue({
+    session: { user: { id: "test-user" } },
+    headers: new Headers(),
+  });
+  const request = new NextRequest("https://reacherx.com/");
+  await proxy(request);
+  expect(mocks.handleAuthkitProxy).toHaveBeenCalledWith(
+    request,
+    expect.any(Headers)
+  );
+});
+
+test("retired homepage variants also return 404 when authenticated", async () => {
+  mocks.authkit.mockResolvedValue({
+    session: { user: { id: "test-user" } },
+    headers: new Headers(),
+  });
+  for (const path of [
+    "/home/v0",
+    "/home/v2",
+    "/home/preview",
+    "/home/preview/network",
+  ]) {
+    const response = await proxy(
+      new NextRequest(`https://reacherx.com${path}`)
+    );
+    expect(response.status).toBe(404);
+    expect(response.headers.get("location")).toBeNull();
+  }
 });

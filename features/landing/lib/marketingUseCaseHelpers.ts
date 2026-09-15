@@ -40,7 +40,7 @@ const STORIES: Record<string, UseCaseStory> = {
       "We are a team of three hiring a frontend engineer. Find people on X/Twitter and LinkedIn who share work on accessibility and complex web apps, and are open to joining a small team.",
     checks: [
       "Search around the skills and experience your team needs.",
-      "Review projects and public activity before reaching out.",
+      "Review their work and public activity before reaching out.",
       "Keep candidate conversations and hiring stages together.",
     ],
     guide: "find-candidates",
@@ -85,7 +85,7 @@ const STORIES: Record<string, UseCaseStory> = {
       "Find people who share your community’s interests and plan a personal invitation.",
     goal: "Grow a community",
     prompt:
-      "Find solo developers sharing early apps and asking for feedback on X/Twitter and LinkedIn. We run a free weekly session where people try each other’s projects.",
+      "Find solo developers sharing early apps and asking for feedback on X/Twitter and LinkedIn. We run a free weekly session where people try each other’s work.",
     checks: [
       "Discover people participating in relevant conversations.",
       "Check whether the community would be useful to them.",
@@ -94,16 +94,16 @@ const STORIES: Record<string, UseCaseStory> = {
     guide: "find-community-members",
   },
   creator_outreach: {
-    heading: "Meet creators who fit your project.",
+    heading: "Meet creators who fit your audience.",
     navigationDescription: "Creators whose work fits your audience.",
     exampleHeading: "Understand the creator before making the pitch.",
     explanation:
       "Find creators whose work fits your audience and prepare a relevant collaboration proposal.",
     goal: "Find creators",
     prompt:
-      "Find creators teaching solo developers how to launch web apps. Look for hands-on tutorials and audience questions about finding the first people to try a project.",
+      "Find creators teaching solo developers how to launch web apps. Look for hands-on tutorials and audience questions about finding the first people to try what you build.",
     checks: [
-      "Discover creators covering subjects relevant to your project.",
+      "Discover creators covering subjects relevant to what you do.",
       "Read their content and the conversations around it.",
       "Prepare a collaboration proposal with a personal introduction.",
     ],
@@ -147,6 +147,8 @@ export const MARKETING_USE_CASES = USE_CASES.map((useCase) => ({
   ...useCase,
   ...STORIES[useCase.useCaseKey],
   href: `/use-cases/${useCase.slug}`,
+  /** Published guide for the same audience; marketing surfaces link here. */
+  blogHref: `/blog/${STORIES[useCase.useCaseKey].guide}`,
 }));
 
 export function getMarketingUseCase(slug: string) {
@@ -154,11 +156,19 @@ export function getMarketingUseCase(slug: string) {
 }
 
 export function isInvalidMarketingPath(pathname: string) {
+  if (pathname === "/about") {
+    return true;
+  }
   if (pathname.startsWith("/use-cases/")) {
     return !getMarketingUseCase(pathname.slice("/use-cases/".length));
   }
-  if (pathname.startsWith("/home/preview/")) {
-    return pathname !== "/home/preview/network";
+  // Retired homepage variants must return 404 before the shell streams.
+  if (
+    pathname === "/home/preview" ||
+    pathname.startsWith("/home/preview/") ||
+    /^\/home\/v\d+(?:\/|$)/.test(pathname)
+  ) {
+    return true;
   }
   return false;
 }

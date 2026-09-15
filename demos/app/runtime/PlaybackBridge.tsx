@@ -23,10 +23,12 @@ export function PlaybackBridge({
   scenario,
   reset,
   onTheme,
+  onActivity,
 }: {
   scenario: BlogDemoId;
   reset: () => number;
   onTheme: (theme: "light" | "dark") => void;
+  onActivity: (active: boolean) => void;
 }) {
   const router = useRouter();
   const [bridgeId] = useState(() => crypto.randomUUID());
@@ -44,6 +46,8 @@ export function PlaybackBridge({
     let userHasFocused = false;
     let disposed = false;
     const initialInert = document.body.inert;
+    const initialAmbient = document.documentElement.dataset.demoAmbient;
+    document.documentElement.dataset.demoAmbient = "paused";
     const send = (type: string, extra = {}) =>
       window.parent.postMessage({ type, ...extra }, parentOrigin);
     const frame = () =>
@@ -198,6 +202,15 @@ export function PlaybackBridge({
         !isRecord(event.data)
       )
         return;
+      if (event.data.type === "reacherx:ambient") {
+        if (typeof event.data.active === "boolean") {
+          document.documentElement.dataset.demoAmbient = event.data.active
+            ? "active"
+            : "paused";
+          onActivity(event.data.active);
+        }
+        return;
+      }
       if (event.data.type === "reacherx:theme") {
         if (event.data.theme === "light" || event.data.theme === "dark")
           onTheme(event.data.theme);
@@ -320,6 +333,9 @@ export function PlaybackBridge({
     return () => {
       disposed = true;
       document.body.inert = initialInert;
+      if (initialAmbient === undefined)
+        delete document.documentElement.dataset.demoAmbient;
+      else document.documentElement.dataset.demoAmbient = initialAmbient;
       generation += 1;
       window.removeEventListener("message", message);
       for (const type of ["pointerdown", "keydown", "wheel"])
@@ -329,6 +345,6 @@ export function PlaybackBridge({
       document.removeEventListener("focusin", focus);
       document.removeEventListener("focusout", focus);
     };
-  }, [scenario, reset, router, onTheme, bridgeId]);
+  }, [scenario, reset, router, onTheme, onActivity, bridgeId]);
   return null;
 }

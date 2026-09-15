@@ -26,28 +26,41 @@ test("all use cases are publicly rendered, canonical, and ready to start a relev
   }
 });
 
-test("Network is the only preview, has a composer, and has no comparison links", async () => {
-  const response = await request("/home/preview/network");
+test("the approved homepage is canonical and indexable", async () => {
+  const response = await request("/home");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /noindex, nofollow/);
+  assert.match(html, /Reach the right people/);
   assert.match(html, /Describe who you need Agent to find/);
+  assert.match(html, /rel="canonical" href="https:\/\/reacherx.com\/home"/);
   assert.doesNotMatch(
     html,
-    /Compare homepage designs|Design previews|preview\/describe|preview\/goals/
-  );
-  const index = await request("/home/preview");
-  assert.equal(index.status, 307);
-  assert.equal(
-    new URL(index.headers.get("location")!, origin).pathname,
-    "/home/preview/network"
+    /noindex|Network homepage preview|Compare homepage designs|Building got easy/
   );
 });
 
+test("retired variant URLs return 404 without redirects", async () => {
+  for (const path of [
+    "/home/v0",
+    "/home/v2",
+    "/home/v2/nested",
+    "/home/preview",
+    "/home/preview/network",
+    "/home/preview/network?utm_source=old",
+    "/home/preview/missing.png",
+  ]) {
+    const response = await request(path);
+    assert.equal(response.status, 404, path);
+    assert.equal(response.headers.get("location"), null, path);
+    assert.equal(response.headers.get("x-robots-tag"), "noindex", path);
+  }
+});
+
 test("public supporting pages and removed or invalid routes have the right status", async () => {
-  for (const path of ["/use-cases", "/product", "/about"])
+  for (const path of ["/use-cases", "/product"])
     assert.equal((await request(path)).status, 200, path);
   for (const path of [
+    "/about",
     "/use-cases/not-real",
     "/home/preview/not-real",
     "/home/preview/describe",
