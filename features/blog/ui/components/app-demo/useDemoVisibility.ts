@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-/** Warm nearby apps before entry, but release distant apps to bound memory use. */
+/** Load nearby apps once; retain their state while offscreen playback is paused. */
 export function useDemoVisibility(preloadRoot?: HTMLElement) {
   const root = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
@@ -10,13 +10,10 @@ export function useDemoVisibility(preloadRoot?: HTMLElement) {
   useEffect(() => {
     const node = root.current;
     if (!node) return;
-    let release: ReturnType<typeof setTimeout> | undefined;
     let nearby = false;
     let rootNearby = !preloadRoot;
     const updateMount = () => {
-      clearTimeout(release);
       if (nearby && rootNearby) setMounted(true);
-      else release = setTimeout(() => setMounted(false), 2000);
     };
     const observer = new IntersectionObserver((entries) => {
       const entry = entries.at(-1);
@@ -37,7 +34,7 @@ export function useDemoVisibility(preloadRoot?: HTMLElement) {
     );
     // A local carousel root can see past the page's horizontal clipping edge.
     // Separately gate it by distance from the browser viewport, so a distant
-    // carousel cannot keep every nearby slide mounted while offscreen.
+    // carousel cannot load its slides before the reader approaches the row.
     const rootVisibility = preloadRoot
       ? new IntersectionObserver(
           (entries) => {
@@ -56,7 +53,6 @@ export function useDemoVisibility(preloadRoot?: HTMLElement) {
       observer.disconnect();
       preload.disconnect();
       rootVisibility?.disconnect();
-      clearTimeout(release);
     };
   }, [preloadRoot]);
   return { root, visible, mounted };

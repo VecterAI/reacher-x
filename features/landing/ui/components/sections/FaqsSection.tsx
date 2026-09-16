@@ -21,7 +21,7 @@ export function FaqsSection({
         href="mailto:creativecoder.crco@gmail.com"
         className="text-foreground underline-offset-4 hover:underline"
       >
-        creativecoder.crco@gmail.com
+        Get in touch.
       </Link>
     </p>
   );
@@ -34,7 +34,7 @@ export function FaqsSection({
             <div className="md:sticky md:top-24">
               <h2
                 id="faqs-heading"
-                className="font-pixel-square text-4xl font-medium md:text-5xl"
+                className="text-4xl leading-[1.1] font-normal tracking-[-0.03em] md:text-5xl"
               >
                 FAQs
               </h2>
@@ -52,7 +52,7 @@ export function FaqsSection({
       <div className="mx-auto w-full max-w-3xl">
         <h2
           id="faqs-heading"
-          className="font-pixel-square mb-10 text-center text-4xl font-medium md:mb-12 md:text-5xl"
+          className="mb-10 text-center text-4xl leading-[1.1] font-normal tracking-[-0.03em] md:mb-12 md:text-5xl"
         >
           FAQs
         </h2>
@@ -65,7 +65,7 @@ export function FaqsSection({
             href="mailto:creativecoder.crco@gmail.com"
             className="text-foreground underline-offset-4 hover:underline"
           >
-            creativecoder.crco@gmail.com
+            Get in touch.
           </Link>
         </p>
       </div>

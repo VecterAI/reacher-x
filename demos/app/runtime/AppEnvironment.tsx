@@ -29,6 +29,8 @@ import { PlaybackBridge } from "./PlaybackBridge";
 import { AnimationActivityProvider } from "@/shared/contexts/AnimationActivityProvider";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
 
+import { getDemoSetupScenario } from "./scenarios/setupHelpers";
+import { lockXChatInBrowser } from "./demoXChatBrowserSession";
 import { installVoiceSample } from "./voiceSample";
 import { installDemoHistory } from "./demoHistoryHelpers";
 
@@ -51,7 +53,9 @@ export function AppEnvironment({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<"light" | "dark">();
   const [scenario] = useState(() => {
     const value =
-      search.get("scenario") ?? window.name.replace(/^reacherx-demo:/, "");
+      search.get("scenario") ??
+      getDemoSetupScenario(search.get("threadId")) ??
+      window.name.replace(/^reacherx-demo:/, "");
     return isBlogDemoId(value)
       ? value
       : window.location.pathname === "/agent/setup"
@@ -71,10 +75,22 @@ export function AppEnvironment({ children }: { children: ReactNode }) {
   const sessionId = useRef(0);
   const reset = useCallback(() => {
     const id = ++sessionId.current;
+    lockXChatInBrowser();
     setSession({ id, services: createAppServices(scenario) });
     return id;
   }, [scenario]);
   const { services } = session;
+  const activeServices = useRef<typeof services | null>(null);
+  useEffect(() => {
+    activeServices.current = services;
+    return () => {
+      activeServices.current = null;
+      // Strict Mode reactivates this same session before the microtask runs.
+      queueMicrotask(() => {
+        if (activeServices.current !== services) void services.client.close();
+      });
+    };
+  }, [services]);
   return (
     <ThemeProvider
       attribute="class"

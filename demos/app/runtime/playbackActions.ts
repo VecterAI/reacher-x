@@ -1,3 +1,4 @@
+import { waitForPlaybackFrame } from "./playbackTimingHelpers";
 import { activateDemoTarget } from "@/features/blog/lib/blogDemoDomHelpers";
 import type { DemoAction } from "@/features/blog/lib/blogDemoHelpers";
 
@@ -51,9 +52,7 @@ export async function performPlaybackAction(
     selection?.removeAllRanges();
     selection?.addRange(range);
     document.dispatchEvent(new Event("selectionchange"));
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => resolve())
-    );
+    await waitForPlaybackFrame();
     if (!isCurrent() || !element.isConnected) return;
     element.dispatchEvent(createPlaybackPasteEvent(action.input));
     return;

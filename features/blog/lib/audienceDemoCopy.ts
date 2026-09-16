@@ -11,7 +11,7 @@ export const AUDIENCE_DEMO_INVITATIONS: Record<AudienceDemoId, string> = {
   "find-partners":
     "Hi Maya, I liked your lesson on agreeing what client approval means. Would a free 30-minute workshop on handling conflicting feedback be useful for your members? I can prepare the examples and run the session; I'd ask you to host and share it with members. No product pitch or fee.",
   "find-creators":
-    "Hi Evan, your web-app launch tutorial made me think ReacherX could help with your viewers' next question: finding people to try it. Would you like to test it? I'm offering product access for feedback, with no posting obligation. The short clip shows the candidate research and conversation workflow.",
+    "Hi Evan, your web-app launch tutorial made me think ReacherX could help with your viewers' next question: finding people to try it. Would you like to test it? I'm offering product access for feedback, with no posting obligation.",
   "find-community-members":
     "Hi Alex, I saw you're looking for feedback on your onboarding. We're holding a free app-feedback session this Friday at 16:00 UTC on Discord. Each person brings one app and tries someone else's. Would you like to bring yours?",
   "find-podcast-guests":

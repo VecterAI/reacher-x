@@ -9,6 +9,14 @@ import {
   GITHUB_REPO_ISSUES_URL,
   GITHUB_REPO_URL,
 } from "@/features/landing/lib/github";
+import {
+  BLUESKY_PROFILE_URL,
+  DISCORD_INVITE_URL,
+  LINKEDIN_PROFILE_URL,
+  PATREON_URL,
+  THREADS_PROFILE_URL,
+  X_PROFILE_URL,
+} from "@/features/landing/lib/communityUrls";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { LandingWordmark } from "@/features/landing/ui/components/LandingWordmark";
@@ -23,6 +31,7 @@ import {
 import {
   TwitterIcon,
   DiscordOutlineIcon,
+  PatreonIcon,
   LinkedinIcon,
   BlueskyIcon,
   ThreadsIcon,
@@ -64,6 +73,8 @@ const FOOTER_COLUMNS = [
         href: "https://github.com/VecterAI/reacher-x/blob/main/README.md",
       },
       { label: "Contribute", href: GITHUB_REPO_ISSUES_URL },
+      { label: "Patreon", href: PATREON_URL },
+      { label: "Discord community", href: DISCORD_INVITE_URL },
       {
         label: "License (Apache-2.0)",
         href: "https://github.com/VecterAI/reacher-x/blob/main/LICENSE",
@@ -79,27 +90,32 @@ const SOCIALS = [
     icon: <GitHubOutlineIcon />,
   },
   {
-    href: "https://x.com/ReacherXfounder",
+    href: X_PROFILE_URL,
     label: "X/Twitter",
     icon: <TwitterIcon />,
   },
   {
-    href: "https://discord.gg/BQttyr8jY",
+    href: DISCORD_INVITE_URL,
     label: "Discord",
     icon: <DiscordOutlineIcon />,
   },
   {
-    href: "https://www.linkedin.com/in/noobships",
+    href: PATREON_URL,
+    label: "Patreon",
+    icon: <PatreonIcon className="fill-current" />,
+  },
+  {
+    href: LINKEDIN_PROFILE_URL,
     label: "LinkedIn",
     icon: <LinkedinIcon className="fill-current" />,
   },
   {
-    href: "https://bsky.app/profile/reacherxfounder.bsky.social",
+    href: BLUESKY_PROFILE_URL,
     label: "Bluesky",
     icon: <BlueskyIcon />,
   },
   {
-    href: "https://threads.net/@reacherxfounder",
+    href: THREADS_PROFILE_URL,
     label: "Threads",
     icon: <ThreadsIcon className="fill-current" />,
   },
@@ -188,7 +204,7 @@ export function FooterClient({
               href="mailto:creativecoder.crco@gmail.com"
               className="text-muted-foreground font-mono text-sm font-medium hover:underline"
             >
-              creativecoder.crco@gmail.com
+              Get in touch
             </a>
           </address>
         </div>

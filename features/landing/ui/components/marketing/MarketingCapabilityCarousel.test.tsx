@@ -17,7 +17,7 @@ vi.mock("@/features/blog/ui/components/app-demo/BlogAppDemo", () => ({
   ),
 }));
 
-test("nearby cards preload paused, and distant cards release apps without changing layout", async () => {
+test("nearby cards preload paused and retain the same app when revisited", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const observers: IntersectionObserverCallback[] = [];
@@ -86,8 +86,9 @@ test("nearby cards preload paused, and distant cards release apps without changi
         show(i, true);
         vi.advanceTimersByTime(2000);
       });
-      expect(host.querySelectorAll("iframe")).toHaveLength(3);
+      expect(host.querySelectorAll("iframe")).toHaveLength(i + 1);
     }
+    expect(host.querySelector("iframe")).toBe(original);
     const card = host.querySelectorAll("article")[7];
     expect(card.querySelector("a")?.nextElementSibling?.className).toBe(
       "capability-demo"

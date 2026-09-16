@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { NewReleasesIcon } from "@/shared/ui/components/icons";
 import { BLOG_AUTHOR } from "../../lib/blogHelpers";
@@ -10,9 +10,28 @@ import {
   type BlogAuthorProfile,
 } from "../../lib/blogAuthorHelpers";
 
+const loadedAuthorImages = new Set<string>();
+const imageListeners = new Set<() => void>();
+const subscribeToImages = (listener: () => void) => {
+  imageListeners.add(listener);
+  return () => {
+    imageListeners.delete(listener);
+  };
+};
+const imageServerSnapshot = () => false;
+
 function BlogAuthorAvatar({ src }: { src: string }) {
-  const [loaded, setLoaded] = useState(false);
+  const loaded = useSyncExternalStore(
+    subscribeToImages,
+    () => loadedAuthorImages.has(src),
+    imageServerSnapshot
+  );
   const [failed, setFailed] = useState(false);
+  const rememberLoaded = () => {
+    if (loadedAuthorImages.has(src)) return;
+    loadedAuthorImages.add(src);
+    imageListeners.forEach((listener) => listener());
+  };
 
   return (
     <div className="relative size-4 shrink-0">
@@ -26,9 +45,10 @@ function BlogAuthorAvatar({ src }: { src: string }) {
           height={16}
           alt=""
           className={`absolute inset-0 size-4 rounded-full object-cover ${loaded ? "opacity-100" : "opacity-0"}`}
-          onLoad={() => setLoaded(true)}
+          onLoad={rememberLoaded}
           onError={() => {
-            setLoaded(false);
+            loadedAuthorImages.delete(src);
+            imageListeners.forEach((listener) => listener());
             setFailed(true);
           }}
         />

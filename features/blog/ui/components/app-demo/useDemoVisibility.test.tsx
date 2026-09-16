@@ -13,7 +13,7 @@ function Demo({ preloadRoot }: { preloadRoot?: HTMLElement }) {
   );
 }
 
-test("preloading does not mark a demo visible, preserves it on return, and cleans up delayed release", async () => {
+test("preloading stays lazy and retains the same iframe across long absences", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const observers: {
@@ -62,27 +62,27 @@ test("preloading does not mark a demo visible, preserves it on return, and clean
       show(1, false);
       vi.advanceTimersByTime(2000);
     });
-    expect(host.querySelector("iframe")).toBeNull();
-    await act(async () => {
-      show(1, true, false);
-    });
-    await act(async () => root.render(<Demo preloadRoot={host} />));
+    expect(host.querySelector("iframe")).toBe(iframe);
+    await act(async () =>
+      root.render(<Demo key="carousel" preloadRoot={host} />)
+    );
     await act(async () => show(3, true));
     expect(host.querySelector("iframe")).toBeNull();
     await act(async () => show(4, true));
     expect(host.querySelector("iframe")).not.toBeNull();
-    // Horizontally adjacent slides must still release when the row is far away.
+    const carouselIframe = host.querySelector("iframe");
+    // Leaving the row or moving to another slide preserves the loaded app.
     await act(async () => {
       show(4, false);
-      vi.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(60000);
     });
-    expect(host.querySelector("iframe")).toBeNull();
+    expect(host.querySelector("iframe")).toBe(carouselIframe);
     await act(async () => {
       show(4, true);
       show(3, false);
       vi.advanceTimersByTime(2000);
     });
-    expect(host.querySelector("iframe")).toBeNull();
+    expect(host.querySelector("iframe")).toBe(carouselIframe);
     await act(async () => show(3, true));
     expect(host.querySelector("iframe")).not.toBeNull();
     await act(async () => root.unmount());

@@ -1,12 +1,15 @@
 import { beforeEach, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   action: vi.fn(),
-  connection: vi.fn(),
+  cacheLife: vi.fn(),
+  cacheTag: vi.fn(),
   options: vi.fn(),
 }));
 vi.mock("server-only", () => ({}));
-vi.mock("react", () => ({ cache: (fn: unknown) => fn }));
-vi.mock("next/server", () => ({ connection: mocks.connection }));
+vi.mock("next/cache", () => ({
+  cacheLife: mocks.cacheLife,
+  cacheTag: mocks.cacheTag,
+}));
 vi.mock("convex/browser", () => ({
   ConvexHttpClient: class {
     constructor(_url: string, options: unknown) {
@@ -21,7 +24,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("NEXT_PUBLIC_CONVEX_URL", "https://example.convex.cloud");
 });
-test("uses the public SocialAPI profile action and fresh results on subsequent requests", async () => {
+test("uses the public profile action inside a shared hourly cache", async () => {
   const profile = {
     name: "First",
     screen_name: "ReacherXfounder",
@@ -37,7 +40,8 @@ test("uses the public SocialAPI profile action and fresh results on subsequent r
   });
   expect((await getBlogAuthor()).name).toBe("First");
   expect((await getBlogAuthor()).image).toBe("https://pbs.twimg.com/b.jpg");
-  expect(mocks.connection).toHaveBeenCalledTimes(2);
+  expect(mocks.cacheLife).toHaveBeenCalledWith("hours");
+  expect(mocks.cacheTag).toHaveBeenCalledWith("blog-author");
   expect(mocks.action.mock.calls[0][1]).toEqual({
     username: "ReacherXfounder",
   });
@@ -61,6 +65,7 @@ test("missing deployment produces the fallback without network work", async () =
   vi.stubEnv("NEXT_PUBLIC_CONVEX_URL", "");
   expect(await getBlogAuthor()).toEqual(BLOG_AUTHOR_FALLBACK);
   expect(mocks.action).not.toHaveBeenCalled();
+  expect(mocks.cacheLife).toHaveBeenCalledTimes(1);
 });
 test.each([
   new Error("provider unavailable"),
@@ -69,5 +74,11 @@ test.each([
   mocks.action.mockRejectedValue(error);
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   expect(await getBlogAuthor()).toEqual(BLOG_AUTHOR_FALLBACK);
+  expect(mocks.cacheLife).toHaveBeenCalledTimes(1);
+  expect(mocks.cacheLife).toHaveBeenLastCalledWith({
+    stale: 60,
+    revalidate: 60,
+    expire: 300,
+  });
   warn.mockRestore();
 });

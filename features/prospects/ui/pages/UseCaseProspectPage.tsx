@@ -23,7 +23,7 @@ export function UseCaseProspectPage({
 }: UseCaseProspectPageProps) {
   const router = useRouter();
   const { entityPlural, entitySingular, routes } = useActiveUseCaseLabels();
-  const { isLoading: isWorkspaceLoading } = useWorkspace();
+  const { workspace, isLoading: isWorkspaceLoading } = useWorkspace();
   const { currentPanel, depth } = usePanelStack();
   const {
     prospectId: selectedProspectId,
@@ -33,6 +33,13 @@ export function UseCaseProspectPage({
   } = useProspectProfile();
   const entityPluralLower = entityPlural.toLowerCase();
   const isCanonicalRoute = entitySlug === routes.entitySlug;
+  const isResolvingRouteProspect = selectedProspectId !== prospectId || loading;
+  const routeProspect =
+    selectedProspectId === prospectId ? prospect : undefined;
+  const hasVerifiedWorkspace = Boolean(
+    workspace && routeProspect?.workspaceId === workspace._id
+  );
+  const hasUnverifiedProspect = Boolean(routeProspect && !hasVerifiedWorkspace);
 
   useEffect(() => {
     if (prospectId) {
@@ -41,10 +48,22 @@ export function UseCaseProspectPage({
   }, [openProspect, prospectId]);
 
   useEffect(() => {
-    if (!isWorkspaceLoading && !isCanonicalRoute) {
+    if (isWorkspaceLoading || !workspace || isResolvingRouteProspect) return;
+    if (hasUnverifiedProspect) {
+      router.replace(routes.listHref);
+    } else if (!isCanonicalRoute) {
       router.replace(routes.detailHref(prospectId));
     }
-  }, [isCanonicalRoute, isWorkspaceLoading, prospectId, router, routes]);
+  }, [
+    hasUnverifiedProspect,
+    isCanonicalRoute,
+    isResolvingRouteProspect,
+    isWorkspaceLoading,
+    prospectId,
+    router,
+    routes,
+    workspace,
+  ]);
 
   const handleChatWithAgent = () => {
     if (prospectId) {
@@ -57,11 +76,12 @@ export function UseCaseProspectPage({
   };
 
   const hasSubPanel = depth >= 1 && currentPanel?.type !== "prospect-profile";
-  const isResolvingRouteProspect = selectedProspectId !== prospectId || loading;
-  const routeProspect =
-    selectedProspectId === prospectId ? prospect : undefined;
-
-  if (!isWorkspaceLoading && !isCanonicalRoute) {
+  if (
+    isWorkspaceLoading ||
+    !workspace ||
+    hasUnverifiedProspect ||
+    !isCanonicalRoute
+  ) {
     return null;
   }
 

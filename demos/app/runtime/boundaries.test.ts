@@ -16,7 +16,7 @@ test("embedding URLs require an explicit safe origin and keep story routes intac
   );
   assert.equal(
     getBlogDemoUrl("find-candidates", "https://demo.example.test"),
-    "https://demo.example.test/workspace?scenario=find-candidates"
+    "https://demo.example.test/agent/setup?scenario=find-candidates"
   );
   assert.equal(
     getBlogDemoUrl("workspaces-explained", "http://localhost:3130"),

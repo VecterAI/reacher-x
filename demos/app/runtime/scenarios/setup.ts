@@ -1,3 +1,8 @@
+import {
+  isUseCaseWalkthrough,
+  USE_CASE_WALKTHROUGH_COPY,
+} from "@/features/blog/lib/useCaseWalkthroughCopy";
+import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
 import type { registerWorkspaceServices } from "../workspaceServices";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 import { api } from "@/convex/_generated/api";
@@ -14,7 +19,7 @@ import type { createAppFixtures } from "../appFixtures";
 import { createAudienceProspect } from "./audiences";
 import { createScenarioDraftPlan } from "../scenarioPlanHelpers";
 
-import { DEMO_SETUP_THREAD_ID } from "./setupHelpers";
+import { getDemoSetupThreadId } from "./setupHelpers";
 
 /** A connected, paid demo account uses the same conditional setup gates as the app. */
 export function registerSetupStory(
@@ -23,18 +28,40 @@ export function registerSetupStory(
   agent: AgentServices,
   workspaceServices: ReturnType<typeof registerWorkspaceServices>
 ) {
-  if (state.scenario !== "getting-started-with-reacherx") return;
+  const walkthroughId =
+    state.scenario === "introducing-reacherx-v4"
+      ? "find-candidates"
+      : state.scenario;
+  const walkthrough = isUseCaseWalkthrough(walkthroughId)
+    ? USE_CASE_WALKTHROUGH_COPY[walkthroughId]
+    : undefined;
+  let active =
+    Boolean(walkthrough) || state.scenario === "getting-started-with-reacherx";
+  const target = state.workspaces[0];
+  const audiencePeople = state.prospects.filter(
+    (person) =>
+      person.workspaceId === target._id &&
+      person.status !== "converted" &&
+      person.status !== "archived"
+  );
+  if (walkthrough)
+    audiencePeople.forEach((person) => {
+      state.plans.delete(person._id);
+      person.planGenerationStatus = undefined;
+    });
   type Session = NonNullable<
     FunctionReturnType<typeof api.setupSessions.getSetupSessionState>
   >;
-  const threadId = DEMO_SETUP_THREAD_ID;
+  const threadId = getDemoSetupThreadId(state.scenario);
   const session: Session = {
     sessionId: "demo_setup_session" as Id<"workspaceSetupSessions">,
     threadId,
     status: "awaiting_input",
     mode: "new_workspace",
-    useCaseKey: "recruiting",
-    displayName: "New recruiting workspace",
+    useCaseKey: walkthrough ? target.useCaseKey : "recruiting",
+    displayName: walkthrough
+      ? `New ${getWorkspaceUseCase(target.useCaseKey).entitySingular.toLowerCase()} workspace`
+      : "New recruiting workspace",
     draftName: null,
     ...buildSetupFlowState({
       status: "awaiting_input",
@@ -74,11 +101,11 @@ export function registerSetupStory(
   };
   client.register(api.shell.getAppShellState, () => {
     const shell = workspaceServices.getShellState();
-    if (session.status === "ready") return shell;
+    if (!active || session.status === "ready") return shell;
     return {
       ...shell,
       activeContextType: "setup_session" as const,
-      effectiveUseCaseKey: "recruiting" as const,
+      effectiveUseCaseKey: session.useCaseKey!,
       pendingNotificationCount: undefined,
       locked: true,
       lockState: session.status,
@@ -109,17 +136,24 @@ export function registerSetupStory(
           locked: false,
           entitlementSlot: 3,
         },
-        ...shell.switcherItems.map((item) => ({ ...item, isActive: false })),
+        ...shell.switcherItems
+          .filter(
+            (item) =>
+              !walkthrough ||
+              item.kind !== "workspace" ||
+              item.workspaceId !== target._id
+          )
+          .map((item) => ({ ...item, isActive: false })),
       ],
     };
   });
   agent.setRoute(threadId, { kind: "setup_draft" });
   agent.threads.set(threadId, []);
   client.register(api.setupSessions.getSetupSessionState, (args) =>
-    !args.threadId || args.threadId === threadId ? session : null
+    active && (!args.threadId || args.threadId === threadId) ? session : null
   );
   client.register(api.setupSessions.getSetupBootstrapState, () => ({
-    activeSession: session.status === "ready" ? null : session,
+    activeSession: !active || session.status === "ready" ? null : session,
     suggestedMode: "new_workspace" as const,
     requiresFirstWorkspace: false,
   }));
@@ -128,11 +162,25 @@ export function registerSetupStory(
     recovered: false,
     state: "waiting_for_user" as const,
   }));
-  client.register(api.setupSessions.startSetupSession, () => ({
-    sessionId: session.sessionId,
-    threadId,
-    reused: true,
-  }));
+  client.register(api.setupSessions.startSetupSession, () => {
+    if (!active || session.status === "ready") {
+      active = true;
+      session.status = "awaiting_input";
+      session.generationRevision = 0;
+      session.generatedProfiles = [];
+      session.hasGeneration = false;
+      session.seedDescription = null;
+      session.improvedDescription = null;
+      session.draftName = null;
+      session.generationSourceMessageId = null;
+      session.inputMode = null;
+      session.targetWorkspaceId = null;
+      agent.threads.set(threadId, []);
+      agent.setRoute(threadId, { kind: "setup_draft" });
+      updateFlow();
+    }
+    return { sessionId: session.sessionId, threadId, reused: false };
+  });
   client.register(
     api.setupSessions.approveSetupGeneration,
     ({ generationRevision }) => {
@@ -141,11 +189,15 @@ export function registerSetupStory(
         generationRevision !== session.generationRevision
       )
         throw new Error("Review the latest examples before continuing.");
-      const workspaceId = "demo_workspace_contract" as Id<"workspaces">;
+      const workspaceId = (
+        walkthrough
+          ? target._id
+          : `demo_workspace_created_${state.workspaces.length}`
+      ) as Id<"workspaces">;
       const workspace = {
         ...state.workspaces[0],
         _id: workspaceId,
-        name: "Contract engineer · payments",
+        name: session.draftName ?? "Contract engineer · payments",
         description: session.seedDescription!,
         improvedDescription: session.improvedDescription!,
         _creationTime: getCurrentUTCTimestamp(),
@@ -157,7 +209,8 @@ export function registerSetupStory(
       state.workspaces.forEach((item) => {
         item.isDefault = false;
       });
-      state.workspaces.push(workspace);
+      if (walkthrough) Object.assign(target, workspace);
+      else state.workspaces.push(workspace);
       state.selectedWorkspaceId = workspaceId;
       const candidate = createAudienceProspect(
         {
@@ -179,7 +232,7 @@ export function registerSetupStory(
       candidate.qualifiedAt = candidate._creationTime;
       candidate.enrichedAt = candidate._creationTime;
       candidate.readyAt = candidate._creationTime;
-      state.prospects.push(candidate);
+      if (!walkthrough) state.prospects.push(candidate);
       session.targetWorkspaceId = workspaceId;
       session.status = getNextSetupStatusAfterProvisioning({
         requiresConnections: false,
@@ -189,12 +242,12 @@ export function registerSetupStory(
       agent.append(
         threadId,
         "user",
-        "I approve these example candidates. Continue with setup."
+        "I approve these audience examples. Continue with setup."
       );
       agent.append(
         threadId,
         "assistant",
-        "Your Contract engineer · payments workspace is ready. Your accounts are already connected and your plan covers this workspace. Review the first candidate's payment experience before reaching out."
+        `Your ${workspace.name} workspace is ready. Your accounts are already connected and your plan covers this workspace. Review the ${getWorkspaceUseCase(workspace.useCaseKey).entityPlural} and their evidence before reaching out.`
       );
       agent.setRoute(threadId, { kind: "workspace", workspaceId });
       return {
@@ -205,57 +258,86 @@ export function registerSetupStory(
     }
   );
   agent.addResponder(({ threadId: current, prompt, messageId }) => {
-    if (current === threadId && session.status !== "ready") {
+    if (active && current === threadId && session.status !== "ready") {
       const corrected = session.generationRevision > 0;
       session.seedDescription ??= prompt;
-      session.improvedDescription = `${session.seedDescription}${corrected ? " Required: TypeScript and Stripe checkout experience. A six-week contract, not a permanent role." : ""}`;
+      session.improvedDescription = `${session.seedDescription}${corrected ? `\n${prompt}` : ""}`;
       session.inputMode = "manual";
-      session.draftName = "Contract engineer · payments";
+      session.draftName = walkthrough
+        ? target.name
+        : "Contract engineer · payments";
       session.generationRevision += 1;
       session.generationSourceMessageId = messageId;
       session.hasGeneration = true;
       session.status = "awaiting_icp_confirmation";
-      session.generatedProfiles = [
-        {
-          title: "Contract payment engineers",
-          description: session.improvedDescription,
-          painPoints: ["Reliable checkout and payment recovery"],
-          channels: ["twitter", "linkedin"],
-          syntheticExamples: [
+      session.generatedProfiles = walkthrough
+        ? [
             {
-              platform: "linkedin",
-              displayName: "Jamie Brooks",
-              title: corrected
-                ? "Contract TypeScript engineer"
-                : "Web payments engineer",
-              bio: corrected
-                ? "Built Stripe checkout and webhook recovery in TypeScript. Takes short contract projects."
-                : "Builds checkout flows for web apps. Has worked with several payment providers.",
+              title: target.icps?.[0]?.title ?? target.name,
+              description: session.improvedDescription,
+              painPoints: target.icps?.[0]?.painPoints ?? [],
+              channels: ["twitter", "linkedin"],
+              syntheticExamples: audiencePeople
+                .filter((person) => person.qualificationStatus === "qualified")
+                .slice(0, 2)
+                .map((person) => ({
+                  platform: person.platform,
+                  displayName: person.displayName ?? "",
+                  title: person.title ?? "",
+                  bio: person.briefIntro ?? "",
+                })),
             },
+          ]
+        : [
             {
-              platform: "twitter",
-              displayName: "Taylor Reed",
-              title: corrected
-                ? "Freelance Stripe developer"
-                : "Full-stack engineer",
-              bio: corrected
-                ? "Shares work on idempotent Stripe webhooks and TypeScript checkout integrations. Works with small teams on contract."
-                : "Shares work on subscriptions, billing screens, and payment APIs.",
+              title: "Contract payment engineers",
+              description: session.improvedDescription,
+              painPoints: ["Reliable checkout and payment recovery"],
+              channels: ["twitter", "linkedin"],
+              syntheticExamples: [
+                {
+                  platform: "linkedin",
+                  displayName: "Jamie Brooks",
+                  title: corrected
+                    ? "Contract TypeScript engineer"
+                    : "Web payments engineer",
+                  bio: corrected
+                    ? "Built Stripe checkout and webhook recovery in TypeScript. Takes short contract projects."
+                    : "Builds checkout flows for web apps. Has worked with several payment providers.",
+                },
+                {
+                  platform: "twitter",
+                  displayName: "Taylor Reed",
+                  title: corrected
+                    ? "Freelance Stripe developer"
+                    : "Full-stack engineer",
+                  bio: corrected
+                    ? "Shares work on idempotent Stripe webhooks and TypeScript checkout integrations. Works with small teams on contract."
+                    : "Shares work on subscriptions, billing screens, and payment APIs.",
+                },
+              ],
             },
-          ],
-        },
-      ];
+          ];
       updateFlow();
       agent.append(
         current,
         "assistant",
-        corrected
-          ? "Updated: TypeScript and Stripe are required, and this is a contract project. Review the revised example candidates, then continue if they fit."
-          : "I've drafted example candidates for contract work on web payments. Review their experience and tell me what to tighten before continuing."
+        walkthrough
+          ? corrected
+            ? "Updated the criteria and examples using your requirements. Review the audience, then continue to start discovery."
+            : "I have drafted an audience from your request. Review the examples and tell me any exclusions, constraints, or outreach terms before we start."
+          : corrected
+            ? "Updated: TypeScript and Stripe are required, and this is a contract project. Review the revised example candidates, then continue if they fit."
+            : "I've drafted example candidates for contract work on web payments. Review their experience and tell me what to tighten before continuing."
       );
       return true;
     }
-    if (session.status === "ready" && /plan|draft|introduction/i.test(prompt)) {
+    if (
+      !walkthrough &&
+      active &&
+      session.status === "ready" &&
+      /plan|draft|introduction/i.test(prompt)
+    ) {
       const person = state.prospects.find(
         (item) => item._id === "demo_contract_engineer"
       )!;

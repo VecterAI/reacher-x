@@ -1,6 +1,6 @@
 ---
 title: "How ReacherX adapts its CRM to different use cases"
-description: "Follow a workspace use case from shared definitions to profile stages, agent prompts, and reporting."
+description: "Follow a workspace use case from shared definitions to profile stages, △ Agent prompts, and reporting."
 category: "engineering"
 date: "2026-07-17"
 updated: "2026-09-11"
@@ -10,7 +10,7 @@ tags: ["CRM", "architecture", "use cases", "contributing", "pipeline"]
 
 Open a candidate who has been marked Hired, then look at the stored status. You'll find `converted`, not `hired`. A customer can have that same value. The workspace tells the app what the value means to the person using it.
 
-That is the first thing to understand before changing a use case in ReacherX. You don't need a new table for every kind of person the user wants to find. The shared definition changes the labels and gives the agent context about the job.
+That is the first thing to understand before changing a use case in ReacherX. You don't need a new table for every kind of person the user wants to find. The shared definition changes the labels and gives △ Agent context about the job.
 
 This walkthrough follows v4 beta at commit `8ea2662`.
 
@@ -30,7 +30,7 @@ stageLabels: {
 
 Suppose you want a different word for Interviewing. Change the label, then check the places that show it. Keep `in_progress` as the key. Replacing that stored value would involve the schema and the code that reads and writes it.
 
-Look below the labels for `promptContext`. It includes `searchIntent`, `qualificationLens`, `outreachGoal`, and `successDefinition`. Those tell the agent what this use case is for. Finding someone to hire calls for different evidence from finding someone who might buy a product.
+Look below the labels for `promptContext`. It includes `searchIntent`, `qualificationLens`, `outreachGoal`, and `successDefinition`. Those tell △ Agent what this use case is for. Finding someone to hire calls for different evidence from finding someone who might buy a product.
 
 The same entry contains entity names, routes, and page labels. This command will help you find code that uses the labels and prompt context:
 
@@ -52,6 +52,6 @@ Now change a candidate's stage. The action reaches `updateProspectStatus` in `co
 
 The audience supplies the user's particular requirements. Saved memories add instructions, and `convex/lib/learningCore.ts` includes the use case in learning context. Changing that context doesn't retrain the model. The [memory article](/blog/how-reacherx-memory-works) explains what is stored and retrieved.
 
-After a change, read the resulting prompt. Does a recruiting agent still ask for buying intent? Check a hiring workspace, then a partnership workspace, then a new setup draft. Check the list, profile, stage menu, success page, and Analytics.
+After a change, read the resulting prompt. Does △ Agent still ask for buying intent in a recruiting workspace? Check a hiring workspace, then a partnership workspace, then a new setup draft. Check the list, profile, stage menu, success page, and Analytics.
 
 The workspace-use-case and prospect-status tests cover nearby behavior. Include an older workspace with no use-case key and an archived person when those paths are affected. Read the generated Convex guidelines before changing the mutation. The [architecture overview](/blog/how-reacherx-agent-works) connects this path to the rest of the app.

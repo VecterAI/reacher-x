@@ -131,7 +131,7 @@ export function BlogArticle({
         <h2 className="text-3xl font-normal text-balance">
           Find the people you need.
         </h2>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid w-full grid-cols-2 items-center gap-3 sm:flex sm:w-auto">
           <LandingPrimaryCta size="sm" />
           <LandingBookDemoCta variant="outline" size="sm" />
         </div>

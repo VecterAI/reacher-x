@@ -26,7 +26,12 @@ export const DEMO_MEMORY_INSTRUCTION =
 
 export function registerReportingServices(client: LocalClient, state: State) {
   const recordedAt = getCurrentUTCTimestamp();
-  const memories = new Map<string, Memory>();
+  const workspaceMemories = new Map<string, Map<string, Memory>>();
+  const memoriesFor = (workspaceId = state.selectedWorkspaceId) => {
+    if (!workspaceMemories.has(workspaceId))
+      workspaceMemories.set(workspaceId, new Map());
+    return workspaceMemories.get(workspaceId)!;
+  };
   const saveMemory = (instruction: string) => {
     const memory: Memory = {
       memoryId: "demo_memory_intro",
@@ -60,7 +65,7 @@ export function registerReportingServices(client: LocalClient, state: State) {
         updatedAt: recordedAt,
       },
     };
-    memories.set(memory.memoryId, memory);
+    memoriesFor().set(memory.memoryId, memory);
     return memory;
   };
   if (state.scenario !== "teach-reacherx-what-you-want")
@@ -102,9 +107,17 @@ export function registerReportingServices(client: LocalClient, state: State) {
       ({ plan }) =>
         plan.workspaceId === args.workspaceId && plan.status === "draft"
     ).length;
+    const previous = people.filter(
+      (person) =>
+        person._creationTime >= window.previous.startMs &&
+        person._creationTime < window.previous.endMs
+    );
     const metric = (value: number) =>
       buildMetric({ currentValue: value, previousValue: 0 });
-    data.newProspects = metric(current.length);
+    data.newProspects = buildMetric({
+      currentValue: current.length,
+      previousValue: previous.length,
+    });
     data.responseRate = {
       ...buildMetric({
         currentValue: calculateRate(replied.length, contacted.length),
@@ -114,11 +127,36 @@ export function registerReportingServices(client: LocalClient, state: State) {
       }),
       contacted: contacted.length,
     };
+    const pendingTasks = [...state.plans.values()]
+      .filter(
+        ({ plan }) =>
+          plan.workspaceId === args.workspaceId && plan.status === "executing"
+      )
+      .flatMap(({ tasks }) => tasks)
+      .filter((task) => task.approvalReady).length;
     data.pendingApprovals = {
-      ...metric(pendingPlans),
+      ...metric(pendingPlans + pendingTasks),
       plans: pendingPlans,
-      tasks: 0,
+      tasks: pendingTasks,
     };
+    const workspacePlans = [...state.plans.values()].filter(
+      ({ plan }) => plan.workspaceId === args.workspaceId
+    );
+    const inWindow = (timestamp: number) =>
+      timestamp >= window.current.startMs && timestamp < window.current.endMs;
+    const paused = workspacePlans.filter(
+      ({ plan }) =>
+        plan.status === "paused" &&
+        inWindow(plan.updatedAt ?? plan._creationTime)
+    ).length;
+    const failed = workspacePlans
+      .flatMap(({ tasks }) => tasks)
+      .filter(
+        (task) =>
+          task.status === "failed" &&
+          inWindow(task.executedAt ?? task._creationTime)
+      ).length;
+    data.issues = { ...metric(paused + failed), paused, failed };
     const qualified = current.filter(
       (person) => person.qualificationStatus === "qualified"
     ).length;
@@ -156,9 +194,17 @@ export function registerReportingServices(client: LocalClient, state: State) {
           person._creationTime < bucket.endMs
       ).length,
     }));
-    data.platformDistribution = ["twitter", "linkedin"].map((platform) => ({
-      platform: platform === "twitter" ? "X" : "LinkedIn",
-      count: current.filter((person) => person.platform === platform).length,
+    data.platformDistribution = data.platformDistribution.map((point) => ({
+      ...point,
+      count: current.filter(
+        (person) =>
+          person.platform ===
+          (point.platform === "LinkedIn"
+            ? "linkedin"
+            : /X|Twitter/.test(point.platform)
+              ? "twitter"
+              : point.platform.toLowerCase())
+      ).length,
     }));
     data.fitDistribution = data.fitDistribution.map((bucket) => {
       const [min, max] = bucket.range.split("-").map(Number);
@@ -176,9 +222,9 @@ export function registerReportingServices(client: LocalClient, state: State) {
   client.register(api.analytics.getDashboardAnalytics, analytics);
   client.register(api.analytics.getDashboardAnalyticsSnapshot, analytics);
 
-  const query = () => {
+  const query = (workspaceId = state.selectedWorkspaceId) => {
     const workspace = state.workspaces.find(
-      (item) => item._id === state.selectedWorkspaceId
+      (item) => item._id === workspaceId
     )!;
     const people = state.prospects.filter(
       (person) =>
@@ -208,18 +254,31 @@ export function registerReportingServices(client: LocalClient, state: State) {
       qualifiedCount: people.filter(
         (person) => person.qualificationStatus === "qualified"
       ).length,
-      convertedCount: 0,
-      replyRate: 0,
+      convertedCount: people.filter((person) => person.status === "converted")
+        .length,
+      replyCount: people.filter(
+        (person) => person.stageTimestamps?.in_progress !== undefined
+      ).length,
+      replyRate: calculateRate(
+        people.filter(
+          (person) => person.stageTimestamps?.in_progress !== undefined
+        ).length,
+        people.filter(
+          (person) => person.stageTimestamps?.contacted !== undefined
+        ).length
+      ),
     };
   };
   client.register(
     api.agentOps.getAgentOpsDiscoveryInventoryPageSnapshot,
-    ({ search, status, pageSize = 10 }) => {
+    ({ workspaceId, search, status, pageSize = 10 }) => {
       const rows =
         (!search ||
-          query().rawValue.toLowerCase().includes(search.toLowerCase())) &&
-        (!status || status === query().status)
-          ? [query()]
+          query(workspaceId)
+            .rawValue.toLowerCase()
+            .includes(search.toLowerCase())) &&
+        (!status || status === query(workspaceId).status)
+          ? [query(workspaceId)]
           : [];
       return {
         rows,
@@ -249,9 +308,9 @@ export function registerReportingServices(client: LocalClient, state: State) {
               impressions: 18,
               prospectsFound: query().prospectsFound,
               qualifiedCount: query().qualifiedCount,
-              convertedCount: 0,
-              replyCount: 0,
-              replyRate: 0,
+              convertedCount: query().convertedCount,
+              replyCount: query().replyCount,
+              replyRate: query().replyRate,
               qualificationRate: calculateRate(
                 query().qualifiedCount,
                 query().prospectsFound
@@ -271,8 +330,8 @@ export function registerReportingServices(client: LocalClient, state: State) {
   );
   client.register(
     api.agentOps.getAgentOpsMemoryInventoryPageSnapshot,
-    ({ search, category, page = 0 }) => {
-      const rows = [...memories.values()]
+    ({ workspaceId, search, category, page = 0 }) => {
+      const rows = [...memoriesFor(workspaceId).values()]
         .filter(
           (memory) =>
             (!search ||
@@ -283,6 +342,8 @@ export function registerReportingServices(client: LocalClient, state: State) {
         )
         .map((memory) => ({
           ...memory,
+          confidence: memory.confidence * 100,
+          impactScore: memory.impactScore * 100,
           relatedQueries: memory.relatedQueries.length,
           evidenceCount: memory.evidence.length,
         }));
@@ -300,7 +361,8 @@ export function registerReportingServices(client: LocalClient, state: State) {
   );
   client.register(
     api.agentOps.getAgentOpsMemoryDetail,
-    ({ memoryId }) => memories.get(memoryId) ?? null
+    ({ workspaceId, memoryId }) =>
+      memoriesFor(workspaceId).get(memoryId) ?? null
   );
   const activity = () => [
     {
@@ -362,17 +424,33 @@ export function registerReportingServices(client: LocalClient, state: State) {
     const fields = getAgentOpsDashboardFields(args.tab, kind);
     const metricValues = {
       ...values,
-      hourlyQualificationCompletedCounts: query().prospectsFound,
-      hourlyQualificationQualifiedCounts: query().qualifiedCount,
-      hourlyMemoriesWrittenCounts: memories.size,
-      hourlyHighImpactMemoriesCounts: memories.size,
-      hourlyMemoryImpactScoreSums: memories.size * 0.9,
-      hourlyMemoryConfidenceSums: memories.size,
+      hourlyQualificationCompletedCounts: query(args.workspaceId)
+        .prospectsFound,
+      hourlyQualificationQualifiedCounts: query(args.workspaceId)
+        .qualifiedCount,
+      hourlyMemoriesWrittenCounts: memoriesFor(args.workspaceId).size,
+      hourlyHighImpactMemoriesCounts: memoriesFor(args.workspaceId).size,
+      hourlyMemoryImpactScoreSums: memoriesFor(args.workspaceId).size * 0.9,
+      hourlyMemoryConfidenceSums: memoriesFor(args.workspaceId).size,
     };
     const inWindow = (startMs: number, endMs: number) =>
       query().updatedAt >= startMs && query().updatedAt < endMs;
     return {
-      analytics: windows.map(() => fields.analytics.map(() => 0)),
+      analytics: windows.map((window) =>
+        fields.analytics.map(
+          (field) =>
+            state.lifecycle.activity.filter(
+              (event) =>
+                event.workspaceId === args.workspaceId &&
+                event._creationTime >= window.startMs &&
+                event._creationTime < window.endMs &&
+                event.type ===
+                  (field === "hourlyContactedEventsCounts"
+                    ? "contacted"
+                    : "responded")
+            ).length
+        )
+      ),
       agentOps: windows.map((window) =>
         fields.agentOps.map((field) =>
           inWindow(window.startMs, window.endMs)
@@ -389,5 +467,10 @@ export function registerReportingServices(client: LocalClient, state: State) {
   client.register(api.agentOps.getAgentOpsDashboardTrendSlice, (args) =>
     slice(args, "trend", args.offset)
   );
-  return { memories, saveMemory };
+  return {
+    get memories() {
+      return memoriesFor();
+    },
+    saveMemory,
+  };
 }

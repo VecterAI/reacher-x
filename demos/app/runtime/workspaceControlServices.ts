@@ -1,3 +1,4 @@
+import type { registerPlanServices } from "./planServices";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { getDefaultWorkspaceAgentSettings } from "@/convex/lib/workspaceAgentSettingsCore";
@@ -7,7 +8,8 @@ import type { createAppFixtures } from "./appFixtures";
 
 export function registerWorkspaceControlServices(
   client: LocalClient,
-  state: ReturnType<typeof createAppFixtures>
+  state: ReturnType<typeof createAppFixtures>,
+  lifecycle: ReturnType<typeof registerPlanServices>
 ) {
   const settings = new Map<string, Doc<"workspaceAgentSettings">>();
   const workspaceFor = (id: string) => {
@@ -16,6 +18,26 @@ export function registerWorkspaceControlServices(
     return workspace;
   };
   client.register(
+    api.workspaces.updateWorkspaceSettings,
+    ({ workspaceId, ...updates }) => {
+      const workspace = workspaceFor(workspaceId);
+      if (updates.name !== undefined && !updates.name.trim())
+        throw new Error("Workspace name is required");
+      Object.assign(
+        workspace,
+        Object.fromEntries(
+          Object.entries(updates).filter(([, value]) => value !== undefined)
+        ),
+        { updatedAt: getCurrentUTCTimestamp() }
+      );
+      return {
+        workspaceId: workspace._id,
+        regenerationScheduledCount: 0,
+        appliedIcps: workspace.icps ?? [],
+      };
+    }
+  );
+  client.register(
     api.workspaces.getWorkspaceAgentSettings,
     ({ workspaceId }) =>
       settings.get(workspaceId) ??
@@ -23,7 +45,7 @@ export function registerWorkspaceControlServices(
   );
   client.register(
     api.workspaces.updateWorkspaceAgentSettings,
-    ({ workspaceId, autonomyMode, startExistingDraftPlans }) => {
+    async ({ workspaceId, autonomyMode, startExistingDraftPlans }) => {
       const current =
         settings.get(workspaceId) ??
         getDefaultWorkspaceAgentSettings(workspaceFor(workspaceId));
@@ -47,10 +69,7 @@ export function registerWorkspaceControlServices(
         updatedAt: getCurrentUTCTimestamp(),
         autonomyMode: mode,
       });
-      for (const { plan } of drafts) {
-        plan.status = "approved";
-        plan.updatedAt = getCurrentUTCTimestamp();
-      }
+      if (enabling) await lifecycle.startAutonomous(workspaceId);
       return {
         autonomyMode: mode,
         draftPlanCount: drafts.length,

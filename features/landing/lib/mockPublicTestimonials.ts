@@ -48,7 +48,7 @@ export const MOCK_PUBLIC_TESTIMONIALS: Tweet[] = [
     id_str: "mock-testimonial-2",
     tweet_created_at: "2026-06-18T09:05:00.000Z",
     full_text:
-      "I told Agent who I needed in plain English and it kept surfacing new matches every day. Feels like a researcher that never sleeps, with me still in control.",
+      "I told △ Agent who I needed in plain English and it kept surfacing new matches every day. Feels like a researcher that never sleeps, with me still in control.",
     favorite_count: 31,
     reply_count: 4,
     retweet_count: 5,
@@ -81,7 +81,7 @@ export const MOCK_PUBLIC_TESTIMONIALS: Tweet[] = [
     id_str: "mock-testimonial-4",
     tweet_created_at: "2026-07-09T11:18:00.000Z",
     full_text:
-      "We use one workspace for customers and another for candidates. Agent adapts fast, and the outreach drafts actually sound like us after a few edits.",
+      "We use one workspace for customers and another for candidates. △ Agent adapts fast, and the outreach drafts actually sound like us after a few edits.",
     favorite_count: 22,
     reply_count: 3,
     retweet_count: 4,

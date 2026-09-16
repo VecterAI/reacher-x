@@ -10,6 +10,7 @@ export function MarketingDemo(props: {
   scenario: BlogDemoId;
   title: string;
   caption: string;
+  sceneRange?: readonly [number, number];
 }) {
   const { root, mounted } = useDemoVisibility();
   return (

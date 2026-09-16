@@ -11,7 +11,7 @@ import type { AudienceStory } from "./audiences";
 
 export const batchStory: AudienceStory = {
   useCaseKey: "partnership_outreach",
-  workspace: "Client feedback workshop",
+  workspace: "Partners — client-feedback workshop",
   brief:
     "Invite a small group to a free workshop about handling client feedback. A speaker, a community host, and a guest each need a different invitation.",
   people: [

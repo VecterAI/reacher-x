@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { DEMO_SETUP_THREAD_ID } from "./runtime/scenarios/setupHelpers";
+import { getDemoSetupThreadId } from "./runtime/scenarios/setupHelpers";
 
 // Seed the local thread before any real setup components mount. This prevents
 // the shell and chat from competing to normalize an empty setup URL.
@@ -10,7 +10,10 @@ export function proxy(request: NextRequest) {
   ) {
     const url = request.nextUrl.clone();
     if (!url.searchParams.get("threadId"))
-      url.searchParams.set("threadId", DEMO_SETUP_THREAD_ID);
+      url.searchParams.set(
+        "threadId",
+        getDemoSetupThreadId(url.searchParams.get("scenario") ?? undefined)
+      );
     url.searchParams.delete("scenario");
     return NextResponse.redirect(url);
   }

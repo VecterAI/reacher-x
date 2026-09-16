@@ -257,7 +257,7 @@ export function getPlanBatchCopy(state: PlanBatchCopyState): PlanBatchCopy {
         `${formatCount(state.failedCount)} ${pluralize(
           state.failedCount,
           "plan"
-        )} need attention`,
+        )} ${state.failedCount === 1 ? "needs" : "need"} attention`,
       ];
       if (state.skippedCount > 0) {
         parts.push(getNotChangedText(state.operation, state.skippedCount));

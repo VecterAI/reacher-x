@@ -1,3 +1,4 @@
+import { getStringProperty } from "@/convex/lib/typeGuards";
 import type { ProspectProfileData } from "../ui/components/ProspectProfilePanel";
 import type { PipelineStage } from "../ui/components/PipelineTimeline";
 import type { PainPoint } from "../ui/components/PainSolutionGrid";
@@ -172,6 +173,7 @@ export function normalizeProspectProfileData(
       typeof prospect._id === "string"
         ? prospect._id
         : String(prospect._id ?? prospect.id ?? ""),
+    workspaceId: getStringProperty(prospect, "workspaceId"),
     displayName: (prospect.displayName as string) || "Unknown",
     verified,
     title: prospect.title as string | undefined,

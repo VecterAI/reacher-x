@@ -15,6 +15,7 @@ import {
 } from "@/features/blog/lib/blogDemoDomHelpers";
 import { isRecord, getNumberProperty } from "@/convex/lib/typeGuards";
 import { performPlaybackAction } from "./playbackActions";
+import { waitForPlaybackFrame as frame } from "./playbackTimingHelpers";
 import { getBlogDemoInitialPath } from "@/features/blog/lib/blogDemoCatalog";
 import { isDemoInitialLocation } from "./demoHistoryHelpers";
 
@@ -46,12 +47,12 @@ export function PlaybackBridge({
     let userHasFocused = false;
     let disposed = false;
     const initialInert = document.body.inert;
+    // Preloaded apps must not autofocus before the host reports visibility.
+    document.body.inert = true;
     const initialAmbient = document.documentElement.dataset.demoAmbient;
     document.documentElement.dataset.demoAmbient = "paused";
     const send = (type: string, extra = {}) =>
       window.parent.postMessage({ type, ...extra }, parentOrigin);
-    const frame = () =>
-      new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const waitFor = async <T,>(
       read: () => T | undefined | false,
       token: number
@@ -83,7 +84,12 @@ export function PlaybackBridge({
             !match.matches(':disabled,[aria-disabled="true"],[data-disabled]'))
           ? match
           : undefined;
-      }, token);
+      }, token).catch((error: unknown) => {
+        throw new Error(
+          `Demo control unavailable: ${description.selector} ${description.text ?? description.containsText ?? ""}`,
+          { cause: error }
+        );
+      });
       if (reveal) revealDemoTarget(element);
       return element;
     };

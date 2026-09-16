@@ -1,3 +1,4 @@
+import { createScenarioDraftPlan } from "./scenarioPlanHelpers";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { api } from "@/convex/_generated/api";
@@ -7,7 +8,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 test("workspace selection changes real shell data without discarding either workspace", async () => {
   const { client, state } = createAppServices("workspaces-explained");
   const first = await client.query(api.workspaces.getDefaultWorkspace, {});
-  assert.equal(first?.name, "Hire a designer");
+  assert.equal(first?.name, "Hiring — product designer");
   const second = state.workspaces[1];
   await client.mutation(api.workspaces.setDefaultWorkspace, {
     workspaceId: second._id,
@@ -18,7 +19,7 @@ test("workspace selection changes real shell data without discarding either work
   assert.equal(shell?.switcherItems.length, 2);
   assert.equal(
     first?.name,
-    "Hire a designer",
+    "Hiring — product designer",
     "previous snapshots stay immutable"
   );
   await client.mutation(api.workspaces.setDefaultWorkspace, {
@@ -161,7 +162,7 @@ test("messages are scoped by prospect and platform, and duplicate submissions ar
 });
 
 test("conversation and history data match the selected prospect, including filtered counts", async () => {
-  const { client, state } = createAppServices();
+  const { client, state } = createAppServices("manage-dm-conversations");
   const prospectId = state.prospects[0]._id;
   await assert.rejects(
     client.query(api.workspaces.getWorkspaceAgentSettings, {
@@ -178,8 +179,8 @@ test("conversation and history data match the selected prospect, including filte
     context?.messages.map((message) => message.direction),
     ["sent", "received"]
   );
-  assert.match(context.messages[0].text ?? "", /senior frontend engineer/);
-  assert.match(context.messages[1].text ?? "", /Thursday/);
+  assert.match(context.messages[0].text ?? "", /client-feedback app/);
+  assert.match(context.messages[1].text ?? "", /account/);
   assert.ok(context.messages[0].createdAt);
   assert.ok(context.messages[1].createdAt);
   assert.ok(context.messages[0].createdAt < context.messages[1].createdAt);
@@ -203,9 +204,9 @@ test("conversation and history data match the selected prospect, including filte
   assert.equal(history.page[0].type, "qualified");
   const counts = await client.action(
     api.prospectSummaries.getWorkspaceProspectStageCountsSnapshot,
-    { workspaceId: state.selectedWorkspaceId, searchQuery: "Isabelle" }
+    { workspaceId: state.selectedWorkspaceId, searchQuery: "Nora" }
   );
-  assert.deepEqual(counts, { new: 1, contacted: 0, in_progress: 0 });
+  assert.deepEqual(counts, { new: 0, contacted: 0, in_progress: 1 });
   await assert.rejects(
     client.query(api.outreach.getActivityLog, {
       prospectId,
@@ -237,8 +238,14 @@ test("demo plan usage follows the selected workspace and the current API contrac
 });
 
 test("edited demo plans require approval and deliver each sample message once", async () => {
-  const { client, state } = createAppServices("find-potential-customers");
-  const data = [...state.plans.values()][0];
+  const { client, state } = createAppServices("find-investors");
+  const person = state.prospects[0];
+  const { data } = createScenarioDraftPlan(state, person, {
+    threadId: "test",
+    description: "Ask about client feedback",
+    content: "Where do client approvals get lost?",
+    rationale: person.briefIntro ?? "",
+  });
   const task = data.tasks[0];
   const args = {
     taskId: task._id,

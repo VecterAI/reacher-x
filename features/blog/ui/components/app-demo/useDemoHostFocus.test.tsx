@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, useRef } from "react";
+import { act, useRef, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, test, vi } from "vitest";
 import { useDemoHostFocus } from "./useDemoHostFocus";
@@ -94,4 +94,57 @@ test("offscreen demos remain inert when an external menu closes, and unlock only
     vi.unstubAllGlobals();
   }
   expect(disconnect).toHaveBeenCalledTimes(3);
+});
+
+test("a replacement fullscreen root is observed and releases its frame", async () => {
+  const callbacks: IntersectionObserverCallback[] = [];
+  const observed: Element[] = [];
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        callbacks.push(callback);
+      }
+      observe(node: Element) {
+        observed.push(node);
+      }
+      disconnect() {}
+    }
+  );
+  const send = vi.fn();
+  function Host({ expanded }: { expanded: boolean }) {
+    const ref = useRef<HTMLElement>(null);
+    const [node, setNode] = useState<HTMLElement | null>(null);
+    useDemoHostFocus(ref, send, false, node);
+    const attach = useCallback((element: HTMLElement | null) => {
+      ref.current = element;
+      setNode(element);
+    }, []);
+    return <section key={String(expanded)} ref={attach} />;
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<Host expanded={false} />));
+    callbacks.at(-1)?.(
+      [{ isIntersecting: false } as IntersectionObserverEntry],
+      {} as IntersectionObserver
+    );
+    const before = observed.at(-1);
+    await act(async () => root.render(<Host expanded />));
+    expect(observed.at(-1)).not.toBe(before);
+    callbacks.at(-1)?.(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver
+    );
+    expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
+      active: false,
+    });
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
 });

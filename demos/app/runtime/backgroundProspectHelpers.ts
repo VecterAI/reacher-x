@@ -16,12 +16,13 @@ const outcomes: Record<WorkspaceUseCaseKey, string> = {
   recruiting:
     "Accepted the offer after the interview and agreed on a start date.",
   partnership_outreach:
-    "Agreed on the referral terms and started the partnership.",
+    "Agreed on the workshop outline and confirmed a session for their members.",
   investor_outreach:
     "Committed to the round after reviewing the deck and speaking with the founders.",
   user_research_recruitment:
     "Passed the screening questions and confirmed a research session.",
-  creator_outreach: "Agreed on the content brief, fee, and publication date.",
+  creator_outreach:
+    "Tried the product on a developer project and shared feedback, with no posting obligation.",
   community_growth: "Accepted the invitation and joined the community.",
   podcast_speaker_sourcing:
     "Confirmed the episode topic and booked a recording slot.",
@@ -34,7 +35,9 @@ export function createBackgroundProspects(
   people: Doc<"prospects">[]
 ) {
   const usedNames = new Set(people.map((person) => person.displayName));
-  const names = Object.keys(portraits).filter((name) => !usedNames.has(name));
+  const names = Object.keys(portraits)
+    .filter((name) => name.startsWith("Avery ") || name.startsWith("Jordan "))
+    .filter((name) => !usedNames.has(name));
   const now = getCurrentUTCTimestamp();
   return workspaces.flatMap((workspace, workspaceIndex) => {
     const example = people.find(

@@ -5,6 +5,7 @@ import {
   MarketingConnections,
   MarketingAuthenticity,
   MarketingDevelopers,
+  MarketingCommunity,
 } from "./MarketingStory";
 import { LandingPromptCta } from "../LandingPromptCta";
 import { marketingButton as buttonVariants } from "./MarketingLayout";
@@ -42,6 +43,7 @@ export function MarketingHome() {
       <MarketingConnections />
       <MarketingAuthenticity />
       <MarketingDevelopers />
+      <MarketingCommunity />
       <MarketingFaq />
       <MarketingFinish />
     </>

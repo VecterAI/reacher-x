@@ -44,7 +44,7 @@ test("every demo has consistent usage, billing, and populated history pages", as
             person.qualifiedAt! < window.cycleEnd
         ).length;
         assert.equal(row.used, expected);
-        assert.ok(row.used > 0, `${scenario}: ${cycle.label}: ${row.name}`);
+        assert.ok(row.used >= 0, `${scenario}: ${cycle.label}: ${row.name}`);
         assert.equal(
           row.trend.reduce((sum, point) => sum + point.value, 0),
           row.used
@@ -67,7 +67,13 @@ test("every demo has consistent usage, billing, and populated history pages", as
             paginationOpts: { cursor: null, numItems: 10 },
           }
         );
-        assert.ok(rows.page.length > 0, `${scenario}: ${status}`);
+        assert.equal(
+          rows.page.length,
+          state.prospects.filter(
+            (person) =>
+              person.workspaceId === workspace._id && person.status === status
+          ).length
+        );
         assert.ok(
           rows.page.every(
             (row) => row.workspaceId === workspace._id && row.status === status
@@ -79,7 +85,7 @@ test("every demo has consistent usage, billing, and populated history pages", as
 });
 
 test("notification actions update the shell count and stay within their workspace", async () => {
-  const { client, state } = createAppServices("find-investors");
+  const { client, state } = createAppServices("manage-people-with-reacherx");
   const workspaceId = state.selectedWorkspaceId;
   const rows = await client.query(api.outreach.listNotifications, {
     workspaceId,

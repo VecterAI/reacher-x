@@ -9,19 +9,19 @@ export const homepageFaqItems: FaqItem[] = [
     id: "what-is-reacherx",
     question: "What is ReacherX?",
     answer:
-      "ReacherX is an open-source AI agent that finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
+      "ReacherX is an open-source △ Agent that finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
   },
   {
     id: "why-agent",
     question: "Do I need sales experience to use it?",
     answer:
-      "No. Describe who you want to reach and why. The agent asks questions, researches people, and helps you plan what to say. You can review its work and give feedback.",
+      "No. Describe who you want to reach and why. △ Agent asks questions, researches people, and helps you plan what to say. You can review its work and give feedback.",
   },
   {
     id: "how-does-it-know",
     question: "How does ReacherX know who to reach?",
     answer:
-      "Describe who you want to meet or share your website. The agent develops search criteria, researches profiles and posts, and explains why each person fits.",
+      "Describe who you want to meet or share your website. △ Agent develops search criteria, researches profiles and posts, and explains why each person fits.",
   },
   {
     id: "platform-support",
@@ -45,13 +45,13 @@ export const homepageFaqItems: FaqItem[] = [
     id: "approval",
     question: "Does ReacherX send anything without approval?",
     answer:
-      "Sending approvals are on by default. If you turn them off in workspace settings, supported replies and DMs can send without another approval. You can review the settings and pause the agent at any time.",
+      "Sending approvals are on by default. If you turn them off in workspace settings, supported replies and DMs can send without another approval. You can review the settings and pause △ Agent at any time.",
   },
   {
     id: "different-from-other-tools",
     question: "How is ReacherX different from other outreach tools?",
     answer:
-      "You work with an agent in a conversation. It uses profiles and posts to research people, prepares outreach plans, and uses your saved feedback to guide later work. You can inspect the research and edit the plans.",
+      "You work with △ Agent in a conversation. It uses profiles and posts to research people, prepares outreach plans, and uses your saved feedback to guide later work. You can inspect the research and edit the plans.",
   },
   {
     id: "open-source",
@@ -71,7 +71,7 @@ export const pricingFaqItems: FaqItem[] = [
   {
     id: "credit-card",
     question: "Do I need a credit card to get started?",
-    answer: "Yes. A paid plan is required to start Agent during launch.",
+    answer: "Yes. A paid plan is required to start △ Agent during launch.",
   },
   {
     id: "plan-limits",
@@ -83,11 +83,11 @@ export const pricingFaqItems: FaqItem[] = [
     id: "hit-limit",
     question: "What happens if I hit my plan limit?",
     answer:
-      "Agent pauses discovery for that workspace until your limit resets or you upgrade.",
+      "△ Agent pauses discovery for that workspace until your limit resets or you upgrade.",
   },
   {
     id: "other-pause-reasons",
-    question: "Can Agent pause for other reasons?",
+    question: "Can △ Agent pause for other reasons?",
     answer:
       "Yes. It can also pause if the workspace becomes inactive, and you can resume it when you are ready.",
   },

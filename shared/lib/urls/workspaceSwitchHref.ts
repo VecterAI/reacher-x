@@ -1,3 +1,5 @@
+import { isWorkspaceEntityRouteSlug } from "../workspaceRoutes";
+
 const AGENT_ROUTE_PREFIX = "/agent";
 
 export function shouldExitAgentOnWorkspaceSwitch(
@@ -16,5 +18,12 @@ export function shouldExitAgentOnWorkspaceSwitch(
 export function getWorkspaceSwitchHref(
   pathname: string | null | undefined
 ): string | null {
-  return shouldExitAgentOnWorkspaceSwitch(pathname) ? "/" : null;
+  const segments = pathname?.split("/").filter(Boolean) ?? [];
+  const isProspectDetail =
+    segments.length === 2 && isWorkspaceEntityRouteSlug(segments[0]);
+  // A person URL belongs to the old workspace. Do not relabel that person's
+  // profile using the new workspace's pipeline while retaining their ID.
+  return shouldExitAgentOnWorkspaceSwitch(pathname) || isProspectDetail
+    ? "/"
+    : null;
 }

@@ -16,14 +16,15 @@ export function MarketingWorkflow() {
         title="Describe what you need."
         demo={
           <MarketingDemo
-            scenario="getting-started-with-reacherx"
+            scenario="find-candidates"
+            sceneRange={[0, 9]}
             title="Set up a search by talking to ReacherX"
             caption="The setup conversation, from your goal to a search brief."
           />
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          No tables or sales jargon. Tell the agent what you are working on and
+          No tables or sales jargon. Tell △ Agent what you are working on and
           who you want to reach, in plain words.
         </p>
         <p className="text-muted-foreground mt-5 text-sm leading-6">
@@ -42,8 +43,9 @@ export function MarketingWorkflow() {
         title="See who fits, and why."
         demo={
           <MarketingDemo
-            scenario="find-potential-customers"
-            title="Research and qualify a potential customer"
+            scenario="find-candidates"
+            sceneRange={[10, 19]}
+            title="Research the frontend candidates"
             caption="Search results with the evidence behind each match."
           />
         }
@@ -68,14 +70,15 @@ export function MarketingWorkflow() {
         title="Reach out like a human."
         demo={
           <MarketingDemo
-            scenario="create-plans-for-several-people"
-            title="Create and review individual outreach plans"
+            scenario="find-candidates"
+            sceneRange={[20, 34]}
+            title="Review an introduction and follow the reply"
             caption="A personal introduction for each person, ready for your review."
           />
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          The agent turns its research into a personal introduction, ready for
+          △ Agent turns its research into a personal introduction, ready for
           your review. Nothing sends without your approval.
         </p>
         <p className="text-muted-foreground mt-5 text-sm leading-6">
@@ -99,10 +102,10 @@ export function MarketingFinish() {
       <div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-center">
         <div>
           <h2 className="text-3xl leading-tight font-normal tracking-tight sm:text-4xl">
-            Who do you want to reach?
+            Who will you and your △ Agent reach?
           </h2>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto">
           <LandingPrimaryCta size="lg" />
           <LandingBookDemoCta variant="outline" size="lg" />
         </div>

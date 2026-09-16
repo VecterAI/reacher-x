@@ -52,6 +52,7 @@ import {
 
 export interface ProspectProfileData {
   id: string;
+  workspaceId?: string;
   displayName?: string;
   verified?: boolean;
   title?: string;

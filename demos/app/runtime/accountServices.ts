@@ -21,6 +21,46 @@ export function registerAccountServices(
   state: ReturnType<typeof createAppFixtures>
 ) {
   const now = getCurrentUTCTimestamp();
+  const connected = { twitter: true, linkedin: true };
+  const snapshot = (platform: "twitter" | "linkedin") => ({
+    platform,
+    isConnected: connected[platform],
+    status: connected[platform]
+      ? ("connected" as const)
+      : ("disconnected" as const),
+    connectedAt: state.workspaces[0]._creationTime,
+    ...(platform === "twitter"
+      ? {
+          connectedAccountId: "demo_x_account",
+          screenName: "maya_demo",
+          name: "Maya Chen",
+          missingScopes: [],
+        }
+      : {
+          accountId: "demo_linkedin_account",
+          publicIdentifier: "fictional-maya-chen",
+          displayName: "Maya Chen",
+        }),
+  });
+  client.register(api.connectedAccounts.getConnectionSnapshot, ({ platform }) =>
+    snapshot(platform)
+  );
+  client.register(api.x.getTwitterConnectionStatus, () => snapshot("twitter"));
+  client.register(api.x.disconnectTwitter, () => {
+    connected.twitter = false;
+    return { success: true as const };
+  });
+  client.register(api.linkedin.disconnectLinkedIn, () => {
+    connected.linkedin = false;
+    return { success: true as const };
+  });
+  const previewConnection = () => {
+    throw new Error(
+      "This demo uses fictional connected accounts. Replay the demo to restore them; connecting a real account is available in the app."
+    );
+  };
+  client.register(api.x.getTwitterConnectLink, previewConnection);
+  client.register(api.linkedin.getLinkedInConnectLink, previewConnection);
   const currentStart = startOfMonth(now);
   const cycles = [0, 1, 2].map((offset) => ({
     cycleStart: +subMonths(currentStart, offset),
@@ -163,11 +203,9 @@ export function registerAccountServices(
   client.register(api.billing.startCustomerPortalFlow, demoBillingOnly);
   client.register(api.billing.startCheckoutFlow, demoBillingOnly);
   client.register(api.linkedin.getLinkedInConnectionStatus, () => ({
-    isConnected: true,
-    status: "connected" as const,
-    displayName: "Maya Chen",
-    connectedAt: cycles[2].cycleStart,
+    ...snapshot("linkedin"),
     publicProfileUrl: "https://www.linkedin.com/in/fictional-maya-chen/",
     providerId: "demo_linkedin_account",
   }));
+  return { snapshot };
 }

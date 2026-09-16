@@ -6,6 +6,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NavigationMenu } from "radix-ui";
 import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
+import {
+  DISCORD_INVITE_URL,
+  PATREON_URL,
+} from "@/features/landing/lib/communityUrls";
+import { GITHUB_REPO_ISSUES_URL, GITHUB_REPO_URL } from "@/features/landing/lib/github";
 import { workspaceUseCaseIcons } from "@/shared/ui/components/icons/workspaceUseCaseIconHelpers";
 import { cn } from "@/shared/lib/utils";
 import { marketingPageWidth } from "./MarketingLayout";
@@ -16,6 +21,8 @@ import {
   GitHubOutlineIcon,
   DeveloperGuideIcon,
   CampaignIcon,
+  DiscordOutlineIcon,
+  PatreonIcon,
 } from "@/shared/ui/components/icons";
 
 const resources = [
@@ -48,6 +55,48 @@ const resources = [
     label: "Self-hosting",
     description: "Run the open-source app",
     icon: GitHubOutlineIcon,
+  },
+];
+
+type NavigationLink = {
+  href: string;
+  label: string;
+  description: string;
+  icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  /** External links open in a new tab and never match the active route. */
+  external?: boolean;
+};
+
+type NavigationGroup = {
+  label: string;
+  eyebrow: string;
+  active: boolean;
+  links: NavigationLink[];
+  all?: string;
+  allLabel?: string;
+};
+
+const communityLinks: NavigationLink[] = [
+  {
+    href: DISCORD_INVITE_URL,
+    label: "Join the Discord",
+    description: "Ask questions and share what you build",
+    icon: DiscordOutlineIcon,
+    external: true,
+  },
+  {
+    href: PATREON_URL,
+    label: "Support on Patreon",
+    description: "Fund development and keep ReacherX open source",
+    icon: PatreonIcon,
+    external: true,
+  },
+  {
+    href: GITHUB_REPO_ISSUES_URL,
+    label: "Contribute on GitHub",
+    description: "Issues, pull requests, and good first tasks",
+    icon: GitHubOutlineIcon,
+    external: true,
   },
 ];
 
@@ -89,7 +138,7 @@ export function MarketingNavigation() {
   const isResourcesActive =
     isActiveHref("/blog", pathname) && !isUseCasesActive;
 
-  const groups = [
+  const groups: NavigationGroup[] = [
     {
       label: "Use cases",
       eyebrow: "Who do you want to find?",
@@ -108,6 +157,14 @@ export function MarketingNavigation() {
       links: resources,
       all: "/blog",
       allLabel: "Read the blog",
+    },
+    {
+      label: "Community",
+      eyebrow: "Build ReacherX with us",
+      active: false,
+      links: communityLinks,
+      all: GITHUB_REPO_URL,
+      allLabel: "Star on GitHub",
     },
   ];
 
@@ -160,37 +217,58 @@ export function MarketingNavigation() {
                 </p>
                 <ul className="grid gap-1 sm:grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
                   {group.links.map((link) => {
-                    const linkActive = isActiveHref(link.href, pathname);
+                    const linkActive =
+                      !link.external && isActiveHref(link.href, pathname);
+                    const linkClassName = cn(
+                      linkClass,
+                      "group flex items-start gap-3 rounded-lg py-3",
+                      linkActive &&
+                        "bg-muted/60 text-foreground data-[active]:bg-muted/60"
+                    );
+                    const linkContent = (
+                      <>
+                        <link.icon
+                          aria-hidden="true"
+                          className={cn(
+                            "mt-0.5 size-5 shrink-0",
+                            link.icon !== GitHubOutlineIcon &&
+                              link.icon !== DiscordOutlineIcon &&
+                              "fill-current"
+                          )}
+                        />
+                        <span>
+                          <span className="text-foreground block text-sm font-medium">
+                            {link.label}
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-pretty">
+                            {link.description}
+                          </span>
+                        </span>
+                      </>
+                    );
                     return (
                       <li key={link.href}>
                         <NavigationMenu.Link asChild active={linkActive}>
-                          <Link
-                            href={link.href}
-                            aria-current={linkActive ? "page" : undefined}
-                            className={cn(
-                              linkClass,
-                              "group flex items-start gap-3 rounded-lg py-3",
-                              linkActive &&
-                                "bg-muted/60 text-foreground data-[active]:bg-muted/60"
-                            )}
-                          >
-                            <link.icon
-                              aria-hidden="true"
-                              className={cn(
-                                "mt-0.5 size-5 shrink-0",
-                                link.icon !== GitHubOutlineIcon &&
-                                  "fill-current"
-                              )}
-                            />
-                            <span>
-                              <span className="text-foreground block text-sm font-medium">
-                                {link.label}
-                              </span>
-                              <span className="mt-1 block text-xs leading-5 text-pretty">
-                                {link.description}
-                              </span>
-                            </span>
-                          </Link>
+                          {link.external ? (
+                            <a
+                              href={link.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={linkClassName}
+                            >
+                              {linkContent}
+                            </a>
+                          ) : (
+                            <Link
+                              href={link.href}
+                              aria-current={
+                                linkActive ? "page" : undefined
+                              }
+                              className={linkClassName}
+                            >
+                              {linkContent}
+                            </Link>
+                          )}
                         </NavigationMenu.Link>
                       </li>
                     );
@@ -199,12 +277,23 @@ export function MarketingNavigation() {
                 {group.all ? (
                   <div className="border-border mt-4 border-t pt-1">
                     <NavigationMenu.Link asChild>
-                      <Link
-                        href={group.all}
-                        className="hover:bg-muted mt-1 block w-fit rounded-md px-3 py-2 text-sm font-medium"
-                      >
-                        {group.allLabel} ↗
-                      </Link>
+                      {group.all.startsWith("http") ? (
+                        <a
+                          href={group.all}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:bg-muted mt-1 block w-fit rounded-md px-3 py-2 text-sm font-medium"
+                        >
+                          {group.allLabel} ↗
+                        </a>
+                      ) : (
+                        <Link
+                          href={group.all}
+                          className="hover:bg-muted mt-1 block w-fit rounded-md px-3 py-2 text-sm font-medium"
+                        >
+                          {group.allLabel} ↗
+                        </Link>
+                      )}
                     </NavigationMenu.Link>
                   </div>
                 ) : null}

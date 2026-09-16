@@ -13,7 +13,10 @@ import {
   MEMORY_DEMO_SHOTS,
 } from "./reportingDemoShots";
 import { AUDIENCE_DEMO_IDS } from "./blogDemoCatalog";
-import { AUDIENCE_DEMO_SHOTS } from "./audienceDemoShots";
+import {
+  AUDIENCE_DEMO_SHOTS,
+  buildUseCaseWalkthroughShots,
+} from "./audienceDemoShots";
 import {
   DEMO_DESIGN_WIDTH,
   DEMO_DESIGN_HEIGHT,
@@ -90,61 +93,6 @@ const firstPerson = {
   selector: '[data-prospect-id="use_case_demo_candidates_1"]',
 };
 const profileMenu = { selector: '[aria-label="Profile menu"]' };
-const plan = { selector: "aside article" };
-const FIND_CANDIDATES_SHOTS: readonly BlogDemoShot[] = [
-  {
-    label: "Your hiring workspace",
-    duration: 2200,
-    camera: wide,
-  },
-  {
-    label: "Start with a clear role",
-    duration: 3200,
-    camera: { ...wide, zoom: 1.65, mobileZoom: 2.5 },
-    focus: { selector: 'textarea[name="rawUserDescription"]' },
-  },
-  {
-    label: "Open the candidates",
-    duration: CLICK_SHOT_DURATION_MS,
-    camera: sidebar,
-    action: { selector: "a", text: "Candidates" },
-  },
-  {
-    label: "Review a relevant match",
-    duration: CLICK_SHOT_DURATION_MS,
-    camera: { ...wide, zoom: 1.65, mobileZoom: 2.5 },
-    action: firstPerson,
-  },
-  {
-    label: "Check the evidence",
-    duration: CLICK_SHOT_DURATION_MS,
-    camera: profile,
-    action: tab("Relevant activity"),
-  },
-  {
-    label: "Read the work behind the match",
-    duration: 3200,
-    camera: profile,
-    focus: { selector: '[role="tabpanel"]' },
-  },
-  {
-    label: "Return to the overview",
-    duration: CLICK_SHOT_DURATION_MS,
-    camera: profile,
-    action: tab("Overview"),
-  },
-  {
-    label: "Review the outreach plan",
-    duration: 3200,
-    camera: profile,
-    focus: plan,
-  },
-  {
-    label: "Ready to reach out",
-    duration: 2600,
-    camera: wide,
-  },
-];
 /** Stories contain camera direction and DOM actions, never alternate app state. */
 export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
   ...AUDIENCE_DEMO_SHOTS,
@@ -152,32 +100,7 @@ export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
   "create-plans-for-several-people": BATCH_DEMO_SHOTS,
   "getting-started-with-reacherx": SETUP_DEMO_SHOTS,
   "manage-dm-conversations": DM_DEMO_SHOTS,
-  "introducing-reacherx-v4": [
-    ...FIND_CANDIDATES_SHOTS.slice(0, -1),
-    {
-      label: "Open the conversation options",
-      duration: 1500,
-      camera: profile,
-      action: profileMenu,
-    },
-    {
-      label: "Follow the LinkedIn conversation",
-      duration: 1500,
-      camera: profile,
-      action: menuItem("Message on LinkedIn"),
-    },
-    {
-      label: "Read the sent introduction and the reply",
-      duration: 4000,
-      camera: profile,
-      focus: { selector: '[role="log"] article', all: true },
-    },
-    {
-      label: "From a clear goal to a conversation",
-      duration: 2600,
-      camera: wide,
-    },
-  ],
+  "introducing-reacherx-v4": buildUseCaseWalkthroughShots("find-candidates"),
   "outreach-with-images-and-video": MEDIA_DEMO_SHOTS,
   "write-with-autocomplete": AUTOCOMPLETE_DEMO_SHOTS,
   "what-reacherx-does-automatically": AUTOMATION_DEMO_SHOTS,
@@ -210,9 +133,66 @@ export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
       camera: profile,
       focus: { selector: 'aside [role="tabpanel"]' },
     },
+    {
+      label: "Return to detailed research",
+      duration: 1500,
+      camera: profile,
+      action: tab("Overview"),
+    },
+    {
+      label: "Expand the researched details",
+      duration: 1500,
+      camera: profile,
+      action: {
+        selector: 'aside [role="tabpanel"] section > div > button',
+        text: "Show more",
+      },
+    },
+    {
+      label: "Inspect the details below the introduction",
+      duration: 3000,
+      camera: profile,
+      focus: { selector: "aside section", containsText: "Location" },
+    },
+    {
+      label: "Open professional profile options",
+      duration: 1500,
+      camera: profile,
+      action: profileMenu,
+    },
+    {
+      label: "Open the dedicated LinkedIn profile",
+      duration: 1500,
+      camera: profile,
+      action: menuItem("Open on LinkedIn"),
+    },
+    {
+      label: "Review experience, skills and posts",
+      duration: 3500,
+      camera: profile,
+      focus: { selector: "aside" },
+    },
+    {
+      label: "Return to the researched person",
+      duration: 1500,
+      camera: profile,
+      action: { selector: 'aside button[aria-label="Go back"]' },
+    },
+    {
+      label: "Open the X profile",
+      duration: 1500,
+      camera: profile,
+      action: { selector: "aside button", text: "X/Twitter" },
+    },
+    {
+      label: "Review the public X profile and activity",
+      duration: 3500,
+      camera: profile,
+      focus: { selector: "aside" },
+    },
     { label: "Research in context", duration: 2600, camera: wide },
   ],
-  "find-candidates": FIND_CANDIDATES_SHOTS,
+  "find-candidates": buildUseCaseWalkthroughShots("find-candidates"),
   "manage-people-with-reacherx": [
     {
       label: "Your candidates",
@@ -226,28 +206,22 @@ export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
       action: firstPerson,
     },
     {
-      label: "Open the profile menu",
-      duration: CLICK_SHOT_DURATION_MS,
+      label: "Inspect the candidate history",
+      duration: 1500,
       camera: profile,
-      action: profileMenu,
+      action: tab("Activity log"),
     },
     {
-      label: "Open the conversation",
-      duration: CLICK_SHOT_DURATION_MS,
+      label: "Review discovery and qualification",
+      duration: 3500,
       camera: profile,
-      action: menuItem("Message on LinkedIn"),
+      focus: { selector: 'aside [role="tabpanel"]' },
     },
     {
-      label: "Read the conversation",
-      duration: 4000,
-      camera: { ...profile, zoom: 1.65, mobileZoom: 2.3 },
-      focus: { selector: '[role="log"] article', all: true },
-    },
-    {
-      label: "Return to the profile",
-      duration: CLICK_SHOT_DURATION_MS,
+      label: "Return to the overview",
+      duration: 1500,
       camera: profile,
-      action: { selector: 'aside button[aria-label="Go back"]' },
+      action: tab("Overview"),
     },
     {
       label: "Update the hiring stage",
@@ -287,6 +261,33 @@ export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
   ],
   "workspaces-explained": [
     {
+      label: "Separate workspaces for separate jobs",
+      duration: 2200,
+      camera: wide,
+    },
+    {
+      label: "Create a separate workspace for another job",
+      duration: 1500,
+      camera: sidebar,
+      action: { selector: "button", text: "New workspace" },
+    },
+    ...SETUP_DEMO_SHOTS.slice(0, 11),
+    {
+      label: "Return to the existing hiring workspace",
+      duration: 1500,
+      camera: sidebar,
+      action: switcher,
+    },
+    {
+      label: "Choose the original hiring workspace",
+      duration: 2000,
+      camera: sidebar,
+      action: {
+        selector: '[role="option"]',
+        text: "Hiring — product designer",
+      },
+    },
+    {
       label: "Your hiring workspace",
       duration: 2200,
       camera: wide,
@@ -301,7 +302,10 @@ export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
       label: "Choose People to try the app",
       duration: WORKSPACE_SWITCH_DURATION_MS,
       camera: sidebar,
-      action: { selector: '[role="option"]', text: "People to try the app" },
+      action: {
+        selector: '[role="option"]',
+        text: "Customers — freelance designers",
+      },
     },
     {
       label: "Same page, different people",
@@ -320,7 +324,10 @@ export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
       label: "Choose Hire a designer",
       duration: WORKSPACE_SWITCH_DURATION_MS,
       camera: sidebar,
-      action: { selector: '[role="option"]', text: "Hire a designer" },
+      action: {
+        selector: '[role="option"]',
+        text: "Hiring — product designer",
+      },
     },
     {
       label: "Your candidates are still here",
@@ -336,9 +343,24 @@ export function isBlogDemoId(value: unknown): value is BlogDemoId {
 export function getBlogDemoDuration(id: BlogDemoId) {
   return BLOG_DEMO_SHOTS[id].reduce((total, shot) => total + shot.duration, 0);
 }
-export function getBlogDemoFrame(id: BlogDemoId, time: number) {
-  const shots = BLOG_DEMO_SHOTS[id];
-  const duration = getBlogDemoDuration(id);
+export function getBlogDemoFrame(
+  id: BlogDemoId,
+  time: number,
+  sceneRange?: readonly [number, number]
+) {
+  const allShots = BLOG_DEMO_SHOTS[id];
+  const first = sceneRange?.[0] ?? 0;
+  const last = sceneRange?.[1] ?? allShots.length - 1;
+  if (
+    !Number.isInteger(first) ||
+    !Number.isInteger(last) ||
+    first < 0 ||
+    last < first ||
+    last >= allShots.length
+  )
+    throw new Error("Invalid demo scene range");
+  const shots = allShots.slice(first, last + 1);
+  const duration = shots.reduce((total, shot) => total + shot.duration, 0);
   const elapsed = Number.isFinite(time) ? Math.max(0, time) % duration : 0;
   let start = 0;
   const index = shots.findIndex((shot) => {
@@ -348,7 +370,7 @@ export function getBlogDemoFrame(id: BlogDemoId, time: number) {
   });
   const shot = shots[index];
   return {
-    index,
+    index: index + first,
     shot,
     camera: shot.camera,
     elapsed,

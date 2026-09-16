@@ -1,6 +1,5 @@
 import "server-only";
-import { cache } from "react";
-import { connection } from "next/server";
+import { cacheLife, cacheTag } from "next/cache";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import {
@@ -9,11 +8,15 @@ import {
   resolveBlogAuthorProfile,
 } from "./blogAuthorHelpers";
 
-// React cache deduplicates within one render request; it does not cache across visits.
-export const getBlogAuthor = cache(async () => {
-  await connection();
+// Public author identity is shared across pages, never keyed by visitor auth.
+export async function getBlogAuthor() {
+  "use cache";
+  cacheTag("blog-author");
   const url = process.env.NEXT_PUBLIC_CONVEX_URL;
-  if (!url) return BLOG_AUTHOR_FALLBACK;
+  if (!url) {
+    cacheLife("hours");
+    return BLOG_AUTHOR_FALLBACK;
+  }
   try {
     const convex = new ConvexHttpClient(url, {
       logger: false,
@@ -29,9 +32,12 @@ export const getBlogAuthor = cache(async () => {
     const result = await convex.action(api.socialapi.getTwitterProfileDisplay, {
       username: BLOG_AUTHOR_USERNAME,
     });
-    return resolveBlogAuthorProfile(result.profile);
+    const profile = resolveBlogAuthorProfile(result.profile);
+    cacheLife("hours");
+    return profile;
   } catch {
+    cacheLife({ stale: 60, revalidate: 60, expire: 300 });
     console.warn("[BlogAuthor] Profile lookup unavailable; using fallback");
     return BLOG_AUTHOR_FALLBACK;
   }
-});
+}

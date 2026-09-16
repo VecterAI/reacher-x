@@ -1,3 +1,4 @@
+import { registerPublicInteractionServices } from "./publicInteractionServices";
 import { registerBatchStory } from "./scenarios/batch";
 import { registerSetupStory } from "./scenarios/setup";
 import { registerMediaStory } from "./scenarios/media";
@@ -19,11 +20,13 @@ import { registerReportingServices } from "./reportingServices";
 import { registerAgentServices } from "./agentServices";
 import { registerAccountServices } from "./accountServices";
 import { registerNotificationServices } from "./notificationServices";
+import { registerProfileServices } from "./profileServices";
+import { registerOutreachStory } from "./scenarios/outreach";
 
 /** One local service graph per mounted app; stories vary only their seed data. */
 export function createAppServices(scenario?: BlogDemoId) {
   const state = createAppFixtures(scenario);
-  const services = createServices();
+  const services = createServices(state);
   const { client } = services;
   const notifications = registerNotificationServices(client, state);
   registerConversationContextServices(client, state);
@@ -32,19 +35,23 @@ export function createAppServices(scenario?: BlogDemoId) {
     state,
     notifications.pendingCount
   );
-  registerWorkspaceControlServices(client, state);
-  registerAccountServices(client, state);
+
+  const accounts = registerAccountServices(client, state);
   registerProspectServices(client, state);
+  registerProfileServices(client, state, accounts);
   registerProspectListServices(client, state);
   registerProspectHistoryServices(client, state);
+  registerPublicInteractionServices(client, state);
   const reporting = registerReportingServices(client, state);
   const agent = registerAgentServices(client, state);
   registerMemoryStory(agent, state, reporting);
   registerAutocompleteStory(client, state);
   registerMentionServices(client, state, registerMediaServices(client));
-  registerPlanServices(client, state);
+  const planLifecycle = registerPlanServices(client, state);
+  registerWorkspaceControlServices(client, state, planLifecycle);
   registerMediaStory(agent, state);
   registerSetupStory(client, state, agent, workspaceServices);
   registerBatchStory(client, state, agent);
-  return { ...services, state, agent, reporting };
+  registerOutreachStory(agent, state);
+  return { ...services, state, agent, reporting, planLifecycle };
 }

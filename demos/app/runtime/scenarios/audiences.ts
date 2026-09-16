@@ -1,3 +1,4 @@
+import { demoHandle } from "../researchFixtureHelpers";
 import portraits from "../portraitAssets.json";
 import type { AudienceDemoId } from "@/features/blog/lib/blogDemoCatalog";
 import type { WorkspaceUseCaseKey } from "@/shared/lib/workspaceUseCases";
@@ -19,7 +20,7 @@ export interface AudienceStory {
 export const audienceStories: Record<AudienceDemoId, AudienceStory> = {
   "find-potential-customers": {
     useCaseKey: "customer_prospecting",
-    workspace: "Simpler client feedback",
+    workspace: "Customers — freelance designers",
     brief:
       "Find freelance designers who have talked about clients sending feedback through email, chat, and shared documents. I'm building an app that puts that feedback in one place.",
     people: [
@@ -54,7 +55,7 @@ export const audienceStories: Record<AudienceDemoId, AudienceStory> = {
   },
   "find-investors": {
     useCaseKey: "investor_outreach",
-    workspace: "Clinic software · pre-seed",
+    workspace: "Investors — clinic software pre-seed",
     brief:
       "We're a two-person UK team building scheduling software for independent clinics. Find investors discussing pre-seed health software in the UK. Check current sector and stage before proposing an introduction.",
     people: [
@@ -89,7 +90,7 @@ export const audienceStories: Record<AudienceDemoId, AudienceStory> = {
   },
   "find-research-participants": {
     useCaseKey: "user_research_recruitment",
-    workspace: "Tutor scheduling study",
+    workspace: "Research — independent tutors",
     brief:
       "Find independent tutors who have recently discussed arranging lessons, cancellations, or chasing confirmations from parents. Participants must manage their own schedule. This is a research study, not a sales campaign.",
     people: [
@@ -124,7 +125,7 @@ export const audienceStories: Record<AudienceDemoId, AudienceStory> = {
   },
   "find-partners": {
     useCaseKey: "partnership_outreach",
-    workspace: "Client feedback workshop",
+    workspace: "Partners — client-feedback workshop",
     brief:
       "Find people who teach freelance designers or run communities for them. We'd like to run a practical workshop about handling client feedback. Look for recent lessons on client communication and expectations.",
     people: [
@@ -159,7 +160,7 @@ export const audienceStories: Record<AudienceDemoId, AudienceStory> = {
   },
   "find-creators": {
     useCaseKey: "creator_outreach",
-    workspace: "Developer tutorial collaborators",
+    workspace: "Creators — developer launch",
     brief:
       "Find creators who teach solo developers how to launch web apps. Look for hands-on tutorials and audience questions about finding the first people to try a project, rather than general startup advice.",
     people: [
@@ -194,7 +195,7 @@ export const audienceStories: Record<AudienceDemoId, AudienceStory> = {
   },
   "find-community-members": {
     useCaseKey: "community_growth",
-    workspace: "Friday app feedback circle",
+    workspace: "Community — app feedback group",
     brief:
       "Find solo developers sharing early versions of their apps and asking for feedback. We run a free weekly session where people try each other's projects. Invite people to the activity, not just a server.",
     people: [
@@ -229,7 +230,7 @@ export const audienceStories: Record<AudienceDemoId, AudienceStory> = {
   },
   "find-podcast-guests": {
     useCaseKey: "podcast_speaker_sourcing",
-    workspace: "Freelance to first hire",
+    workspace: "Podcast guests — first-hire stories",
     brief:
       "Find people who recently shared their experience hiring their first teammate after freelancing. We want a podcast guest who can discuss handing over client work, what changed, and what went wrong.",
     people: [
@@ -273,9 +274,21 @@ export function createAudienceProspect(
     ...person,
     key: `audience_${index + 1}`,
     platform,
-    handle: `fictional-${person.displayName.toLowerCase().replaceAll(" ", "-")}`,
+    handle:
+      platform === "twitter"
+        ? demoHandle(person.displayName)
+        : `fictional-${person.displayName.toLowerCase().replaceAll(" ", "-")}`,
     hoursAgo: index + 1,
     matchedKeywords: [],
   });
+  if (
+    ["Alex Rivera", "Daniel Park", "Owen Clarke"].includes(person.displayName)
+  ) {
+    prospect.qualificationStatus = "disqualified";
+    prospect.qualificationScore = 28;
+    prospect.status = "archived";
+    prospect.pipelineStage = "archived";
+    prospect.qualificationReasoning = `Excluded: ${person.briefIntro}`;
+  }
   return applyDemoPortrait(prospect);
 }

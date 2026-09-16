@@ -19,7 +19,7 @@ export function registerProspectHistoryServices(
     api.outreach.getActivityLog,
     ({ prospectId, type, search, paginationOpts }) => {
       const prospect = prospectFor(prospectId);
-      const rows = [
+      const seeded = [
         {
           type: "qualified" as const,
           title: "Qualified",
@@ -32,6 +32,11 @@ export function registerProspectHistoryServices(
           description: "Found through relevant public activity.",
         },
       ]
+        .filter(
+          (entry) =>
+            entry.type !== "qualified" ||
+            prospect.qualificationStatus === "qualified"
+        )
         .map((entry, index) => ({
           ...entry,
           _id: `demo_activity_${prospectId}_${index}` as Doc<"prospectActivityLog">["_id"],
@@ -39,7 +44,14 @@ export function registerProspectHistoryServices(
           prospectId,
           workspaceId: prospect.workspaceId,
           plan: null,
-        }))
+        }));
+      const rows = [
+        ...seeded,
+        ...state.lifecycle.activity.filter(
+          (entry) => entry.prospectId === prospectId
+        ),
+      ]
+        .sort((a, b) => b._creationTime - a._creationTime)
         .filter(
           (entry) =>
             (!type || entry.type === type) &&
@@ -53,9 +65,19 @@ export function registerProspectHistoryServices(
   );
   client.register(
     api.interactions.getProspectInteractionsPage,
-    ({ prospectId }) => {
+    ({ prospectId, paginationOpts }) => {
       prospectFor(prospectId);
-      return { page: [], isDone: true, continueCursor: "" };
+      return paginateLocalRows(
+        state.lifecycle.interactions
+          .filter(
+            // The production tab renders public post/comment threads. DMs
+            // belong to Conversation and Activity log, never fake post cards.
+            (entry) =>
+              entry.interactionType !== "dm" && entry.prospectId === prospectId
+          )
+          .sort((a, b) => b.repliedAt - a.repliedAt),
+        paginationOpts
+      );
     }
   );
   client.register(

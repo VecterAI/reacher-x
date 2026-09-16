@@ -27,7 +27,15 @@ export async function POST(request: NextRequest) {
   }
   const blob = await readDemoUpload(request, MAX_BYTES);
   if (!blob) return new Response("Invalid upload size", { status: 413 });
-  if (!blob.size || blob.size > MAX_BYTES || !isDemoUploadMimeType(blob.type)) {
+  if (
+    !blob.size ||
+    blob.size > MAX_BYTES ||
+    !(
+      isDemoUploadMimeType(blob.type) ||
+      (request.nextUrl.searchParams.get("xchat") === "true" &&
+        blob.type === "application/octet-stream")
+    )
+  ) {
     return new Response("Unsupported demo attachment", { status: 400 });
   }
   const now = getCurrentUTCTimestamp();

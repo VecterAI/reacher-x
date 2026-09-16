@@ -43,7 +43,7 @@ export function LandingPrimaryCta({
     return (
       <span className={classNames} aria-busy="true" aria-disabled="true">
         <ChangeHistoryIcon className="size-4 fill-current" aria-hidden="true" />
-        Reach
+        Reach now
       </span>
     );
   }
@@ -64,7 +64,7 @@ export function LandingPrimaryCta({
       onClick={onClick}
     >
       <ChangeHistoryIcon className="size-4 fill-current" aria-hidden="true" />
-      Reach
+      Reach now
     </LandingAuthLink>
   );
 }

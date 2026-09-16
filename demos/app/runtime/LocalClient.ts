@@ -11,6 +11,7 @@ export class LocalClient extends ConvexReactClient {
   private handlers = new Map<string, (args: never) => unknown>();
   private observers = new Set<() => void>();
   private version = 0;
+  private timers = new Set<ReturnType<typeof setTimeout>>();
   private queryResults = new Map<
     string,
     { value: unknown; serialized: string | undefined; version: number }
@@ -48,6 +49,23 @@ export class LocalClient extends ConvexReactClient {
     for (const observer of this.observers) observer();
   }
 
+  schedule(callback: () => void, delayMs: number) {
+    const timer = setTimeout(() => {
+      this.timers.delete(timer);
+      callback();
+      this.notify();
+    }, delayMs);
+    if (typeof timer === "object" && "unref" in timer) timer.unref();
+    this.timers.add(timer);
+  }
+
+  override async close() {
+    this.timers.forEach(clearTimeout);
+    this.timers.clear();
+    this.observers.clear();
+    await super.close();
+  }
+
   override watchQuery: ConvexReactClient["watchQuery"] = (query, ...args) => ({
     onUpdate: (callback) => {
       this.observers.add(callback);
@@ -78,8 +96,14 @@ export class LocalClient extends ConvexReactClient {
     localQueryLogs: () => undefined,
     journal: () => undefined,
   });
-  override action: ConvexReactClient["action"] = async (action, ...args) =>
-    (await this.run(action, args[0] ?? {})) as never;
+  override action: ConvexReactClient["action"] = async (action, ...args) => {
+    try {
+      return (await this.run(action, args[0] ?? {})) as never;
+    } finally {
+      // Local actions can persist state just like actions calling mutations.
+      this.notify();
+    }
+  };
   override mutation: ConvexReactClient["mutation"] = async (
     mutation,
     ...args

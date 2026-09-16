@@ -16,7 +16,13 @@ export function isAudienceDemoId(value: string): value is AudienceDemoId {
 /** Route metadata only. All mock services and fixtures stay in demos/app. */
 export function getBlogDemoInitialPath(scenario: string) {
   if (scenario === "create-plans-for-several-people") return "/agent";
-  if (scenario === "getting-started-with-reacherx") return "/agent/setup";
+  if (
+    scenario === "introducing-reacherx-v4" ||
+    scenario === "getting-started-with-reacherx" ||
+    scenario === "find-candidates" ||
+    isAudienceDemoId(scenario)
+  )
+    return "/agent/setup";
   if (scenario === "what-reacherx-does-automatically") return "/workspace";
   if (scenario === "teach-reacherx-what-you-want") return "/agent";
   if (scenario === "read-your-reacherx-analytics") return "/analytics";

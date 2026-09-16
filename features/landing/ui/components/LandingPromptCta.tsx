@@ -404,7 +404,7 @@ export function LandingPromptCta({
         onPasteCapture={handlePasteCapture}
       >
         <label className="sr-only" htmlFor={contentEditableId}>
-          Describe who you need Agent to find
+          Describe who you need △ Agent to find
         </label>
         <ComposerEditor
           className="min-h-20 w-full min-w-0 text-left text-sm"
@@ -438,7 +438,7 @@ export function LandingPromptCta({
                   type="button"
                   disabled
                   aria-label="Attach media"
-                  title="Available after you start with Agent"
+                  title="Available after you start with △ Agent"
                 >
                   <AttachFileIcon className="fill-current" />
                 </Button>

@@ -1,7 +1,8 @@
 import {
-  createMemoryArtifact,
-  createPlanPreviewArtifact,
-} from "@/shared/lib/json-render/agentArtifacts";
+  buildDemoIntroduction,
+  createScenarioDraftPlan,
+} from "../scenarioPlanHelpers";
+import { createMemoryArtifact } from "@/shared/lib/json-render/agentArtifacts";
 import type { AgentServices } from "../agentServices";
 import type { createAppFixtures } from "../appFixtures";
 import type { registerReportingServices } from "../reportingServices";
@@ -41,24 +42,20 @@ export function registerMemoryStory(
     }
     if (!/draft|introduction|plan/i.test(prompt) || !reporting.memories.size)
       return false;
-    const plan = state.plans.get("use_case_demo_candidates_1");
-    if (!plan) return false;
-    plan.tasks = plan.tasks.slice(0, 1);
-    plan.tasks[0].type = "dm";
-    plan.tasks[0].description = "Introduce the frontend role";
-    plan.tasks[0].content =
-      "Hi Isabelle, I read your post about keyboard navigation in complex settings screens. We're a team of three hiring a frontend engineer to improve our web app. The role is remote, €80–100k, within three hours of Paris. Would you like the role details?";
-    plan.plan.strategy.rationale =
-      "Lead with Isabelle's accessibility work. Keep the introduction under 80 words, with one question and no meeting request.";
-    const artifact = createPlanPreviewArtifact({
-      planId: plan.plan._id,
-      prospectId: plan.plan.prospectId,
-      status: plan.plan.status,
-      rationale: plan.plan.strategy.rationale,
-      tasks: plan.tasks.map((task) => ({
-        ...task,
-        description: task.description ?? "Review the proposed outreach",
-      })),
+    const person = state.prospects.find(
+      (person) =>
+        person.workspaceId === state.selectedWorkspaceId &&
+        prompt.includes(person.displayName?.split(" ")[0] ?? "\u0000")
+    );
+    if (!person) return false;
+    const workspace = state.workspaces.find(
+      (item) => item._id === person.workspaceId
+    )!;
+    const { artifact } = createScenarioDraftPlan(state, person, {
+      threadId,
+      ...buildDemoIntroduction(person, workspace, state.scenario),
+      rationale:
+        "Use the saved workspace instruction: under 80 words, one question, and no meeting request. Connect it to this person's own work.",
     });
     const text =
       "Here's a first message using the saved instruction. Review it before sending.";

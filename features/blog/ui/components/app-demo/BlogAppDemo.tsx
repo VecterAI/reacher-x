@@ -44,6 +44,7 @@ import { useDemoHostFocus } from "./useDemoHostFocus";
 import { useDemoExpansion } from "./useDemoExpansion";
 import "./blog-app-demo.css";
 import { useTheme } from "next-themes";
+import { Spinner } from "@/shared/ui/components/Spinner";
 import { getBlogDemoUrl } from "@/features/blog/lib/blogDemoUrl";
 
 import { readDemoRect } from "@/features/blog/lib/blogDemoDomHelpers";
@@ -59,6 +60,7 @@ interface BlogAppDemoProps {
   scenario: BlogDemoId;
   title: string;
   caption: string;
+  sceneRange?: readonly [number, number];
   presentation?: "cinematic" | "fixed";
   /** Card interaction controls automatic playback; explicit controls remain available. */
   playbackActive?: boolean;
@@ -69,13 +71,19 @@ interface BlogAppDemoProps {
 
 export function BlogAppDemo(props: BlogAppDemoProps) {
   // A different story owns a fresh timeline, iframe, and measured cursor state.
-  return <BlogAppDemoPlayer key={props.scenario} {...props} />;
+  return (
+    <BlogAppDemoPlayer
+      key={`${props.scenario}:${props.sceneRange?.join(":") ?? "all"}`}
+      {...props}
+    />
+  );
 }
 
 function BlogAppDemoPlayer({
   scenario,
   title,
   caption,
+  sceneRange,
   presentation = "cinematic",
   playbackActive,
   interaction = "inline",
@@ -104,7 +112,7 @@ function BlogAppDemoPlayer({
   const [expanded, setExpanded] = useState(false),
     [ready, setReady] = useState(false),
     [prepared, setPrepared] = useState(false),
-    [shotIndex, setShotIndex] = useState(0);
+    [shotIndex, setShotIndex] = useState(sceneRange?.[0] ?? 0);
   const [visible, setVisible] = useState(false);
   const [documentActive, setDocumentActive] = useState(true);
   const [playback, setPlayback] = useState<Playback>(
@@ -113,6 +121,10 @@ function BlogAppDemoPlayer({
     [error, setError] = useState<string | null>(null),
     [touchControls, setTouchControls] = useState(false);
   const [camera, setCamera] = useState<DemoCamera>(DEMO_WIDE_CAMERA);
+  const [rebuilding, setRebuilding] = useState((sceneRange?.[0] ?? 0) > 0);
+  const scrubbing = useRef(false);
+  const pendingSeek = useRef<number | null>(null);
+  const seekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const placementSize = useRef(size);
   const [click, setClick] = useState<{
@@ -141,7 +153,7 @@ function BlogAppDemoPlayer({
     backgroundScale = useMotionValue(1.04);
   const runtime = useRef({
     time: 0,
-    index: 0,
+    index: sceneRange?.[0] ?? 0,
     revision: 0,
     prepared: false,
     actionSent: false,
@@ -160,7 +172,7 @@ function BlogAppDemoPlayer({
   });
   const explicitPause = useRef(false);
   const shot = BLOG_DEMO_SHOTS[scenario][shotIndex];
-  const duration = getBlogDemoFrame(scenario, 0).duration;
+  const duration = getBlogDemoFrame(scenario, 0, sceneRange).duration;
   useDemoExpansion(root, expanded, setExpanded);
   const {
     capture: captureScroll,
@@ -188,7 +200,8 @@ function BlogAppDemoPlayer({
   const syncHostFocus = useDemoHostFocus(
     root,
     send,
-    interaction === "expanded" && !expanded
+    !visible || (interaction === "expanded" && !expanded),
+    rootNode
   );
   useEffect(() => {
     if (ready)
@@ -208,6 +221,7 @@ function BlogAppDemoPlayer({
       r.initialized = true;
       r.revision += 1;
       r.prepared = false;
+      if (reset) setRebuilding(index > 0);
       setPrepared(false);
       r.actionSent = false;
       r.waitingTime = 0;
@@ -217,19 +231,30 @@ function BlogAppDemoPlayer({
     },
     [send, captureScroll]
   );
+  useEffect(() => {
+    const r = runtime.current;
+    if (
+      ready &&
+      !r.initialized &&
+      !r.manual &&
+      (explicitPause.current || (sceneRange?.[0] ?? 0) > 0)
+    ) {
+      prepare(r.index, true);
+    }
+  }, [ready, sceneRange, prepare]);
   const resume = useCallback(() => {
     explicitPause.current = false;
     const r = runtime.current;
     r.retries = 0;
-    if (r.manual || r.playback === "paused") {
-      const frame = getBlogDemoFrame(scenario, r.time);
+    if (r.manual || !r.initialized) {
+      const frame = getBlogDemoFrame(scenario, r.time, sceneRange);
       r.time = frame.start;
       r.manual = false;
       r.editing = false;
       prepare(frame.index, true);
     }
     changePlayback("playing");
-  }, [scenario, prepare, changePlayback]);
+  }, [scenario, sceneRange, prepare, changePlayback]);
   useEffect(() => {
     if (playbackActive === undefined) return;
     if (
@@ -256,9 +281,9 @@ function BlogAppDemoPlayer({
       r.visibleSince = performance.now();
       iframe.current.contentWindow?.location.replace(demoUrl);
     }
-    prepare(0, true);
+    prepare(sceneRange?.[0] ?? 0, true);
     changePlayback(reducedMotion ? "paused" : "playing");
-  }, [prepare, changePlayback, reducedMotion, demoUrl]);
+  }, [prepare, changePlayback, reducedMotion, demoUrl, sceneRange]);
 
   const pause = useCallback(() => {
     // Moving focus to player controls can dismiss an iframe's Radix menu.
@@ -274,21 +299,24 @@ function BlogAppDemoPlayer({
       r.prepared = false;
       const action = getBlogDemoRecoveryAction(r.playback, r.manual, r.retries);
       if (action === "defer") {
+        if (!r.manual) setError(message);
         r.manual = true;
+        setRebuilding(false);
         return;
       }
       console.warn(`[BlogAppDemo] ${message}`);
       if (action === "retry") {
         r.retries += 1;
-        r.time = getBlogDemoFrame(scenario, r.time).start;
+        r.time = getBlogDemoFrame(scenario, r.time, sceneRange).start;
         prepare(r.index, true);
         return;
       }
       r.manual = true;
+      setRebuilding(false);
       setError(message);
       changePlayback("paused");
     },
-    [scenario, prepare, changePlayback]
+    [scenario, sceneRange, prepare, changePlayback]
   );
 
   useLayoutEffect(() => {
@@ -313,13 +341,9 @@ function BlogAppDemoPlayer({
         const r = runtime.current;
         const nextVisible = expanded || entry.isIntersecting;
         if (!nextVisible) cancelScroll();
-        if (r.visible && !nextVisible && r.ready && r.playback === "playing") {
-          // Cancel work before offscreen Radix/editor focus can move the page.
-          send("reacherx:suspend");
-          r.initialized = false;
-          r.prepared = false;
-          setPrepared(false);
-        }
+        // Keep the prepared frame and in-flight local action. The host clock
+        // stops offscreen, ambient work pauses, and useDemoHostFocus makes the
+        // child inert so a finishing action cannot steal the reader's focus.
         r.visible = nextVisible;
         setVisible(nextVisible);
         if (runtime.current.visible && !runtime.current.visibleSince)
@@ -333,7 +357,7 @@ function BlogAppDemoPlayer({
       resize.disconnect();
       visibility.disconnect();
     };
-  }, [rootNode, expanded, send, cancelScroll]);
+  }, [rootNode, expanded, cancelScroll]);
   useEffect(() => {
     if (reducedMotion) changePlayback("paused");
   }, [reducedMotion, changePlayback]);
@@ -413,6 +437,9 @@ function BlogAppDemoPlayer({
         r.ready = true;
         setReady(true);
         r.initialized = false;
+        // A seek made before the iframe handshake must survive the initial load.
+        if (!r.manual && (explicitPause.current || (sceneRange?.[0] ?? 0) > 0))
+          prepare(r.index, true);
       }
       if (event.data.type === "reacherx:interact") {
         cancelScroll();
@@ -448,6 +475,7 @@ function BlogAppDemoPlayer({
         if (r.visible) restoreScroll();
         r.prepared = true;
         setPrepared(true);
+        setRebuilding(false);
         if (r.manual) return;
         const currentShot = BLOG_DEMO_SHOTS[scenario][r.index];
         setCamera(
@@ -500,6 +528,7 @@ function BlogAppDemoPlayer({
     cancelScroll,
     recover,
     demoOrigin,
+    sceneRange,
   ]);
 
   useEffect(() => {
@@ -508,6 +537,39 @@ function BlogAppDemoPlayer({
     document.addEventListener("visibilitychange", update);
     return () => document.removeEventListener("visibilitychange", update);
   }, []);
+
+  const commitSeek = useCallback(() => {
+    if (seekTimer.current) clearTimeout(seekTimer.current);
+    seekTimer.current = null;
+    scrubbing.current = false;
+    const index = pendingSeek.current;
+    pendingSeek.current = null;
+    if (index === null) return;
+    const frame = getBlogDemoFrame(
+      scenario,
+      BLOG_DEMO_SHOTS[scenario]
+        .slice(sceneRange?.[0] ?? 0, index)
+        .reduce((time, scene) => time + scene.duration, 0),
+      sceneRange
+    );
+    const r = runtime.current;
+    explicitPause.current = true;
+    r.time = frame.start;
+    r.retries = 0;
+    r.manual = false;
+    r.editing = false;
+    setError(null);
+    setClick(null);
+    changePlayback("paused");
+    prepare(frame.index, true);
+    if (progress.current) progress.current.value = String(frame.index);
+  }, [scenario, sceneRange, prepare, changePlayback]);
+  useEffect(
+    () => () => {
+      if (seekTimer.current) clearTimeout(seekTimer.current);
+    },
+    []
+  );
 
   useEffect(() => {
     if (ready || !visible || !documentActive || error) return;
@@ -536,7 +598,7 @@ function BlogAppDemoPlayer({
       const r = runtime.current;
       if (r.ready && r.visible && !document.hidden && r.playback !== "paused") {
         if (!r.initialized && r.playback === "playing") {
-          const frame = getBlogDemoFrame(scenario, r.time);
+          const frame = getBlogDemoFrame(scenario, r.time, sceneRange);
           r.time = frame.start;
           prepare(frame.index, true);
         }
@@ -544,9 +606,9 @@ function BlogAppDemoPlayer({
           if (!r.editing && now - r.lastInteraction >= IDLE_RESUME_MS) resume();
         } else if (r.prepared) {
           r.time += delta;
-          let frame = getBlogDemoFrame(scenario, r.time);
+          let frame = getBlogDemoFrame(scenario, r.time, sceneRange);
           if (frame.index !== r.index) {
-            prepare(frame.index, frame.index === 0);
+            prepare(frame.index, frame.index === (sceneRange?.[0] ?? 0));
           } else if (
             frame.shot.action &&
             !r.actionSent &&
@@ -573,6 +635,7 @@ function BlogAppDemoPlayer({
     documentActive,
     playback,
     scenario,
+    sceneRange,
     presentation,
     prepare,
     send,
@@ -601,6 +664,7 @@ function BlogAppDemoPlayer({
         data-demo-visible={visible}
         data-demo-ready={ready}
         data-demo-prepared={prepared}
+        data-demo-rebuilding={rebuilding}
         data-demo-scenario={scenario}
         data-demo-state={playback}
         data-demo-error={error || undefined}
@@ -623,6 +687,8 @@ function BlogAppDemoPlayer({
             width: DEMO_DESIGN_WIDTH,
             height: DEMO_DESIGN_HEIGHT,
             visibility: ready && size.width > 0 ? "visible" : "hidden",
+            opacity: rebuilding ? 0 : 1,
+            pointerEvents: rebuilding ? "none" : undefined,
             x,
             y,
             scale,
@@ -660,7 +726,7 @@ function BlogAppDemoPlayer({
         <motion.div
           aria-hidden="true"
           className="blog-app-demo-cursor"
-          hidden={!ready || playback !== "playing"}
+          hidden={!ready || rebuilding || playback !== "playing"}
           style={{
             x: screenCursorX,
             y: screenCursorY,
@@ -676,6 +742,15 @@ function BlogAppDemoPlayer({
             />
           </svg>
         </motion.div>
+        {rebuilding && !error && (
+          <div
+            className="bg-background/90 absolute inset-0 flex items-center justify-center"
+            aria-busy="true"
+            aria-label="Preparing demo scene"
+          >
+            <Spinner className="size-5" />
+          </div>
+        )}
         {error && (
           <p role="status" className="blog-app-demo-error">
             {error}
@@ -701,29 +776,38 @@ function BlogAppDemoPlayer({
             type="range"
             aria-label="Demo progress"
             aria-valuetext={shot.label}
-            min={0}
-            max={BLOG_DEMO_SHOTS[scenario].length - 1}
+            min={sceneRange?.[0] ?? 0}
+            max={sceneRange?.[1] ?? BLOG_DEMO_SHOTS[scenario].length - 1}
             step={1}
-            defaultValue={0}
-            onChange={(event) => {
-              const r = runtime.current;
-              const frame = getBlogDemoFrame(
-                scenario,
-                BLOG_DEMO_SHOTS[scenario]
-                  .slice(0, event.currentTarget.valueAsNumber)
-                  .reduce((time, scene) => time + scene.duration, 0)
-              );
+            defaultValue={sceneRange?.[0] ?? 0}
+            onPointerDown={(event) => {
+              scrubbing.current = true;
+              pendingSeek.current = event.currentTarget.valueAsNumber;
+              if (seekTimer.current) clearTimeout(seekTimer.current);
               explicitPause.current = true;
-              // Seek to the scene checkpoint, before its action. The slider never fabricates later state.
-              r.time = frame.start;
-              r.retries = 0;
-              r.manual = false;
-              r.editing = false;
-              setError(null);
-              setClick(null);
+              runtime.current.manual = true;
+              runtime.current.revision += 1;
+              send("reacherx:suspend");
               changePlayback("paused");
-              prepare(frame.index, true);
-              event.currentTarget.value = String(frame.index);
+            }}
+            onPointerUp={commitSeek}
+            onPointerCancel={commitSeek}
+            onLostPointerCapture={() => {
+              if (scrubbing.current) commitSeek();
+            }}
+            onKeyUp={commitSeek}
+            onBlur={commitSeek}
+            onChange={(event) => {
+              pendingSeek.current = event.currentTarget.valueAsNumber;
+              setShotIndex(event.currentTarget.valueAsNumber);
+              if (!scrubbing.current) {
+                explicitPause.current = true;
+                runtime.current.revision += 1;
+                send("reacherx:suspend");
+                changePlayback("paused");
+                if (seekTimer.current) clearTimeout(seekTimer.current);
+                seekTimer.current = setTimeout(commitSeek, 120);
+              }
             }}
           />
           <>

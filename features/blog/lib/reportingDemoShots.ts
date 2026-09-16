@@ -13,7 +13,7 @@ const close = { selector: "main button", text: "Close" };
 const row = { selector: "main tbody tr" };
 
 export const OBSERVABILITY_DEMO_SHOTS: readonly BlogDemoShot[] = [
-  { label: "The agent's work in context", duration: 2200, camera: wide },
+  { label: "△ Agent's work in context", duration: 2200, camera: wide },
   click("Choose an area to inspect", section),
   click("Inspect Discovery", option("Discovery")),
   click("Filter query status", {
@@ -57,7 +57,7 @@ export const OBSERVABILITY_DEMO_SHOTS: readonly BlogDemoShot[] = [
     camera: detail,
     focus: { selector: "main .h-full.shrink-0" },
   },
-  { label: "Evidence behind the agent's work", duration: 2600, camera: wide },
+  { label: "Evidence behind △ Agent's work", duration: 2600, camera: wide },
 ];
 
 export const ANALYTICS_DEMO_SHOTS: readonly BlogDemoShot[] = [
@@ -196,7 +196,7 @@ export const AUTOMATION_DEMO_SHOTS: readonly BlogDemoShot[] = [
     camera: detail,
     focus: { selector: '[role="dialog"]' },
   },
-  click("Pause the agent", {
+  click("Pause △ Agent", {
     selector: '[role="dialog"] button',
     text: "Pause △ Agent",
   }),
@@ -214,7 +214,7 @@ export const AUTOMATION_DEMO_SHOTS: readonly BlogDemoShot[] = [
     selector: 'button[aria-label="△ Agent is paused"]',
   }),
   {
-    label: "The agent is paused; progress is preserved",
+    label: "△ Agent is paused; progress is preserved",
     duration: 2600,
     camera: detail,
     focus: { selector: '[role="dialog"]' },
@@ -224,7 +224,7 @@ export const AUTOMATION_DEMO_SHOTS: readonly BlogDemoShot[] = [
     text: "Resume △ Agent",
   }),
   {
-    label: "The agent resumes",
+    label: "△ Agent resumes",
     duration: 2300,
     camera: detail,
     waitFor: { selector: '[role="dialog"] button', text: "Pause △ Agent" },
@@ -234,5 +234,21 @@ export const AUTOMATION_DEMO_SHOTS: readonly BlogDemoShot[] = [
     selector: '[role="dialog"] button',
     text: "Close",
   }),
-  { label: "You control when the agent works", duration: 2600, camera: wide },
+  click("Inspect the contacted people", {
+    selector: '[data-sidebar="menu-button"][href="/"]',
+  }),
+  click("View contacted candidates", {
+    selector: '[role="tab"][id$="trigger-contacted"]',
+  }),
+  click("Review the completed outreach", {
+    selector: '[data-prospect-id="use_case_demo_candidates_1"]',
+  }),
+  {
+    label: "The plan and its task completed",
+    duration: 3500,
+    camera: detail,
+    waitFor: { selector: "aside article", containsText: "Completed" },
+    focus: { selector: "aside article" },
+  },
+  { label: "You control when △ Agent works", duration: 2600, camera: wide },
 ];

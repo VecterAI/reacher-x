@@ -53,7 +53,7 @@ export const MARKETING_CAPABILITIES: CapabilityItem[] = [
   {
     icon: FolderCopyIcon,
     title: "Workspaces",
-    body: "Give each goal or client its own agent, people, and settings.",
+    body: "Give each goal or client its own △ Agent, people, and settings.",
     href: "/blog/workspaces-explained",
     demo: "workspaces-explained",
   },
@@ -67,7 +67,7 @@ export const MARKETING_CAPABILITIES: CapabilityItem[] = [
   {
     icon: ActivityZoneIcon,
     title: "Agent observability",
-    body: "Check what the agent did and why, at any moment. Pause it whenever you want.",
+    body: "Check what △ Agent did and why, at any moment. Pause it whenever you want.",
     href: "/blog/understand-agent-observability",
     demo: "understand-agent-observability",
   },

@@ -11,7 +11,17 @@ const wide = { x: 640, y: 425, zoom: 1, mobileZoom: 1 };
 const detail = { x: 980, y: 650, zoom: 1.8, mobileZoom: 2.5 };
 const editor = 'aside [contenteditable="true"]';
 export const AUTOCOMPLETE_DEMO_SHOTS: readonly BlogDemoShot[] = [
+  { label: "Continue a relevant conversation", duration: 2200, camera: wide },
   { label: "Reply in your own words", duration: 2200, camera: wide },
+  {
+    label: "Open ongoing conversations",
+    duration: 1500,
+    camera: wide,
+    action: {
+      selector:
+        '[role="tab"][value="in_progress"], [role="tab"][id$="trigger-in_progress"]',
+    },
+  },
   {
     label: "Open the designer",
     duration: 1500,
@@ -116,7 +126,18 @@ export const AUTOCOMPLETE_DEMO_SHOTS: readonly BlogDemoShot[] = [
 ];
 
 export const MEDIA_DEMO_SHOTS: readonly BlogDemoShot[] = [
-  { label: "Give the agent a relevant clip", duration: 2200, camera: wide },
+  {
+    label: "Answer a prospect with a useful clip",
+    duration: 2200,
+    camera: wide,
+  },
+  {
+    label: "Open ongoing conversations",
+    duration: 1500,
+    camera: wide,
+    action: { selector: '[role="tab"][id$="trigger-in_progress"]' },
+  },
+  { label: "Give △ Agent a relevant clip", duration: 2200, camera: wide },
   {
     label: "Open the designer's profile",
     duration: 1500,
@@ -164,7 +185,7 @@ export const MEDIA_DEMO_SHOTS: readonly BlogDemoShot[] = [
     action: {
       selector: 'main [contenteditable="true"]',
       input:
-        "Create a plan for Nora. Use this demo in the first message: it shows a client leaving feedback without creating an account. Keep the message short and explain the clip.",
+        "Create a plan for replying to Nora. Use this demo in the reply: it shows a client leaving feedback without creating an account. Keep the message short and explain the clip.",
     },
   },
   {
@@ -205,13 +226,41 @@ export const MEDIA_DEMO_SHOTS: readonly BlogDemoShot[] = [
     focus: { selector: "aside" },
   },
   {
-    label: "A short explanation, with something useful to show",
+    label: "Approve the media plan",
+    duration: 1500,
+    camera: detail,
+    action: { selector: "aside button", text: "Approve plan" },
+  },
+  {
+    label: "Approve and send the message with its clip",
+    duration: 1500,
+    camera: detail,
+    action: { selector: "aside button", text: "Approve DM" },
+  },
+  {
+    label: "Verify the delivered attachment",
+    duration: 3500,
+    camera: detail,
+    waitFor: {
+      selector: 'aside [role="log"] button[aria-label="Download Video 1"]',
+    },
+    focus: { selector: 'aside [role="log"] article', all: true },
+  },
+  {
+    label: "The relevant clip is delivered with its explanation",
     duration: 2600,
     camera: wide,
   },
 ];
 
 export const DM_DEMO_SHOTS: readonly BlogDemoShot[] = [
+  { label: "Your ongoing conversations", duration: 2200, camera: wide },
+  {
+    label: "Open ongoing conversations",
+    duration: 1500,
+    camera: wide,
+    action: { selector: '[role="tab"][id$="trigger-in_progress"]' },
+  },
   {
     label: "Keep the conversation with the person",
     duration: 2200,
@@ -334,6 +383,19 @@ export const DM_DEMO_SHOTS: readonly BlogDemoShot[] = [
     action: { selector: '[role="menuitem"]', text: "DM on X/Twitter" },
   },
   {
+    label: "Unlock XChat with the four-digit PIN",
+    duration: 2600,
+    camera: detail,
+    waitFor: { selector: 'aside input[inputmode="numeric"]' },
+    focus: { selector: "aside" },
+  },
+  {
+    label: "Enter the demo PIN",
+    duration: 1500,
+    camera: detail,
+    action: { selector: 'aside input[inputmode="numeric"]', input: "1234" },
+  },
+  {
     label: "Read Samir's reply",
     duration: 3000,
     camera: detail,
@@ -366,6 +428,17 @@ export const DM_DEMO_SHOTS: readonly BlogDemoShot[] = [
 ];
 
 export const VOICE_DEMO_SHOTS: readonly BlogDemoShot[] = [
+  {
+    label: "Answer a question with a voice note",
+    duration: 2200,
+    camera: wide,
+  },
+  {
+    label: "Open ongoing conversations",
+    duration: 1500,
+    camera: wide,
+    action: { selector: '[role="tab"][id$="trigger-in_progress"]' },
+  },
   { label: "Answer with a short voice note", duration: 2200, camera: wide },
   {
     label: "Open Nora's profile",

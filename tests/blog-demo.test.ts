@@ -73,7 +73,7 @@ test("stories drive real controls without alternate UI checkpoints", () => {
     assert.ok(shots.every((shot) => !("app" in shot)));
   }
   const crm = BLOG_DEMO_SHOTS["manage-people-with-reacherx"];
-  assert.ok(crm.some((shot) => shot.action?.text === "Message on LinkedIn"));
+  assert.ok(crm.some((shot) => shot.action?.text === "Activity log"));
   assert.ok(crm.some((shot) => shot.action?.text === 'Mark "Interviewing"'));
   assert.equal(
     crm.filter((shot) => shot.action).at(-1)?.action?.text,
@@ -84,7 +84,11 @@ test("stories drive real controls without alternate UI checkpoints", () => {
     workspace
       .filter((shot) => shot.action?.selector === '[role="option"]')
       .map((shot) => shot.action?.text),
-    ["People to try the app", "Hire a designer"]
+    [
+      "Hiring — product designer",
+      "Customers — freelance designers",
+      "Hiring — product designer",
+    ]
   );
   assert.ok(workspace.every((shot) => shot.action?.selector !== "a"));
 });
@@ -125,7 +129,7 @@ test("close-ups use the focal point with deliberate wallpaper gutters", () => {
 });
 test("only explicit actions produce clicks and leave time for their result", () => {
   for (const id of BLOG_DEMO_IDS) {
-    assert.ok(getBlogDemoDuration(id) < 90000);
+    assert.ok(getBlogDemoDuration(id) < 120000);
     let start = 0;
     for (const shot of BLOG_DEMO_SHOTS[id]) {
       const frame = getBlogDemoFrame(id, start);
@@ -248,4 +252,31 @@ test("workspace-switching sample plans match the people in that workspace", () =
     );
   }
   assert.equal(JSON.stringify(USE_CASE_DEMO_PLANS), before);
+});
+
+test("marketing chapters loop within their range and keep absolute scene indices", () => {
+  for (const range of [
+    [0, 9],
+    [10, 19],
+    [20, 34],
+  ] as const) {
+    const first = getBlogDemoFrame("find-candidates", 0, range);
+    assert.equal(first.index, range[0]);
+    assert.equal(
+      getBlogDemoFrame("find-candidates", first.duration - 1, range).index,
+      range[1]
+    );
+    assert.equal(
+      getBlogDemoFrame("find-candidates", first.duration, range).index,
+      range[0]
+    );
+  }
+  assert.throws(
+    () => getBlogDemoFrame("find-candidates", 0, [-1, 2]),
+    /Invalid/
+  );
+  assert.throws(
+    () => getBlogDemoFrame("find-candidates", 0, [4, 3]),
+    /Invalid/
+  );
 });

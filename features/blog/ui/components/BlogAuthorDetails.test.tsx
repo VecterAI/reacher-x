@@ -121,3 +121,26 @@ test.each([undefined, { ...profile, verified: false }, profile])(
     );
   }
 );
+
+test("a loaded author portrait survives tab/page remounts without a new skeleton", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const cachedProfile = {
+    ...profile,
+    image: "https://pbs.twimg.com/remount.jpg",
+  };
+  await act(async () =>
+    root.render(<BlogAuthorDetails profile={cachedProfile} />)
+  );
+  await act(async () =>
+    host.querySelector("img")!.dispatchEvent(new Event("load"))
+  );
+  await act(async () => root.render(null));
+  await act(async () =>
+    root.render(<BlogAuthorDetails profile={cachedProfile} />)
+  );
+  expect(host.querySelector(".animate-skeleton-shimmer")).toBeNull();
+  expect(host.querySelector("img")!.className).toContain("opacity-100");
+  await act(async () => root.unmount());
+});

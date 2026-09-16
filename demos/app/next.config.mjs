@@ -21,19 +21,31 @@ export default function config(phase) {
     // Temporary uploads must use their no-store response, without optimizer caching.
     images: { unoptimized: true },
     async headers() {
-      return parent
-        ? [
+      return [
+        {
+          source: "/media/portraits/:path*",
+          has: [{ type: "query", key: "v", value: "[a-f0-9]{12}" }],
+          headers: [
             {
-              source: "/:path*",
-              headers: [
-                {
-                  key: "Content-Security-Policy",
-                  value: `frame-ancestors 'self' ${parent}`,
-                },
-              ],
+              key: "Cache-Control",
+              value: "public, max-age=31536000, immutable",
             },
-          ]
-        : [];
+          ],
+        },
+        ...(parent
+          ? [
+              {
+                source: "/:path*",
+                headers: [
+                  {
+                    key: "Content-Security-Policy",
+                    value: `frame-ancestors 'self' ${parent}`,
+                  },
+                ],
+              },
+            ]
+          : []),
+      ];
     },
     distDir: phase === PHASE_DEVELOPMENT_SERVER ? ".next-dev" : ".next",
     turbopack: {
@@ -41,6 +53,8 @@ export default function config(phase) {
       // Substitute browser services only in this isolated app. The production
       // components and their default implementations remain shared and intact.
       resolveAlias: {
+        "@/features/agent/lib/xChatBrowserSession":
+          "./runtime/demoXChatBrowserSession.ts",
         "@/features/composer/hooks/useVoiceNoteRecorder":
           "./runtime/useSampleVoiceNoteRecorder.ts",
         "@/shared/lib/linkedin/media": "./runtime/demoMediaHelpers.ts",

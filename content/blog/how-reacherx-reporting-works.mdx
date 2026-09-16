@@ -16,7 +16,7 @@ If any part disagrees with the others, a chart can look correct while saying the
 
 [features/analytics/ui/AnalyticsDashboard.tsx](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/features/analytics/ui/AnalyticsDashboard.tsx) is the user-outcome view. It shows new people, response rate, pending approvals, outreach issues, processing states, and other breakdowns.
 
-[features/agent-ops/ui/AgentOpsDashboard.tsx](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/features/agent-ops/ui/AgentOpsDashboard.tsx) is the agent-operation view. Its tabs include overview, discovery, quality, memory, and activity. Users can inspect queries, memories, events, evaluator runs, and suggestions through detail views.
+[features/agent-ops/ui/AgentOpsDashboard.tsx](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/features/agent-ops/ui/AgentOpsDashboard.tsx) is △ Agent-operation view. Its tabs include overview, discovery, quality, memory, and activity. Users can inspect queries, memories, events, evaluator runs, and suggestions through detail views.
 
 These are related views, not interchangeable counts. A memory event is not a new prospect. A generated query is not necessarily an activated query. Keep those meanings intact when adding a metric.
 
@@ -30,7 +30,7 @@ currentValue: calculateRate(respondedCurrent, contactedCurrent),
 
 Read the numerator and denominator definitions around that line before changing the label. This is an event-window calculation. It is not automatically a cohort study following the exact same contacted people until every reply arrives.
 
-Daily reporting rows contain hourly information used for windowed calculations. [convex/workspaceAnalyticsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAnalyticsDaily.ts) includes list and rebuild paths. [convex/workspaceAgentOpsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAgentOpsDaily.ts) serves the agent-operations daily rows. [convex/lib/workspaceReportingAggregate.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/workspaceReportingAggregate.ts) provides shared aggregate support.
+Daily reporting rows contain hourly information used for windowed calculations. [convex/workspaceAnalyticsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAnalyticsDaily.ts) includes list and rebuild paths. [convex/workspaceAgentOpsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAgentOpsDaily.ts) serves △ Agent-operations daily rows. [convex/lib/workspaceReportingAggregate.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/workspaceReportingAggregate.ts) provides shared aggregate support.
 
 ## Account for readiness and time
 

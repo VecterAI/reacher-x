@@ -6,7 +6,8 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
 export function useDemoHostFocus(
   root: RefObject<HTMLElement | null>,
   send: (type: string, extra: { active: boolean }) => void,
-  suppressFocus = false
+  suppressFocus = false,
+  observedRoot?: HTMLElement | null
 ) {
   const previous = useRef<boolean | undefined>(undefined);
   const visible = useRef(true);
@@ -58,7 +59,8 @@ export function useDemoHostFocus(
       visible.current = entries.at(-1)?.isIntersecting ?? false;
       sync();
     });
-    if (root.current) visibility.observe(root.current);
+    const node = observedRoot ?? root.current;
+    if (node) visibility.observe(node);
     sync(true);
     return () => {
       observer.disconnect();
@@ -66,6 +68,6 @@ export function useDemoHostFocus(
       window.removeEventListener("scroll", onScroll);
       clearTimeout(scrollEnd);
     };
-  }, [root, sync]);
+  }, [root, sync, observedRoot]);
   return sync;
 }

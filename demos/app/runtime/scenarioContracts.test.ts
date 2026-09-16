@@ -178,3 +178,169 @@ test("saving an instruction precedes a later draft and does not leak into anothe
   assert.equal(secondPage.page.length, 2);
   assert.equal(secondPage.isDone, true);
 });
+
+test("all eight use cases start with setup and create a matching workspace before outreach", async () => {
+  for (const scenario of [
+    "find-candidates",
+    "find-potential-customers",
+    "find-investors",
+    "find-research-participants",
+    "find-partners",
+    "find-creators",
+    "find-community-members",
+    "find-podcast-guests",
+  ] as const) {
+    const { state, client } = createAppServices(scenario);
+    const shell = await client.query(api.shell.getAppShellState, {});
+    assert.equal(shell?.locked, true);
+    assert.equal(shell?.activeContextType, "setup_session");
+    assert.equal(
+      [...state.plans.values()].filter(
+        ({ plan }) => plan.workspaceId === state.selectedWorkspaceId
+      ).length,
+      0
+    );
+    assert.equal(
+      state.prospects.filter(
+        (person) =>
+          person.workspaceId === state.selectedWorkspaceId &&
+          person.status === "converted"
+      ).length,
+      0
+    );
+    await client.close();
+  }
+});
+
+test("analytics preserves every production platform category and pending task counts", async () => {
+  const { state, client } = createAppServices("read-your-reacherx-analytics");
+  const args = {
+    workspaceId: state.selectedWorkspaceId,
+    range: "30d" as const,
+  };
+  const result = await client.action(
+    api.analytics.getDashboardAnalyticsSnapshot,
+    args
+  );
+  assert.equal(result.status, "success");
+  if (result.status !== "success") return;
+  assert.equal(result.data.platformDistribution.length, 5);
+  assert.ok(
+    result.data.platformDistribution.some(
+      (point) => point.platform === "Threads"
+    )
+  );
+  assert.ok(
+    result.data.platformDistribution.some(
+      (point) => point.platform === "Bluesky"
+    )
+  );
+  assert.ok(
+    result.data.platformDistribution.some(
+      (point) => point.platform === "Reddit"
+    )
+  );
+  const first = state.plans.get(state.prospects[0]._id)!;
+  await client.mutation(api.outreach.approvePlan, { planId: first.plan._id });
+  const next = await client.action(
+    api.analytics.getDashboardAnalyticsSnapshot,
+    args
+  );
+  if (next.status !== "success") throw new Error("Analytics unavailable");
+  assert.equal(next.data.pendingApprovals.tasks, 1);
+  await client.close();
+});
+
+test("secondary customer workspaces never inherit hiring drafts", async () => {
+  for (const scenario of BLOG_DEMO_IDS) {
+    const { client, state } = createAppServices(scenario);
+    for (const { plan, tasks } of state.plans.values()) {
+      const workspace = state.workspaces.find(
+        (item) => item._id === plan.workspaceId
+      )!;
+      if (workspace.useCaseKey === "customer_prospecting") {
+        for (const task of tasks)
+          assert.doesNotMatch(
+            task.content ?? "",
+            /frontend.*role|product designer role|salary|€80/
+          );
+      }
+    }
+    await client.close();
+  }
+  const { client, state } = createAppServices("teach-reacherx-what-you-want");
+  state.selectedWorkspaceId = state.workspaces[1]._id;
+  const person = state.prospects.find(
+    (item) =>
+      item.workspaceId === state.selectedWorkspaceId && item.status === "new"
+  )!;
+  const thread = await client.mutation(
+    api.chat.createWorkspaceThreadWithPrompt,
+    { prompt: `Remember this for outreach: ${DEMO_MEMORY_INSTRUCTION}` }
+  );
+  await client.mutation(api.chat.initiateStreamingMessage, {
+    threadId: thread.threadId,
+    prompt: `Draft an introduction for ${person.displayName}`,
+  });
+  const draft = state.plans.get(person._id)!.tasks[0].content!;
+  assert.match(draft, /client feedback/);
+  assert.doesNotMatch(draft, /frontend|salary|€80/);
+  assert.equal(draft.split("?").length - 1, 1);
+  assert.ok(draft.split(/\s+/).length < 80);
+  await client.close();
+});
+
+test("analytics fixtures keep pipeline dates and reply performance consistent", async () => {
+  const { state, client } = createAppServices("read-your-reacherx-analytics");
+  const people = state.prospects.filter(
+    (person) => person.workspaceId === state.selectedWorkspaceId
+  );
+  for (const person of people) {
+    assert.equal(person.stageTimestamps?.new, person._creationTime);
+    assert.ok(person.stageTimestamps?.[person.status] !== undefined);
+    if (person.status === "in_progress" || person.status === "converted") {
+      assert.ok(
+        person.stageTimestamps!.in_progress! >=
+          person.stageTimestamps!.contacted!
+      );
+    }
+  }
+  const inventory = await client.action(
+    api.agentOps.getAgentOpsDiscoveryInventoryPageSnapshot,
+    { workspaceId: state.selectedWorkspaceId, range: "30d" }
+  );
+  assert.ok(inventory.rows[0].replyRate > 0);
+  assert.ok(inventory.rows[0].replyRate <= 100);
+  await client.close();
+});
+
+test("starting another demo workspace clears the previous setup draft", async () => {
+  const { client } = createAppServices("getting-started-with-reacherx");
+  const { sessionId, threadId } = await client.mutation(
+    api.setupSessions.startSetupSession,
+    { mode: "new_workspace" }
+  );
+  await client.mutation(api.chat.initiateStreamingMessage, {
+    threadId,
+    prompt: "Find a contract TypeScript engineer for checkout",
+  });
+  const drafted = await client.query(api.setupSessions.getSetupSessionState, {
+    sessionId,
+  });
+  assert.ok(drafted?.draftName);
+  await client.mutation(api.setupSessions.approveSetupGeneration, {
+    sessionId,
+    generationRevision: drafted.generationRevision,
+  });
+  await client.mutation(api.setupSessions.startSetupSession, {
+    mode: "new_workspace",
+  });
+  const restarted = await client.query(api.setupSessions.getSetupSessionState, {
+    sessionId,
+  });
+  assert.equal(restarted?.status, "awaiting_input");
+  assert.equal(restarted?.draftName, null);
+  assert.equal(restarted?.generationSourceMessageId, null);
+  assert.equal(restarted?.inputMode, null);
+  await client.close();
+});

@@ -36,6 +36,7 @@ function MarketingCapabilities() {
         demo={
           <MarketingDemo
             scenario="find-candidates"
+            sceneRange={[9, 19]}
             title="Find people through their work"
             caption="Search results with the evidence behind each match."
           />
@@ -61,7 +62,7 @@ function MarketingCapabilities() {
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          The agent turns its research into an outreach plan for each person,
+          △ Agent turns its research into an outreach plan for each person,
           with a draft message you can edit before anything sends.
         </p>
         <CapabilityLink href="/blog/how-reacherx-planning-works">
@@ -72,7 +73,7 @@ function MarketingCapabilities() {
         title="Messages with substance."
         demo={
           <MarketingDemo
-            scenario="outreach-with-images-and-video"
+            scenario="send-voice-notes"
             title="Send media in a conversation"
             caption="A voice note shared inside a real conversation."
           />
@@ -88,7 +89,7 @@ function MarketingCapabilities() {
       </MarketingFeature>
       <MarketingFeature
         reverse
-        title="An agent with a memory."
+        title="△ Agent, with a memory."
         demo={
           <MarketingDemo
             scenario="teach-reacherx-what-you-want"
@@ -98,7 +99,7 @@ function MarketingCapabilities() {
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          Tell the agent how you write and who you look for, once. It applies
+          Tell △ Agent how you write and who you look for, once. It applies
           your preferences to every later search and message.
         </p>
         <CapabilityLink href="/blog/how-reacherx-memory-works">

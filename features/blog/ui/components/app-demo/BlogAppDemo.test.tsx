@@ -208,3 +208,191 @@ test("a failed load can reconnect through Play without replacing the player", as
   expect(host.querySelector('[data-demo-ready="true"]')).not.toBeNull();
   expect(state()).toBe("playing");
 });
+
+for (const readyBeforeVisible of [false, true]) {
+  test(`paused chapter starts at its own scene (ready first: ${readyBeforeVisible})`, async () => {
+    await act(async () =>
+      root.render(
+        <BlogAppDemo {...props} sceneRange={[10, 19]} playbackActive={false} />
+      )
+    );
+    const iframe = host.querySelector("iframe")!;
+    const post = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", {
+      value: { postMessage: post },
+      configurable: true,
+    });
+    const show = () =>
+      act(async () =>
+        intersect(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          {} as IntersectionObserver
+        )
+      );
+    const connect = () =>
+      act(async () =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            origin: "null",
+            source: iframe.contentWindow,
+            data: { type: "reacherx:ready", bridgeId: "chapter" },
+          })
+        )
+      );
+    if (readyBeforeVisible) {
+      await connect();
+      await show();
+    } else {
+      await show();
+      await connect();
+    }
+    expect(
+      post.mock.calls.filter(([m]) => m.type === "reacherx:prepare").at(-1)?.[0]
+        .index
+    ).toBe(10);
+    expect(
+      host.querySelector("[data-demo-shot]")?.getAttribute("data-demo-shot")
+    ).toBe("10");
+    expect(
+      (host.querySelector('[aria-label="Demo progress"]') as HTMLInputElement)
+        .value
+    ).toBe("10");
+    expect(state()).toBe("paused");
+  });
+}
+
+test("drag seeking commits once on release, hides reconstruction and resumes the prepared frame", async () => {
+  await act(async () =>
+    root.render(<BlogAppDemo {...props} playbackActive={false} />)
+  );
+  const iframe = host.querySelector("iframe")!;
+  const post = vi.fn();
+  Object.defineProperty(iframe, "contentWindow", {
+    value: { postMessage: post },
+    configurable: true,
+  });
+  const message = (data: object) =>
+    act(async () =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          origin: "null",
+          source: iframe.contentWindow,
+          data,
+        })
+      )
+    );
+  await act(async () =>
+    intersect(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver
+    )
+  );
+  await message({ type: "reacherx:ready", bridgeId: "seek" });
+  const slider = host.querySelector('input[type="range"]') as HTMLInputElement;
+  const input = async (value: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value"
+      )!.set!.call(slider, value);
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  await act(async () =>
+    slider.dispatchEvent(new Event("pointerdown", { bubbles: true }))
+  );
+  await input("5");
+  await input("12");
+  await input("8");
+  expect(
+    post.mock.calls.filter(([m]) => m.type === "reacherx:prepare")
+  ).toHaveLength(0);
+  await act(async () =>
+    slider.dispatchEvent(new Event("pointerup", { bubbles: true }))
+  );
+  const prepares = post.mock.calls.filter(
+    ([m]) => m.type === "reacherx:prepare"
+  );
+  expect(prepares).toHaveLength(1);
+  const prepared = prepares[0][0];
+  expect(prepared.index).toBe(8);
+  expect(host.querySelector('[data-demo-rebuilding="true"]')).not.toBeNull();
+  await message({
+    type: "reacherx:prepared",
+    revision: prepared.revision - 1,
+    index: 8,
+  });
+  expect(host.querySelector('[data-demo-rebuilding="true"]')).not.toBeNull();
+  await message({
+    type: "reacherx:prepared",
+    revision: prepared.revision,
+    index: 8,
+  });
+  expect(host.querySelector('[data-demo-rebuilding="false"]')).not.toBeNull();
+  await act(async () =>
+    (
+      host.querySelector('[aria-label="Play demo"]') as HTMLButtonElement
+    ).click()
+  );
+  expect(
+    post.mock.calls.filter(([m]) => m.type === "reacherx:prepare")
+  ).toHaveLength(1);
+  expect(state()).toBe("playing");
+});
+
+test("chapters prepare before visibility and keep their checkpoint when scrolled away", async () => {
+  await act(async () =>
+    root.render(
+      <BlogAppDemo {...props} sceneRange={[10, 19]} playbackActive={false} />
+    )
+  );
+  const iframe = host.querySelector("iframe")!;
+  const post = vi.fn();
+  Object.defineProperty(iframe, "contentWindow", {
+    value: { postMessage: post },
+    configurable: true,
+  });
+  const message = (data: object) =>
+    act(async () =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          origin: "null",
+          source: iframe.contentWindow,
+          data,
+        })
+      )
+    );
+  const show = (isIntersecting: boolean) =>
+    act(async () =>
+      intersect(
+        [{ isIntersecting } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+    );
+  await message({ type: "reacherx:ready", bridgeId: "retained" });
+  const prepares = () =>
+    post.mock.calls.filter(([m]) => m.type === "reacherx:prepare");
+  expect(prepares()).toHaveLength(1);
+  await message({
+    type: "reacherx:prepared",
+    revision: prepares()[0][0].revision,
+  });
+  expect(host.querySelector('[data-demo-rebuilding="false"]')).not.toBeNull();
+  await show(true);
+  await act(async () =>
+    root.render(<BlogAppDemo {...props} sceneRange={[10, 19]} playbackActive />)
+  );
+  await show(false);
+  expect(host.querySelector('[data-demo-prepared="true"]')).not.toBeNull();
+  expect(post.mock.calls.some(([m]) => m.type === "reacherx:suspend")).toBe(
+    false
+  );
+  expect(
+    post.mock.calls.filter(([m]) => m.type === "reacherx:ambient").at(-1)?.[0]
+      .active
+  ).toBe(false);
+  await show(true);
+  expect(prepares()).toHaveLength(1);
+  expect(host.querySelector("iframe")).toBe(iframe);
+  expect(host.querySelector('[data-demo-rebuilding="false"]')).not.toBeNull();
+});

@@ -8,6 +8,7 @@ import type { LocalClient } from "./LocalClient";
 import type { createAppFixtures } from "./appFixtures";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import { getProspectMatchReasoning } from "@/shared/lib/prospectMatchReasoningHelpers";
+import { recordDemoActivity } from "./lifecycleHelpers";
 
 export function registerProspectServices(
   client: LocalClient,
@@ -120,6 +121,19 @@ export function registerProspectServices(
           "Unarchive this prospect before changing pipeline stage."
         );
       const now = getCurrentUTCTimestamp();
+      if (
+        status !== prospect.status &&
+        ["archived", "converted", "contacted"].includes(status)
+      ) {
+        recordDemoActivity(
+          state.lifecycle,
+          prospect,
+          status as "archived" | "converted" | "contacted",
+          `Moved to ${status}`,
+          notes ?? `Status changed from ${prospect.status} to ${status}.`,
+          now
+        );
+      }
       Object.assign(prospect, {
         status,
         pipelineStage: status,

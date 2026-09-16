@@ -10,6 +10,11 @@ import { toast } from "sonner";
 
 import { cn } from "@/shared/lib/utils";
 import { GITHUB_REPO_URL } from "@/features/landing/lib/github";
+import {
+  DISCORD_INVITE_URL,
+  PATREON_URL,
+  X_PROFILE_URL,
+} from "@/features/landing/lib/communityUrls";
 import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
@@ -57,6 +62,7 @@ import {
   ArrowOutwardIcon,
   TwitterIcon,
   DiscordOutlineIcon,
+  PatreonIcon,
   LinkedinIcon,
   BlueskyIcon,
   ThreadsIcon,
@@ -120,6 +126,16 @@ const NAV_LINKS = [
   { href: "/product", label: "Product", isAnchor: false },
   { href: "/blog", label: "Blog", isAnchor: false },
   { href: "/blog/category/comparisons", label: "Comparisons", isAnchor: false },
+  {
+    href: DISCORD_INVITE_URL,
+    label: "Join the Discord",
+    isAnchor: true,
+  },
+  {
+    href: PATREON_URL,
+    label: "Support on Patreon",
+    isAnchor: true,
+  },
   {
     href: "mailto:creativecoder.crco@gmail.com",
     label: "Contact",
@@ -932,17 +948,14 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
                   <SocialLink href={GITHUB_REPO_URL} label="GitHub">
                     <GitHubOutlineIcon />
                   </SocialLink>
-                  <SocialLink
-                    href="https://x.com/ReacherXfounder"
-                    label="X/Twitter"
-                  >
+                  <SocialLink href={X_PROFILE_URL} label="X/Twitter">
                     <TwitterIcon />
                   </SocialLink>
-                  <SocialLink
-                    href="https://discord.gg/BQttyr8jY"
-                    label="Discord"
-                  >
+                  <SocialLink href={DISCORD_INVITE_URL} label="Discord">
                     <DiscordOutlineIcon />
+                  </SocialLink>
+                  <SocialLink href={PATREON_URL} label="Patreon">
+                    <PatreonIcon className="fill-current" />
                   </SocialLink>
                   <SocialLink
                     href="https://www.linkedin.com/in/noobships"

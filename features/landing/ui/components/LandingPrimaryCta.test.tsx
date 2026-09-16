@@ -41,7 +41,7 @@ async function render(props: ComponentProps<typeof LandingPrimaryCta> = {}) {
 test("anonymous Reach preserves the setup auth destination and triangle", async () => {
   await render();
   const link = container.querySelector("a")!;
-  expect(link.textContent).toBe("Reach");
+  expect(link.textContent).toBe("Reach now");
   expect(link.getAttribute("href")).toBe(
     buildLoginHref(NEW_WORKSPACE_SETUP_AUTH_RETURN_TO)
   );

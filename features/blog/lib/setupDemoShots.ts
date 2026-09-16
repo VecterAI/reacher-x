@@ -21,7 +21,7 @@ export const SETUP_DEMO_SHOTS: readonly BlogDemoShot[] = [
         "I need an engineer for a contract project. They should have experience building checkout or payment features for web apps. Help me find people whose work shows that experience.",
     },
   },
-  click("Ask the agent to propose an audience", send),
+  click("Ask △ Agent to propose an audience", send),
   click("Review the example candidates", {
     selector: "button",
     text: "Review",
