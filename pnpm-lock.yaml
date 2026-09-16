@@ -8655,6 +8655,7 @@ packages:
         integrity: sha512-Mi7JISo/4Ij2tDZ2xBE2WH+/KvVlkhA6juEjpEeRAVPNCpN3nxJo/5FhDNKgBcdmcmhaH6JjgST4xY/23ZYK0w==,
       }
     engines: { node: ^12.20.0 || ^14.18.0 || >=16.0.0 }
+    hasBin: true
 
   natural-compare@1.4.0:
     resolution:

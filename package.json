@@ -18,7 +18,10 @@
     "test:plan-batch": "tsx --test tests/plan-batch-core.test.ts tests/agent-thread-target-selection.test.ts tests/plan-batch-copy.test.ts && vitest run --config vitest.config.ts",
     "test:targeted": "tsx --test tests/plan-usage-and-analytics.test.ts",
     "test:blog": "tsx --test tests/blog.test.ts tests/blog-editorial.test.ts tests/blog-demo.test.ts tests/auth-routes.test.ts tests/auth-bootstrap-wiring.test.ts tests/post-auth-bootstrap.test.ts tests/landing-auth-touchpoints.test.ts",
-    "test:blog:http": "tsx --test tests/blog-http.test.ts"
+    "test:blog:http": "tsx --test tests/blog-http.test.ts",
+    "dev:demo": "next dev demos/app --port 3001",
+    "build:demo": "next build demos/app",
+    "start:demo": "next start demos/app --port 3001"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.72",

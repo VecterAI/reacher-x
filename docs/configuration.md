@@ -14,12 +14,14 @@ Use Node.js 22+ and pnpm 11.x for development, as described in the [README](../R
 
 ## Environment Locations
 
-ReacherX has two separate environment-variable stores:
+ReacherX has separate environments for the main site, isolated demo app, and Convex backend:
 
 | Location                                   | Used by                                                                          | Examples                                                                            |
 | ------------------------------------------ | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `.env.local` and hosting-provider settings | Next.js browser/server runtime and Convex CLI deployment selection               | `NEXT_PUBLIC_CONVEX_URL`, WorkOS AuthKit values, `NEXT_PUBLIC_SITE_URL`, PostHog    |
 | Convex deployment environment              | Convex queries, mutations, actions, workflows, agents, and provider integrations | AI/provider keys, model roles, prospecting controls, rate limits, workpool controls |
+
+The isolated demo app reads `demos/app/.env.local` locally and its **own** hosting project's variables after deployment. It does not inherit the main site's `.env.local` or hosting settings. See [Interactive Demos](#interactive-demos).
 
 Convex functions do **not** load backend values from `.env.local`. Variables must be configured separately for each Convex deployment. See the official [Convex environment-variable guide](https://docs.convex.dev/production/environment-variables) and [`npx convex env` reference](https://docs.convex.dev/cli/reference/env).
 
@@ -72,6 +74,67 @@ npx convex dev
 # Terminal 2
 pnpm dev
 ```
+
+## Interactive Demos
+
+The marketing pages and blog embed a separate Next.js app from `demos/app`. It reuses product components with fictional local data. It needs neither a Convex deployment nor real authentication or provider credentials. The main site and demo must use different origins.
+
+| Variable                         | Set it in                                        | Local value             | Hosted value                                            |
+| -------------------------------- | ------------------------------------------------ | ----------------------- | ------------------------------------------------------- |
+| `NEXT_PUBLIC_BLOG_DEMO_ORIGIN`   | Main site's `.env.local` and Vercel project      | `http://localhost:3001` | HTTPS origin of the deployed demo app                   |
+| `NEXT_PUBLIC_DEMO_PARENT_ORIGIN` | `demos/app/.env.local` and demo's Vercel project | `http://localhost:3000` | Exact HTTPS origin of the main site embedding that demo |
+
+Both values are public and baked into the build. Use a scheme and host (plus port locally), without a path, query, credentials, fragment, or trailing slash. Do **not** set these in Convex. `NEXT_PUBLIC_SITE_URL` and the Convex URL do not replace either variable.
+
+### Local Development And Builds
+
+From the repository root:
+
+```bash
+cp .env.example .env.local # Fresh clones only; preserve an existing local file.
+cp demos/app/.env.example demos/app/.env.local
+```
+
+Run `pnpm dev` and `pnpm dev:demo` in separate terminals, alongside `npx convex dev` when using the real app. The site runs on port 3000 and the demo on port 3001. If you change either port, update the corresponding origin in the other app's environment file.
+
+To check production builds locally:
+
+```bash
+pnpm build:demo
+pnpm build
+```
+
+Then run `pnpm start:demo` and `pnpm start` in separate terminals. Next.js reads each app's own environment file. Never upload local env files or copy the main site's secrets into the demo app.
+
+### Vercel Setup
+
+Create **two Vercel projects** linked to the same repository:
+
+| Setting                                     | Main site                                                     | Isolated demo                                                             |
+| ------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Framework                                   | Next.js                                                       | Next.js                                                                   |
+| Root directory                              | Repository root                                               | `demos/app`                                                               |
+| Include source files outside root directory | Not needed                                                    | Enabled; the demo imports shared product components                       |
+| Install dependencies                        | `corepack install && corepack pnpm install --frozen-lockfile` | `cd ../.. && corepack install && corepack pnpm install --frozen-lockfile` |
+| Build command                               | `npx convex deploy --cmd 'npm run build'`                     | `cd ../.. && corepack pnpm build:demo`                                    |
+| Output directory                            | Framework default                                             | Framework default (`.next` under `demos/app`)                             |
+| Environment                                 | Main-site auth/config plus `NEXT_PUBLIC_BLOG_DEMO_ORIGIN`     | Only `NEXT_PUBLIC_DEMO_PARENT_ORIGIN` is required                         |
+
+The demo project uses [`demos/app/vercel.json`](../demos/app/vercel.json) for its install/build commands. Keep its Vercel Root Directory set to `demos/app`.
+
+Deploy the demo first, confirm its origin, then set the main site's `NEXT_PUBLIC_BLOG_DEMO_ORIGIN`. Configure Production, Preview, and Development separately; a Production variable does not automatically apply to a Preview build. The public demo must be accessible to visitors without a Vercel login. Keep the main site's existing deployment protection in place.
+
+The demo's parent setting controls both its `frame-ancestors` policy and its playback message validation. For production, use the canonical main-site origin after redirects (for example, `https://www.example.com`). For a preview, use a separate demo preview built for that branch's **stable main-site preview origin**, and point the main-site branch's `NEXT_PUBLIC_BLOG_DEMO_ORIGIN` at that demo preview. Use Vercel's reported branch aliases rather than guessing their names; long names can be shortened. Scope Preview variables to the matching Git branch. Visit that configured main-site alias when reviewing: a different deployment URL is a different origin and cannot control the demo. Configure a new matching pair for another branch.
+
+Environment changes affect **new builds**, not existing deployments. Rebuild the demo when its parent origin changes and rebuild the main site when its demo origin changes. See [Vercel environment variables](https://vercel.com/docs/environment-variables), [monorepo setup](https://vercel.com/docs/monorepos), and [Convex on Vercel](https://docs.convex.dev/production/hosting/vercel).
+
+### Missing-Origin Build Failures
+
+`Set NEXT_PUBLIC_BLOG_DEMO_ORIGIN to the isolated demo app URL before building the blog` means the **main site's build environment** is missing the demo origin. Compilation and TypeScript can succeed before prerendering fails on a blog or `/home/demo/...` route. Add the value to the correct Vercel environment, then redeploy. Removing the check or substituting the main site's own origin would hide the configuration error and break the iframe.
+
+If the demo reports a missing `NEXT_PUBLIC_DEMO_PARENT_ORIGIN`, set it in the **demo project** and rebuild. If a build passes but playback is blank or unresponsive, check that the demo is reachable without a login and that the browser's main-site origin exactly matches the demo's configured parent.
+
+The main project's Convex deploy key selects its backend independently. Preview keys should target the intended development or preview backend, and Production keys should target production. These demo variables do not change that selection. See [Convex deployment environments](https://docs.convex.dev/production/multiple-deployments).
 
 ## Minimum Configuration By Feature
 
@@ -309,7 +372,7 @@ Reserved variables remain in `.env.example` so intended future integration point
 
 Before enabling a feature in development or production:
 
-1. Set its variables on the intended Convex deployment, not only in `.env.local`.
+1. Set backend variables on the intended Convex deployment and frontend variables in the correct hosting project and environment. Local files do not configure either hosted store.
 2. Confirm the selected deployment in the Convex dashboard. If you use `npx convex env list`, remember that it prints secret values.
 3. Keep `PROSPECTING_AUTO_RESCHEDULE=0` in development unless continuous provider usage is intentional.
 4. Keep `INLINE_AUTOCOMPLETE_ENABLED=0` in development unless you intentionally want composer autocomplete AI calls. Set `1` in production when autocomplete should be available.
@@ -317,3 +380,4 @@ Before enabling a feature in development or production:
 6. Configure provider callback and webhook URLs for the correct Convex site URL.
 7. Test with development credentials before applying production values.
 8. Never copy production secrets into development or commit them to the repository.
+9. For marketing/blog pages, deploy the isolated demo and configure both build-time origins using the [interactive demo setup](#interactive-demos). Verify playback from the configured site origin before merging.

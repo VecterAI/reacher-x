@@ -154,7 +154,14 @@ Terminal 2:
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+For the marketing/blog interactive demos, also run:
+
+```bash
+cp demos/app/.env.example demos/app/.env.local
+pnpm dev:demo
+```
+
+Open [http://localhost:3000](http://localhost:3000). The isolated demo app runs at `http://localhost:3001`; both apps must be running for embedded demos. See [interactive demo configuration](./docs/configuration.md#interactive-demos) for hosting and production builds.
 
 ### Environment Notes
 
