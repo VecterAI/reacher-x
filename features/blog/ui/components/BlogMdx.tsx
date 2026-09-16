@@ -21,10 +21,7 @@ export async function BlogPre({ children }: { children?: ReactNode }) {
     requestedLanguage in bundledLanguages
       ? (requestedLanguage as keyof typeof bundledLanguages)
       : "text";
-  const html = await codeToHtml(code, {
-    lang: language,
-    themes: { light: "github-light", dark: "github-dark" },
-  });
+  const html = await highlightBlogCode(code, language);
   return (
     <div className="not-prose border-border my-8 overflow-hidden rounded-md border">
       <div className="border-border flex items-center justify-between border-b px-4 py-2 text-xs">
@@ -39,6 +36,16 @@ export async function BlogPre({ children }: { children?: ReactNode }) {
       />
     </div>
   );
+}
+
+// Shiki initializes WASM using timing APIs. Cache the HTML string, rather than
+// the component tree, so highlighting stays compatible with prerendering.
+async function highlightBlogCode(code: string, language: string) {
+  "use cache";
+  return codeToHtml(code, {
+    lang: language,
+    themes: { light: "github-light", dark: "github-dark" },
+  });
 }
 
 export function BlogImage({

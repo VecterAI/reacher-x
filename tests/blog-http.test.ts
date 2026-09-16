@@ -25,6 +25,30 @@ async function request(path: string, headers?: HeadersInit) {
   return fetch(`${origin}${path}`, { headers, redirect: "manual" });
 }
 
+// Run this first against a freshly started production server. HTTP 200 alone
+// can hide a streamed RSC error after the static article shell was sent.
+test("demo article cold loads and repeated RSC requests have no render errors", async () => {
+  const path = "/blog/reach-out-and-get-replies";
+  for (const headers of [undefined, { RSC: "1" }, { RSC: "1" }]) {
+    const response = await request(path, headers);
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    assert.doesNotMatch(body, /\b[0-9a-f]+:E\{"digest":/);
+    assert.doesNotMatch(body, /data-dgst="[^"]+"/);
+    assert.ok(body.includes("reach-out-unicode-formatting"));
+    assert.ok(body.includes("reach-out-message-bubbles"));
+    if (headers) {
+      assert.match(
+        response.headers.get("content-type") ?? "",
+        /text\/x-component/
+      );
+    } else {
+      assert.match(body, /data-demo-scenario="reach-out-unicode-formatting"/);
+      assert.match(body, /data-demo-scenario="reach-out-message-bubbles"/);
+    }
+  }
+});
+
 test("anonymous blog index and all category pages return readable HTML", async () => {
   for (const path of [
     "/blog",

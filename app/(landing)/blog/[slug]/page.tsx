@@ -22,14 +22,22 @@ async function BlogPostContent({
   params,
   author,
 }: Props & { author: ReactNode }) {
-  "use cache";
-  const post = await getBlogPost((await params).slug);
-  if (!post) notFound();
+  const article = await getBlogArticleData((await params).slug);
+  if (!article) notFound();
+  const { post, related } = article;
+  // Load MDX outside the cache so restored data never references client modules
+  // that have not been registered in a fresh server process.
   const { default: Content } = await import(`@/content/blog/${post.slug}.mdx`);
-  const related = getRelatedBlogPosts(post, await getBlogPosts());
   return (
     <BlogArticle author={author} post={post} related={related}>
       <Content />
     </BlogArticle>
   );
+}
+
+async function getBlogArticleData(slug: string) {
+  "use cache";
+  const post = await getBlogPost(slug);
+  if (!post) return null;
+  return { post, related: getRelatedBlogPosts(post, await getBlogPosts()) };
 }
