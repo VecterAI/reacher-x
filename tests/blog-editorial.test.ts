@@ -40,7 +40,7 @@ test("launch collection preserves history, removes samples, and has unique dates
   ])
     assert.ok(!files.includes(file), file);
   const real = all;
-  assert.equal(real.length, 59);
+  assert.equal(real.length, 62);
   assert.equal(new Set(real.map((post) => post.date)).size, real.length);
   assert.ok(real.every((post) => !post.draft));
   for (const [slug, date] of historical)
@@ -114,7 +114,7 @@ test("new prose is complete, contains no em dashes, and exposes readable placeho
   const posts = (await getBlogPosts()).filter(
     (post) => !historical.has(post.slug)
   );
-  assert.equal(posts.length, 56);
+  assert.equal(posts.length, 59);
   for (const post of posts) {
     assert.doesNotMatch(
       post.title + post.description + post.content,

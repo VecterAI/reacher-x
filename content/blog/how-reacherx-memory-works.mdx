@@ -5,7 +5,7 @@ category: engineering
 date: "2026-07-13"
 updated: "2026-09-10"
 related: ["how-reacherx-reporting-works", "help-build-reacherx"]
-tags: ["engineering", "how reacherx memory works"]
+tags: ["engineering", "memory", "contributors"]
 ---
 
 There are two different reasons ReacherX might remember something: a user explicitly asked it to, or the system inferred a reusable lesson from work it observed.
@@ -20,7 +20,7 @@ Start with [convex/agents/tools/rememberWorkspaceMemory.ts](https://github.com/V
 
 The stable key allows a correction to address the same topic. Scope distinguishes a general workspace instruction from something that applies only to one person.
 
-[convex/lib/workspaceMemoryScope.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/workspaceMemoryScope.ts) resolves context from prospect threads, setup sessions, and workspace threads. Don't replace that with whichever workspace happens to be first in a query. A valid memory saved to the wrong project is still a serious bug.
+[convex/lib/workspaceMemoryScope.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/workspaceMemoryScope.ts) resolves context from prospect threads, setup sessions, and workspace threads. Don't replace that with whichever workspace happens to be first in a query. A valid memory saved to the wrong workspace is still a serious bug.
 
 ## Turn recorded events into possible lessons
 
@@ -53,6 +53,10 @@ This separation is useful for debugging. “The instruction exists” and “the
 
 A good test saves an instruction, asks for later work in the same workspace, and checks that the applicable context contains it. Add a second workspace and verify the instruction does not cross over. Test a correction, a disabled memory, and an indexing failure too.
 
-Read [convex/workspaceMemory.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceMemory.integration.test.ts), [convex/workspaceMemoryIndexRetry.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceMemoryIndexRetry.integration.test.ts), and [convex/memoryEvaluationQueue.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/memoryEvaluationQueue.integration.test.ts) for existing coverage.
+Read these for existing coverage:
+
+- [convex/workspaceMemory.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceMemory.integration.test.ts) saves instructions and builds workspace context.
+- [convex/workspaceMemoryIndexRetry.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceMemoryIndexRetry.integration.test.ts) retries failed memory indexing with backoff.
+- [convex/memoryEvaluationQueue.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/memoryEvaluationQueue.integration.test.ts) keeps memory evaluation queues FIFO per workspace.
 
 The system can use feedback to change later work. That doesn't guarantee steadily improving outcomes, and it doesn't make inferred lessons true. The [user-facing memory guide](/blog/teach-reacherx-what-you-want) explains how to steer it; [Agent observability](/blog/understand-agent-observability) exposes records that help people check what happened.

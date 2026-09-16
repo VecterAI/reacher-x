@@ -5,7 +5,7 @@ category: engineering
 date: "2026-07-10"
 updated: "2026-09-10"
 related: ["how-reacherx-planning-works", "how-reacherx-qualification-works"]
-tags: ["engineering", "how reacherx enrichment works"]
+tags: ["engineering", "enrichment", "contributors"]
 ---
 
 After finding someone relevant, ReacherX needs enough information to explain who they are and help you approach them. Enrichment turns available social data and supporting posts into a more useful profile.
@@ -40,7 +40,13 @@ The core's `EnrichmentResult` type makes partial completion explicit:
 enrichmentStatus: "enriched" | "partial" | "failed";
 ```
 
-The workflow return type also includes `pending`. For example, it can skip an archived person and return their existing status, falling back to `pending` if none is set. That is separate from the core result above.
+The workflow return type also includes `pending`. The statuses mean:
+
+| State | What it means |
+| --- | --- |
+| `enriched` / `partial` / `failed` | The core result for the run: full profile, incomplete profile, or failed. |
+| `pending` in the workflow return | The workflow skipped the run, for example an archived person, and returned that person's stored status. |
+| `pending` fallback | If the skipped person has no stored status, the workflow returns `pending`. |
 
 Another useful helper is `convertToEvidencePosts`. It produces a consistent record with an ID, text, URL, platform, and optional original provider payload. The UI can show the source post while other parts of the system use a smaller, consistent representation.
 

@@ -5,7 +5,7 @@ category: engineering
 date: "2026-07-11"
 updated: "2026-09-10"
 related: ["how-reacherx-outreach-runs", "how-reacherx-memory-works"]
-tags: ["engineering", "how reacherx planning works"]
+tags: ["engineering", "planning", "contributors"]
 ---
 
 An outreach plan is more than a generated message. It describes a sequence of actions for one person, using the workspace's goal and what the system knows about that person.
@@ -36,7 +36,7 @@ const initialPlanStatus =
     : "draft";
 ```
 
-That is why user-facing copy must not promise that every new plan always waits for approval. Review-required is the default, but an autonomous workspace behaves differently.
+Review-required is the default, but an autonomous workspace behaves differently.
 
 The single-active-plan rule also matters when two operations run close together. Updating an existing plan and creating another plan are different operations. Don't solve a duplicate-plan error by bypassing the check.
 

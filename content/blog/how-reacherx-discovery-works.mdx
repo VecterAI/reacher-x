@@ -5,7 +5,7 @@ category: engineering
 date: "2026-07-08"
 updated: "2026-09-10"
 related: ["how-reacherx-qualification-works", "how-reacherx-memory-works"]
-tags: ["engineering", "how reacherx discovery works"]
+tags: ["engineering", "discovery", "contributors"]
 ---
 
 Discovery answers a first question: who might fit this workspace? It produces candidates for later checks. A search result is not yet a qualified person.
@@ -20,13 +20,13 @@ The prospecting workflow checks capacity and workspace state, loads the audience
 
 The workflow generates keywords and converts them into platform-specific queries. Metadata records the platform, search surface, strictness, and criteria associated with each query. Keywords are saved before searching so later results can be attributed to them.
 
-A useful detail lives in [convex/lib/discoveryQueryPlanningCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/discoveryQueryPlanningCore.ts):
+A useful detail lives in [convex/lib/discoveryQueryPlanningCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/discoveryQueryPlanningCore.ts). `resolvePeopleQueryStage` decides when a query should broaden:
 
 ```ts
 return hasRequiredWorkflow && isRoleOnly ? "broad" : stage;
 ```
 
-That return belongs to `resolvePeopleQueryStage`. If the audience requires evidence of an activity, searching only for a job title is a broad way to find candidates. It doesn't establish that activity. This distinction keeps discovery from quietly treating a title match as proof of intent.
+If the audience requires evidence of an activity, searching only for a job title is a broad way to find candidates. It doesn't establish that activity. This distinction keeps discovery from quietly treating a title match as proof of intent.
 
 ## Search the platforms and preserve the reason
 
@@ -42,7 +42,7 @@ There are also conversation-seed and monitor-related paths. Don't assume the mai
 
 That is one concrete part of the application's learning behavior. It uses recorded outcomes to allocate future search work. It does not guarantee each new search will be better.
 
-The completion handler in `prospecting.ts` decides whether to schedule another cycle. Workspace state, capacity, runtime configuration, and recovery conditions matter. Pausing a workspace is not implemented by closing a browser tab.
+The completion handler in `prospecting.ts` decides whether to schedule another cycle. Workspace state, capacity, runtime configuration, and recovery conditions matter. Pausing a workspace stores a paused status on the workspace record, and the workflow checks that stored state before starting its next cycle.
 
 ## Make a change you can evaluate
 

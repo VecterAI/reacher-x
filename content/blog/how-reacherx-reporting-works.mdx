@@ -5,7 +5,7 @@ category: engineering
 date: "2026-07-14"
 updated: "2026-09-10"
 related: ["help-build-reacherx", "how-reacherx-discovery-works"]
-tags: ["engineering", "how reacherx reporting works"]
+tags: ["engineering", "reporting", "contributors"]
 ---
 
 A number on a dashboard has a history. Something happened, the application recorded it, reporting code grouped it into a time window, and the UI gave it a label.
@@ -30,13 +30,19 @@ currentValue: calculateRate(respondedCurrent, contactedCurrent),
 
 Read the numerator and denominator definitions around that line before changing the label. This is an event-window calculation. It is not automatically a cohort study following the exact same contacted people until every reply arrives.
 
-Daily reporting rows contain hourly information used for windowed calculations. [convex/workspaceAnalyticsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAnalyticsDaily.ts) includes list and rebuild paths. [convex/workspaceAgentOpsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAgentOpsDaily.ts) serves △ Agent-operations daily rows. [convex/lib/workspaceReportingAggregate.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/workspaceReportingAggregate.ts) provides shared aggregate support.
+Daily reporting rows contain hourly information used for windowed calculations:
+
+| File | Layer | What it does |
+| --- | --- | --- |
+| [convex/workspaceAnalyticsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAnalyticsDaily.ts) | Function module | Lists and rebuilds the workspace analytics daily rows. |
+| [convex/workspaceAgentOpsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAgentOpsDaily.ts) | Function module | Serves the △ Agent-operations daily rows. |
+| [convex/lib/workspaceReportingAggregate.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/workspaceReportingAggregate.ts) | Shared library | Maintains the aggregate backing the windowed metric reads. |
 
 ## Account for readiness and time
 
 The frontend checks reporting readiness through [convex/workspaceReporting.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceReporting.ts). When reporting is ready, it uses reactive queries. When it is not, the dashboards have snapshot-action paths rather than assuming empty results mean zero activity.
 
-Time windows use the workspace reporting time zone. Check both the visible range and the normalized backend window when a count differs around midnight. A UTC event timestamp and a local reporting day serve different purposes.
+Time windows use the workspace reporting time zone. Check both the visible range and the normalized backend window when a count differs around midnight. The UTC event timestamp keeps event ordering and hour buckets consistent across the system; the local reporting day decides which day the dashboard shows as today.
 
 The UI also changes labels for the workspace use case. A recruiting view can say candidates while the underlying record remains a prospect. Keep presentation names separate from the data semantics.
 
