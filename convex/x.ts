@@ -1967,7 +1967,7 @@ export const replyToPost = action({
       ? await getOwnedTwitterProspectForUser(ctx, userId, args.prospectId)
       : null;
     if (args.prospectId && !prospect) {
-      throw new Error("X prospect not found or not authorized.");
+      throw new Error("X profile not found or not authorized.");
     }
     const postLimit = await ctx.runQuery(
       internal.xPostLimits.getEffectivePostLimitInternal,
@@ -2453,13 +2453,13 @@ export const getXChatDecryptBundle = action({
       args.prospectId
     );
     if (!prospect) {
-      throw new Error("X prospect not found or not authorized.");
+      throw new Error("X profile not found or not authorized.");
     }
     const identity = resolveProspectTwitterIdentity(
       prospect as Record<string, unknown>
     );
     if (!identity.username) {
-      throw new Error("This prospect does not have a usable X username.");
+      throw new Error("This profile does not have a usable X username.");
     }
     const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
       userId,
@@ -2521,13 +2521,13 @@ export const getXChatEventPage = action({
       args.prospectId
     );
     if (!prospect) {
-      throw new Error("X prospect not found or not authorized.");
+      throw new Error("X profile not found or not authorized.");
     }
     const identity = resolveProspectTwitterIdentity(
       prospect as Record<string, unknown>
     );
     if (!identity.username) {
-      throw new Error("This prospect does not have a usable X username.");
+      throw new Error("This profile does not have a usable X username.");
     }
     const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
       userId,
@@ -2562,13 +2562,13 @@ export const markXChatConversationRead = action({
       args.prospectId
     );
     if (!prospect) {
-      throw new Error("X prospect not found or not authorized.");
+      throw new Error("X profile not found or not authorized.");
     }
     const identity = resolveProspectTwitterIdentity(
       prospect as Record<string, unknown>
     );
     if (!identity.username) {
-      throw new Error("This prospect does not have a usable X username.");
+      throw new Error("This profile does not have a usable X username.");
     }
     const sequenceId = args.seenUntilSequenceId.trim();
     if (!sequenceId) {
@@ -2616,13 +2616,13 @@ export const uploadXChatEncryptedMedia = action({
         args.prospectId
       );
       if (!prospect) {
-        throw new Error("X prospect not found or not authorized.");
+        throw new Error("X profile not found or not authorized.");
       }
       const identity = resolveProspectTwitterIdentity(
         prospect as Record<string, unknown>
       );
       if (!identity.username) {
-        throw new Error("This prospect does not have a usable X username.");
+        throw new Error("This profile does not have a usable X username.");
       }
       const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
         userId,
@@ -2646,7 +2646,7 @@ export const uploadXChatEncryptedMedia = action({
         .trim()
         .replaceAll(":", "-");
       if (suppliedConversationId !== expectedConversationId) {
-        throw new Error("XChat conversation does not match this prospect.");
+        throw new Error("XChat conversation does not match this profile.");
       }
 
       const blob = await ctx.storage.get(args.storageId);
@@ -2701,13 +2701,13 @@ export const submitXChatEncryptedMessage = action({
       args.prospectId
     );
     if (!prospect) {
-      throw new Error("X prospect not found or not authorized.");
+      throw new Error("X profile not found or not authorized.");
     }
     const identity = resolveProspectTwitterIdentity(
       prospect as Record<string, unknown>
     );
     if (!identity.username) {
-      throw new Error("This prospect does not have a usable X username.");
+      throw new Error("This profile does not have a usable X username.");
     }
     const finalizeSuccessfulSend = async (
       sendResult: XChatEncryptedSendResult
@@ -2779,7 +2779,7 @@ export const submitXChatEncryptedMessage = action({
       profileUserId
     );
     if (suppliedConversationId !== expectedConversationId) {
-      throw new Error("XChat conversation does not match this prospect.");
+      throw new Error("XChat conversation does not match this profile.");
     }
 
     const leaseId = globalThis.crypto.randomUUID();
@@ -2920,7 +2920,7 @@ export const getXChatEncryptedMedia = action({
       args.prospectId
     );
     if (!prospect) {
-      throw new Error("X prospect not found or not authorized.");
+      throw new Error("X profile not found or not authorized.");
     }
     const cachedConversation: {
       conversationId: string;
@@ -2942,7 +2942,7 @@ export const getXChatEncryptedMedia = action({
         prospect as Record<string, unknown>
       );
       if (!identity.username) {
-        throw new Error("This prospect does not have a usable X username.");
+        throw new Error("This profile does not have a usable X username.");
       }
       provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
         userId,
@@ -3101,7 +3101,7 @@ async function sendDmMessageForUser(
     args.prospectId
   );
   if (!prospect) {
-    throw new Error("Prospect not found.");
+    throw new Error("Profile not found.");
   }
   const dmState = await getProspectDmStateForUser(
     ctx,
@@ -3109,7 +3109,7 @@ async function sendDmMessageForUser(
     args.prospectId
   );
   if (!dmState) {
-    throw new Error("Prospect not found.");
+    throw new Error("Profile not found.");
   }
   if (!dmState.eligibility.enabled) {
     throw new Error(dmState.eligibility.reasonLabel);
@@ -3120,7 +3120,7 @@ async function sendDmMessageForUser(
     args.prospectId
   );
   if (!panelContext) {
-    throw new Error("Prospect not found.");
+    throw new Error("Profile not found.");
   }
   const conversationId =
     args.conversationId ??

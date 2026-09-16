@@ -88,7 +88,7 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     if (requiresPlan) {
       return {
         tooltip: "Upgrade plan",
-        title: `Upgrade plan to keep △ Agent ${discoveryVerb} and qualifying ${entityPluralLower}.`,
+        title: `Upgrade plan to keep △ Agent ${discoveryVerb} and checking matches for ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} billing`,
       };
     }
@@ -150,7 +150,7 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     if (status.issueReason === "setup_incomplete") {
       return {
         tooltip: "△ Agent setup is incomplete",
-        title: `Finish setup so your △ Agent can keep ${discoveryVerb} and qualifying ${entityPluralLower}.`,
+        title: `Finish setup so your △ Agent can keep ${discoveryVerb} and checking matches for ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} setup`,
       };
     }
@@ -158,7 +158,7 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     if (status.issueReason === "limit_reached") {
       return {
         tooltip: "△ Agent reached this workspace's limit",
-        title: `△ Agent is paused because this workspace reached its qualified ${entityPluralLower} limit for the current billing cycle. Upgrade to continue ${discoveryVerb} and qualifying ${entityPluralLower}.`,
+        title: `△ Agent is paused because this workspace reached its limit for ${entityPluralLower} who match for the current billing cycle. Upgrade to continue ${discoveryVerb} and checking matches for ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} capacity`,
       };
     }
@@ -332,7 +332,7 @@ export function WorkspaceSystemStatusDialog({
               work for this workspace.
             </p>
             <p className="text-muted-foreground text-sm">
-              A task already running may finish safely. Your saved prospects and
+              A task already running may finish safely. Your saved profiles and
               progress stay intact, and queued work resumes later from this same
               dialog.
             </p>

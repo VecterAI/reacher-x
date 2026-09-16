@@ -37,7 +37,7 @@ export function PendingProspectsFeedBar({
   }
 
   const countLabel = `${pendingCount}${pendingCountCapped ? "+" : ""}`;
-  const label = `Load ${countLabel} new ${entityPluralLower}`;
+  const label = `Show ${countLabel} new ${entityPluralLower}`;
 
   return (
     <button
@@ -63,7 +63,7 @@ export function PendingProspectsFeedBar({
           />
         ) : null}
         <span className="text-sm font-medium">
-          <span>Load </span>
+          <span>Show </span>
           <span className="text-muted-foreground font-mono font-semibold tabular-nums">
             {countLabel}
           </span>

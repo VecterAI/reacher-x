@@ -303,7 +303,7 @@ export function useProspectDmPanel(args: {
       mediaMetadata?: OutboundMessageMediaMetadata[]
     ) => {
       if (!prospectId) {
-        throw new Error("Missing prospect.");
+        throw new Error("Choose a person first.");
       }
       const activeActionRequestId =
         actionRequestStatus === "pending_approval" && actionRequestId

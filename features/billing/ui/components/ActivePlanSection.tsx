@@ -1,6 +1,7 @@
 "use client";
 
 import { format } from "date-fns";
+import { resolvePlanFeatureEntityCopy } from "@/features/landing/lib/pricingUseCaseCopy";
 import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import { ONBOARDING_PLAN_TIERS } from "@/features/agent/ui/components/onboarding/planStepConfig";
@@ -30,6 +31,7 @@ export interface ActivePlanSectionProps {
   onUpgradeToPro: () => void;
   onManageBilling: () => void;
   isPaid: boolean;
+  entityPlural?: string;
 }
 
 function tierTitle(tier: "free" | "hobby" | "base" | "pro"): string {
@@ -46,6 +48,7 @@ export function ActivePlanSection({
   onUpgradeToPro,
   onManageBilling,
   isPaid,
+  entityPlural,
 }: ActivePlanSectionProps) {
   const tier = plan?.tier ?? "free";
   const grant = plan?.complimentaryGrant;
@@ -143,7 +146,7 @@ export function ActivePlanSection({
               className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
               aria-hidden
             />
-            <span>{line}</span>
+            <span>{resolvePlanFeatureEntityCopy(line, entityPlural)}</span>
           </li>
         ))}
       </ul>

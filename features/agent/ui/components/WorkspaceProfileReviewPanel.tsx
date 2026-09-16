@@ -496,7 +496,7 @@ export function WorkspaceProfileReviewPanel({
                             render={({ field: profileField }) => (
                               <FormItem className={FORM_FIELD_CLASS_NAME}>
                                 <FormLabel className={FORM_LABEL_CLASS_NAME}>
-                                  Pain points ·{" "}
+                                  What they need ·{" "}
                                   <AnimatedNumber
                                     value={profileField.value.length}
                                   />

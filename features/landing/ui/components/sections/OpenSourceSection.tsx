@@ -20,7 +20,7 @@ const CARDS = [
   {
     title: "Read the code",
     description:
-      "Every workflow, search strategy, and qualification rule is visible on GitHub.",
+      "You can see how the agent searches, checks matches, and works on GitHub.",
     linkLabel: "View source",
     href: GITHUB_REPO_URL,
   },

@@ -87,7 +87,9 @@ export const outreachPlanWorkflow = workflowManager.define({
       return {
         success: false,
         status: "skipped",
-        error: "Prospect is no longer qualified for outreach",
+        error: prospect
+          ? "This person is no longer a match"
+          : "This profile is no longer available",
       };
     }
 

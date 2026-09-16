@@ -8,7 +8,7 @@ import {
   PageHeader,
   PageLayout,
 } from "@/features/webapp/ui/components";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useQueryWithStatus, useActiveUseCaseLabels } from "@/shared/hooks";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { toast } from "sonner";
 import { ActivePlanSection } from "./components/ActivePlanSection";
@@ -26,6 +26,7 @@ import { parseAsStringLiteral, useQueryState } from "nuqs";
 import { PLANS_UPGRADE_VALUE } from "@/features/billing/lib/plansUpgradeUrl";
 
 export function PlansPage() {
+  const { entityPlural } = useActiveUseCaseLabels();
   const isMobile = useIsMobile();
   const [upgradeParam, setUpgradeParam] = useQueryState(
     "upgrade",
@@ -154,6 +155,7 @@ export function PlansPage() {
         </h2>
       </header>
       <PlanSelector
+        entityPlural={entityPlural}
         mode="plans"
         currentTier={purchaseTier}
         hideMarketingHeadline
@@ -173,6 +175,7 @@ export function PlansPage() {
       <PageContent className="scroll-fade min-h-0 flex-1 overflow-y-auto p-0">
         <div className="flex h-full min-h-0 w-full flex-col">
           <ActivePlanSection
+            entityPlural={entityPlural}
             plan={plan}
             subscription={subscription}
             isPaid={isPaid}

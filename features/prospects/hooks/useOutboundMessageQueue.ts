@@ -159,7 +159,7 @@ export function useOutboundMessageQueue(args: {
 
   const queueWithClientRequestId = React.useCallback(
     async (clientRequestId: string, message: QueueMessageArgs) => {
-      if (!prospectId) throw new Error("Prospect is required.");
+      if (!prospectId) throw new Error("Choose a person first.");
       return await queueMutation({
         prospectId: prospectId as Id<"prospects">,
         platform,
@@ -181,7 +181,7 @@ export function useOutboundMessageQueue(args: {
 
   const enqueue = React.useCallback(
     async (message: QueueMessageArgs) => {
-      if (!prospectId) throw new Error("Prospect is required.");
+      if (!prospectId) throw new Error("Choose a person first.");
       const clientRequestId = createClientRequestId();
       const now = getCurrentUTCTimestamp();
       const localOperation = createLocalOperation({
@@ -205,7 +205,7 @@ export function useOutboundMessageQueue(args: {
 
   const enqueuePrepared = React.useCallback(
     async (args: PreparedQueueMessageArgs) => {
-      if (!prospectId) throw new Error("Prospect is required.");
+      if (!prospectId) throw new Error("Choose a person first.");
       const clientRequestId = createClientRequestId();
       const localOperation = createLocalOperation({
         clientRequestId,

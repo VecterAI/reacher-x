@@ -267,7 +267,7 @@ export const socialAction = createTool({
         actionKey: args.action,
         title: "Social action unavailable",
         message: AMBIGUOUS_PROSPECT_SELECTION_MESSAGE,
-        error: "Ambiguous prospect context",
+        error: "Ambiguous profile context",
       };
     }
 

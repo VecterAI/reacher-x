@@ -419,7 +419,7 @@ export function deriveWorkspaceSystemStatus(
       tooltip: "Qualified prospect limit reached",
       dialogTitle: "Qualified prospect limit reached",
       dialogDescription:
-        "Discovery is paused because this workspace reached its qualified prospect limit for the current billing cycle. Upgrade to resume discovery.",
+        "Finding new people is paused because this workspace reached its match limit for the current billing cycle. Upgrade to continue.",
       actionLabel: "View plans",
       actionKind: "view_plans",
       features,

@@ -1442,7 +1442,7 @@ export const startLinkedInCommentReplyMonitor = internalMutation({
   handler: async (ctx, args) => {
     const prospect = await ctx.db.get("prospects", args.prospectId);
     if (!prospect || prospect.userId !== args.userId) {
-      throw new Error("Prospect not found for LinkedIn comment monitoring");
+      throw new Error("Profile not found for LinkedIn comment monitoring");
     }
 
     const plan = args.planId
@@ -2286,10 +2286,10 @@ async function checkTwitterProspectResponse(
   const prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
     prospectId: monitor.prospectId,
   });
-  if (!prospect) throw new Error("Prospect not found");
+  if (!prospect) throw new Error("Profile not found");
   const prospectIdentity = resolveProspectTwitterIdentity(prospect);
   if (!prospectIdentity.username) {
-    throw new Error("Prospect X/Twitter handle is unavailable");
+    throw new Error("Profile X/Twitter handle is unavailable");
   }
 
   const params = new URLSearchParams({
@@ -2341,7 +2341,7 @@ async function checkLinkedInCommentResponse(
   if (!account?.accountId || account.status !== "connected") {
     throw new Error("Connected LinkedIn account is unavailable");
   }
-  if (!prospect) throw new Error("Prospect not found");
+  if (!prospect) throw new Error("Profile not found");
 
   const response = await ctx.runAction(
     internal.linkedin.listLinkedInCommentRepliesInternal,

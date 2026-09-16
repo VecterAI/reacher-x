@@ -51,14 +51,14 @@ function getWorkspaceFeatureCopy(
       };
     case "qualification":
       return {
-        label: `${entitySingular} qualification`,
+        label: "Match checks",
         detail: limitedStatus
           ? `Scoring ${entityPluralLower} is ${limitedStatus}.`
           : `△ Agent can score ${entityPluralLower}.`,
       };
     case "enrichment":
       return {
-        label: `${entitySingular} enrichment`,
+        label: "Profile details",
         detail: limitedStatus
           ? `Updating ${entitySingularLower} details is ${limitedStatus}.`
           : `△ Agent can update ${entitySingularLower} details.`,

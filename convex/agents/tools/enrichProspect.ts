@@ -89,7 +89,7 @@ export const enrichProspect = createTool({
               enrichmentStatus: "failed",
               painPointsCount: 0,
               hasFinance: false,
-              error: "Prospect not found",
+              error: "Profile not found",
             };
           }
 
@@ -105,7 +105,7 @@ export const enrichProspect = createTool({
               enrichmentStatus: "failed",
               painPointsCount: 0,
               hasFinance: false,
-              error: "Not authorized to enrich this prospect",
+              error: "Not authorized to find details for this profile",
             };
           }
 
@@ -125,7 +125,7 @@ export const enrichProspect = createTool({
               enrichmentStatus: "failed",
               painPointsCount: 0,
               hasFinance: false,
-              error: "Prospect does not belong to this workspace",
+              error: "Profile does not belong to this workspace",
             };
           }
 

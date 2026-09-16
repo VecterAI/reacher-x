@@ -66,7 +66,7 @@ export const generateEncryptedMediaUploadUrl = mutation({
       prospect.userId !== user._id ||
       prospect.platform !== "twitter"
     ) {
-      throw new Error("X prospect not found or not authorized.");
+      throw new Error("X profile not found or not authorized.");
     }
     return await ctx.storage.generateUploadUrl();
   },

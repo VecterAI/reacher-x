@@ -55,7 +55,7 @@ export function getProspectPipelineEmptyStateCopy({
   if (!previousStage) {
     return {
       title: `Nothing in ${stageLabel} right now`,
-      description: `The agent adds ${entityPluralLower} here as it discovers and qualifies matches for this workspace. If you expected results, check filters or let the agent finish processing.`,
+      description: `New ${entityPluralLower} appear here when they match your criteria. Check your filters or give the agent time to finish.`,
     };
   }
 

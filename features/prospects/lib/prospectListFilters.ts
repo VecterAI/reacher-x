@@ -177,7 +177,9 @@ export function getProspectListFilterSummaryTokens(
     filters.fitScoreRange[0] !== defaults.fitScoreRange[0] ||
     filters.fitScoreRange[1] !== defaults.fitScoreRange[1]
   ) {
-    tokens.push(`Fit ${filters.fitScoreRange[0]}-${filters.fitScoreRange[1]}`);
+    tokens.push(
+      `Match ${filters.fitScoreRange[0]}-${filters.fitScoreRange[1]}`
+    );
   }
 
   const dateSummary = getDateSummary(filters);

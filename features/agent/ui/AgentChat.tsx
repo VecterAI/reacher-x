@@ -370,15 +370,17 @@ function getProgressStatusIcon(status: ProgressStep["status"]) {
 
 const TOOL_LABELS: Record<string, string> = {
   analyzeUrl: "Analyzing website",
-  generateImprovedDescriptionAndICPs: "Generating ICPs",
+  generateImprovedDescriptionAndICPs: "Defining who to look for",
   getUserStatus: "Checking account",
   createWorkspace: "Creating workspace",
   updateWorkspace: "Updating workspace",
-  searchProspects: "Finding prospects",
+  searchProspects: "Finding matches",
+  qualifyProspect: "Checking match",
+  enrichProspect: "Finding details",
   generateSeedKeywords: "Generating keywords",
-  convertToSocialQueries: "Converting to social queries",
-  getSocialContext: "Fetching social context",
-  displayEntity: "Showing entity",
+  convertToSocialQueries: "Preparing searches",
+  getSocialContext: "Reading recent posts",
+  displayEntity: "Showing details",
   socialAction: "Taking social action",
 };
 
@@ -910,7 +912,7 @@ function ToolCallVisualization({
                 Found{" "}
                 {(result.results as { totalProspects?: number })
                   .totalProspects ?? 0}{" "}
-                prospects
+                people
               </div>
             )}
         </div>

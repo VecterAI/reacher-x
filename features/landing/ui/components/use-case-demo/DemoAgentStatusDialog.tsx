@@ -50,8 +50,8 @@ import { useDemoShell } from "./demoShellContext";
 // Same stage list as OnboardingProgressCard.
 const STAGES = [
   { id: "searching", label: "Search", step: 1 },
-  { id: "qualifying", label: "Qualify", step: 2 },
-  { id: "enriching", label: "Enrich", step: 3 },
+  { id: "qualifying", label: "Check match", step: 2 },
+  { id: "enriching", label: "Find details", step: 3 },
   { id: "plans", label: "Plans", step: 4 },
 ] as const;
 
@@ -103,12 +103,12 @@ export function DemoAgentStatusDialog({
     },
     {
       key: "qualification",
-      label: `${labels.entitySingular} qualification`,
+      label: "Match checks",
       detail: `△ Agent can score ${entityPluralLower}.`,
     },
     {
       key: "enrichment",
-      label: `${labels.entitySingular} enrichment`,
+      label: "Profile details",
       detail: `△ Agent can update ${entitySingularLower} details.`,
     },
     {
@@ -161,7 +161,7 @@ export function DemoAgentStatusDialog({
               monitor activity.
             </p>
             <p className="text-muted-foreground text-sm">
-              Your saved prospects and progress stay intact, and you can resume
+              Your saved profiles and progress stay intact, and you can resume
               later from this same workspace status dialog.
             </p>
             <div className="bg-muted/40 border-border rounded-lg border px-3 py-2.5">
@@ -244,8 +244,8 @@ export function DemoAgentStatusDialog({
                 <div className="min-w-0 flex-1">
                   <div className="text-sm leading-6 font-medium">
                     <span className="text-muted-foreground">
-                      △ Agent is actively {labels.discoveryVerb} and qualifying{" "}
-                      {entityPluralLower}.
+                      △ Agent is actively {labels.discoveryVerb} and checking
+                      matches for {entityPluralLower}.
                     </span>
                   </div>
                 </div>
@@ -274,7 +274,7 @@ export function DemoAgentStatusDialog({
                 }
               />
               <StatCell
-                label="Qualified"
+                label="Good match"
                 value={DEMO_PROGRESS.qualified}
                 detail={
                   formatAverageFitScoreDetail(
@@ -283,7 +283,7 @@ export function DemoAgentStatusDialog({
                 }
               />
               <StatCell
-                label="Enriched"
+                label="Details found"
                 value={DEMO_PROGRESS.enriched}
                 detail={formatEnrichedProfilesDetail(DEMO_PROGRESS.enriched)}
               />

@@ -107,8 +107,8 @@ test("a paused plan waiting on a manual X reply clearly asks for action", () => 
     ]),
   });
 
-  assert.equal(presentation?.label, "Manual reply needed · 0/1");
-  assert.equal(presentation?.indicator, "attention");
+  assert.equal(presentation?.label, "Post reply on X · 0/1");
+  assert.equal(presentation?.indicator, "reply");
   assert.equal(presentation?.tone, "attention");
 });
 

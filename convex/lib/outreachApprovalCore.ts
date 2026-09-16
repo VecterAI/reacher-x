@@ -26,7 +26,7 @@ export async function startOutreachPlanExecution(
 
   const prospect = await ctx.db.get("prospects", plan.prospectId);
   if (!prospect) {
-    throw new Error("Prospect not found");
+    throw new Error("Profile not found");
   }
   requireProspectEligibleForOutreach(prospect);
 

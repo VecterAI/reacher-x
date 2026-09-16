@@ -235,7 +235,7 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   const disabledCommentActionReason = !postId
     ? "This LinkedIn post is missing a stable id."
     : commentBehavior === "create_action_request" && !prospectId
-      ? "Open this post from a LinkedIn prospect profile to use in-app actions."
+      ? "Open this post from a LinkedIn profile to use these actions."
       : undefined;
 
   React.useEffect(() => {
@@ -522,7 +522,7 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
             icon={MailIcon}
             ariaLabel="Message author on LinkedIn"
             disabled
-            tooltip="DM from post is intentionally disabled in v1. Open the prospect profile to message on LinkedIn."
+            tooltip="Open their profile to send a LinkedIn message."
           />
         </div>
       </footer>

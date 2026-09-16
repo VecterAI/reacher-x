@@ -515,7 +515,7 @@ export const getProspectInteractionHistory = createTool({
         return {
           success: false as const,
           history: null,
-          error: "Prospect not found or unavailable to the current user.",
+          error: "Profile not found or unavailable to the current user.",
         };
       }
 
@@ -582,7 +582,7 @@ export const getProspectInteractionHistory = createTool({
         return {
           success: false as const,
           history: null,
-          error: "Prospect not found or unavailable to the current user.",
+          error: "Profile not found or unavailable to the current user.",
         };
       }
 

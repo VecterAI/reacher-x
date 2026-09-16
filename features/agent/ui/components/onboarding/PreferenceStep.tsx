@@ -20,7 +20,7 @@ export function PreferenceStep({
   defaultRange,
   onRangeChange,
 }: PreferenceStepProps) {
-  const helperId = "preference-fit-score-helper";
+  const helperId = "preference-match-score-helper";
   const entityLower = useCase.promptContext.terminology.entityPlural;
   const histogramQuery = useQueryWithStatus(
     api.prospectSummaries.getWorkspaceFitScoreHistogram,
@@ -28,8 +28,8 @@ export function PreferenceStep({
   );
   const binCounts = histogramQuery.data?.binCounts ?? Array(10).fill(0);
   const supportingText = histogramQuery.isError
-    ? `Agent couldn't load the current fit-score distribution, but your range will still be saved. ${useCase.entityPlural} below ${QUALIFICATION_THRESHOLD}% are unqualified.`
-    : `${useCase.entityPlural} below ${QUALIFICATION_THRESHOLD}% are unqualified.`;
+    ? `Agent couldn't load the current match-score distribution, but your range will still be saved. ${useCase.entityPlural} below ${QUALIFICATION_THRESHOLD}% are not a match.`
+    : `${useCase.entityPlural} below ${QUALIFICATION_THRESHOLD}% are not a match.`;
 
   return (
     <section
@@ -41,7 +41,7 @@ export function PreferenceStep({
           className="text-xl font-semibold tracking-tight"
           id="preference-fit-heading"
         >
-          Fit score
+          Match score
         </h2>
         <p className="text-muted-foreground text-sm">
           Only show {entityLower} between these scores.
@@ -49,12 +49,12 @@ export function PreferenceStep({
       </header>
 
       <RangeHistogramField
-        ariaLabel="Fit score range"
+        ariaLabel="Match score range"
         defaultRange={defaultRange}
         describedBy={helperId}
         domainMax={100}
         domainMin={0}
-        fieldLabel="Fit score range"
+        fieldLabel="Match score range"
         binCounts={binCounts}
         maxLabel="Max"
         minLabel="Min"

@@ -463,7 +463,7 @@ export const executeActionRequestInternal = internalAction({
           case "linkedin_send_message_existing_conversation": {
             if (!request.prospectId) {
               throw new Error(
-                "LinkedIn messages require a prospect in the current thread."
+                "LinkedIn messages require a profile in the current thread."
               );
             }
             const result = await ctx.runAction(
@@ -493,7 +493,7 @@ export const executeActionRequestInternal = internalAction({
           case "linkedin_react_to_post": {
             if (!request.prospectId || !postId) {
               throw new Error(
-                "LinkedIn reactions require a prospect and post id."
+                "LinkedIn reactions require a profile and post id."
               );
             }
             const result = await ctx.runAction(
@@ -514,7 +514,7 @@ export const executeActionRequestInternal = internalAction({
           case "linkedin_comment_on_post": {
             if (!request.prospectId || !postId) {
               throw new Error(
-                "LinkedIn comments require a prospect and post id."
+                "LinkedIn comments require a profile and post id."
               );
             }
             const parentCommentId =
@@ -545,7 +545,7 @@ export const executeActionRequestInternal = internalAction({
           case "linkedin_invite_user": {
             if (!request.prospectId) {
               throw new Error(
-                "LinkedIn invitations require a prospect in the current thread."
+                "LinkedIn invitations require a profile in the current thread."
               );
             }
             const result = await ctx.runAction(
@@ -787,7 +787,7 @@ export const executeActionRequestInternal = internalAction({
           }
           if (!resolvedTargetUserId) {
             throw new Error(
-              "Could not resolve X participant id for DM. Reconnect or refresh prospect data."
+              "Could not resolve X participant id for DM. Reconnect or refresh profile data."
             );
           }
         }
@@ -1116,12 +1116,12 @@ export const submitTwitterActionForThread = internalAction({
           pendingApproval: false,
           actionKey: args.actionKey,
           title,
-          message: "DMs require a prospect in the current thread.",
+          message: "DMs require a profile in the current thread.",
           approvalMode: metadata.approvalMode,
           riskLevel: metadata.riskLevel,
           sourceContext: args.context,
           draftContent: args.text?.trim() || undefined,
-          error: "Missing prospect context for DM action.",
+          error: "Missing profile context for DM action.",
         };
       }
 
@@ -1173,7 +1173,7 @@ export const submitTwitterActionForThread = internalAction({
             prospectId: String(threadContext.prospectId),
             title: "DM unavailable",
             message:
-              "Could not resolve the prospect's X/Twitter user ID. Refresh enrichment or open the DM panel.",
+              "Could not find their X/Twitter user ID. Refresh their details or open Messages.",
             approvalMode: metadata.approvalMode,
             riskLevel: metadata.riskLevel,
             sourceContext: args.context,

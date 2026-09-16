@@ -64,7 +64,7 @@ async function runDeletePlanAction(
     if (!planId) {
       return {
         success: false,
-        error: "No active plan found for this prospect. Nothing to delete.",
+        error: "No active plan found for this profile. Nothing to delete.",
       };
     }
 

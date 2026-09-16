@@ -1011,7 +1011,7 @@ export default function WorkspacePage() {
                                         <FormLabel
                                           className={formLabelClassName}
                                         >
-                                          Pain points ·{" "}
+                                          What they need ·{" "}
                                           <AnimatedNumber
                                             value={f.value?.length ?? 0}
                                           />
@@ -1185,7 +1185,7 @@ export default function WorkspacePage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete workspace?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes all prospects, archives, and stats for
+              This permanently deletes all profiles, archives, and stats for
               this workspace
               {userWorkspaces && userWorkspaces.length > 1
                 ? " and switches you to another workspace."

@@ -105,9 +105,7 @@ export function XChatUnlockCard({
     nextPin: string
   ) => {
     if (!prospectId) {
-      throw new Error(
-        "The selected prospect could not be resolved for this task."
-      );
+      throw new Error("The selected profile could not be found for this task.");
     }
     const decrypted = await decryptXChatInBrowser({
       prospectId,
@@ -212,7 +210,7 @@ export function XChatUnlockCard({
 
   const handleUnlock = async (completedPin: string) => {
     if (!prospectId) {
-      setError("The selected prospect could not be resolved for this task.");
+      setError("The selected profile could not be found for this task.");
       return;
     }
     if (

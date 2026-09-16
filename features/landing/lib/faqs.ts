@@ -15,13 +15,13 @@ export const homepageFaqItems: FaqItem[] = [
     id: "why-agent",
     question: "Why do you call ReacherX an Agent?",
     answer:
-      "Because it does more than search. It keeps running in the background, qualifies people, reads context, drafts outreach, and improves from your feedback.",
+      "Because it does more than search. It keeps running in the background, checks matches, reads recent posts, drafts messages, and improves from your feedback.",
   },
   {
     id: "how-does-it-know",
     question: "How does ReacherX know who to reach?",
     answer:
-      "You tell Agent who you want to reach in plain English, or give it a URL. It turns that into search strategies, watches for real signals, and qualifies people based on fit and context.",
+      "You tell Agent who you want to reach in plain English, or give it a URL. It turns that into search strategies, watches for real signals, and checks how closely people match what you described.",
   },
   {
     id: "platform-support",
@@ -39,7 +39,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "runs-24-7",
     question: "Does ReacherX really run 24/7?",
     answer:
-      "Yes. Agent keeps searching, qualifying, and surfacing new people in the background.",
+      "Yes. Agent keeps searching for people and checking matches in the background.",
   },
   {
     id: "approval",
@@ -77,7 +77,7 @@ export const pricingFaqItems: FaqItem[] = [
     id: "plan-limits",
     question: "What do plan limits actually control?",
     answer:
-      "Plans mainly control how many qualified people ReacherX can surface each month, plus workspace limits and a few extra features.",
+      "Plans mainly control how many people who match your criteria ReacherX can surface each month, plus workspace limits and a few extra features.",
   },
   {
     id: "hit-limit",

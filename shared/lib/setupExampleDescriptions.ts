@@ -11,7 +11,7 @@ const DEFAULT_EXAMPLES: SetupExampleDescription[] = [
     id: "product",
     title: "Product",
     description:
-      "We sell an AI outreach tool for B2B SaaS founders and GTM teams who need to find qualified prospects, understand buying signals, and start relevant sales conversations without adding SDR headcount.",
+      "We built a tool for software founders who need to find customers and start conversations without hiring a sales team. Look for founders posting about finding their first customers or spending too much time searching.",
   },
   {
     id: "service",
@@ -35,7 +35,7 @@ const BY_USE_CASE: Partial<
       id: "b2b",
       title: "B2B offer",
       description:
-        "We sell an AI SDR for outbound teams at mid-market SaaS companies doing $10k-$200k ARR. Ideal prospects need more qualified meetings, care about pipeline quality, and do not want to hire more SDRs.",
+        "We sell an AI assistant for software companies making $10k–$200k a year. Look for people who want more conversations with potential customers and do not want to hire a larger sales team.",
     },
     {
       id: "local",
@@ -47,7 +47,7 @@ const BY_USE_CASE: Partial<
       id: "consumer",
       title: "Consumer app",
       description:
-        "We built a budgeting app for couples who share finances. Ideal prospects talk about joint accounts, splitting expenses, tracking subscriptions, planning savings goals, or needing clearer monthly budgets.",
+        "We built a budgeting app for couples who share finances. Look for people talking about joint accounts, splitting expenses, tracking subscriptions, planning savings goals, or needing clearer monthly budgets.",
     },
   ],
   recruiting: [
@@ -99,7 +99,7 @@ const BY_USE_CASE: Partial<
     },
     {
       id: "climate",
-      title: "Thesis fit",
+      title: "Investment focus",
       description:
         "Climate hardware plus software for grid operators. We have pilots with two utilities and patents filed. Ideal investors back climate infrastructure, grid modernization, hardware, or applied energy software.",
     },

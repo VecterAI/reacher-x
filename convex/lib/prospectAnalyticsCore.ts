@@ -143,11 +143,14 @@ function inferReadyTransitionTimestamp(args: {
 export function classifyQualificationActivityTitle(
   title: string
 ): "qualified" | "disqualified" | null {
-  if (title.startsWith("Qualified with")) {
+  if (title.startsWith("Qualified with") || title.startsWith("Good match ·")) {
     return "qualified";
   }
 
-  if (title.startsWith("Did not qualify")) {
+  if (
+    title.startsWith("Did not qualify") ||
+    title.startsWith("Not a match ·")
+  ) {
     return "disqualified";
   }
 
