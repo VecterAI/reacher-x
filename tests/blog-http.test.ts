@@ -29,7 +29,7 @@ async function request(path: string, headers?: HeadersInit) {
 // can hide a streamed RSC error after the static article shell was sent.
 test("demo article cold loads and repeated RSC requests have no render errors", async () => {
   const path = "/blog/reach-out-and-get-replies";
-  for (const headers of [undefined, { RSC: "1" }, { RSC: "1" }]) {
+  for (const headers of [{ RSC: "1" }, { RSC: "1" }, undefined]) {
     const response = await request(path, headers);
     assert.equal(response.status, 200);
     const body = await response.text();
