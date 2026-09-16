@@ -31,7 +31,7 @@ export async function BlogPre({ children }: { children?: ReactNode }) {
         <span className="text-muted-foreground font-mono">
           {children.props["data-filename"] ?? requestedLanguage}
         </span>
-        <BlogCopyButton text={code} label="Copy code" />
+        <BlogCopyButton text={code} />
       </div>
       <div
         className="blog-code overflow-x-auto text-sm [&_pre]:m-0 [&_pre]:p-4"

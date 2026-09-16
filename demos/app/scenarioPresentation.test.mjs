@@ -1,10 +1,11 @@
+import { getBlogDemoArticleSlug } from "../../features/blog/lib/blogDemoCatalog.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium } from "./playwrightHelpers.mjs";
 import { BLOG_DEMO_IDS } from "../../features/blog/lib/blogDemoHelpers.ts";
 const origin = process.env.BLOG_TEST_URL ?? "http://localhost:3125";
 test(
-  "all 21 stories inherit theme and retain usable mobile controls",
+  "all stories inherit theme and retain usable mobile controls",
   { timeout: 300000 },
   async () => {
     const browser = await chromium.launch({ channel: "chrome" });
@@ -17,14 +18,15 @@ test(
           reducedMotion: "reduce",
         });
         try {
-          await page.goto(`${origin}/blog/${scenario}`);
-          const player = page.locator("[data-demo-scenario]");
+          await page.goto(`${origin}/blog/${getBlogDemoArticleSlug(scenario)}`);
+          const player = page.locator(`[data-demo-scenario="${scenario}"]`);
           await player.scrollIntoViewIfNeeded();
           await player.hover();
           await page.waitForFunction(
-            () =>
-              document.querySelector("[data-demo-scenario]")?.dataset
-                .demoPrepared === "true"
+            (id) =>
+              document.querySelector(`[data-demo-scenario="${id}"]`)?.dataset
+                .demoReady === "true",
+            scenario
           );
           const frame = await player
             .locator("iframe")

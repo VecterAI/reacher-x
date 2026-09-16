@@ -7,7 +7,8 @@ export function useDemoHostFocus(
   root: RefObject<HTMLElement | null>,
   send: (type: string, extra: { active: boolean }) => void,
   suppressFocus = false,
-  observedRoot?: HTMLElement | null
+  observedRoot?: HTMLElement | null,
+  expanded = false
 ) {
   const previous = useRef<boolean | undefined>(undefined);
   const visible = useRef(true);
@@ -16,7 +17,7 @@ export function useDemoHostFocus(
     (force = false) => {
       const active =
         suppressFocus ||
-        !visible.current ||
+        (!expanded && !visible.current) ||
         scrolling.current ||
         Array.from(
           document.querySelectorAll<HTMLElement>(
@@ -34,9 +35,12 @@ export function useDemoHostFocus(
         send("reacherx:host-focus", { active });
       }
     },
-    [root, send, suppressFocus]
+    [root, send, suppressFocus, expanded]
   );
   useEffect(() => {
+    // A visibility/fullscreen change disposes the previous scroll-end timer.
+    // Do not carry its temporary focus lock into the new observer lifecycle.
+    scrolling.current = false;
     let scrollEnd: ReturnType<typeof setTimeout> | undefined;
     const onScroll = () => {
       scrolling.current = true;

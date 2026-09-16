@@ -1,3 +1,9 @@
+import {
+  REACH_OUT_MEMORY_SHOTS,
+  REACH_OUT_VIDEO_SHOTS,
+  REACH_OUT_BUBBLE_SHOTS,
+  REACH_OUT_UNICODE_SHOTS,
+} from "./reachOutDemoShots";
 import { BATCH_DEMO_SHOTS } from "./batchDemoShots";
 import { SETUP_DEMO_SHOTS } from "./setupDemoShots";
 import {
@@ -23,6 +29,10 @@ import {
 } from "@/features/landing/ui/components/use-case-demo/demoPresentationHelpers";
 
 export const BLOG_DEMO_IDS = [
+  "reach-out-writing-preferences",
+  "reach-out-personal-video",
+  "reach-out-message-bubbles",
+  "reach-out-unicode-formatting",
   "how-reacherx-enrichment-works",
   "send-voice-notes",
   "create-plans-for-several-people",
@@ -96,6 +106,10 @@ const profileMenu = { selector: '[aria-label="Profile menu"]' };
 /** Stories contain camera direction and DOM actions, never alternate app state. */
 export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
   ...AUDIENCE_DEMO_SHOTS,
+  "reach-out-writing-preferences": REACH_OUT_MEMORY_SHOTS,
+  "reach-out-personal-video": REACH_OUT_VIDEO_SHOTS,
+  "reach-out-message-bubbles": REACH_OUT_BUBBLE_SHOTS,
+  "reach-out-unicode-formatting": REACH_OUT_UNICODE_SHOTS,
   "send-voice-notes": VOICE_DEMO_SHOTS,
   "create-plans-for-several-people": BATCH_DEMO_SHOTS,
   "getting-started-with-reacherx": SETUP_DEMO_SHOTS,

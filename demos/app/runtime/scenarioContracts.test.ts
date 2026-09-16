@@ -1,3 +1,4 @@
+import { getBlogDemoArticleSlug } from "@/features/blog/lib/blogDemoCatalog";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
@@ -7,27 +8,24 @@ import { createAppServices } from "./appServices";
 import { BLOG_DEMO_IDS } from "@/features/blog/lib/blogDemoHelpers";
 import { DEMO_MEMORY_INSTRUCTION } from "./reportingServices";
 
-test("every published story is wired to its own article; self-hosting remains excluded", async () => {
+test("every published story is wired to its article; self-hosting remains excluded", async () => {
   for (const id of BLOG_DEMO_IDS) {
     const body = await readFile(
-      new URL(`../../../content/blog/${id}.mdx`, import.meta.url),
+      new URL(
+        `../../../content/blog/${getBlogDemoArticleSlug(id)}.mdx`,
+        import.meta.url
+      ),
       "utf8"
     );
     assert.ok(body.includes(`scenario="${id}"`));
     assert.ok(!body.includes("<BlogMediaPlaceholder"));
   }
-  assert.equal(BLOG_DEMO_IDS.length, 22);
-  assert.ok(
-    (
-      await readFile(
-        new URL(
-          "../../../content/blog/run-reacherx-yourself.mdx",
-          import.meta.url
-        ),
-        "utf8"
-      )
-    ).includes("<BlogMediaPlaceholder")
+  assert.equal(BLOG_DEMO_IDS.length, 26);
+  const selfHosted = await readFile(
+    new URL("../../../content/blog/run-reacherx-yourself.mdx", import.meta.url),
+    "utf8"
   );
+  assert.ok(!selfHosted.includes("<BlogAppDemo"));
 });
 
 for (const retryAll of [false, true])

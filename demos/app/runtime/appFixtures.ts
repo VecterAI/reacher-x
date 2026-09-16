@@ -63,6 +63,10 @@ export function createAppFixtures(
             "outreach-with-images-and-video",
             "manage-dm-conversations",
             "send-voice-notes",
+            "reach-out-writing-preferences",
+            "reach-out-personal-video",
+            "reach-out-message-bubbles",
+            "reach-out-unicode-formatting",
           ].includes(scenario)
         ? audienceStories["find-potential-customers"]
         : undefined;

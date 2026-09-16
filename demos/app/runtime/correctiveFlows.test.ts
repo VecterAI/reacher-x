@@ -164,7 +164,10 @@ test("a linked X profile supplies valid, unique timeline IDs even for LinkedIn-s
     { username: person.socialProfiles!.twitter!.username!, mode: "posts" }
   );
   assert.ok(result.tweets.length >= 3);
-  for (const post of result.tweets) assert.match(post.id_str, /^\d+$/);
+  for (const post of result.tweets) {
+    assert.ok(post.id_str);
+    assert.match(post.id_str, /^\d+$/);
+  }
   assert.equal(
     new Set(result.tweets.map((post) => post.id_str)).size,
     result.tweets.length

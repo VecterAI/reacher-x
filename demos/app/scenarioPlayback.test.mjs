@@ -1,3 +1,9 @@
+import {
+  REACH_OUT_BUBBLES,
+  REACH_OUT_MEMORY_DRAFT,
+  REACH_OUT_VIDEO_DRAFT,
+  REACH_OUT_UNICODE_DRAFT,
+} from "../../features/blog/lib/reachOutDemoCopy.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium } from "./playwrightHelpers.mjs";
@@ -11,6 +17,10 @@ import { AUDIENCE_DEMO_INVITATIONS } from "../../features/blog/lib/audienceDemoC
 const demoOrigin = process.env.DEMO_TEST_URL ?? "http://localhost:3131";
 const parentOrigin = process.env.BLOG_TEST_URL ?? "http://localhost:3125";
 for (const scenario of [
+  "reach-out-writing-preferences",
+  "reach-out-personal-video",
+  "reach-out-message-bubbles",
+  "reach-out-unicode-formatting",
   ...AUDIENCE_DEMO_IDS,
   "how-reacherx-enrichment-works",
   "send-voice-notes",
@@ -137,7 +147,7 @@ for (const scenario of [
           assert.ok(
             await frame
               .locator("aside")
-              .getByText(/Hi Isabelle, I read your post/)
+              .getByText(/Hi Isabelle, your work on/)
               .isVisible()
           );
           assert.equal(
@@ -160,6 +170,57 @@ for (const scenario of [
               .getByText("Workflow event detail", { exact: true })
               .isVisible()
           );
+        if (scenario === "reach-out-message-bubbles") {
+          const texts = await frame
+            .locator('aside [role="log"] article')
+            .allTextContents();
+          assert.equal(texts.length, 3);
+          REACH_OUT_BUBBLES.forEach((message, index) =>
+            assert.ok(texts[index].includes(message))
+          );
+          assert.equal(
+            (
+              await frame.locator('aside [contenteditable="true"]').innerText()
+            ).trim(),
+            ""
+          );
+        }
+        if (scenario === "reach-out-unicode-formatting") {
+          const message = frame.locator('aside [role="log"] article');
+          assert.equal(await message.count(), 1);
+          assert.ok(
+            (await message.innerText()).includes(REACH_OUT_UNICODE_DRAFT)
+          );
+          assert.equal(await message.locator("strong, code").count(), 0);
+        }
+        if (scenario === "reach-out-writing-preferences")
+          assert.ok(
+            await frame
+              .locator("aside")
+              .getByText(REACH_OUT_MEMORY_DRAFT)
+              .isVisible()
+          );
+        if (scenario === "reach-out-personal-video") {
+          assert.ok(
+            await frame
+              .locator('aside [role="log"]')
+              .getByText(REACH_OUT_VIDEO_DRAFT, { exact: true })
+              .isVisible()
+          );
+          const video = frame.locator('aside [role="log"] video');
+          assert.equal(await video.count(), 1);
+          assert.ok(
+            await video.evaluate(async (element) => {
+              element.muted = true;
+              await element.play();
+              await new Promise((resolve) => setTimeout(resolve, 350));
+              const played = element.currentTime > 0 && !element.error;
+              element.pause();
+              return played;
+            }),
+            "The delivered video must decode and play, not just render a tag"
+          );
+        }
         assert.deepEqual(errors, []);
       } finally {
         await browser.close();

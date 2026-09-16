@@ -200,8 +200,9 @@ function BlogAppDemoPlayer({
   const syncHostFocus = useDemoHostFocus(
     root,
     send,
-    !visible || (interaction === "expanded" && !expanded),
-    rootNode
+    (!expanded && !visible) || (interaction === "expanded" && !expanded),
+    rootNode,
+    expanded
   );
   useEffect(() => {
     if (ready)

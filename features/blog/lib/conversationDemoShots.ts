@@ -125,133 +125,148 @@ export const AUTOCOMPLETE_DEMO_SHOTS: readonly BlogDemoShot[] = [
   { label: "Your words, with a little help", duration: 2600, camera: wide },
 ];
 
-export const MEDIA_DEMO_SHOTS: readonly BlogDemoShot[] = [
-  {
-    label: "Answer a prospect with a useful clip",
-    duration: 2200,
-    camera: wide,
-  },
-  {
-    label: "Open ongoing conversations",
-    duration: 1500,
-    camera: wide,
-    action: { selector: '[role="tab"][id$="trigger-in_progress"]' },
-  },
-  { label: "Give △ Agent a relevant clip", duration: 2200, camera: wide },
-  {
-    label: "Open the designer's profile",
-    duration: 1500,
-    camera: detail,
-    action: { selector: '[data-prospect-id="use_case_demo_audience_1"]' },
-  },
-  {
-    label: "Plan an approach for this person",
-    duration: 1500,
-    camera: detail,
-    action: { selector: "aside button", text: "Agent" },
-  },
-  {
-    label: "Find the clip in workspace attachments",
-    duration: 1500,
-    camera: detail,
-    action: {
-      selector: 'main [contenteditable="true"]',
-      input: "@client",
+export function buildMediaDemoShots(copy: {
+  opening: string;
+  status: "new" | "in_progress";
+  prompt: string;
+}): readonly BlogDemoShot[] {
+  return [
+    {
+      label: copy.opening,
+      duration: 2200,
+      camera: wide,
     },
-  },
-  {
-    label: "Narrow the attachment search",
-    duration: 1500,
-    camera: detail,
-    action: {
-      selector: 'main [contenteditable="true"]',
-      input: "-feedback",
-      inputMode: "append",
+    {
+      label:
+        copy.status === "new"
+          ? "Open new matches"
+          : "Open ongoing conversations",
+      duration: 1500,
+      camera: wide,
+      action: { selector: `[role="tab"][id$="trigger-${copy.status}"]` },
     },
-  },
-  {
-    label: "Choose the client-feedback walkthrough",
-    duration: 1500,
-    camera: detail,
-    action: {
-      selector: '[role="option"]',
-      containsText: "client-feedback.mp4",
+    { label: "Give △ Agent a relevant clip", duration: 2200, camera: wide },
+    {
+      label: "Open the designer's profile",
+      duration: 1500,
+      camera: detail,
+      action: { selector: '[data-prospect-id="use_case_demo_audience_1"]' },
     },
-  },
-  {
-    label: "Explain who it is for and what it shows",
-    duration: 1500,
-    camera: detail,
-    action: {
-      selector: 'main [contenteditable="true"]',
-      input:
-        "Create a plan for replying to Nora. Use this demo in the reply: it shows a client leaving feedback without creating an account. Keep the message short and explain the clip.",
+    {
+      label: "Plan an approach for this person",
+      duration: 1500,
+      camera: detail,
+      action: { selector: "aside button", text: "Agent" },
     },
-  },
-  {
-    label: "Check the attached filename",
-    duration: 2500,
-    camera: detail,
-    focus: { selector: '[role="log"]' },
-  },
-  {
-    label: "Ask for the plan",
-    duration: 1500,
-    camera: detail,
-    action: { selector: 'button[aria-label="Send message"]' },
-  },
-  {
-    label: "Open the proposed outreach",
-    duration: 1500,
-    camera: detail,
-    action: { selector: "button", text: "Show plan" },
-  },
-  {
-    label: "Read the proposed introduction",
-    duration: 3000,
-    camera: detail,
-    focus: { selector: "aside article" },
-  },
-  {
-    label: "Review the message and attachment together",
-    duration: 1500,
-    camera: detail,
-    action: { selector: "aside button", text: "Edit" },
-  },
-  {
-    label: "The clip accompanies the draft",
-    duration: 3500,
-    camera: detail,
-    waitFor: { selector: "aside video" },
-    focus: { selector: "aside" },
-  },
-  {
-    label: "Approve the media plan",
-    duration: 1500,
-    camera: detail,
-    action: { selector: "aside button", text: "Approve plan" },
-  },
-  {
-    label: "Approve and send the message with its clip",
-    duration: 1500,
-    camera: detail,
-    action: { selector: "aside button", text: "Approve DM" },
-  },
-  {
-    label: "Verify the delivered attachment",
-    duration: 3500,
-    camera: detail,
-    waitFor: {
-      selector: 'aside [role="log"] button[aria-label="Download Video 1"]',
+    {
+      label: "Find the clip in workspace attachments",
+      duration: 1500,
+      camera: detail,
+      action: {
+        selector: 'main [contenteditable="true"]',
+        input: "@client",
+      },
     },
-    focus: { selector: 'aside [role="log"] article', all: true },
-  },
-  {
-    label: "The relevant clip is delivered with its explanation",
-    duration: 2600,
-    camera: wide,
-  },
-];
+    {
+      label: "Narrow the attachment search",
+      duration: 1500,
+      camera: detail,
+      action: {
+        selector: 'main [contenteditable="true"]',
+        input: "-feedback",
+        inputMode: "append",
+      },
+    },
+    {
+      label: "Choose the client-feedback walkthrough",
+      duration: 1500,
+      camera: detail,
+      action: {
+        selector: '[role="option"]',
+        containsText: "client-feedback.mp4",
+      },
+    },
+    {
+      label: "Explain who it is for and what it shows",
+      duration: 1500,
+      camera: detail,
+      action: {
+        selector: 'main [contenteditable="true"]',
+        input: copy.prompt,
+      },
+    },
+    {
+      label: "Check the attached filename",
+      duration: 2500,
+      camera: detail,
+      focus: { selector: '[role="log"]' },
+    },
+    {
+      label: "Ask for the plan",
+      duration: 1500,
+      camera: detail,
+      action: { selector: 'button[aria-label="Send message"]' },
+    },
+    {
+      label: "Open the proposed outreach",
+      duration: 1500,
+      camera: detail,
+      action: { selector: "button", text: "Show plan" },
+    },
+    {
+      label: "Read the proposed introduction",
+      duration: 3000,
+      camera: detail,
+      focus: { selector: "aside article" },
+    },
+    {
+      label: "Review the message and attachment together",
+      duration: 1500,
+      camera: detail,
+      action: { selector: "aside button", text: "Edit" },
+    },
+    {
+      label: "The clip accompanies the draft",
+      duration: 3500,
+      camera: detail,
+      waitFor: { selector: "aside video" },
+      focus: { selector: "aside" },
+    },
+    {
+      label: "Approve the media plan",
+      duration: 1500,
+      camera: detail,
+      action: { selector: "aside button", text: "Approve plan" },
+    },
+    {
+      label: "Approve and send the message with its clip",
+      duration: 1500,
+      camera: detail,
+      action: { selector: "aside button", text: "Approve DM" },
+    },
+    {
+      label: "Verify the delivered attachment",
+      duration: 3500,
+      camera: detail,
+      waitFor: {
+        selector: 'aside [role="log"] button[aria-label="Download Video 1"]',
+      },
+      focus: { selector: 'aside [role="log"] article', all: true },
+    },
+    {
+      label: "The relevant clip is delivered with its explanation",
+      duration: 2600,
+      camera: wide,
+    },
+  ];
+}
+
+export const MEDIA_DEMO_SHOTS = buildMediaDemoShots({
+  opening: "Answer a prospect with a useful clip",
+  status: "in_progress",
+  prompt:
+    "Create a plan for replying to Nora. Use this demo in the reply: it shows a client leaving feedback without creating an account. Keep the message short and explain the clip.",
+});
 
 export const DM_DEMO_SHOTS: readonly BlogDemoShot[] = [
   { label: "Your ongoing conversations", duration: 2200, camera: wide },

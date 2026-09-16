@@ -148,3 +148,71 @@ test("a replacement fullscreen root is observed and releases its frame", async (
     vi.unstubAllGlobals();
   }
 });
+
+test("fullscreen stays interactive after a stale offscreen notification, while host menus still own focus", async () => {
+  let notify: IntersectionObserverCallback | undefined;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        notify = callback;
+      }
+      observe() {}
+      disconnect() {}
+    }
+  );
+  const send = vi.fn();
+  function Host({ expanded }: { expanded: boolean }) {
+    const ref = useRef<HTMLElement>(null);
+    useDemoHostFocus(ref, send, false, undefined, expanded);
+    return <section ref={ref} role={expanded ? "dialog" : "region"} />;
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const menu = document.createElement("div");
+  menu.setAttribute("role", "menu");
+  menu.getClientRects = () =>
+    [new DOMRect(0, 0, 20, 20)] as unknown as DOMRectList;
+  try {
+    await act(async () => root.render(<Host expanded={false} />));
+    window.dispatchEvent(new Event("scroll"));
+    expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
+      active: true,
+    });
+    await act(async () => root.render(<Host expanded />));
+    notify?.(
+      [{ isIntersecting: false } as IntersectionObserverEntry],
+      {} as IntersectionObserver
+    );
+    expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
+      active: false,
+    });
+    await act(async () => {
+      document.body.append(menu);
+    });
+    expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
+      active: true,
+    });
+    await act(async () => {
+      menu.remove();
+    });
+    expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
+      active: false,
+    });
+    await act(async () => root.render(<Host expanded={false} />));
+    notify?.(
+      [{ isIntersecting: false } as IntersectionObserverEntry],
+      {} as IntersectionObserver
+    );
+    expect(send).toHaveBeenLastCalledWith("reacherx:host-focus", {
+      active: true,
+    });
+  } finally {
+    await act(async () => root.unmount());
+    menu.remove();
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

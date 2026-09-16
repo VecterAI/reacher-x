@@ -24,11 +24,27 @@ export function getBlogDemoInitialPath(scenario: string) {
   )
     return "/agent/setup";
   if (scenario === "what-reacherx-does-automatically") return "/workspace";
-  if (scenario === "teach-reacherx-what-you-want") return "/agent";
+  if (
+    scenario === "teach-reacherx-what-you-want" ||
+    scenario === "reach-out-writing-preferences"
+  )
+    return "/agent";
   if (scenario === "read-your-reacherx-analytics") return "/analytics";
   if (scenario === "understand-agent-observability") return "/agent-ops";
   return ["find-candidates", "introducing-reacherx-v4"].includes(scenario) ||
     isAudienceDemoId(scenario)
     ? "/workspace"
     : "/";
+}
+
+/** Several stories can illustrate different sections of the same article. */
+export function getBlogDemoArticleSlug(scenario: string) {
+  return [
+    "reach-out-writing-preferences",
+    "reach-out-personal-video",
+    "reach-out-message-bubbles",
+    "reach-out-unicode-formatting",
+  ].includes(scenario)
+    ? "reach-out-and-get-replies"
+    : scenario;
 }

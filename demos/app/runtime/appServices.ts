@@ -1,3 +1,4 @@
+import { registerReachOutStory } from "./scenarios/reachOut";
 import { registerPublicInteractionServices } from "./publicInteractionServices";
 import { registerBatchStory } from "./scenarios/batch";
 import { registerSetupStory } from "./scenarios/setup";
@@ -50,6 +51,7 @@ export function createAppServices(scenario?: BlogDemoId) {
   const planLifecycle = registerPlanServices(client, state);
   registerWorkspaceControlServices(client, state, planLifecycle);
   registerMediaStory(agent, state);
+  registerReachOutStory(agent, state);
   registerSetupStory(client, state, agent, workspaceServices);
   registerBatchStory(client, state, agent);
   registerOutreachStory(agent, state);

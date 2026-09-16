@@ -27,7 +27,11 @@ One fact worth knowing: what △ Agent learns is scoped per workspace. The style
 
 If you're new and don't know your style yet, say so. Ask △ Agent to brainstorm approaches for your situation, and ask it for best practices: it knows the guides on this blog, so it can point you to the right post and summarize what matters, like [how voice notes work](/blog/send-voice-notes) or [how to save instructions it should remember](/blog/teach-reacherx-what-you-want).
 
-> **Interactive demo placeholder:** Teaching △ Agent a writing preference ("always open with a question about their work, never open with my product"), then requesting a sample plan and checking the preference appears in the draft. Show the memory confirmation and the resulting draft side by side.
+<BlogAppDemo
+  scenario="reach-out-writing-preferences"
+  title="Save a writing preference and check the next draft"
+  caption="Save the instruction, then check that Nora’s draft opens with a question about her work."
+/>
 
 ## Research like you mean it
 
@@ -106,13 +110,23 @@ That's it, no config file → 𝘥𝘦𝘮𝘰 𝘣𝘦𝘭𝘰𝘸
 
 Pick one or two accents per message. A whole message in fake-bold is harder to read, not easier, and some devices render the exotic glyphs unevenly, so stick to the common ones when in doubt.
 
+<BlogAppDemo
+  scenario="reach-out-unicode-formatting"
+  title="Ask △ Agent to format a message with Unicode"
+  caption="Ask △ Agent for one bold phrase and two short bullets. Review the draft, then see the same formatting in Nora’s conversation."
+/>
+
 ## Show, don't tell
 
 Words are cheap right now, so effort is the differentiator. The single highest-leverage thing you can do is make something for the specific person: a two-minute demo of their exact use case, a screenshot of the thing you'd build for them, a sketch of the workflow you're proposing. Attach it to your request and let △ Agent include it in the plan.
 
 A generic pitch describes. A personal demo proves. It says "I spent an hour on you specifically", and almost nobody does that, which is exactly why it works.
 
-> **Interactive demo placeholder:** Attaching a short custom demo video for one specific person in the composer, explaining when to use it, and the plan sending it as part of the first message.
+<BlogAppDemo
+  scenario="reach-out-personal-video"
+  title="Include a relevant walkthrough in the first message"
+  caption="Nora’s approvals are scattered across email and chat. Show her how feedback could stay beside the design."
+/>
 
 ## Use your voice when it counts
 
@@ -120,7 +134,11 @@ Text is safe, and safe messages blend together. A voice note changes the channel
 
 Use it when it adds something: a warm thank-you, a complicated explanation, a first hello after good back-and-forth. Record it yourself in the conversation composer. Thirty honest seconds outperforms a perfect paragraph.
 
-> **Interactive demo placeholder:** Recording a voice note inside a real conversation composer and sending it, with the playback appearing in the thread.
+<BlogAppDemo
+  scenario="send-voice-notes"
+  title="Record, listen, and send a voice note"
+  caption="Nora is happy to hear a voice note. Try a take, listen back, and send it. This demo uses sample audio."
+/>
 
 ## Borrow trust, honestly
 
@@ -142,6 +160,12 @@ Bubble 3: Want me to walk you through it, or is invoicing actually solved on you
 ```
 
 Most automation sends one bloated block, and people have learned to smell it.
+
+<BlogAppDemo
+  scenario="reach-out-message-bubbles"
+  title="Ask △ Agent to send three separate messages"
+  caption="Give △ Agent the brief once. It drafts three messages, adds them to the plan in order, and sends each after your approval."
+/>
 
 ## After you hit send
 

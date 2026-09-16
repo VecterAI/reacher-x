@@ -68,7 +68,10 @@ export function registerReportingServices(client: LocalClient, state: State) {
     memoriesFor().set(memory.memoryId, memory);
     return memory;
   };
-  if (state.scenario !== "teach-reacherx-what-you-want")
+  if (
+    state.scenario !== "teach-reacherx-what-you-want" &&
+    state.scenario !== "reach-out-writing-preferences"
+  )
     saveMemory(DEMO_MEMORY_INSTRUCTION);
   client.register(api.workspaceReporting.getWorkspaceReportingStatus, () => ({
     ready: true,

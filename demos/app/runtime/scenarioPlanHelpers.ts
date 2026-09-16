@@ -8,17 +8,36 @@ import type { createAppFixtures } from "./appFixtures";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import { createPlanPreviewArtifact } from "@/shared/lib/json-render/agentArtifacts";
 
+interface ScenarioMessageDraft {
+  description: string;
+  content: string;
+  media?: { url: string; kind: "image" | "video"; description: string };
+}
+
 export function createScenarioDraftPlan(
+  state: ReturnType<typeof createAppFixtures>,
+  person: Doc<"prospects">,
+  input: ScenarioMessageDraft & { threadId: string; rationale: string }
+) {
+  return createScenarioMessagePlan(state, person, {
+    threadId: input.threadId,
+    rationale: input.rationale,
+    messages: [input],
+  });
+}
+
+/** Each message is an ordered DM task using the normal approval/send lifecycle. */
+export function createScenarioMessagePlan(
   state: ReturnType<typeof createAppFixtures>,
   person: Doc<"prospects">,
   input: {
     threadId: string;
-    description: string;
-    content: string;
     rationale: string;
-    media?: { url: string; kind: "image" | "video"; description: string };
+    messages: readonly ScenarioMessageDraft[];
   }
 ) {
+  const first = input.messages[0];
+  if (!first) throw new Error("A message plan needs at least one draft");
   const now = getCurrentUTCTimestamp();
   const previous = state.plans.get(person._id);
   if (
@@ -50,38 +69,38 @@ export function createScenarioDraftPlan(
       updatedAt: now,
       strategy: {
         rationale: input.rationale,
-        valueProposition: input.description,
+        valueProposition: first.description,
         tone: "Helpful and direct",
       },
     },
-    tasks: [
-      {
-        _id: `demo_task_${person._id}_${version}` as Id<"outreachTasks">,
-        _creationTime: now,
-        planId,
-        type: "dm" as const,
-        order: 1,
-        status: "pending" as const,
-        timing: { type: "immediate" as const },
-        description: input.description,
-        content: input.content,
-        ...(input.media
-          ? {
-              mediaUrls: [input.media.url],
-              mediaKinds: [input.media.kind],
-              mediaDescriptions: [input.media.description],
-            }
-          : {}),
-        approvalReady: false,
-        approvalContext: { platform: person.platform },
-        originalPost: null,
-      },
-    ],
+    tasks: input.messages.map((message, index) => ({
+      _id: `demo_task_${person._id}_${version}${index ? `_${index + 1}` : ""}` as Id<"outreachTasks">,
+      _creationTime: now,
+      planId,
+      type: "dm" as const,
+      order: index + 1,
+      status: "pending" as const,
+      timing: { type: "immediate" as const },
+      description: message.description,
+      content: message.content,
+      ...(message.media
+        ? {
+            mediaUrls: [message.media.url],
+            mediaKinds: [message.media.kind],
+            mediaDescriptions: [message.media.description],
+          }
+        : {}),
+      approvalReady: false,
+      approvalContext: { platform: person.platform },
+      originalPost: null,
+    })),
   };
-  const publicCopy = !input.media && PUBLIC_OUTREACH_DEMO_COPY[state.scenario];
+  const publicCopy = !first.media && PUBLIC_OUTREACH_DEMO_COPY[state.scenario];
   const post = person.evidencePosts?.[0];
   if (publicCopy && post) {
-    data.tasks[0].order = 2;
+    data.tasks.forEach((task) => {
+      task.order += 1;
+    });
     data.tasks.unshift({
       _id: `demo_comment_${person._id}_${version}` as Id<"outreachTasks">,
       _creationTime: now,

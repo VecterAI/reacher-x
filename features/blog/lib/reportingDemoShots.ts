@@ -98,60 +98,72 @@ export const ANALYTICS_DEMO_SHOTS: readonly BlogDemoShot[] = [
   },
 ];
 
-export const MEMORY_DEMO_SHOTS: readonly BlogDemoShot[] = [
-  { label: "Teach the workspace how to write", duration: 2200, camera: wide },
-  {
-    label: "Give a clear writing instruction",
-    duration: 1500,
-    camera: detail,
-    action: {
-      selector: 'main [contenteditable="true"]',
-      input:
-        "Remember this for outreach: keep the first message under 80 words. Ask one question. Don't ask for a meeting in the first message.",
+export function buildMemoryDemoShots(copy: {
+  instruction: string;
+  request: string;
+}): readonly BlogDemoShot[] {
+  return [
+    { label: "Teach the workspace how to write", duration: 2200, camera: wide },
+    {
+      label: "Give a clear writing instruction",
+      duration: 1500,
+      camera: detail,
+      action: {
+        selector: 'main [contenteditable="true"]',
+        input: copy.instruction,
+      },
     },
-  },
-  click("Save the instruction", {
-    selector: 'button[aria-label="Send message"]',
-  }),
-  {
-    label: "Check that it was saved",
-    duration: 3000,
-    camera: detail,
-    waitFor: {
-      selector: 'button[aria-label="Open memory in Agent observability"]',
+    click("Save the instruction", {
+      selector: 'button[aria-label="Send message"]',
+    }),
+    {
+      label: "Check that it was saved",
+      duration: 3000,
+      camera: detail,
+      waitFor: {
+        selector: 'button[aria-label="Open memory in Agent observability"]',
+      },
+      focus: { selector: '[role="log"] [role="status"]' },
     },
-    focus: { selector: '[role="log"] [role="status"]' },
-  },
-  {
-    label: "Ask for a new introduction",
-    duration: 1500,
-    camera: detail,
-    action: {
-      selector: 'main [contenteditable="true"]',
-      input:
-        "Draft a first message to Isabelle about the frontend role. Use the instruction you saved.",
+    {
+      label: "Ask for a new introduction",
+      duration: 1500,
+      camera: detail,
+      action: {
+        selector: 'main [contenteditable="true"]',
+        input: copy.request,
+      },
     },
-  },
-  click("Create the draft", { selector: 'button[aria-label="Send message"]' }),
-  click("Open the proposed plan", { selector: "button", text: "Show plan" }),
-  {
-    label: "Read the full draft",
-    duration: 1500,
-    camera: detail,
-    action: { selector: "aside article li button", text: "Show more" },
-  },
-  {
-    label: "Read the introduction using that instruction",
-    duration: 4500,
-    camera: detail,
-    focus: { selector: "aside article" },
-  },
-  {
-    label: "The saved instruction carries into later work",
-    duration: 2600,
-    camera: wide,
-  },
-];
+    click("Create the draft", {
+      selector: 'button[aria-label="Send message"]',
+    }),
+    click("Open the proposed plan", { selector: "button", text: "Show plan" }),
+    {
+      label: "Read the full draft",
+      duration: 1500,
+      camera: detail,
+      action: { selector: "aside article li button", text: "Show more" },
+    },
+    {
+      label: "Read the introduction using that instruction",
+      duration: 4500,
+      camera: detail,
+      focus: { selector: "aside article" },
+    },
+    {
+      label: "The saved instruction carries into later work",
+      duration: 2600,
+      camera: wide,
+    },
+  ];
+}
+
+export const MEMORY_DEMO_SHOTS = buildMemoryDemoShots({
+  instruction:
+    "Remember this for outreach: keep the first message under 80 words. Ask one question. Don't ask for a meeting in the first message.",
+  request:
+    "Draft a first message to Isabelle about the frontend role. Use the instruction you saved.",
+});
 
 export const AUTOMATION_DEMO_SHOTS: readonly BlogDemoShot[] = [
   { label: "Your workspace controls", duration: 2200, camera: wide },

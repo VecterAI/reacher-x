@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium } from "./playwrightHelpers.mjs";
+import { getBlogDemoDuration } from "../../features/blog/lib/blogDemoHelpers.ts";
 
 const origin = process.env.BLOG_TEST_URL;
 if (!origin) throw new Error("Set BLOG_TEST_URL to the blog preview.");
@@ -12,7 +13,7 @@ for (const scenario of [
 ]) {
   test(
     `${scenario}: website menu and demo complete independently`,
-    { timeout: 90000 },
+    { timeout: getBlogDemoDuration(scenario) + 60000 },
     async () => {
       const browser = await chromium.launch({
         channel: process.env.PLAYWRIGHT_CHANNEL ?? "chrome",
@@ -43,7 +44,7 @@ for (const scenario of [
         assert.ok(frame, "Demo content frame missing");
         await frame.waitForFunction(() => document.body.inert);
         const result = await page.evaluate(
-          () =>
+          (timeout) =>
             new Promise((resolve) => {
               const player = document.querySelector("[data-demo-scenario]");
               const maximum = Number(
@@ -63,7 +64,7 @@ for (const scenario of [
                     "Website menu lost focus") ||
                   (Math.abs(window.scrollY - scroll) > 2 &&
                     "Article scrolled") ||
-                  (performance.now() - started > 55000 &&
+                  (performance.now() - started > timeout &&
                     "Playback did not complete");
                 if (error) return resolve({ error, seen: [...seen] });
                 if (shot === 0 && seen.has(maximum))
@@ -72,7 +73,8 @@ for (const scenario of [
                 setTimeout(sample, 40);
               };
               sample();
-            })
+            }),
+          getBlogDemoDuration(scenario) + 15000
         );
         assert.equal(result.error, undefined, JSON.stringify(result));
         assert.deepEqual(
@@ -102,9 +104,11 @@ for (const scenario of [
           .getByRole("button", { name: "User menu", exact: true })
           .click();
         await frame.getByRole("menu").waitFor();
-        assert.equal(
-          await player.getAttribute("data-demo-state"),
-          "interactive"
+        // User interaction crosses the iframe's asynchronous message bridge.
+        await page.waitForFunction(
+          () =>
+            document.querySelector("[data-demo-scenario]").dataset.demoState ===
+            "interactive"
         );
         await page.keyboard.press("Escape");
         assert.deepEqual(errors, []);

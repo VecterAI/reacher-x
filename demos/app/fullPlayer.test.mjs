@@ -1,3 +1,4 @@
+import { getBlogDemoArticleSlug } from "../../features/blog/lib/blogDemoCatalog.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdir } from "node:fs/promises";
@@ -8,7 +9,6 @@ import {
   getBlogDemoDuration,
 } from "../../features/blog/lib/blogDemoHelpers.ts";
 const origin = process.env.BLOG_TEST_URL ?? "http://localhost:3125";
-const demoOrigin = process.env.DEMO_TEST_URL ?? "http://localhost:3130";
 const captures = process.env.DEMO_CAPTURE_DIR ?? "/tmp/reacherx-player-qa";
 const browserName = process.env.DEMO_BROWSER ?? "chromium";
 if (!["chromium", "firefox"].includes(browserName))
@@ -108,7 +108,9 @@ for (const scenario of targets)
           });
         });
         await page.goto(`${origin}/blog`);
-        await page.goto(`${origin}/blog/${scenario}`);
+        await page.goto(
+          `${origin}/blog/${process.env.BLOG_TEST_SLUG ?? getBlogDemoArticleSlug(scenario)}`
+        );
         const player = page.locator(`[data-demo-scenario="${scenario}"]`);
         await player.scrollIntoViewIfNeeded();
         await player.hover();
@@ -117,8 +119,8 @@ for (const scenario of targets)
           .click();
         await page.waitForFunction(
           () =>
-            document.querySelector("[data-demo-scenario]")?.dataset
-              .demoReady === "true"
+            document.querySelector('[data-demo-scenario][role="dialog"]')
+              ?.dataset.demoReady === "true"
         );
         const initialHistoryLength = await page.evaluate(() => history.length);
         await player.hover();
@@ -129,7 +131,9 @@ for (const scenario of targets)
         const result = await page.evaluate(
           ({ count, timeout }) =>
             new Promise((resolve) => {
-              const element = document.querySelector("[data-demo-scenario]"),
+              const element = document.querySelector(
+                  '[data-demo-scenario][role="dialog"]'
+                ),
                 seen = new Set();
               const start = performance.now();
               const timer = setInterval(() => {
@@ -165,7 +169,7 @@ for (const scenario of targets)
           console.log(
             await page
               .frames()
-              .find((f) => f.url().startsWith(demoOrigin))
+              .find((f) => f.name() === `reacherx-demo:${scenario}`)
               ?.locator("body")
               .innerText()
           );
@@ -183,6 +187,7 @@ for (const scenario of targets)
         const slider = player.locator('input[type="range"]');
         // Browser-native range events exercise the actual player's seeking path.
         // Rapidly seeking setup must survive its real navigation/reconnection.
+        await slider.dispatchEvent("pointerdown");
         for (const seekIndex of [count - 1, 0, count - 1])
           await slider.evaluate((el, index) => {
             Object.getOwnPropertyDescriptor(
@@ -192,9 +197,12 @@ for (const scenario of targets)
             el.dispatchEvent(new Event("input", { bubbles: true }));
             el.dispatchEvent(new Event("change", { bubbles: true }));
           }, seekIndex);
+        await slider.dispatchEvent("pointerup");
         await page.waitForFunction(
           (index) => {
-            const e = document.querySelector("[data-demo-scenario]");
+            const e = document.querySelector(
+              '[data-demo-scenario][role="dialog"]'
+            );
             return (
               Number(e.dataset.demoShot) === index &&
               e.dataset.demoPrepared === "true"
@@ -204,7 +212,9 @@ for (const scenario of targets)
           { timeout: 45000 }
         );
         assert.equal(await player.getAttribute("data-demo-error"), null);
-        const frame = page.frames().find((f) => f.url().startsWith(demoOrigin));
+        const frame = page
+          .frames()
+          .find((f) => f.name() === `reacherx-demo:${scenario}`);
         assert.ok(frame);
         assert.equal(
           await frame.evaluate(() => window.__demoMicrophoneCalls),
@@ -225,7 +235,9 @@ for (const scenario of targets)
           });
           await page.waitForFunction(
             () => {
-              const e = document.querySelector("[data-demo-scenario]");
+              const e = document.querySelector(
+                '[data-demo-scenario][role="dialog"]'
+              );
               return (
                 e.dataset.demoShot === "12" && e.dataset.demoPrepared === "true"
               );
@@ -310,8 +322,8 @@ for (const scenario of targets)
           .click();
         await page.waitForFunction(
           () =>
-            document.querySelector("[data-demo-scenario]").dataset.demoShot ===
-            "0"
+            document.querySelector('[data-demo-scenario][role="dialog"]')
+              .dataset.demoShot === "0"
         );
         await page.waitForTimeout(1300);
         const margins = await player.evaluate((e) => {
@@ -336,7 +348,11 @@ for (const scenario of targets)
           initialHistoryLength
         );
         await page.goBack();
-        await page.waitForURL(`${origin}/blog`);
+        // The index restores its scroll position and may update ?page= while
+        // doing so. Back must leave the article, regardless of that pagination.
+        await page.waitForURL(
+          (url) => url.origin === origin && url.pathname === "/blog"
+        );
         assert.deepEqual(errors, []);
       } catch (error) {
         console.error(scenario, error);
@@ -345,13 +361,13 @@ for (const scenario of targets)
           console.log(
             await failedPage
               .frames()
-              .find((f) => f.url().startsWith(demoOrigin))
+              .find((f) => f.name() === `reacherx-demo:${scenario}`)
               ?.locator("body")
               .innerText()
           );
           console.log(
             await failedPage
-              .locator("[data-demo-scenario]")
+              .locator(`[data-demo-scenario="${scenario}"]`)
               .evaluate((e) => ({ ...e.dataset }))
           );
           await failedPage.screenshot({
