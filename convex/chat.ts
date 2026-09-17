@@ -4428,7 +4428,7 @@ export const searchProspectMessages = action({
       }
     );
     if (!prospect || prospect.userId !== user._id) {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
 
     const threadLinks = await ctx.runQuery(

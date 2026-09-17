@@ -173,7 +173,7 @@ export function ProspectListSortPanel({
               className="gap-0 space-y-0"
             >
               <Section
-                title="Fit score"
+                title="Match score"
                 description={`Sort by how closely each ${entitySingularLower} matches your target.`}
               >
                 <div className="space-y-3">

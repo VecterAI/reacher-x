@@ -15,13 +15,13 @@ export const homepageFaqItems: FaqItem[] = [
     id: "why-agent",
     question: "Do I need sales experience to use it?",
     answer:
-      "No. Describe who you want to reach and why. △ Agent asks questions, researches people, and helps you plan what to say. You can review its work and give feedback.",
+      "Because it does more than search. It keeps running in the background, checks matches, reads recent posts, drafts messages, and improves from your feedback.",
   },
   {
     id: "how-does-it-know",
     question: "How does ReacherX know who to reach?",
     answer:
-      "Describe who you want to meet or share your website. △ Agent develops search criteria, researches profiles and posts, and explains why each person fits.",
+      "You tell Agent who you want to reach in plain English, or give it a URL. It turns that into search strategies, watches for real signals, and checks how closely people match what you described.",
   },
   {
     id: "platform-support",
@@ -39,7 +39,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "runs-24-7",
     question: "Does it keep working when I close the browser?",
     answer:
-      "Yes. A running workspace can keep discovering and researching people in the background. Usage limits, disconnected accounts, or a paused workspace can stop work. You can check its status and pause or resume it in the app.",
+      "Yes. Agent keeps searching for people and checking matches in the background.",
   },
   {
     id: "approval",
@@ -77,7 +77,7 @@ export const pricingFaqItems: FaqItem[] = [
     id: "plan-limits",
     question: "What do plan limits actually control?",
     answer:
-      "Plans mainly control how many qualified people ReacherX can surface each month, plus workspace limits and a few extra features.",
+      "Plans mainly control how many people who match your criteria ReacherX can surface each month, plus workspace limits and a few extra features.",
   },
   {
     id: "hit-limit",

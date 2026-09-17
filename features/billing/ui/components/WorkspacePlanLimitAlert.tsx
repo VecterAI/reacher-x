@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { resolveWorkspaceEntityPluralLabel } from "@/shared/lib/workspaceUseCases";
 import Link from "next/link";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -25,6 +26,7 @@ export function WorkspacePlanLimitNotice({
   dismissing?: boolean;
   error?: string;
 }) {
+  const entityPlural = resolveWorkspaceEntityPluralLabel(usage.entityPlural);
   const requiresPlan = usage.tier === "free";
   return (
     <aside
@@ -36,8 +38,8 @@ export function WorkspacePlanLimitNotice({
         <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
           <p className="font-pixel-square text-sm font-medium text-pretty sm:flex-1 sm:basis-60">
             {requiresPlan
-              ? `Choose a plan to start ${usage.discoveryVerb} ${usage.entityPlural.toLowerCase()}.`
-              : `This workspace has reached its plan limit for ${usage.entityPlural.toLowerCase()} this cycle.`}
+              ? `Choose a plan to start ${usage.discoveryVerb} ${entityPlural.toLowerCase()}.`
+              : `This workspace has reached its plan limit for ${entityPlural.toLowerCase()} this cycle.`}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild size="xs">

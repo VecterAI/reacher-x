@@ -172,7 +172,8 @@ function ProgressStatusCard({
 
       {typeof props.totalProspects === "number" && props.totalProspects > 0 && (
         <div className="text-muted-foreground text-xs">
-          Found {props.totalProspects} prospects
+          Found {props.totalProspects}{" "}
+          {props.totalProspects === 1 ? "person" : "people"}
         </div>
       )}
     </div>

@@ -413,7 +413,7 @@ export function useProspectLinkedInPanel(args: {
       voiceNoteCacheId?: Id<"platformConversationMediaCache">
     ) => {
       if (!prospectId) {
-        throw new Error("Missing prospect.");
+        throw new Error("Choose a person first.");
       }
       const activeActionRequestId =
         actionRequestStatus === "pending_approval" && actionRequestId
@@ -457,7 +457,7 @@ export function useProspectLinkedInPanel(args: {
       releaseOptimisticPreview?: () => void;
     }) => {
       if (!prospectId) {
-        throw new Error("Missing prospect.");
+        throw new Error("Choose a person first.");
       }
       const activeActionRequestId =
         actionRequestStatus === "pending_approval" && actionRequestId
@@ -517,7 +517,7 @@ export function useProspectLinkedInPanel(args: {
 
   const reactToMessage = useCallback(
     async (messageId: string, emoji: string) => {
-      if (!prospectId) throw new Error("Prospect is required.");
+      if (!prospectId) throw new Error("Choose a person first.");
       const requestCacheKey = cacheKey;
       return await runLinkedInMessageReactionOperation({
         operationKey: `${requestCacheKey}:${messageId}`,

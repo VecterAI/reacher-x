@@ -90,7 +90,7 @@ async function claimAutoPlanRecoveryRun(
       type: "error",
       title: buildAutoPlanFailureNotificationTitle(prospectLabel),
       message:
-        "Automatic retries stopped after repeated failures. Try again from this prospect after the issue is resolved.",
+        "Automatic retries stopped after repeated failures. Try again from this profile after the issue is resolved.",
       notificationKey: `auto-plan-failed:${prospect._id}`,
       prospectId: prospect._id,
       ...displayFields,

@@ -8,6 +8,7 @@ export type ProspectOutreachProgress = NonNullable<
 export type OutreachProgressIndicator =
   | "spinner" // Active — braille spinner
   | "waiting" // Waiting — CalendarClockIcon
+  | "reply" // Post a prepared reply
   | "attention" // Needs you — WarningIcon
   | "paused" // Paused — PauseCircleIcon
   | "blocked" // Blocked — ErrorIcon
@@ -110,10 +111,10 @@ export function resolveOutreachProgressPresentation({
     case "paused":
       if (progress.activeTask?.status === "waiting_manual") {
         return {
-          label: withProgress("Manual reply needed"),
+          label: withProgress("Post reply on X"),
           title:
             "Post the prepared reply on X; ReacherX is watching automatically",
-          indicator: "attention",
+          indicator: "reply",
           tone: "attention",
         };
       }

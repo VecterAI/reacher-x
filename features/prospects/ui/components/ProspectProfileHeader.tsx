@@ -351,7 +351,7 @@ export function ProspectProfileHeader({
                   }
                   title={
                     status === "archived"
-                      ? "Unarchive to change pipeline stage"
+                      ? "Unarchive to change status"
                       : undefined
                   }
                   onClick={() => handleStatusChange(opt.value)}

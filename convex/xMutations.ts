@@ -30,7 +30,7 @@ export const backfillDmAttachmentPreviewUrl = mutation({
       prospect.userId !== user._id ||
       prospect.platform !== "twitter"
     ) {
-      throw new Error("Prospect not found.");
+      throw new Error("Profile not found.");
     }
 
     const conversation = await ctx.db

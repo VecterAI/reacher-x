@@ -52,7 +52,7 @@ export const researchProspect = createTool({
       if (!prospectId) {
         return {
           success: false,
-          error: "Could not resolve the prospect for this thread.",
+          error: "Could not resolve the profile for this thread.",
         };
       }
 
@@ -61,7 +61,7 @@ export const researchProspect = createTool({
         { prospectId }
       );
       if (!prospect) {
-        return { success: false, error: "Prospect not found." };
+        return { success: false, error: "Profile not found." };
       }
 
       const name = prospect.displayName?.trim();
@@ -69,7 +69,7 @@ export const researchProspect = createTool({
       if (!name) {
         return {
           success: false,
-          error: "Prospect has no name to research yet.",
+          error: "Profile has no name to research yet.",
         };
       }
 

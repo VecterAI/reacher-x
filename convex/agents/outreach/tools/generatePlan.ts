@@ -245,7 +245,7 @@ export const generatePlan = createTool({
           success: false,
           message:
             "Unable to create plan - " + MISSING_PROSPECT_SELECTION_MESSAGE,
-          error: "Missing prospect or workspace context",
+          error: "Missing profile or workspace context",
         };
       }
       const prospect = await ctx.runQuery(
@@ -279,7 +279,7 @@ export const generatePlan = createTool({
         return {
           success: true,
           message:
-            "An active outreach plan already exists for this prospect. Review or refine the existing plan instead of generating a new one.",
+            "An active outreach plan already exists for this profile. Review or refine the existing plan instead of generating a new one.",
           _internalPlanId: existingPlan.plan._id,
           plan: {
             id: existingPlan.plan._id,
@@ -468,7 +468,7 @@ export const generatePlan = createTool({
         return {
           success: false,
           message: AMBIGUOUS_PROSPECT_SELECTION_MESSAGE,
-          error: "Ambiguous prospect context",
+          error: "Ambiguous profile context",
         };
       }
       mediaFailureContext = {

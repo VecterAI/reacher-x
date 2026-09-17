@@ -516,7 +516,7 @@ export function useAgentChat(
     const startedChatSessionEpoch = chatSessionEpochRef.current;
     const nextPendingTurn = createPendingTurn({
       prompt:
-        "Generate an outreach plan for this prospect. Analyze their profile, recent activity, and pain points to create a personalized engagement strategy.",
+        "Create a plan to reach this person. Use their profile, recent activity, and what they need to decide what to say and when.",
       showUserPrompt: false,
       assistantLabel: "Generating plan",
     });

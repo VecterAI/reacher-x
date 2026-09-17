@@ -5,6 +5,7 @@
 // Uses a SINGLE unified LLM call for all extraction
 // Used by: workflows/enrichment.ts, agents/tools/enrichProspect.ts
 
+import { USER_FACING_LANGUAGE_RULES } from "../../shared/lib/agentLanguageHelpers";
 import { z } from "zod";
 import { robustGenerateObject, type ModelRouting } from "./ai";
 import { logger } from "../../shared/lib/logger";
@@ -230,7 +231,9 @@ const unifiedEnrichmentSchema = z.object({
 // Unified Enrichment Prompt
 // ============================================================================
 
-const UNIFIED_ENRICHMENT_PROMPT = `You are an expert at analyzing social media profiles and extracting business intelligence.
+const UNIFIED_ENRICHMENT_PROMPT = `${USER_FACING_LANGUAGE_RULES}
+
+You are an expert at analyzing social media profiles and extracting business intelligence.
 
 Your task is to analyze the profile data and posts to extract:
 1. **Prospect Type**: Is this an individual person or an organization/company?

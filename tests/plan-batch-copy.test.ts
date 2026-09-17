@@ -173,8 +173,8 @@ test("confirmation copy explains the next step without system terms", () => {
   );
 
   assert.deepEqual(copy, {
-    title: "40 prospects are ready",
-    status: "Reply yes to start creating plans. 3 prospects cannot be included",
+    title: "40 people are ready",
+    status: "Reply yes to start creating plans. 3 people cannot be included",
   });
 });
 

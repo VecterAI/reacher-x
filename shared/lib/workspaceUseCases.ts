@@ -1,6 +1,6 @@
 export const DEFAULT_WORKSPACE_USE_CASE_KEY = "customer_prospecting";
 
-export const WORKSPACE_USE_CASE_FIELD_LABEL = "Outreach goal";
+export const WORKSPACE_USE_CASE_FIELD_LABEL = "Your goal";
 
 export const WORKSPACE_USE_CASE_KEYS = [
   "customer_prospecting",
@@ -74,13 +74,13 @@ export type WorkspaceUseCaseDefinition = {
 export const workspaceUseCaseRegistry = {
   customer_prospecting: {
     key: "customer_prospecting",
-    displayName: "Customer Prospecting",
+    displayName: "Find customers",
     shortDescription:
       "Find people and companies likely to become paying customers.",
-    entitySingular: "Prospect",
-    entityPlural: "Prospects",
-    successDefinition: "A converted prospect becomes a customer.",
-    profileLabelPlural: "Ideal customer profiles",
+    entitySingular: "Person",
+    entityPlural: "People",
+    successDefinition: "The person becomes a customer.",
+    profileLabelPlural: "Who you want to reach",
     routeSlugs: {
       entity: "prospects",
       success: "converts",
@@ -89,12 +89,12 @@ export const workspaceUseCaseRegistry = {
       new: "New",
       contacted: "Contacted",
       in_progress: "In progress",
-      converted: "Converted",
+      converted: "Customer",
       archived: "Archived",
     },
     pageLabels: {
-      entities: "Prospects",
-      converts: "Converts",
+      entities: "People",
+      converts: "Customers",
       archives: "Archives",
       analytics: "Analytics",
     },
@@ -105,12 +105,12 @@ export const workspaceUseCaseRegistry = {
       outreachGoal:
         "start a relevant sales conversation that can lead to a customer",
       successDefinition:
-        "a successful outcome is turning the prospect into a customer",
+        "a successful outcome is turning the person into a customer",
       terminology: {
-        entitySingular: "prospect",
-        entityPlural: "prospects",
-        successLabel: "Converts",
-        profileLabelPlural: "Ideal customer profiles",
+        entitySingular: "person",
+        entityPlural: "people",
+        successLabel: "Customers",
+        profileLabelPlural: "Who you want to reach",
       },
     },
   },
@@ -336,7 +336,7 @@ export const workspaceUseCaseRegistry = {
       "Find people who are likely to join and participate in the community.",
     entitySingular: "Potential member",
     entityPlural: "Potential members",
-    successDefinition: "A converted prospect becomes a member.",
+    successDefinition: "The person becomes a member.",
     profileLabelPlural: "Ideal member profiles",
     routeSlugs: {
       entity: "potential-members",
@@ -506,4 +506,13 @@ export function getWorkspaceDiscoveryVerb(
   return resolveWorkspaceUseCaseKey(value) === "recruiting"
     ? "sourcing"
     : "finding";
+}
+
+/** Keep older API display labels aligned while frontend and backend roll out separately. */
+export function resolveWorkspaceEntityPluralLabel(
+  entityPlural: string
+): string {
+  return entityPlural.trim().toLowerCase() === "prospects"
+    ? getWorkspaceUseCase(DEFAULT_WORKSPACE_USE_CASE_KEY).entityPlural
+    : entityPlural;
 }

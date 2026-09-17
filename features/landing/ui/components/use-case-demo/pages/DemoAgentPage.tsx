@@ -144,9 +144,9 @@ const AGENT_MESSAGE_AVATAR_SLOT_CLASSNAME =
 const AGENT_CHAT_CONTENT_COLUMN_CLASS_NAME = "mx-auto w-full max-w-[48rem]";
 
 const TOOL_LABELS: Record<string, string> = {
-  getSocialContext: "Fetching social context",
-  displayEntity: "Showing entity",
-  searchProspects: "Finding prospects",
+  getSocialContext: "Reading recent posts",
+  displayEntity: "Showing details",
+  searchProspects: "Finding people",
 };
 
 // ============================================================================
@@ -244,7 +244,7 @@ function buildDemoThreads(
   entityPluralLower: string
 ): DemoThread[] {
   const [p0, p1, p2] = dataset.prospects;
-  const p0Name = p0.displayName ?? "this prospect";
+  const p0Name = p0.displayName ?? "this person";
   const inRange = dataset.prospects.filter((prospect) => {
     const score = prospect.qualificationScore ?? 0;
     return score >= 70 && score <= 79;
@@ -273,7 +273,7 @@ function buildDemoThreads(
           parts: [
             {
               type: "text",
-              text: `${p0Name} posted recently: "${signalSnippet(p0)}" ${p0.title ? `${p0.title}. ` : ""}Fit score ${p0.qualificationScore ?? "?"}, one of the strongest matches right now. I pulled the latest context below.`,
+              text: `${p0Name} posted recently: "${signalSnippet(p0)}" ${p0.title ? `${p0.title}. ` : ""}Match score ${p0.qualificationScore ?? "?"}, one of the strongest matches right now. I pulled the latest context below.`,
             },
             {
               type: "progress",
@@ -330,7 +330,7 @@ function buildDemoThreads(
             },
             {
               type: "text",
-              text: "Saved. I will apply both to every future plan: no em dashes in any copy, and the tutorial only when it gives the prospect a genuinely useful next step, not as a link in every message.",
+              text: "Saved. I will apply both to every future plan: no em dashes in any copy, and the tutorial only when it helps the person take the next step, not as a link in every message.",
             },
           ],
         },
@@ -355,7 +355,7 @@ function buildDemoThreads(
           parts: [
             {
               type: "text",
-              text: "Got it. I will use the demo selectively, only for prospects where a short walkthrough clearly helps, never attached to every message. I saved this as a preference.",
+              text: "Got it. I will use the demo selectively, only when a short walkthrough would help, never attached to every message. I saved this as a preference.",
             },
             {
               type: "memory",
@@ -367,14 +367,14 @@ function buildDemoThreads(
     },
     {
       id: "demo-thread-bulk-plans",
-      firstMessage: "Create plans for fit scores between 70 and 79",
+      firstMessage: "Create plans for match scores between 70 and 79",
       createdAt: BASE_TIME - 3 * DAY_MS,
       messages: [
         {
           id: "demo-msg-9",
           role: "user",
           segments: [
-            `Create plans for qualified ${entityPluralLower} with a fit score between 70 and 79.`,
+            `Create plans for ${entityPluralLower} who match with a match score between 70 and 79.`,
           ],
         },
         {
@@ -383,7 +383,7 @@ function buildDemoThreads(
           parts: [
             {
               type: "text",
-              text: `I found ${bulkCount} qualified ${entityPluralLower} in that fit range. I will create a tailored plan for each, following your saved rules. Confirm and I will start.`,
+              text: `I found ${bulkCount} ${entityPluralLower} in that match range. I will create a tailored plan for each, following your saved rules. Confirm and I will start.`,
             },
           ],
         },
@@ -412,13 +412,13 @@ function buildDemoThreads(
     },
     {
       id: "demo-thread-review",
-      firstMessage: "Give me a weekly review of my pipeline",
+      firstMessage: "Give me a weekly progress update",
       createdAt: BASE_TIME - 5 * DAY_MS,
       messages: [
         {
           id: "demo-msg-13",
           role: "user",
-          segments: ["Give me a weekly review of my pipeline."],
+          segments: ["Give me a weekly progress update."],
         },
         {
           id: "demo-msg-14",
@@ -426,7 +426,7 @@ function buildDemoThreads(
           parts: [
             {
               type: "text",
-              text: `Here is your week:\n\n- **128** new ${entityPluralLower} discovered\n- **46** qualified against your profile\n- **12** contacted, **5** replies\n\nReply rate is up from last week. ${firstName(p0.displayName)}, ${firstName(p1.displayName)}, and ${firstName(p2.displayName)} are the warmest open threads.`,
+              text: `Here is your week:\n\n- **128** new ${entityPluralLower} discovered\n- **46** match your criteria\n- **12** contacted, **5** replies\n\nReply rate is up from last week. ${firstName(p0.displayName)}, ${firstName(p1.displayName)}, and ${firstName(p2.displayName)} have the most active conversations.`,
             },
           ],
         },

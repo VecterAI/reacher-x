@@ -2688,7 +2688,7 @@ async function sendLinkedInMessageForUser(
     args.prospectId
   );
   if (!prospect) {
-    throw new Error("Prospect not found.");
+    throw new Error("Profile not found.");
   }
 
   const storedAccount = await getConnectedLinkedInAccountOrThrow(
@@ -2792,7 +2792,7 @@ async function sendLinkedInMessageForUser(
     }
     if (!prospectIdentity.providerId) {
       throw new Error(
-        "This LinkedIn prospect is missing a provider id needed to start a new conversation."
+        "This LinkedIn profile is missing a provider id needed to start a new conversation."
       );
     }
     result = await startLinkedInChat({
@@ -3482,7 +3482,7 @@ export const markLinkedInConversationRead = action({
       args.prospectId
     );
     if (!prospect) {
-      throw new Error("LinkedIn prospect not found or not authorized.");
+      throw new Error("LinkedIn profile not found or not authorized.");
     }
     const [account, snapshot]: [LinkedInStoredAccount, any] = await Promise.all(
       [
@@ -3555,7 +3555,7 @@ export const getLinkedInProfile = action({
     const prospectIdentity = getProspectLinkedInIdentity(prospect);
     if (!prospectIdentity.username && !prospectIdentity.providerId) {
       throw new Error(
-        "This prospect is missing the LinkedIn identity needed to load a profile."
+        "This profile is missing the LinkedIn identity needed to load a profile."
       );
     }
 
@@ -4001,7 +4001,7 @@ export const getLinkedInConversationAttachment = action({
       args.prospectId
     );
     if (!prospect) {
-      throw new Error("LinkedIn prospect not found or not authorized.");
+      throw new Error("LinkedIn profile not found or not authorized.");
     }
 
     const snapshot: any = await ctx.runQuery(
@@ -5018,8 +5018,8 @@ export const submitLinkedInActionForThread = internalAction({
         pendingApproval: false,
         actionKey: args.actionKey,
         title: "LinkedIn action unavailable",
-        message: "LinkedIn actions require a prospect in the current thread.",
-        error: "Missing prospect context for LinkedIn action.",
+        message: "LinkedIn actions require a profile in the current thread.",
+        error: "Missing profile context for LinkedIn action.",
       };
     }
 
@@ -5206,7 +5206,7 @@ export const submitLinkedInActionForThread = internalAction({
         prospectId: String(threadContext.prospectId),
         title: "LinkedIn invite unavailable",
         message:
-          "This prospect is missing the LinkedIn provider id needed to send an invitation.",
+          "This profile is missing the LinkedIn provider id needed to send an invitation.",
         approvalMode: metadata.approvalMode,
         riskLevel: metadata.riskLevel,
         sourceContext: args.context,
@@ -5428,7 +5428,7 @@ export const createLinkedInPostActionRequest = action({
     const prospect: Doc<"prospects"> | null =
       await getOwnedLinkedInProspectForUser(ctx, userId, args.prospectId);
     if (!prospect) {
-      throw new Error("Prospect not found.");
+      throw new Error("Profile not found.");
     }
 
     await getConnectedLinkedInAccountOrThrow(ctx, userId);
@@ -5687,7 +5687,7 @@ export const reactToLinkedInPostInternal = internalAction({
       args.prospectId
     );
     if (!prospect) {
-      throw new Error("Prospect not found.");
+      throw new Error("Profile not found.");
     }
 
     const storedAccount = await getConnectedLinkedInAccountOrThrow(
@@ -5762,7 +5762,7 @@ export const commentOnLinkedInPostInternal = internalAction({
           postId: args.postId,
         });
       if (!prospect) {
-        throw new Error("Prospect not found.");
+        throw new Error("Profile not found.");
       }
 
       const result = await commentOnLinkedInPost({
@@ -5848,13 +5848,13 @@ export const sendLinkedInInvitationInternal = internalAction({
       args.prospectId
     );
     if (!prospect) {
-      throw new Error("Prospect not found.");
+      throw new Error("Profile not found.");
     }
 
     const prospectIdentity = getProspectLinkedInIdentity(prospect);
     if (!prospectIdentity.providerId) {
       throw new Error(
-        "This LinkedIn prospect is missing a provider id needed for invitations."
+        "This LinkedIn profile is missing a provider id needed for invitations."
       );
     }
 
@@ -5908,11 +5908,11 @@ export const sendLinkedInRecoveryInvitationInternal = internalAction({
         args.userId,
         args.prospectId
       );
-      if (!prospect) throw new Error("Prospect not found.");
+      if (!prospect) throw new Error("Profile not found.");
       const identity = getProspectLinkedInIdentity(prospect);
       if (!identity.providerId) {
         throw new Error(
-          "This LinkedIn prospect is missing a provider id needed for invitations."
+          "This LinkedIn profile is missing a provider id needed for invitations."
         );
       }
       const account = await getConnectedLinkedInAccountOrThrow(

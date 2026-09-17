@@ -141,7 +141,7 @@ export function formatQualifiedProspectLimitReachedMessage(args: {
   currentCount: number;
   limit: number;
 }) {
-  return `Qualified prospect limit reached for this workspace in the current cycle (${args.currentCount}/${args.limit}).`;
+  return `This workspace has reached its match limit for the current cycle (${args.currentCount}/${args.limit}).`;
 }
 
 /**

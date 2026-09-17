@@ -1006,7 +1006,7 @@ export const createProspect = mutation({
     if (!canAdd.allowed) {
       throw new Error(
         canAdd.reason ??
-          "Qualified prospect limit reached for this workspace in the current cycle."
+          "This workspace has reached its match limit for the current cycle."
       );
     }
 
@@ -1124,7 +1124,7 @@ export const createProspectsBatch = internalMutation({
         );
 
       if (!workspace || !hasConsistentPreviewProvenance) {
-        throw new Error("Invalid setup preview prospect batch");
+        throw new Error("Invalid setup preview profile batch");
       }
 
       const session = await ctx.db.get(
@@ -1143,7 +1143,7 @@ export const createProspectsBatch = internalMutation({
       });
 
       if (!isValidatedSetupPreviewBatch) {
-        throw new Error("Invalid setup preview prospect batch");
+        throw new Error("Invalid setup preview profile batch");
       }
 
       if (
@@ -1465,7 +1465,7 @@ export const createProspectsBatch = internalMutation({
           prospectId,
           workspaceId: args.workspaceId,
           type: "found",
-          title: "Prospect discovered",
+          title: "Person found",
           description: `Found via ${p.matchedKeywords?.[0] || "search"}`,
         });
 
@@ -1516,9 +1516,7 @@ export const updateProspectStatus = mutation({
       args.status !== "archived" &&
       args.status !== "new"
     ) {
-      throw new Error(
-        "Unarchive this prospect before changing pipeline stage."
-      );
+      throw new Error("Unarchive this profile before changing its status.");
     }
 
     const now = getCurrentUTCTimestamp();
@@ -1561,8 +1559,8 @@ export const updateProspectStatus = mutation({
         prospectId: args.prospectId,
         workspaceId: prospect.workspaceId,
         type: "archived",
-        title: "Prospect archived",
-        description: "This prospect was archived.",
+        title: "Profile archived",
+        description: "This profile was archived.",
       });
       await recordMemoryWorkflowEvent(ctx, {
         workspaceId: prospect.workspaceId,
@@ -1639,8 +1637,8 @@ export const archiveProspects = mutation({
             prospectId: id,
             workspaceId: prospect.workspaceId,
             type: "archived",
-            title: "Prospect archived",
-            description: "This prospect was archived.",
+            title: "Profile archived",
+            description: "This profile was archived.",
           });
           await recordMemoryWorkflowEvent(ctx, {
             workspaceId: prospect.workspaceId,
@@ -1828,7 +1826,7 @@ export const saveProspectFromWebhook = internalMutation({
         created: false,
         skipped: true,
         reason:
-          "Qualified prospect limit reached for this workspace in the current cycle.",
+          "This workspace has reached its match limit for the current cycle.",
       };
     }
 
@@ -1885,7 +1883,7 @@ export const saveProspectFromWebhook = internalMutation({
       prospectId,
       workspaceId: args.workspaceId,
       type: "found",
-      title: "Prospect discovered",
+      title: "Person found",
       description: `Found via ${args.matchedQuery || "monitor"}`,
     });
 
@@ -1997,7 +1995,7 @@ export const saveReplyDerivedProspect = internalMutation({
       prospectId,
       workspaceId: args.workspaceId,
       type: "found",
-      title: "Prospect discovered from X reply",
+      title: "Person found from an X/Twitter reply",
       description: args.matchReason,
     });
 
@@ -2091,7 +2089,7 @@ export const saveReplyDerivedProspectWithRetry = internalAction({
 
     throw lastError instanceof Error
       ? lastError
-      : new Error("Failed to save reply-derived prospect after retries");
+      : new Error("Failed to save reply-derived profile after retries");
   },
 });
 
@@ -2352,7 +2350,7 @@ export const updateProspectEnrichment = internalMutation({
         prospectId: args.prospectId,
         workspaceId: prospect.workspaceId,
         type: "enriched",
-        title: "Profile enriched",
+        title: "Profile details found",
         description: args.activityLogDescription,
       });
     }
@@ -3187,7 +3185,7 @@ export const updatePlanGenerationStatus = internalMutation({
   handler: async (ctx, args) => {
     const prospect = await ctx.db.get(args.prospectId);
     if (!prospect) {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
 
     await ctx.db.patch(args.prospectId, {

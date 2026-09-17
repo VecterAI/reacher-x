@@ -511,7 +511,7 @@ export async function createOutreachPlan(
     prospect.workspaceId !== input.workspaceId ||
     prospect.userId !== input.userId
   ) {
-    throw new Error("Prospect does not belong to this outreach workspace");
+    throw new Error("Profile does not belong to this outreach workspace");
   }
   requireProspectEligibleForOutreach(prospect);
   const agentSettings = await getWorkspaceAgentSettingsRow(
@@ -546,7 +546,7 @@ export async function createOutreachPlan(
 
   if (existingPlan) {
     throw new Error(
-      `Active plan already exists for prospect. Use refinePlan instead.`
+      "Active plan already exists for profile. Use refinePlan instead."
     );
   }
 
@@ -688,7 +688,7 @@ export async function refinePlan(
   const plan = await ctx.db.get(planId);
   if (!plan) throw new Error("Plan not found");
   const prospect = await ctx.db.get("prospects", plan.prospectId);
-  if (!prospect) throw new Error("Prospect not found");
+  if (!prospect) throw new Error("Profile not found");
   requireProspectEligibleForOutreach(prospect);
   const platform: OutreachMediaPlatform =
     prospect.platform === "linkedin" ? "linkedin" : "twitter";
@@ -851,7 +851,7 @@ export async function approvePlan(
   const plan = await ctx.db.get(planId);
   if (!plan) throw new Error("Plan not found");
   const prospect = await ctx.db.get("prospects", plan.prospectId);
-  if (!prospect) throw new Error("Prospect not found");
+  if (!prospect) throw new Error("Profile not found");
   requireProspectEligibleForOutreach(prospect);
   if (plan.status !== "draft") {
     throw new Error("Can only approve draft plans");
@@ -1027,7 +1027,7 @@ export async function completeBrowserEncryptedDmTaskCore(
     prospect.userId !== args.userId ||
     prospect.platform !== "twitter"
   ) {
-    throw new Error("X prospect not found or not authorized.");
+    throw new Error("X profile not found or not authorized.");
   }
   const operation = await ctx.db
     .query("xChatSendOperations")

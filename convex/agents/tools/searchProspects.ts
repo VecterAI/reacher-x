@@ -214,7 +214,7 @@ export const searchProspects = createTool({
           logEvent.error(error);
           return {
             success: false,
-            message: `Failed to start prospecting: ${errorMessage}`,
+            message: `Could not start the search: ${errorMessage}`,
             error: errorMessage,
           };
         }

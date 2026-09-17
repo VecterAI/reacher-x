@@ -144,7 +144,7 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
     rawUserDescription:
       "Northstar Analytics is a pipeline analytics tool for B2B SaaS sales teams. It connects to the CRM and shows which deals are stalling and why.",
     improvedDescription:
-      "Target: sales leaders (VP Sales, Head of Sales, RevOps) at B2B SaaS companies with 20 to 200 employees using Salesforce or HubSpot. Signals: posts about forecast misses, stalled deals, pipeline reviews, or hiring SDRs. Qualify on ICP fit with a fit score of 70 to 100, recent activity, and clear pain around pipeline visibility. Goal: start a conversation that leads to a booked demo.",
+      "Target: sales leaders (VP Sales, Head of Sales, RevOps) at B2B SaaS companies with 20 to 200 employees using Salesforce or HubSpot. Signals: posts about forecast misses, stalled deals, pipeline reviews, or hiring SDRs. Look for a match score of 70 to 100, recent activity, and difficulty keeping track of sales. Goal: start a conversation that leads to a booked demo.",
     sourceUrl: "https://northstar-analytics.com",
     icps: [
       {
@@ -175,7 +175,7 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
     rawUserDescription:
       "Northstar Analytics is a pipeline analytics tool for B2B SaaS sales teams. The team is raising a pre-seed round and reaching out to investors directly.",
     improvedDescription:
-      "Target: pre-seed and seed investors (VC partners, angels) who back B2B SaaS and sales tooling. Signals: posts about sales tech, PLG, outbound, or recent SaaS investments. Qualify on thesis fit, check size, stage preference, and recent activity. Goal: start a conversation that leads to a partner meeting.",
+      "Target: pre-seed and seed investors (VC partners, angels) who back B2B SaaS and sales tooling. Signals: posts about sales tech, PLG, outbound, or recent SaaS investments. Check their investment focus, typical investment amount, preferred company stage, and recent activity. Goal: start a conversation that leads to a partner meeting.",
     sourceUrl: "https://northstar-analytics.com",
     icps: [
       {
@@ -205,7 +205,7 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
     rawUserDescription:
       "Northstar Analytics is a pipeline analytics tool for B2B SaaS sales teams. The team is growing from 6 to 12 people and hiring its first go-to-market and engineering roles.",
     improvedDescription:
-      "Target: senior SDRs, growth marketers, and full-stack engineers open to early-stage startups. Signals: posts about job searches, open-to-work updates, layoffs, or building in public. Qualify on role fit, seniority, and visible interest in early-stage work. Goal: start a conversation that leads to an intro call.",
+      "Target: senior SDRs, growth marketers, and full-stack engineers open to early-stage startups. Signals: posts about job searches, open-to-work updates, layoffs, or building in public. Check their skills, experience, and interest in early-stage work. Goal: start a conversation that leads to an intro call.",
     sourceUrl: "https://northstar-analytics.com",
     icps: [
       {
@@ -235,7 +235,7 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
     rawUserDescription:
       "Northstar Analytics is a pipeline analytics tool for B2B SaaS sales teams. The team wants to partner with creators who cover sales, startups, and SaaS growth.",
     improvedDescription:
-      "Target: newsletter writers, YouTubers, and podcasters covering B2B sales and startups with 5k to 100k followers. Signals: recent content about prospecting, CRM, or outbound, plus steady engagement. Qualify on audience fit, posting cadence, and topic overlap. Goal: start a conversation that leads to a collaboration or sponsorship.",
+      "Target: newsletter writers, YouTubers, and podcasters covering B2B sales and startups with 5k to 100k followers. Signals: recent content about prospecting, CRM, or outbound, plus steady engagement. Check who follows them, how often they post, and which topics they cover. Goal: start a conversation that leads to a collaboration or sponsorship.",
     sourceUrl: "https://northstar-analytics.com",
     icps: [
       {
@@ -262,7 +262,7 @@ const DEMO_WORKSPACE_PROFILES: Record<UseCaseDemoKey, DemoWorkspaceProfile> = {
     rawUserDescription:
       "A senior growth marketer looking for the next role, using ReacherX to find the people actually hiring instead of applying into the void.",
     improvedDescription:
-      "Target: founders, heads of growth, and hiring managers at startups with 10 to 200 employees who are actively hiring for growth roles. Signals: job posts, we-are-hiring threads, and team expansion announcements. Qualify on role fit, company stage, and how recent the signal is. Goal: start a conversation that leads to an interview.",
+      "Target: founders, heads of growth, and hiring managers at startups with 10 to 200 employees who are actively hiring for growth roles. Signals: job posts, we-are-hiring threads, and team expansion announcements. Check whether the role matches, the company stage, and how recent the post is. Goal: start a conversation that leads to an interview.",
     sourceUrl: "https://northstar-analytics.com",
     icps: [
       {
@@ -937,7 +937,7 @@ export function DemoWorkspacePage({
                                   render={({ field: f }) => (
                                     <FormItem className={formFieldClassName}>
                                       <FormLabel className={formLabelClassName}>
-                                        Pain points ·{" "}
+                                        What they need ·{" "}
                                         <AnimatedNumber
                                           value={f.value?.length ?? 0}
                                         />
@@ -1051,7 +1051,7 @@ export function DemoWorkspacePage({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete workspace?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes all prospects, archives, and stats for
+              This permanently deletes all profiles, archives, and stats for
               this workspace and sends you back to setup.
             </AlertDialogDescription>
           </AlertDialogHeader>

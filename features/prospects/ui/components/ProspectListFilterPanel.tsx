@@ -85,7 +85,7 @@ export function ProspectListFilterPanel({
   onDraftFiltersChange,
   className,
 }: ProspectListFilterPanelProps) {
-  const helperId = "prospect-list-fit-score-helper";
+  const helperId = "prospect-list-match-score-helper";
   const { entityPlural } = useActiveUseCaseLabels();
   const entityPluralLower = entityPlural.toLowerCase();
   const summaryTokens = useMemo(
@@ -123,8 +123,8 @@ export function ProspectListFilterPanel({
     createdBeforeMs: histogramFilterArgs.createdBeforeMs,
   });
   const supportingText = histogramQuery.isError
-    ? "We couldn't load the current fit-score distribution, but your range will still be applied."
-    : `Drag to narrow ${entityPluralLower} by fit score.`;
+    ? "We couldn't load the current match-score distribution, but your range will still be applied."
+    : `Drag to narrow ${entityPluralLower} by match score.`;
   const binCounts = histogramQuery.binCounts;
 
   const updateDraftFilters = useCallback(
@@ -239,16 +239,16 @@ export function ProspectListFilterPanel({
         <ScrollArea className="min-h-0 flex-1 overscroll-contain">
           <PageContent className="space-y-0 py-4">
             <Section
-              title="Fit score"
-              description={`Focus on ${entityPluralLower} within the fit-score range you want.`}
+              title="Match score"
+              description={`Focus on ${entityPluralLower} within the match-score range you want.`}
             >
               <RangeHistogramField
-                ariaLabel="Fit score range"
+                ariaLabel="Match score range"
                 defaultRange={draftFilters.fitScoreRange}
                 describedBy={helperId}
                 domainMax={100}
                 domainMin={0}
-                fieldLabel="Fit score range"
+                fieldLabel="Match score range"
                 binCounts={binCounts}
                 maxLabel="Max"
                 minLabel="Min"

@@ -42,13 +42,10 @@ test("workspace and notification glyphs use the custom icon library", () => {
   assert.match(iconSource, /export const PsychologyAltIcon/);
 });
 
-test("workspace use-case field uses the shared outreach-goal label", () => {
+test("workspace use-case field uses the shared goal label", () => {
   const useCasesSource = readSource("shared/lib/workspaceUseCases.ts");
 
-  assert.match(
-    useCasesSource,
-    /WORKSPACE_USE_CASE_FIELD_LABEL = "Outreach goal"/
-  );
+  assert.match(useCasesSource, /WORKSPACE_USE_CASE_FIELD_LABEL = "Your goal"/);
   for (const file of [
     "features/webapp/workspace/WorkspaceUseCaseCombobox.tsx",
     "features/webapp/workspace/WorkspacePageSkeleton.tsx",

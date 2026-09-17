@@ -135,11 +135,9 @@ function PlanTierCard({
   const amountForCta =
     amountOverride ?? (billing === "monthly" ? monthlyAmount : yearlyAmount);
   const isPlansMode = mode === "plans";
-  const featureLines = entityPlural
-    ? tier.features.map((line) =>
-        resolvePlanFeatureEntityCopy(line, entityPlural)
-      )
-    : tier.features;
+  const featureLines = tier.features.map((line) =>
+    resolvePlanFeatureEntityCopy(line, entityPlural)
+  );
 
   return (
     <Card className={isPlansMode ? "shadow-none" : undefined}>

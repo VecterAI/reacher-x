@@ -48,7 +48,7 @@ export async function getPlanReadiness(
   plan: Doc<"outreachPlans">
 ) {
   const prospect = await ctx.db.get("prospects", plan.prospectId);
-  if (!prospect) throw new Error("Prospect not found");
+  if (!prospect) throw new Error("Profile not found");
   const tasks = await ctx.db
     .query("outreachTasks")
     .withIndex("by_plan_order", (q) => q.eq("planId", plan._id))

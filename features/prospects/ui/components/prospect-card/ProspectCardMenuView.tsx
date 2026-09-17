@@ -123,7 +123,7 @@ export function ProspectCardMenuView({
               disabled={isPreviewMode || status === "archived"}
               title={
                 status === "archived"
-                  ? "Unarchive to change pipeline stage"
+                  ? "Unarchive to change status"
                   : undefined
               }
               onClick={(e) => handleStatusChange(e, opt.value)}

@@ -99,7 +99,7 @@ export function PipelineTimeline({
     <div className={cn("relative", className)}>
       {/* Header */}
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-medium">Pipeline</h3>
+        <h3 className="text-sm font-medium">Progress</h3>
         <div className="flex gap-1">
           <Button
             variant="ghost"

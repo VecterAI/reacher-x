@@ -35,7 +35,7 @@ export const generateUploadUrl = mutation({
     const user = await requireUser(ctx);
     const prospect = await requireOwnedProspect(ctx, args.prospectId, { user });
     if (prospect.platform !== "linkedin") {
-      throw new Error("LinkedIn prospect not found or not authorized.");
+      throw new Error("LinkedIn profile not found or not authorized.");
     }
     const now = getCurrentUTCTimestamp();
     const expiresAt = now + STAGED_VOICE_NOTE_TTL_MS;
@@ -230,7 +230,7 @@ export const finalizeUpload = action({
       { userId: user._id, prospectId: args.prospectId }
     );
     if (!authorized) {
-      throw new Error("LinkedIn prospect not found or not authorized.");
+      throw new Error("LinkedIn profile not found or not authorized.");
     }
 
     const now = getCurrentUTCTimestamp();

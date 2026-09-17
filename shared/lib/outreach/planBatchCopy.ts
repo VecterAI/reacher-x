@@ -154,13 +154,13 @@ function getSelectionStatus(state: PlanBatchCopyState) {
     typeof state.fitScoreMin === "number" &&
     typeof state.fitScoreMax === "number"
   ) {
-    return `Finding prospects with fit scores from ${state.fitScoreMin} to ${state.fitScoreMax}`;
+    return `Finding people with match scores from ${state.fitScoreMin} to ${state.fitScoreMax}`;
   }
   return state.scopeKind === "all"
-    ? "Checking all prospects"
+    ? "Checking all people"
     : state.scopeKind === "fit_score"
-      ? "Checking matching prospects"
-      : "Checking selected prospects";
+      ? "Checking matching people"
+      : "Checking selected people";
 }
 
 function getConfirmationStatus(state: PlanBatchCopyState) {
@@ -176,7 +176,8 @@ function getConfirmationStatus(state: PlanBatchCopyState) {
     parts.push(
       `${formatCount(state.skippedCount)} ${pluralize(
         state.skippedCount,
-        "prospect"
+        "person",
+        "people"
       )} cannot be included`
     );
   }
@@ -208,14 +209,15 @@ export function getPlanBatchCopy(state: PlanBatchCopyState): PlanBatchCopy {
   switch (state.status) {
     case "selecting":
       return {
-        title: "Checking prospects",
+        title: "Checking people",
         status: getSelectionStatus(state),
       };
     case "awaiting_confirmation":
       return {
         title: `${formatCount(state.eligibleCount)} ${pluralize(
           state.eligibleCount,
-          "prospect"
+          "person",
+          "people"
         )} ${state.eligibleCount === 1 ? "is" : "are"} ready`,
         status: getConfirmationStatus(state),
       };

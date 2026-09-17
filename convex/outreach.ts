@@ -1867,7 +1867,7 @@ export const resumePlan = mutation({
     await requirePlanAccounts(ctx, plan);
     const prospectResume = await ctx.db.get(plan.prospectId);
     if (!prospectResume) {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
     requireProspectEligibleForOutreach(prospectResume);
 
@@ -1902,7 +1902,7 @@ export const pausePlan = mutation({
 
     const prospectPause = await ctx.db.get(plan.prospectId);
     if (!prospectPause) {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
     requireProspectEligibleForOutreach(prospectPause);
 
@@ -2775,7 +2775,7 @@ export const validateTaskMediaForExecution = internalQuery({
       prospect.userId !== plan.userId ||
       prospect.workspaceId !== plan.workspaceId
     ) {
-      throw new Error("Prospect not found for this plan");
+      throw new Error("Profile not found for this plan");
     }
 
     const platform = getRecordedPlatform(task, prospect);
@@ -3115,7 +3115,7 @@ async function handleProspectResponseCore(
     outreachLogger.warn("Received prospect response for missing prospect", {
       prospectId: String(args.prospectId),
     });
-    return { success: false, error: "Prospect not found" };
+    return { success: false, error: "Profile not found" };
   }
 
   const eventKey = [
@@ -4166,7 +4166,7 @@ export const approveTask = mutation({
 
     const prospectApprove = await ctx.db.get(plan.prospectId);
     if (!prospectApprove) {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
     requireProspectEligibleForOutreach(prospectApprove);
 
@@ -4253,7 +4253,7 @@ export const approveTaskInternal = internalMutation({
 
     const prospectInternalApprove = await ctx.db.get(plan.prospectId);
     if (!prospectInternalApprove) {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
     requireProspectEligibleForOutreach(prospectInternalApprove);
 

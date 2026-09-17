@@ -227,7 +227,7 @@ export const rememberWorkspaceMemory = createTool({
           return {
             success: false,
             message:
-              "This memory was requested as prospect-specific, but this conversation is not linked to a prospect.",
+              "This memory was requested as profile-specific, but this conversation is not linked to a profile.",
           };
         }
 

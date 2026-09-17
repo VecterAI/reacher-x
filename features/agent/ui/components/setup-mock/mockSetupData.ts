@@ -217,7 +217,7 @@ export function getMockSetupProspects(
 
 export const MOCK_DESCRIPTIONS: Record<WorkspaceUseCaseKey, string> = {
   customer_prospecting:
-    "Find software founders doing outbound themselves and sales development managers who want to spend less time researching prospects.",
+    "Find software founders doing outbound themselves and sales development managers who want to spend less time searching for potential customers.",
   recruiting:
     "Find frontend React engineers and backend engineers who are looking for a new role.",
   general_outreach:

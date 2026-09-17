@@ -1162,7 +1162,7 @@ export const fetchConversationReplies = action({
         return {
           success: false,
           tweets: [],
-          error: "Not authorized to view this prospect",
+          error: "Not authorized to view this profile",
         };
       }
     }

@@ -93,7 +93,7 @@ export const qualifyProspect = createTool({
               status: "pending",
               evidenceCount: 0,
               matchedKeywords: [],
-              error: "Prospect not found",
+              error: "Profile not found",
             };
           }
 
@@ -111,7 +111,7 @@ export const qualifyProspect = createTool({
               status: "pending",
               evidenceCount: 0,
               matchedKeywords: [],
-              error: "Not authorized to qualify this prospect",
+              error: "Not authorized to check this profile’s match",
             };
           }
 
@@ -133,7 +133,7 @@ export const qualifyProspect = createTool({
               status: "pending",
               evidenceCount: 0,
               matchedKeywords: [],
-              error: "Prospect does not belong to this workspace",
+              error: "Profile does not belong to this workspace",
             };
           }
 
@@ -414,7 +414,7 @@ export const qualifyProspect = createTool({
               evidenceCount: 0,
               matchedKeywords: [],
               error:
-                "Workspace targeting or prospect changed during qualification; retry with current context.",
+                "The criteria or profile changed during the match check. Try again.",
             };
 
           logEvent.set({
