@@ -61,7 +61,7 @@ export const approveTask = createTool({
             return {
               success: false,
               message: MISSING_PROSPECT_SELECTION_MESSAGE,
-              error: "No prospect context found",
+              error: "No profile context found",
             };
           }
 
@@ -80,7 +80,7 @@ export const approveTask = createTool({
             return {
               success: false,
               message:
-                "No pending task found for this prospect. The task may have already been approved or completed.",
+                "No pending task found for this profile. The task may have already been approved or completed.",
               error: "No pending task",
             };
           }
@@ -98,7 +98,7 @@ export const approveTask = createTool({
             return {
               success: false,
               message:
-                "This reply was already posted and is waiting for prospect response.",
+                "This reply was already posted and is waiting for a reply.",
               error: "Task already posted",
             };
           }

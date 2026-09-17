@@ -16,13 +16,19 @@ import type { TrendDataPoint } from "../../lib/types";
 export interface ProspectsTrendChartProps {
   data: TrendDataPoint[];
   className?: string;
+  labels?: Pick<
+    ReturnType<typeof useActiveUseCaseLabels>,
+    "entityPlural" | "stageLabels"
+  >;
 }
 
 export const ProspectsTrendChart = React.memo(function ProspectsTrendChart({
   data,
   className,
+  labels,
 }: ProspectsTrendChartProps) {
-  const { entityPlural, stageLabels } = useActiveUseCaseLabels();
+  const activeLabels = useActiveUseCaseLabels();
+  const { entityPlural, stageLabels } = labels ?? activeLabels;
   const chartConfig = React.useMemo(
     () =>
       ({

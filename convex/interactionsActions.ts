@@ -443,7 +443,7 @@ export const runTwitterProspectInteractionDiscovery = internalAction({
       }
     );
     if (!prospect || prospect.platform !== "twitter") {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
 
     const connectionStatus = await getXConnectionStatusForUser(
@@ -477,7 +477,7 @@ export const runTwitterProspectInteractionDiscovery = internalAction({
     const prospectHandle = normalizeHandle(prospectIdentity.username);
 
     if (!viewerHandle || !prospectHandle) {
-      throw new Error("Prospect or viewer handle is unavailable.");
+      throw new Error("Profile or viewer handle is unavailable.");
     }
 
     const now = getCurrentUTCTimestamp();
@@ -669,7 +669,7 @@ export const runLinkedInProspectInteractionDiscovery = internalAction({
       prospect.userId !== args.userId ||
       prospect.platform !== "linkedin"
     ) {
-      throw new Error("LinkedIn prospect not found");
+      throw new Error("LinkedIn profile not found");
     }
 
     const account: Doc<"linkedinAccounts"> | null = await ctx.runQuery(
@@ -684,7 +684,7 @@ export const runLinkedInProspectInteractionDiscovery = internalAction({
       prospect as unknown as Record<string, unknown>
     );
     if (!prospectIdentity.profileUrn) {
-      throw new Error("This prospect is missing a LinkedIn provider id.");
+      throw new Error("This profile is missing a LinkedIn provider id.");
     }
 
     const now = getCurrentUTCTimestamp();
@@ -867,7 +867,7 @@ export const runProspectInteractionDiscovery = internalAction({
       { prospectId: args.prospectId }
     );
     if (!prospect || prospect.userId !== args.userId) {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
 
     if (prospect.platform === "linkedin") {
@@ -907,7 +907,7 @@ export const refreshProspectInteractions = action({
       prospectId: args.prospectId,
     });
     if (!prospect) {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
     return await ctx.runAction(
       internal.interactionsActions.runProspectInteractionDiscovery,

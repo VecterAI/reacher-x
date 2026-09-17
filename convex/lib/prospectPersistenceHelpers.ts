@@ -72,7 +72,7 @@ export async function retryOccMutation<T>(
 
   throw lastError instanceof Error
     ? lastError
-    : new Error("Failed to persist prospect after repeated OCC conflicts");
+    : new Error("Failed to persist profile after repeated OCC conflicts");
 }
 
 // Existing prospect callers retain their established API.

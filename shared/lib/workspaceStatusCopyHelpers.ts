@@ -10,8 +10,8 @@ export function getRunningWorkspaceStatusCopy({
 }) {
   return {
     tooltip: "△ Agent is active",
-    title: `△ Agent is actively ${discoveryVerb} and qualifying ${entityPlural.toLowerCase()}.`,
-    meta: `${useCaseName} pipeline`,
+    title: `△ Agent is actively ${discoveryVerb} and checking matches for ${entityPlural.toLowerCase()}.`,
+    meta: `${useCaseName} progress`,
   };
 }
 

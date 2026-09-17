@@ -146,7 +146,7 @@ export async function getRawOwnedWorkspace(
 
 export function requireProspectNotArchived(prospect: Doc<"prospects">) {
   if (prospect.status === "archived") {
-    throw new Error("This prospect is archived. Unarchive to continue.");
+    throw new Error("This profile is archived. Unarchive to continue.");
   }
 }
 
@@ -154,7 +154,7 @@ export function requireProspectEligibleForOutreach(prospect: Doc<"prospects">) {
   requireProspectNotArchived(prospect);
   if (prospect.qualificationStatus !== "qualified") {
     throw new Error(
-      "This prospect is not qualified. Requalify before creating or continuing outreach."
+      "This person is not a match. Check their match again before creating or continuing a plan."
     );
   }
 }
@@ -200,7 +200,7 @@ export async function requireOwnedProspect(
   const user = options.user ?? (await requireUser(ctx));
   const prospect = await ctx.db.get(prospectId);
   if (!prospect) {
-    throw new Error(options.notFoundMessage ?? "Prospect not found");
+    throw new Error(options.notFoundMessage ?? "Profile not found");
   }
   if (prospect.userId !== user._id) {
     throw new Error(

@@ -1237,7 +1237,7 @@ export async function resolveSocialContext(
   })) as ProspectDoc | null;
 
   if (!prospect) {
-    throw new Error("Prospect not found");
+    throw new Error("Profile not found");
   }
 
   const prospectSummary = resolveProspectSummary(prospect);
@@ -1265,7 +1265,7 @@ export async function resolveSocialContext(
     if (resolvedPlatform === "twitter") {
       const twitterIdentity = resolveProspectTwitterIdentity(prospect);
       if (!twitterIdentity.username) {
-        throw new Error("This prospect does not have a Twitter username.");
+        throw new Error("This profile does not have a Twitter username.");
       }
 
       if (args.mode === "platform_profile") {

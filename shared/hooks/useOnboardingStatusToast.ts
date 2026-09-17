@@ -68,7 +68,7 @@ export function useOnboardingStatusToast() {
     ) {
       toast.success(`Your ${entityPlural.toLowerCase()} are ready`, {
         id: "onboarding-ready",
-        description: `Qualified ${entityPlural.toLowerCase()} are now available.`,
+        description: "New matches are ready to view.",
       });
       readyToastShownRef.current = true;
       toast.dismiss("onboarding-delayed");

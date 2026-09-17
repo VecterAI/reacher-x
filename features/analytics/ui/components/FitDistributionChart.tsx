@@ -16,13 +16,16 @@ import type { FitDistributionDataPoint } from "../../lib/types";
 export interface FitDistributionChartProps {
   data: FitDistributionDataPoint[];
   className?: string;
+  labels?: Pick<ReturnType<typeof useActiveUseCaseLabels>, "entityPlural">;
 }
 
 export const FitDistributionChart = React.memo(function FitDistributionChart({
   data,
   className,
+  labels,
 }: FitDistributionChartProps) {
-  const { entityPlural } = useActiveUseCaseLabels();
+  const activeLabels = useActiveUseCaseLabels();
+  const { entityPlural } = labels ?? activeLabels;
   const chartConfig = React.useMemo(
     () =>
       ({
@@ -36,7 +39,7 @@ export const FitDistributionChart = React.memo(function FitDistributionChart({
 
   return (
     <ChartCard
-      title="Fit score distribution"
+      title={`${entityPlural} by match score`}
       config={chartConfig}
       className={className}
     >

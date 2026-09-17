@@ -28,7 +28,7 @@ export const WorkspaceComparisonChart = React.memo(
       () =>
         ({
           value: {
-            label: mode === "count" ? "Qualified" : "Usage %",
+            label: mode === "count" ? "Good match" : "Usage %",
             color: "hsl(var(--chart-1))",
           },
         }) satisfies ChartConfig,
@@ -88,7 +88,7 @@ export const WorkspaceComparisonChart = React.memo(
                     <div className="grid min-w-36 gap-1">
                       <UsageTooltipMetricRow
                         color={fillColor}
-                        label={mode === "percent" ? "Used" : "Qualified"}
+                        label={mode === "percent" ? "Used" : "Good match"}
                         value={formattedValue}
                       />
                       <div className="flex items-center gap-2">

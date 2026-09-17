@@ -9,6 +9,8 @@
  */
 "use client";
 
+import { QUALIFICATION_UI_LABELS } from "@/features/prospects/lib/qualificationUi";
+
 import * as React from "react";
 import type { DateRange } from "react-day-picker";
 import { MOCK_ANALYTICS } from "@/features/analytics/lib/mockData";
@@ -29,10 +31,10 @@ import { cn } from "@/shared/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
 import {
   CheckCircleIcon,
-  DoNotDisturbOnIcon,
+  EmergencyHeatIcon,
   ErrorIcon,
   FramePersonIcon,
-  PersonCheckIcon,
+  FireCheckIcon,
   QuickPhrasesIcon,
   SearchActivityIcon,
   ThumbsUpDownIcon,
@@ -125,7 +127,7 @@ export function DemoAnalyticsPage() {
       },
       {
         id: "response-rate",
-        title: "Response rate",
+        title: "Reply rate",
         value: data.responseRate.value,
         change: data.responseRate.change,
         changePercent: data.responseRate.changePercent,
@@ -136,7 +138,7 @@ export function DemoAnalyticsPage() {
       },
       {
         id: "pending-approvals",
-        title: "Pending approvals",
+        title: "Approvals",
         value: data.pendingApprovals.value,
         change: data.pendingApprovals.change,
         changePercent: data.pendingApprovals.changePercent,
@@ -146,7 +148,7 @@ export function DemoAnalyticsPage() {
       },
       {
         id: "issues",
-        title: "Outreach issues",
+        title: "Needs attention",
         value: data.issues.value,
         change: data.issues.change,
         changePercent: data.issues.changePercent,
@@ -163,23 +165,23 @@ export function DemoAnalyticsPage() {
     () => [
       {
         id: "pending",
-        title: "Pending",
+        title: QUALIFICATION_UI_LABELS.pending,
         value: data.processingSummary.pending.value,
         change: data.processingSummary.pending.change,
         changePercent: data.processingSummary.pending.changePercent,
         trend: data.processingSummary.pending.trend,
-        context: "new prospects still pending this period",
+        context: `new ${entityPluralLower} awaiting a match check`,
         icon: <SearchActivityIcon className="fill-current" />,
       },
       {
         id: "qualified",
-        title: "Qualified",
+        title: QUALIFICATION_UI_LABELS.qualified,
         value: data.processingSummary.qualified.value,
         change: data.processingSummary.qualified.change,
         changePercent: data.processingSummary.qualified.changePercent,
         trend: data.processingSummary.qualified.trend,
-        context: "new prospects currently qualified",
-        icon: <PersonCheckIcon className="fill-current" />,
+        context: `new ${entityPluralLower} who match`,
+        icon: <FireCheckIcon className="fill-current" />,
       },
       {
         id: "ready",
@@ -188,22 +190,22 @@ export function DemoAnalyticsPage() {
         change: data.processingSummary.ready.change,
         changePercent: data.processingSummary.ready.changePercent,
         trend: data.processingSummary.ready.trend,
-        context: "new prospects currently ready",
+        context: `new ${entityPluralLower} with details ready for next steps`,
         icon: <CheckCircleIcon className="fill-current" />,
       },
       {
         id: "disqualified",
-        title: "Disqualified",
+        title: QUALIFICATION_UI_LABELS.disqualified,
         value: data.processingSummary.disqualified.value,
         change: data.processingSummary.disqualified.change,
         changePercent: data.processingSummary.disqualified.changePercent,
         trend: data.processingSummary.disqualified.trend,
-        context: "new prospects currently disqualified",
+        context: `new ${entityPluralLower} outside your criteria`,
         semantic: "destructive",
-        icon: <DoNotDisturbOnIcon className="fill-current" />,
+        icon: <EmergencyHeatIcon className="fill-current" />,
       },
     ],
-    [data]
+    [data, entityPluralLower]
   );
 
   return (
@@ -217,20 +219,20 @@ export function DemoAnalyticsPage() {
           <StatsOverview className="mt-4" metrics={processingMetrics} />
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <PipelineFunnelChart data={data.pipelineFunnel} />
-            <ProspectsTrendChart data={data.trendsOverTime} />
+            <PipelineFunnelChart data={data.pipelineFunnel} labels={labels} />
+            <ProspectsTrendChart data={data.trendsOverTime} labels={labels} />
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <QualificationDistributionChart
               data={data.qualificationDistribution}
-              title="Qualification breakdown for new prospects"
+              title={`Match results for new ${entityPluralLower}`}
             />
             <PlatformDistributionChart data={data.platformDistribution} />
           </div>
 
           <div className="mt-4">
-            <FitDistributionChart data={data.fitDistribution} />
+            <FitDistributionChart data={data.fitDistribution} labels={labels} />
           </div>
         </div>
       </PageContent>

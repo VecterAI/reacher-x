@@ -263,7 +263,7 @@ export function YourInteractionsTab({
           {syncError ??
             (isSyncing
               ? "Syncing latest interactions…"
-              : "No public interactions found with this prospect.")}
+              : "No public interactions with this person yet.")}
         </div>
       ) : (
         <div className="divide-y">

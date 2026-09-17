@@ -2,18 +2,19 @@ import type { Doc } from "@/convex/_generated/dataModel";
 
 /** Shared copy for qualification UI (aligned with billing usage and /plans). */
 export const QUALIFICATION_UI_LABELS = {
-  flaggedRowLabel: "Flagged as",
-  qualified: "Qualified",
-  disqualified: "Disqualified",
-  unqualified: "Unqualified",
-  pending: "Pending",
-  chartTitle: "Qualification breakdown",
+  flaggedRowLabel: "Match result",
+  qualified: "Good match",
+  disqualified: "Not a match",
+  unqualified: "Not a match",
+  pending: "Awaiting match check",
+  chartTitle: "Match results",
 } as const;
 
 export type QualificationPresentation = {
   /** Show qualification chip on prospect cards (qualified / disqualified only). */
   showCardBadge: boolean;
-  /** Tailwind classes for Flag2 on cards (icon only). */
+  icon: "match" | "not-match" | "pending";
+  /** Tailwind classes for the match-result icon on cards. */
   cardIconClassName: string;
   /** Mono label on card chip when badge is shown. */
   cardLabelText: string;
@@ -34,6 +35,7 @@ export function resolveQualificationPresentation(
   if (status === "qualified") {
     return {
       showCardBadge: true,
+      icon: "match",
       cardIconClassName: "text-emerald-600 dark:text-emerald-500",
       cardLabelText: L.qualified,
       profileValueText: L.qualified,
@@ -43,14 +45,16 @@ export function resolveQualificationPresentation(
   if (status === "disqualified") {
     return {
       showCardBadge: true,
-      cardIconClassName: "text-orange-600 dark:text-orange-500",
+      icon: "not-match",
+      cardIconClassName: "text-muted-foreground",
       cardLabelText: L.unqualified,
       profileValueText: L.unqualified,
-      profileValueClassName: "font-mono text-orange-600 dark:text-orange-500",
+      profileValueClassName: "font-mono text-muted-foreground",
     };
   }
   return {
     showCardBadge: false,
+    icon: "pending",
     cardIconClassName: "",
     cardLabelText: "",
     profileValueText: L.pending,

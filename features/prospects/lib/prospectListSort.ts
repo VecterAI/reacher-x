@@ -11,8 +11,8 @@ export const DEFAULT_PROSPECT_LIST_SORT: ProspectListSortOption =
 
 export const PROSPECT_LIST_SORT_LABELS: Record<ProspectListSortOption, string> =
   {
-    best_fit_first: "Best fit first",
-    lowest_fit_first: "Lowest fit first",
+    best_fit_first: "Best matches first",
+    lowest_fit_first: "Lowest matches first",
     newest_first: "Newest first",
     oldest_first: "Oldest first",
     individuals_first: "Individuals first",

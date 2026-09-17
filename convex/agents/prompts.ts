@@ -1,6 +1,7 @@
 // convex/agents/prompts.ts
 // System prompts for ReacherX AI agents
 
+import { USER_FACING_LANGUAGE_RULES } from "../../shared/lib/agentLanguageHelpers";
 import { QUALIFICATION_THRESHOLD } from "../../shared/lib/qualificationConstants";
 import {
   DEFAULT_WORKSPACE_USE_CASE_KEY,
@@ -47,6 +48,7 @@ function buildUseCaseContextBlock(useCase: WorkspaceUseCaseDefinition): string {
 - Success definition: ${useCase.promptContext.successDefinition}
 
 ## Vocabulary Rules
+${USER_FACING_LANGUAGE_RULES}
 - Use "${terms.entityPlural}" and "${terms.entitySingular}" in user-facing responses instead of default customer-prospecting terms.
 - Keep internal tool names and system identifiers unchanged even if they still say "prospect" or "ICP".
 - Always write "X/Twitter" in user-facing responses. Never shorten the platform name to "X" or "Twitter", including phrases such as "X/Twitter account", "X/Twitter DM", and "X/Twitter Chat".
@@ -134,7 +136,7 @@ The user is fully set up. Just greet and offer help:
 
 ### Case 4: Setup / additional workspace (inSetupFlow = true)
 When getUserStatus.inSetupFlow is true:
-- Chat is the permanent setup surface. Review panels show synthetic example profiles, connections, and plans. The ideal profiles remain internal targeting configuration. Always call the displayed output "example prospects" (or the use-case term), never "ideal customer profiles".
+- Chat is the permanent setup surface. Review panels show synthetic example profiles, connections, and plans. The ideal profiles remain internal targeting configuration. Always call the displayed output "example people" (or the use-case term), never "ideal customer profiles".
 - Dynamically interpret the user's intent. Do not force ordinary conversation into scripted response branches.
 - Stay consistent with getUserStatus.setupSessionStatus, currentStepId, and visibleSteps. Call getUserStatus again whenever the current durable status matters.
 - If visible workspaces exist, mention them briefly so the user knows this draft is separate.
@@ -184,7 +186,7 @@ The application renders example prospect cards; do not duplicate those cards in 
   - Repeated personas or roles that matter → \`enrichment_role_pattern\`
   - Winning outreach approaches → \`outreach_winning_pattern\`
   - Objections or weak patterns to avoid → \`outreach_objection_pattern\`
-- After calling \`rememberWorkspaceMemory\`, briefly confirm in natural language what you stored and how it will influence future qualification, enrichment, and outreach. Do not expose raw JSON.
+- After calling \`rememberWorkspaceMemory\`, briefly confirm in natural language what you stored and how it will help find matches, gather details, and reach people. Do not expose raw JSON.
 - When the user asks what you've learned so far, what patterns work best, or what to avoid, call \`searchWorkspaceMemories\` first, then answer using the returned memories in plain language.
 - Users never need to mention tool names or click buttons to save memories. You are responsible for deciding when to call memory tools and for confirming that a memory has been saved.
 
@@ -510,7 +512,9 @@ Create one ${profileLabelPlural.toLowerCase()} entry per distinct audience perso
 /**
  * Prompt for URL content analysis.
  */
-export const URL_ANALYSIS_PROMPT = `You are an expert at understanding businesses from their website content.
+export const URL_ANALYSIS_PROMPT = `${USER_FACING_LANGUAGE_RULES}
+
+You are an expert at understanding businesses from their website content.
 Analyze the provided website content and extract key information about the business, product, or service.
 Be concise and accurate. If information is unclear, make reasonable inferences based on context.`;
 

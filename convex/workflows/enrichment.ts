@@ -285,7 +285,7 @@ export const enrichmentWorkflow = workflow.define({
       return {
         success: false,
         enrichmentStatus: "failed",
-        error: "Prospect not found",
+        error: "Profile not found",
       };
     }
 
@@ -482,7 +482,7 @@ export const enrichmentWorkflow = workflow.define({
         ),
         activityLogDescription:
           enrichmentResult.enrichmentStatus !== "failed"
-            ? `Identified as ${enrichmentResult.prospectType} with ${enrichmentResult.painPoints.length} pain point${enrichmentResult.painPoints.length !== 1 ? "s" : ""}`
+            ? `Found profile details and ${enrichmentResult.painPoints.length} need${enrichmentResult.painPoints.length !== 1 ? "s" : ""}.`
             : undefined,
       }
     );

@@ -36,7 +36,7 @@ export const approveSocialActionRequest = createTool({
       return {
         success: false,
         message: AMBIGUOUS_PROSPECT_SELECTION_MESSAGE,
-        error: "Ambiguous prospect context",
+        error: "Ambiguous profile context",
       };
     }
 

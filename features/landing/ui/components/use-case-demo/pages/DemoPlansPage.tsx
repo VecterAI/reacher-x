@@ -11,6 +11,8 @@
 "use client";
 
 import * as React from "react";
+import { useDemoShell } from "../demoShellContext";
+import { resolvePlanFeatureEntityCopy } from "@/features/landing/lib/pricingUseCaseCopy";
 import { ActivePlanSection } from "@/features/billing/ui/components/ActivePlanSection";
 import { BillingSection } from "@/features/billing/ui/components/BillingSection";
 import { SubscriptionHistorySection } from "@/features/billing/ui/components/SubscriptionHistorySection";
@@ -149,6 +151,7 @@ function PlanTierCard({
     billing: BillingPeriod;
   }) => void;
 }) {
+  const { labels } = useDemoShell();
   const monthlyAmount = tier.pricing.monthly.amount;
   const yearlyAmount = tier.pricing.yearly.amount;
   const amountForCta = billing === "monthly" ? monthlyAmount : yearlyAmount;
@@ -181,7 +184,9 @@ function PlanTierCard({
                 className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
                 aria-hidden
               />
-              <span>{line}</span>
+              <span>
+                {resolvePlanFeatureEntityCopy(line, labels.entityPlural)}
+              </span>
             </li>
           ))}
         </ul>
@@ -289,6 +294,7 @@ function DemoPlanSelector({
 // ---------------------------------------------------------------------------
 
 export function DemoPlansPage() {
+  const { labels } = useDemoShell();
   const isMobile = useIsMobile();
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
 
@@ -321,6 +327,7 @@ export function DemoPlansPage() {
       <PageContent className="scroll-fade min-h-0 flex-1 overflow-y-auto p-0">
         <div className="flex h-full min-h-0 w-full flex-col">
           <ActivePlanSection
+            entityPlural={labels.entityPlural}
             plan={DEMO_PLAN}
             subscription={DEMO_SUBSCRIPTION}
             isPaid={true}

@@ -195,7 +195,7 @@ export const qualificationWorkflow = workflow.define({
     if (!prospect || prospect.workspaceId !== args.workspaceId) {
       return {
         success: false,
-        error: "Prospect not found in this workspace",
+        error: "Profile not found in this workspace",
       };
     }
 
@@ -451,10 +451,10 @@ export const qualificationWorkflow = workflow.define({
       workspaceId: args.workspaceId,
       type: "qualified",
       title: result.qualified
-        ? `Qualified with ${result.score}% fit`
-        : `Did not qualify (${result.score}% fit)`,
+        ? `Good match · ${result.score}% match`
+        : `Not a match · ${result.score}% match`,
       description: result.qualified
-        ? `Qualified with a score of ${result.score}. Minimum required: ${QUALIFICATION_THRESHOLD}. Moving to enrichment.`
+        ? `Match score: ${result.score}. Minimum required: ${QUALIFICATION_THRESHOLD}.${isStillSetupPreview ? "" : " Finding profile details next."}`
         : `Scored ${result.score}. Minimum required: ${QUALIFICATION_THRESHOLD}.`,
     });
     await step.runMutation(internal.memory.recordMemoryWorkflowEventInternal, {

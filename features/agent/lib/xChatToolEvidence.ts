@@ -33,7 +33,7 @@ export function getLockedXChatToolEvidence(
     prospectName:
       typeof prospect?.name === "string" && prospect.name.trim()
         ? prospect.name.trim()
-        : "this prospect",
+        : "this person",
     eventCount: typeof xChat.eventCount === "number" ? xChat.eventCount : 0,
     inboundEventCount:
       typeof xChat.inboundEventCount === "number" ? xChat.inboundEventCount : 0,

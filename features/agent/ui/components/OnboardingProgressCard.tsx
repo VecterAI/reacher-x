@@ -43,8 +43,8 @@ import {
 
 const STAGES = [
   { id: "searching", label: "Search", step: 1 },
-  { id: "qualifying", label: "Qualify", step: 2 },
-  { id: "enriching", label: "Enrich", step: 3 },
+  { id: "qualifying", label: "Check match", step: 2 },
+  { id: "enriching", label: "Find details", step: 3 },
   { id: "plans", label: "Plans", step: 4 },
 ] as const;
 
@@ -378,14 +378,14 @@ export function OnboardingProgressCard({
           }
         />
         <StatCell
-          label="Qualified"
+          label="Good match"
           value={data.qualified}
           detail={
             formatAverageFitScoreDetail(data.avgQualificationScore) ?? "\u00A0"
           }
         />
         <StatCell
-          label="Enriched"
+          label="Details found"
           value={data.enriched}
           detail={formatEnrichedProfilesDetail(data.enriched)}
         />

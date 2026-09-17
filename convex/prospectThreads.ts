@@ -108,7 +108,7 @@ export const ensureActiveThreadForProspectInternal = internalMutation({
   handler: async (ctx, { prospectId, threadSummary }) => {
     const prospect = await ctx.db.get(prospectId);
     if (!prospect) {
-      throw new Error("Prospect not found");
+      throw new Error("Profile not found");
     }
 
     const existingLink = await getLatestActiveProspectThreadLink(

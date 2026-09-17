@@ -12,7 +12,7 @@ const SYSTEM_FACTS: Array<{
 }> = [
   { value: 10, suffix: "×", label: "Less manual work" },
   { value: 24, suffix: "/7", label: "Working for you" },
-  { value: 4, suffix: "×", label: "More qualified matches" },
+  { value: 4, suffix: "×", label: "More matches" },
   { value: 0, label: "Expertise required", resetFrom: 12 },
 ];
 

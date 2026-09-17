@@ -145,9 +145,9 @@ function getFallbackDescription(
     case "converted":
       return `This ${entitySingularLower} moved to the next stage.`;
     case "qualified":
-      return `This ${entitySingularLower} was evaluated for qualification.`;
+      return `This ${entitySingularLower} was checked against your criteria.`;
     case "enriched":
-      return "The profile was enriched.";
+      return "Profile details were found.";
     case "found":
     default:
       return `This ${entitySingularLower} was discovered.`;
@@ -185,8 +185,8 @@ export function ActivityLogTab({
   const actionLabels = React.useMemo<Record<ActivityType, string>>(
     () => ({
       found: `discovered this ${entitySingularLower}.`,
-      qualified: `qualified this ${entitySingularLower}.`,
-      enriched: "enriched the profile.",
+      qualified: `checked this ${entitySingularLower} for a match.`,
+      enriched: "found profile details.",
       plan_created: "created an outreach plan.",
       contacted: "started outreach.",
       posted: "posted an update.",
@@ -200,8 +200,8 @@ export function ActivityLogTab({
     (): Array<{ value: ActivityFilterType; label: string }> => [
       { value: "all", label: "All activity" },
       { value: "found", label: "Discovered" },
-      { value: "qualified", label: "Qualified" },
-      { value: "enriched", label: "Enriched" },
+      { value: "qualified", label: "Good match" },
+      { value: "enriched", label: "Details found" },
       { value: "plan_created", label: "Plan created" },
       { value: "contacted", label: stageLabels.contacted },
       { value: "posted", label: "Posted update" },

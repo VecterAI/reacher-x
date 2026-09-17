@@ -272,7 +272,7 @@ export const createProspectMonitor = internalAction({
     );
 
     if (!prospect) {
-      return { success: false, error: "Prospect not found" };
+      return { success: false, error: "Profile not found" };
     }
 
     // Extract Twitter user ID and username from prospect data
@@ -280,7 +280,7 @@ export const createProspectMonitor = internalAction({
     const twitterUsername = prospect.data?.user?.screen_name;
 
     if (!twitterUserId && !twitterUsername) {
-      return { success: false, error: "Prospect has no Twitter user ID" };
+      return { success: false, error: "Profile has no Twitter user ID" };
     }
 
     // Check if monitor already exists

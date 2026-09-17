@@ -302,7 +302,7 @@ export const queueMessage = mutation({
     const user = await requireUser(ctx);
     const prospect = await requireOwnedProspect(ctx, args.prospectId, { user });
     if (prospect.platform !== args.platform) {
-      throw new Error("Prospect platform does not match this conversation.");
+      throw new Error("Profile platform does not match this conversation.");
     }
     const now = getCurrentUTCTimestamp();
     let mediaUrls = normalizeOptionalStrings(args.mediaUrls);

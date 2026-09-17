@@ -499,9 +499,9 @@ export function AgentOpsDashboard() {
       ),
       metricCard(
         "qualification-precision",
-        "Qualification precision",
+        "Match precision",
         data.overview.metrics.qualificationPrecision,
-        "qualified prospects",
+        "matching people",
         "default",
         "percent"
       ),
@@ -613,8 +613,8 @@ export function AgentOpsDashboard() {
           "Source theme",
           "Novelty score",
           "Performance score",
-          "Prospects found",
-          "Qualified",
+          "People found",
+          "Good match",
           "Converted",
           "Reply rate",
           "Created at",
@@ -778,7 +778,7 @@ export function AgentOpsDashboard() {
     () => [
       metricCard(
         "qual-precision",
-        "Qualification precision",
+        "Match precision",
         data.quality.summary.qualificationPrecision,
         "of evaluated",
         "default",
@@ -786,7 +786,7 @@ export function AgentOpsDashboard() {
       ),
       metricCard(
         "qual-enrichment",
-        "Enrichment usefulness",
+        "Profile detail usefulness",
         data.quality.summary.enrichmentUsefulness,
         "avg score"
       ),
@@ -1028,7 +1028,7 @@ export function AgentOpsDashboard() {
           />
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <AgentOpsLineChart
-              title="Qualification precision"
+              title="Match precision"
               config={{
                 precision: {
                   label: "Precision",
@@ -1060,7 +1060,7 @@ export function AgentOpsDashboard() {
               ]}
             />
             <AgentOpsLineChart
-              title="Enrichment usefulness"
+              title="Profile detail usefulness"
               config={{
                 usefulness: {
                   label: "Usefulness",
@@ -1851,7 +1851,7 @@ function AgentOpsImprovementChartWrapper({
           color: "hsl(var(--chart-2))",
         },
         qualifiedProspects: {
-          label: "Qualified prospects",
+          label: "Matching people",
           color: "hsl(var(--chart-3))",
         },
       }}

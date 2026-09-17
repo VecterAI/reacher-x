@@ -267,7 +267,7 @@ export function OutreachPlanCard({
             <h3 className="truncate text-base font-medium">{title}</h3>
             <Badge variant="outline" className="shrink-0 text-xs font-normal">
               {hasWaitingManual
-                ? "Manual reply needed"
+                ? "Post reply on X"
                 : getOutreachPlanStatusLabel(status, canStart)}
             </Badge>
           </div>

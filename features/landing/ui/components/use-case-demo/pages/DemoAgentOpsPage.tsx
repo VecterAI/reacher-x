@@ -174,7 +174,7 @@ const DISCOVERY_INVENTORY: DiscoveryInventoryRow[] = [
     type: "semantic",
     status: "generated",
     statusLabel: "Generated",
-    sourceTheme: "Pain points",
+    sourceTheme: "What they need",
     noveltyScore: 79,
     performanceScore: null,
     createdAt: DEMO_NOW - 1 * DAY,
@@ -246,7 +246,7 @@ const DISCOVERY_INVENTORY: DiscoveryInventoryRow[] = [
     type: "keyword",
     status: "rejected_low_novelty",
     statusLabel: "Low novelty",
-    sourceTheme: "Pain points",
+    sourceTheme: "What they need",
     noveltyScore: 22,
     performanceScore: null,
     createdAt: DEMO_NOW - 4 * DAY,
@@ -282,7 +282,7 @@ const DISCOVERY_INVENTORY: DiscoveryInventoryRow[] = [
     type: "semantic",
     status: "generated",
     statusLabel: "Generated",
-    sourceTheme: "Pain points",
+    sourceTheme: "What they need",
     noveltyScore: 68,
     performanceScore: null,
     createdAt: DEMO_NOW - 12 * HOUR,
@@ -336,7 +336,7 @@ const MEMORY_INVENTORY: MemoryInventoryRow[] = [
     memoryId: "mem-01",
     title: "Hiring signals convert best",
     summary:
-      "Prospects posting sales roles reply at 2x the baseline rate, so hiring-signal queries are prioritized during review.",
+      "People posting sales roles reply twice as often, so the agent searches for hiring posts more often.",
     source: "outcome_evaluator",
     category: "qualification",
     confidence: 91.2,
@@ -425,9 +425,9 @@ const MEMORY_INVENTORY: MemoryInventoryRow[] = [
   },
   {
     memoryId: "mem-08",
-    title: "Enrichment boosts precision",
+    title: "More details improve match checks",
     summary:
-      "Prospects with refreshed finance signals are qualified correctly 18 percent more often.",
+      "Match checks are correct 18 percent more often when financial details are up to date.",
     source: "quality_evaluator",
     category: "qualification",
     confidence: 71.8,
@@ -479,7 +479,7 @@ const MEMORY_INVENTORY: MemoryInventoryRow[] = [
     memoryId: "mem-12",
     title: "Long-tail keywords underperform",
     summary:
-      "Keyword queries longer than six words rarely qualify prospects and are deprioritized at review.",
+      "Searches longer than six words rarely find matches, so the agent uses them less often.",
     source: "novelty_gate",
     category: "qualification",
     confidence: 58.7,
@@ -505,12 +505,12 @@ const ACTIVITY_FEED: AgentOpsActivityItem[] = [
   {
     id: "run-01",
     kind: "run",
-    title: "Qualification evaluator run",
+    title: "Match review",
     description: "Scored 6 new matches against the workspace profile.",
     status: "completed",
     timestamp: DEMO_NOW - 25 * 60 * 1000,
     severity: "success",
-    linkedEntity: "Qualification",
+    linkedEntity: "Match check",
   },
   {
     id: "mem-13",
@@ -526,12 +526,12 @@ const ACTIVITY_FEED: AgentOpsActivityItem[] = [
   {
     id: "evt-02",
     kind: "event",
-    title: "Enrichment refresh finished",
-    description: "Updated profiles and finance signals for 4 prospects.",
+    title: "Profile details updated",
+    description: "Updated profiles and finance signals for 4 people.",
     status: "processed",
     timestamp: DEMO_NOW - 2 * HOUR,
     severity: "default",
-    linkedEntity: "Enrichment",
+    linkedEntity: "Profile details",
   },
   {
     id: "run-02",
@@ -770,9 +770,9 @@ export function DemoAgentOpsPage() {
     ),
     metricCard(
       "qualification-precision",
-      "Qualification precision",
+      "Match precision",
       data.overview.metrics.qualificationPrecision,
-      "qualified prospects",
+      "matching people",
       "default",
       "percent"
     ),
@@ -849,7 +849,7 @@ export function DemoAgentOpsPage() {
   const qualityMetrics: StatMetricData[] = [
     metricCard(
       "qual-precision",
-      "Qualification precision",
+      "Match precision",
       data.quality.summary.qualificationPrecision,
       "of evaluated",
       "default",
@@ -857,7 +857,7 @@ export function DemoAgentOpsPage() {
     ),
     metricCard(
       "qual-enrichment",
-      "Enrichment usefulness",
+      "Profile detail usefulness",
       data.quality.summary.enrichmentUsefulness,
       "avg score"
     ),
@@ -1078,7 +1078,7 @@ export function DemoAgentOpsPage() {
                           color: "hsl(var(--chart-2))",
                         },
                         qualifiedProspects: {
-                          label: "Qualified prospects",
+                          label: "Matching people",
                           color: "hsl(var(--chart-3))",
                         },
                       }}
@@ -1221,8 +1221,8 @@ export function DemoAgentOpsPage() {
                           "Source theme",
                           "Novelty score",
                           "Performance score",
-                          "Prospects found",
-                          "Qualified",
+                          "People found",
+                          "Good match",
                           "Converted",
                           "Reply rate",
                           "Created at",
@@ -1289,7 +1289,7 @@ export function DemoAgentOpsPage() {
                   />
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                     <AgentOpsLineChart
-                      title="Qualification precision"
+                      title="Match precision"
                       config={{
                         precision: {
                           label: "Precision",
@@ -1321,7 +1321,7 @@ export function DemoAgentOpsPage() {
                       ]}
                     />
                     <AgentOpsLineChart
-                      title="Enrichment usefulness"
+                      title="Profile detail usefulness"
                       config={{
                         usefulness: {
                           label: "Usefulness",

@@ -17,6 +17,7 @@ import {
   ErrorIcon,
   PauseCircleIcon,
   WarningIcon,
+  ReplyIcon,
 } from "@/shared/ui/components/icons";
 
 const INDICATOR_TONE_CLASS_NAMES: Record<OutreachProgressTone, string> = {
@@ -33,6 +34,7 @@ const STATIC_INDICATOR_ICONS: Record<
 > = {
   waiting: CalendarClockIcon,
   attention: WarningIcon,
+  reply: ReplyIcon,
   paused: PauseCircleIcon,
   blocked: ErrorIcon,
   success: CheckIcon,

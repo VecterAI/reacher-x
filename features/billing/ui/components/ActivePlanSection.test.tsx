@@ -73,3 +73,24 @@ describe("complimentary billing presentation", () => {
     expect(html).not.toContain("Complimentary");
   });
 });
+
+test.each([undefined, "People", "Candidates", "Investors"])(
+  "current plan features use %s wording instead of the old sales labels",
+  (entityPlural) => {
+    const html = renderToStaticMarkup(
+      createElement(ActivePlanSection, {
+        plan: { tier: "pro" },
+        subscription: null,
+        isPaid: true,
+        entityPlural,
+        onUpgrade() {},
+        onUpgradeToPro() {},
+        onManageBilling() {},
+      })
+    );
+    expect(html).toContain(
+      `Unlimited ${(entityPlural ?? "People").toLowerCase()} who match`
+    );
+    expect(html).not.toMatch(/qualified|prospects|qualification|enrichment/);
+  }
+);

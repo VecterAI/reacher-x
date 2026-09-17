@@ -15,20 +15,20 @@ import {
   buildTelHref,
   type ProspectContactSource,
 } from "@/shared/lib/utils/contact/contactUtils";
+import { MatchResultIcon } from "./MatchResultIcon";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
 import AnimatedPercent from "@/shared/ui/components/AnimatedPercent";
 import Link from "next/link";
 import {
   CallIcon,
-  HandshakeIcon,
+  ModeHeatIcon,
   MailIcon,
   LocationOnIcon,
   AppBadgingIcon,
   StoreIcon,
   GlobeIcon,
   PaidIcon,
-  Flag2Icon,
   SearchActivityIcon,
   FactCheckIcon,
   Cognition2Icon,
@@ -134,7 +134,7 @@ export function AnimatedFitBar({
   return (
     <span
       className={cn("font-mono text-xs tracking-tight", className)}
-      aria-label={`${percentage}% fit`}
+      aria-label={`${percentage}% match`}
     >
       {bar}
     </span>
@@ -273,7 +273,13 @@ export function ProspectDetailsCard({
   return (
     <div className={cn("space-y-1", className)}>
       <DetailRow
-        icon={<Flag2Icon className="fill-current" />}
+        icon={
+          <MatchResultIcon
+            result={qualificationPresentation.icon}
+            className="fill-current"
+            aria-hidden
+          />
+        }
         label={QUALIFICATION_UI_LABELS.flaggedRowLabel}
         valueClassName={qualificationPresentation.profileValueClassName}
       >
@@ -282,15 +288,15 @@ export function ProspectDetailsCard({
 
       {/* Fit (always visible) */}
       <DetailRow
-        icon={<HandshakeIcon className="fill-current" />}
-        label="Fit"
+        icon={<ModeHeatIcon className="fill-current" aria-hidden />}
+        label="Match"
         valueClassName="text-foreground"
       >
         <div className="flex items-center gap-2">
           <AnimatedFitBar percentage={qualificationScore} />
           <AnimatedPercent
             value={qualificationScore}
-            srLabel={`${entitySingular} fit score`}
+            srLabel={`${entitySingular} match score`}
           />
         </div>
       </DetailRow>
@@ -358,7 +364,7 @@ export function ProspectDetailsCard({
       {resolvedWebsiteHref && (
         <DetailRow
           icon={<GlobeIcon className="fill-current" />}
-          label="Website Url"
+          label="Website"
         >
           <Link
             href={resolvedWebsiteHref}

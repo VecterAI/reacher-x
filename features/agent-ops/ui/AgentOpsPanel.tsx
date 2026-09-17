@@ -226,11 +226,11 @@ export function AgentOpsPanel({
                   {queryDetail.data.performance ? (
                     <div className="grid grid-cols-2 gap-3 rounded-lg border p-3">
                       <Metric
-                        label="Prospects found"
+                        label="People found"
                         value={queryDetail.data.performance.prospectsFound}
                       />
                       <Metric
-                        label="Qualified"
+                        label="Good match"
                         value={queryDetail.data.performance.qualifiedCount}
                       />
                       <Metric
@@ -290,7 +290,7 @@ export function AgentOpsPanel({
                 </div>
                 <p>Refresh frequency: {monitorDetail.data.refreshFrequency}</p>
                 <p>
-                  Prospects found:{" "}
+                  People found:{" "}
                   {monitorDetail.data.totalProspectsFound.toLocaleString()}
                 </p>
                 <p>
@@ -302,7 +302,7 @@ export function AgentOpsPanel({
                 {monitorDetail.data.performance ? (
                   <div className="grid grid-cols-2 gap-3 rounded-lg border p-3">
                     <Metric
-                      label="Qualified"
+                      label="Good match"
                       value={monitorDetail.data.performance.qualifiedCount}
                     />
                     <Metric
@@ -314,7 +314,7 @@ export function AgentOpsPanel({
                       value={`${monitorDetail.data.performance.replyRate.toFixed(1)}%`}
                     />
                     <Metric
-                      label="Qualification rate"
+                      label="Match rate"
                       value={`${monitorDetail.data.performance.qualificationRate.toFixed(1)}%`}
                     />
                   </div>

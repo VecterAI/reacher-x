@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { resolveWorkspaceEntityPluralLabel } from "@/shared/lib/workspaceUseCases";
 import Link from "next/link";
 import { format } from "date-fns";
 import { Button } from "@/shared/ui/components/Button";
@@ -28,6 +29,9 @@ export function WorkspaceUsageDetails({
   unavailable: boolean;
   onNavigate: () => void;
 }) {
+  const entityPlural = usage
+    ? resolveWorkspaceEntityPluralLabel(usage.entityPlural)
+    : "";
   const progress = usage
     ? getUsageProgress(usage.used ?? 0, usage.limit)
     : null;
@@ -56,7 +60,7 @@ export function WorkspaceUsageDetails({
         ) : (
           <>
             <div className="flex items-baseline justify-between gap-3 text-sm">
-              <span>{usage.entityPlural}</span>
+              <span>{entityPlural}</span>
               <span className="tabular-nums">
                 <span className="font-medium">
                   {usage.used.toLocaleString()}
@@ -71,7 +75,7 @@ export function WorkspaceUsageDetails({
             {finiteUsage && progress ? (
               <Progress
                 value={progress.fraction * 100}
-                aria-label={`${usage.entityPlural} usage`}
+                aria-label={`${entityPlural} usage`}
                 aria-valuenow={progress.fraction * 100}
                 aria-valuetext={`${usage.used} of ${usage.limit} used`}
                 className="h-1 rounded-full"
@@ -97,7 +101,7 @@ export function WorkspaceUsageDetails({
             {usage.limitReached ? (
               <p className="text-muted-foreground text-xs text-pretty">
                 Agent has paused {usage.discoveryVerb} new{" "}
-                {usage.entityPlural.toLowerCase()}.
+                {entityPlural.toLowerCase()}.
               </p>
             ) : null}
           </>
@@ -129,6 +133,9 @@ export function WorkspaceUsageIndicatorView({
   unavailable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const entityPlural = usage
+    ? resolveWorkspaceEntityPluralLabel(usage.entityPlural)
+    : "";
   const label = unavailable
     ? "Usage unavailable. Open usage to try again"
     : usage?.tier === "free"
@@ -136,8 +143,8 @@ export function WorkspaceUsageIndicatorView({
       : !usage || usage.used === null
         ? "Usage is being updated"
         : usage.limit === -1
-          ? `${usage.used.toLocaleString()} ${usage.entityPlural.toLowerCase()} used. Unlimited plan`
-          : `${usage.used.toLocaleString()} of ${usage.limit.toLocaleString()} ${usage.entityPlural.toLowerCase()} used`;
+          ? `${usage.used.toLocaleString()} ${entityPlural.toLowerCase()} used. Unlimited plan`
+          : `${usage.used.toLocaleString()} of ${usage.limit.toLocaleString()} ${entityPlural.toLowerCase()} used`;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>

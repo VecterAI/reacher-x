@@ -82,9 +82,9 @@ const STEPS: Array<{ index: string; title: string; description: ReactNode }> = [
   },
   {
     index: "03",
-    title: "Qualify",
+    title: "Check match",
     description:
-      "Every match is scored out of 100, with the exact post that proves fit.",
+      "Each person gets a match score out of 100, with the post that explains why.",
   },
   {
     index: "04",
@@ -101,7 +101,7 @@ const OSS_CAPABILITIES: Array<{ title: string; detail: string }> = [
   },
   {
     title: "Change it",
-    detail: "Modify the workflows, qualification rules, and behavior.",
+    detail: "Change how the agent works, checks matches, and responds.",
   },
   {
     title: "Build on it",

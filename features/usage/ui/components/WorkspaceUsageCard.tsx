@@ -68,7 +68,7 @@ export const WorkspaceUsageCard = React.memo(function WorkspaceUsageCard({
     () =>
       ({
         value: {
-          label: "Qualified",
+          label: "Good match",
           color: accentColor,
         },
       }) satisfies ChartConfig,

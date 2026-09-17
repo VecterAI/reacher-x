@@ -544,8 +544,8 @@ export const searchMentionEntities = query({
               secondaryLabel:
                 scopedProspect && scopedProspect._id === prospect.prospectId
                   ? handleLabel
-                    ? `Current prospect • ${handleLabel}`
-                    : "Current prospect"
+                    ? `Current person • ${handleLabel}`
+                    : "Current person"
                   : prospect.secondaryLabel,
               avatarUrl: prospect.avatarUrl,
               verified: prospect.verified,

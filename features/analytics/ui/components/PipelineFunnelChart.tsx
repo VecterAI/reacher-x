@@ -19,6 +19,10 @@ import type { PipelineFunnelDataPoint } from "../../lib/types";
 export interface PipelineFunnelChartProps {
   data: PipelineFunnelDataPoint[];
   className?: string;
+  labels?: Pick<
+    ReturnType<typeof useActiveUseCaseLabels>,
+    "entityPlural" | "stageLabels"
+  >;
 }
 
 // ============================================================================
@@ -60,8 +64,10 @@ function getColorKey(
 export const PipelineFunnelChart = React.memo(function PipelineFunnelChart({
   data,
   className,
+  labels,
 }: PipelineFunnelChartProps) {
-  const { entityPlural, stageLabels } = useActiveUseCaseLabels();
+  const activeLabels = useActiveUseCaseLabels();
+  const { entityPlural, stageLabels } = labels ?? activeLabels;
   const chartConfig = React.useMemo(
     () =>
       ({
@@ -90,7 +96,7 @@ export const PipelineFunnelChart = React.memo(function PipelineFunnelChart({
 
   return (
     <ChartCard
-      title="Pipeline funnel"
+      title={`${entityPlural} by stage`}
       config={chartConfig}
       className={className}
     >

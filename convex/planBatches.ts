@@ -501,7 +501,7 @@ export const resolveNamedPlanBatchTargetsInternal = internalQuery({
     for (const requestedName of args.prospectNames) {
       const normalizedName = normalizePlanBatchTargetName(requestedName);
       if (!normalizedName) {
-        throw new Error("A prospect name or handle cannot be empty.");
+        throw new Error("A profile name or handle cannot be empty.");
       }
       const candidates = await ctx.db
         .query("prospectSummaries")
@@ -829,7 +829,7 @@ export const createPlanBatchRunInternal = internalMutation({
       args.perProspectInstructions.length > 0
     ) {
       throw new Error(
-        "Target-specific instructions can only be used with exact tagged or named prospects."
+        "Target-specific instructions can only be used with exact tagged or named people."
       );
     }
 
@@ -900,7 +900,7 @@ export const createPlanBatchRunInternal = internalMutation({
       ) {
         await ctx.db.delete("planBatchRuns", runId);
         throw new Error(
-          "The shared instruction must contain only the common plan change, without prospect names or prospect-specific instructions."
+          "The shared instruction must contain only the common plan change, without profile names or profile-specific instructions."
         );
       }
       let resolvedInstructions: Map<string, string>;
@@ -935,7 +935,9 @@ export const createPlanBatchRunInternal = internalMutation({
       if (targetCount === 0) {
         await ctx.db.delete("planBatchRuns", runId);
         throw new Error(
-          "The tagged prospects are no longer available in this workspace."
+          args.scopeKind === "tagged"
+            ? "The tagged people are no longer available in this workspace."
+            : "The people you named are no longer available in this workspace."
         );
       }
 

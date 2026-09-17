@@ -200,3 +200,40 @@ describe("plan usage UI", () => {
     expect(html).not.toContain('role="progressbar"');
   });
 });
+
+describe("usage copy with older backend labels", () => {
+  test.each([
+    ["Prospects", "People"],
+    ["prospects", "People"],
+    ["People", "People"],
+    ["Candidates", "Candidates"],
+    ["Investors", "Investors"],
+    ["Creators", "Creators"],
+  ])("renders %s as %s across usage and plan notices", (storedLabel, label) => {
+    const value = { ...usage, entityPlural: storedLabel };
+    const details = renderToStaticMarkup(
+      createElement(WorkspaceUsageDetails, {
+        usage: value,
+        unavailable: false,
+        onNavigate() {},
+      })
+    );
+    const notice = renderToStaticMarkup(
+      createElement(WorkspacePlanLimitNotice, {
+        usage: value,
+        onDismiss() {},
+      })
+    );
+    expect(details).toContain(`>${label}</span>`);
+    expect(details).toContain(`aria-label="${label} usage"`);
+    expect(details).toContain(`new ${label.toLowerCase()}`);
+    expect(renderIndicator(value)).toContain(
+      `100 of 100 ${label.toLowerCase()} used`
+    );
+    expect(notice).toContain(`plan limit for ${label.toLowerCase()}`);
+    expect(renderIndicator({ ...value, limit: -1 })).toContain(
+      `100 ${label.toLowerCase()} used. Unlimited plan`
+    );
+    expect(value.entityPlural).toBe(storedLabel);
+  });
+});

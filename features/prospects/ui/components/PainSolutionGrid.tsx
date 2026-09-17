@@ -1,7 +1,7 @@
 /**
  * PainSolutionGrid
  * Two-column grid showing pain points and matched solutions.
- * Pain points are clickable to view evidence posts.
+ * What they need are clickable to view evidence posts.
  */
 "use client";
 
@@ -112,13 +112,13 @@ export function PainSolutionGrid({
     <div className={cn("space-y-3", className)}>
       {/* Header */}
       <div className="grid grid-cols-2 gap-4 text-sm font-medium">
-        {/* Pain points header with orange bar */}
+        {/* What they need header with orange bar */}
         <div className="relative pl-3">
           <span
             className="absolute top-0 left-0 h-full w-1 bg-orange-500"
             aria-hidden="true"
           />
-          Pain points
+          What they need
         </div>
         {/* Solutions header with lime bar */}
         <div className="relative pl-3">
@@ -126,7 +126,7 @@ export function PainSolutionGrid({
             className="absolute top-0 left-0 h-full w-1 bg-lime-500"
             aria-hidden="true"
           />
-          Solutions
+          How you can help
         </div>
       </div>
 
