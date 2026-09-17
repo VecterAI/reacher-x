@@ -17,8 +17,8 @@ Merging into main and promoting to production remain outside this authorization.
 - [x] Complete built-in browser desktop/mobile/no-JavaScript QA; document browser and auth limitations below.
 - [x] Run CodeRabbit and resolve verified issues; both review suggestions were disproved by current source and HTTP evidence.
 - [x] Record local evidence and remaining deployment checks.
-- [ ] Push the reviewed change to PR #85 and verify the new preview.
-- [ ] Run a fresh public is-agentic scan and inspect its findings.
+- [x] Push the reviewed change to PR #85 and verify the new preview.
+- [x] Run a fresh public is-agentic scan and inspect its findings.
 - [ ] Verify deployed HTML/Markdown responses and cache behavior.
 
 ## Scope and constraints
@@ -184,3 +184,38 @@ No unnecessary changes were made to satisfy either suggestion. Review transcript
 Before commit approval, the final Git check fetched origin again; `HEAD` remained `bd7e624f`, exactly matching
 `origin/codex/marketing-variants` (0 ahead / 0 behind). The index is empty. PR #85
 and the separate PR #84 were not modified.
+
+### Deployed verification, September 17
+
+Commit `6dbf0863` built successfully on Vercel. Its temporarily public preview
+scored **98/100** using `npx is-agentic@1.0.1 <preview-url> --json`, with all five
+essential checks passing (80/80). This is a preview diagnostic, not a production
+score: some recommended/bonus results misidentify the `vercel.app` domain as
+Vercel, including developer resources and MCP. No artificial content was added
+to chase those points. The original preview protection was restored and an
+unauthenticated request again returned the Vercel authentication redirect (302).
+
+The deployed HTTP suite passed five of six groups. Its first group caught a real
+missing `Accept` value in cached HTML's `Vary` header, so the complete 81-page
+sweep was not yet established on that deployment. Markdown negotiation, format
+switching/HEAD/Flight, invalid/private routes, sitemap/index, structured metadata,
+and blog search checks otherwise passed.
+
+The Vercel Next.js adapter sets prerender `initialHeaders.vary` to its own RSC
+header list, overwriting the proxy's addition. `vercel.json` now appends `Accept`
+using a response-header transform on public editorial routes, preserving Next.js's
+existing values. `continue: true` preserves framework routing. This uses Vercel's
+[documented transforms](https://vercel.com/docs/project-configuration/vercel-json#transform-object-definition).
+Deployed verification of this correction is pending.
+
+CodeRabbit's completed third review covered `vercel.json` and raised one major
+issue: explicitly continue routing after the header rule. That valid issue was
+fixed. Prettier, the six agent-readiness unit tests, route-scope positive/negative
+checks and `git diff --check` passed. The change only affects Vercel routing
+configuration; the application's previously verified production build is unchanged.
+
+Built-in browser smoke testing confirmed the deployed home page and interactive
+demo rendered, with no captured console warnings/errors. Both acquisition/login
+links returned to the homepage in the available browser session; a complete
+customer login/setup flow remains unverified and is skipped under the user's
+explicit exception. No workspace or customer outreach was created.
