@@ -28,6 +28,8 @@ export interface EvidencePostsListProps {
   posts?: unknown[];
   platform?: "twitter" | "linkedin";
   readOnly?: boolean;
+  /** Render supplied fixtures without hydration or engagement requests. */
+  offline?: boolean;
   maxItems?: number;
   compact?: boolean;
   onPostSelect?: (post: unknown) => void;
@@ -39,6 +41,7 @@ export function EvidencePostsList({
   posts = EMPTY_POSTS,
   platform = "twitter",
   readOnly = false,
+  offline = false,
   maxItems,
   compact = false,
   onPostSelect,
@@ -79,8 +82,9 @@ export function EvidencePostsList({
     }
     return postIds;
   }, [platform, visiblePosts]);
-  const { tweetsById, resultsById, error } =
-    useHydratedTwitterPosts(twitterPostIds);
+  const { tweetsById, resultsById, error } = useHydratedTwitterPosts(
+    offline ? [] : twitterPostIds
+  );
   const fallbackTweets = useTwitterTimelineEngagementMerge(
     React.useMemo(() => {
       if (platform !== "twitter") {
@@ -99,7 +103,8 @@ export function EvidencePostsList({
         }
       }
       return tweets;
-    }, [platform, visiblePosts])
+    }, [platform, visiblePosts]),
+    !offline
   );
   const fallbackTweetsById = React.useMemo(() => {
     const tweetsById: Record<string, TweetType> = {};
@@ -121,7 +126,8 @@ export function EvidencePostsList({
           typeof post === "object" &&
           (post as UnifiedPost).platform === "linkedin"
       );
-    }, [platform, visiblePosts])
+    }, [platform, visiblePosts]),
+    !offline
   );
   const linkedInPostsById = React.useMemo(() => {
     const postsById: Record<string, UnifiedPost> = {};
@@ -153,7 +159,8 @@ export function EvidencePostsList({
           className={cn(
             "px-4 pb-2",
             index === 0 ? "pt-4" : "pt-2",
-            onPostSelect && "hover:bg-muted/30 cursor-pointer transition-colors"
+            onPostSelect &&
+              "cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-950"
           )}
           role={platform === "twitter" && onPostSelect ? "button" : undefined}
           tabIndex={platform === "twitter" && onPostSelect ? 0 : undefined}
@@ -210,7 +217,7 @@ export function EvidencePostsList({
                     showMenu={showPostActions ? undefined : false}
                     showFooter={showPostActions}
                     interactiveCursor={Boolean(onPostSelect)}
-                    openBehavior={onPostSelect ? "none" : "auto"}
+                    openBehavior={offline || onPostSelect ? "none" : "auto"}
                   />
                 );
               }
@@ -228,7 +235,7 @@ export function EvidencePostsList({
                     showMenu={showPostActions ? undefined : false}
                     showFooter={showPostActions}
                     interactiveCursor={Boolean(onPostSelect)}
-                    openBehavior={onPostSelect ? "none" : "auto"}
+                    openBehavior={offline || onPostSelect ? "none" : "auto"}
                   />
                 );
               }
@@ -264,7 +271,7 @@ export function EvidencePostsList({
                   : undefined
               }
               interactiveCursor={Boolean(onPostSelect)}
-              openBehavior={onPostSelect ? "none" : "auto"}
+              openBehavior={offline || onPostSelect ? "none" : "auto"}
               disableExternalNavigation={
                 (readOnly && platform === "linkedin") || Boolean(onPostSelect)
               }

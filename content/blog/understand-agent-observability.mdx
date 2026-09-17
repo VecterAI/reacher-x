@@ -1,0 +1,52 @@
+---
+title: "See what ReacherX △ Agent is doing"
+description: "Use Agent observability to inspect searches, memories, quality checks, and activity when results need a closer look."
+category: tutorials
+date: "2026-07-07"
+updated: "2026-09-10"
+related: ["teach-reacherx-what-you-want", "how-reacherx-reporting-works"]
+tags:
+  ["observability", "Agent observability", "memory", "discovery", "debugging"]
+---
+
+“Observability” is a technical word for being able to see what a system is doing. In ReacherX, the Agent observability page lets you look behind the results.
+
+You don't need to be a developer to use it. If you want to know what △ Agent searched for, what it remembered, or why some work needs attention, this is where to look.
+
+## Start with a question
+
+Suppose △ Agent keeps finding people who are too far from your target audience. Open the Discovery tab and inspect the search queries. Do those searches describe the people you wanted?
+
+You can search and filter the inventory, then open an individual record for details. Query status matters: not every query △ Agent writes ends up being run. Duplicate or low-novelty proposals may be rejected.
+
+If the search looks right but the people don't, read their qualification explanations too. The problem may be how fit was judged, rather than how people were found.
+
+## Check what △ Agent remembers
+
+The Memory tab lets you inspect saved knowledge and instructions. Look at the source, status, and supporting information. A direct instruction from you carries different meaning from a lesson inferred by the system.
+
+A confidence number is the system's assessment, not a guarantee. Ask whether the memory is supported and still relevant to the current workspace.
+
+If you recently changed your audience or product, look for instructions that no longer apply. Tell △ Agent what should replace them, then check the saved result. [This guide](/blog/teach-reacherx-what-you-want) gives examples of useful corrections.
+
+<BlogAppDemo
+  scenario="understand-agent-observability"
+  title="Inspect discovery and memory"
+  caption="Open a search query to see what △ Agent found."
+/>
+
+## Follow the activity behind a result
+
+The page includes Overview, Discovery, Quality, Memory, and Activity tabs. Activity records can lead to details about an event, an evaluator run (an automatic quality check), or a memory suggestion.
+
+Those distinctions help when you're investigating learning. An event happening, a lesson being suggested, and a memory being promoted (a suggestion turned into a saved instruction) are separate steps. A suggested lesson hasn't necessarily become an instruction △ Agent will use.
+
+You can filter the view and use the date range to narrow the investigation. If something failed, record the visible reason and what you were doing before retrying. That makes a useful bug report.
+
+## Use the two dashboards together
+
+Start with [Analytics](/blog/read-your-reacherx-analytics) when you want to review outcomes and work waiting for you. Use Agent observability when you want to inspect how that work happened.
+
+For example: Analytics shows few qualified people. Discovery shows broad searches. A person's qualification explanation shows missing evidence. Together, those details give you a more useful question to ask than “Why is AI bad today?”
+
+If you need help interpreting a result, [join Discord](https://discord.gg/BQttyr8jY) and describe the workspace's purpose and the record you inspected. Share a redacted screenshot. Developers can continue with [how the reporting system works](/blog/how-reacherx-reporting-works).

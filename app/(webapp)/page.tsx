@@ -364,69 +364,6 @@ export default function ProspectsPage() {
     (stageCountsState.scopeKey !== stageCountScopeKey ||
       !stageCountsState.resolved);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!workspaceId || !fitScoreRange) {
-      return;
-    }
-
-    void convex
-      .action(api.prospectSummaries.getWorkspaceProspectStageCountsSnapshot, {
-        workspaceId,
-        fitScoreMin: appliedFilterArgs.fitScoreMin,
-        fitScoreMax: appliedFilterArgs.fitScoreMax,
-        platform: appliedFilterArgs.platform,
-        prospectType: appliedFilterArgs.prospectType,
-        createdAfterMs: appliedFilterArgs.createdAfterMs,
-        createdBeforeMs: appliedFilterArgs.createdBeforeMs,
-        visibilityMode,
-        searchQuery: trimmedSearchQuery || undefined,
-      })
-      .then((counts) => {
-        if (!cancelled) {
-          setStageCountsState({
-            scopeKey: stageCountScopeKey,
-            value: counts as ProspectStageCounts,
-            resolved: true,
-          });
-        }
-      })
-      .catch((error) => {
-        console.warn(
-          "[ProspectsPage] Failed to load stage counts",
-          {
-            workspaceId: String(workspaceId),
-          },
-          error
-        );
-        if (!cancelled) {
-          setStageCountsState({
-            scopeKey: stageCountScopeKey,
-            value: undefined,
-            resolved: true,
-          });
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    convex,
-    workspaceId,
-    fitScoreRange,
-    appliedFilterArgs.fitScoreMin,
-    appliedFilterArgs.fitScoreMax,
-    appliedFilterArgs.platform,
-    appliedFilterArgs.prospectType,
-    appliedFilterArgs.createdAfterMs,
-    appliedFilterArgs.createdBeforeMs,
-    visibilityMode,
-    stageCountScopeKey,
-    trimmedSearchQuery,
-  ]);
-
   const tabAttention = useMemo<TabAttentionState>(() => {
     if (!stageCounts) {
       return createEmptyTabAttention();
@@ -529,6 +466,81 @@ export default function ProspectsPage() {
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
   );
+
+  // Snapshot counts must refresh when the reactive feed moves a person between stages.
+  const stageMembershipKey = [
+    newProspectsQuery.results,
+    contactedProspectsQuery.results,
+    inProgressProspectsQuery.results,
+  ]
+    .map((people) =>
+      people.map((person) => `${person._id}:${person.status}`).join(",")
+    )
+    .join("|");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!workspaceId || !fitScoreRange) {
+      return;
+    }
+
+    void convex
+      .action(api.prospectSummaries.getWorkspaceProspectStageCountsSnapshot, {
+        workspaceId,
+        fitScoreMin: appliedFilterArgs.fitScoreMin,
+        fitScoreMax: appliedFilterArgs.fitScoreMax,
+        platform: appliedFilterArgs.platform,
+        prospectType: appliedFilterArgs.prospectType,
+        createdAfterMs: appliedFilterArgs.createdAfterMs,
+        createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+        visibilityMode,
+        searchQuery: trimmedSearchQuery || undefined,
+      })
+      .then((counts) => {
+        if (!cancelled) {
+          setStageCountsState({
+            scopeKey: stageCountScopeKey,
+            value: counts as ProspectStageCounts,
+            resolved: true,
+          });
+        }
+      })
+      .catch((error) => {
+        console.warn(
+          "[ProspectsPage] Failed to load stage counts",
+          {
+            workspaceId: String(workspaceId),
+          },
+          error
+        );
+        if (!cancelled) {
+          setStageCountsState({
+            scopeKey: stageCountScopeKey,
+            value: undefined,
+            resolved: true,
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    convex,
+    workspaceId,
+    fitScoreRange,
+    appliedFilterArgs.fitScoreMin,
+    appliedFilterArgs.fitScoreMax,
+    appliedFilterArgs.platform,
+    appliedFilterArgs.prospectType,
+    appliedFilterArgs.createdAfterMs,
+    appliedFilterArgs.createdBeforeMs,
+    visibilityMode,
+    stageCountScopeKey,
+    trimmedSearchQuery,
+    stageMembershipKey,
+  ]);
 
   const activeTabStatus = useMemo(
     () => TAB_DEFINITIONS.find((t) => t.id === activeTab)!.status,

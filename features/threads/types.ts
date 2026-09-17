@@ -126,9 +126,3 @@ export interface Tweet {
   display_text_range?: [number, number];
   viewerState?: TwitterViewerState;
 }
-
-export interface Thread {
-  postedAt: number;
-  threadId: string;
-  tweets: Tweet[];
-}

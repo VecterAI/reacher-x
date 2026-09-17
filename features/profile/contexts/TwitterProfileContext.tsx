@@ -69,6 +69,21 @@ const TwitterProfileContext = createContext<
   TwitterProfileContextValue | undefined
 >(undefined);
 
+/** Supply already-loaded profile data without mounting the network-backed provider. */
+export function TwitterProfileStateProvider({
+  value,
+  children,
+}: {
+  value: TwitterProfileContextValue;
+  children: React.ReactNode;
+}) {
+  return (
+    <TwitterProfileContext.Provider value={value}>
+      {children}
+    </TwitterProfileContext.Provider>
+  );
+}
+
 const PROFILE_CACHE_TTL_MS = 30_000;
 
 function isFresh(fetchedAt: number | undefined) {

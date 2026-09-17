@@ -25,6 +25,8 @@ type PrimaryAction = HydratedTwitterRelationshipDisplay["primaryAction"];
 type PrimaryLabel = HydratedTwitterRelationshipDisplay["primaryLabel"];
 
 export interface TwitterProfileActionButtonsProps {
+  /** Replaces the remote follow/unfollow effect for local demonstrations. */
+  onFollowAction?: (action: PrimaryAction) => Promise<void>;
   profileUserId?: string;
   username?: string;
   profileUrl?: string;
@@ -38,6 +40,7 @@ export interface TwitterProfileActionButtonsProps {
 }
 
 export function TwitterProfileActionButtons({
+  onFollowAction,
   profileUserId,
   username,
   profileUrl,
@@ -97,7 +100,7 @@ export function TwitterProfileActionButtons({
       resolvedAction === "unfollow" ? "Follow" : "Unfollow";
 
     const loadingToastId = toast.loading(loadingLabel);
-    const status = await ensureConnected();
+    const status = onFollowAction ? true : await ensureConnected();
     if (!status) {
       toast.dismiss(loadingToastId);
       return;
@@ -105,7 +108,9 @@ export function TwitterProfileActionButtons({
 
     setPendingAction(resolvedAction);
     try {
-      if (resolvedAction === "unfollow") {
+      if (onFollowAction) {
+        await onFollowAction(resolvedAction);
+      } else if (resolvedAction === "unfollow") {
         await unfollowUser({ targetUserId: profileUserId });
       } else {
         await followUser({ targetUserId: profileUserId });
@@ -129,6 +134,7 @@ export function TwitterProfileActionButtons({
       setPendingAction(null);
     }
   }, [
+    onFollowAction,
     ensureConnected,
     followUser,
     onRelationshipChange,

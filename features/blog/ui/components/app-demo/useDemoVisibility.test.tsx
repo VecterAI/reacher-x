@@ -1,0 +1,97 @@
+// @vitest-environment happy-dom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { expect, test, vi } from "vitest";
+import { useDemoVisibility } from "./useDemoVisibility";
+
+function Demo({ preloadRoot }: { preloadRoot?: HTMLElement }) {
+  const { root, visible, mounted } = useDemoVisibility(preloadRoot);
+  return (
+    <section ref={root} data-visible={visible}>
+      {mounted && <iframe title="demo" />}
+    </section>
+  );
+}
+
+test("preloading stays lazy and retains the same iframe across long absences", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const observers: {
+    callback: IntersectionObserverCallback;
+    disconnect: ReturnType<typeof vi.fn>;
+  }[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      disconnect = vi.fn();
+      constructor(callback: IntersectionObserverCallback) {
+        observers.push({ callback, disconnect: this.disconnect });
+      }
+      observe() {}
+    }
+  );
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const show = (index: number, ...values: boolean[]) =>
+    observers[index].callback(
+      values.map(
+        (isIntersecting) => ({ isIntersecting }) as IntersectionObserverEntry
+      ),
+      {} as IntersectionObserver
+    );
+  try {
+    await act(async () => root.render(<Demo />));
+    await act(async () => show(1, true));
+    const iframe = host.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    expect(host.querySelector("section")?.dataset.visible).toBe("false");
+    await act(async () => show(0, true, false));
+    expect(host.querySelector("section")?.dataset.visible).toBe("false");
+    await act(async () => {
+      show(1, false);
+      vi.advanceTimersByTime(1500);
+    });
+    expect(host.querySelector("iframe")).toBe(iframe);
+    await act(async () => {
+      show(1, true);
+      vi.advanceTimersByTime(3000);
+    });
+    expect(host.querySelector("iframe")).toBe(iframe);
+    await act(async () => {
+      show(1, false);
+      vi.advanceTimersByTime(2000);
+    });
+    expect(host.querySelector("iframe")).toBe(iframe);
+    await act(async () =>
+      root.render(<Demo key="carousel" preloadRoot={host} />)
+    );
+    await act(async () => show(3, true));
+    expect(host.querySelector("iframe")).toBeNull();
+    await act(async () => show(4, true));
+    expect(host.querySelector("iframe")).not.toBeNull();
+    const carouselIframe = host.querySelector("iframe");
+    // Leaving the row or moving to another slide preserves the loaded app.
+    await act(async () => {
+      show(4, false);
+      vi.advanceTimersByTime(60000);
+    });
+    expect(host.querySelector("iframe")).toBe(carouselIframe);
+    await act(async () => {
+      show(4, true);
+      show(3, false);
+      vi.advanceTimersByTime(2000);
+    });
+    expect(host.querySelector("iframe")).toBe(carouselIframe);
+    await act(async () => show(3, true));
+    expect(host.querySelector("iframe")).not.toBeNull();
+    await act(async () => root.unmount());
+    expect(vi.getTimerCount()).toBe(0);
+    for (const observer of observers)
+      expect(observer.disconnect).toHaveBeenCalledOnce();
+  } finally {
+    host.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});

@@ -7,6 +7,8 @@
 "use client";
 
 import * as React from "react";
+import { ScopedUseCaseLabelsProvider } from "@/shared/contexts/ActiveUseCaseLabelsProvider";
+import { getDemoWorkspaceUseCaseKey } from "./demoLabels";
 import { getDemoUseCaseLabels, type DemoUseCaseLabels } from "./demoLabels";
 import type { UseCaseDemoKey } from "./useCaseDemoData";
 
@@ -58,6 +60,7 @@ interface DemoShellContextValue {
   activeWorkspace: DemoWorkspace;
   setActiveWorkspaceId: (id: string) => void;
   pendingNotificationCount: number;
+  initialWorkspaceMenuOpen?: boolean;
 }
 
 const DemoShellContext = React.createContext<DemoShellContextValue | null>(
@@ -70,15 +73,21 @@ export function DemoShellProvider({
   activeWorkspaceId,
   setActiveWorkspaceId,
   children,
+  workspaces: suppliedWorkspaces,
+  initialWorkspaceMenuOpen,
 }: {
   useCaseKey: UseCaseDemoKey;
   pendingNotificationCount: number;
   activeWorkspaceId: string;
   setActiveWorkspaceId: (id: string) => void;
   children: React.ReactNode;
+  workspaces?: DemoWorkspace[];
+  initialWorkspaceMenuOpen?: boolean;
 }) {
   const value = React.useMemo<DemoShellContextValue>(() => {
-    const workspaces = getDemoWorkspaces(useCaseKey);
+    const workspaces = suppliedWorkspaces?.length
+      ? suppliedWorkspaces
+      : getDemoWorkspaces(useCaseKey);
     return {
       useCaseKey,
       labels: getDemoUseCaseLabels(useCaseKey),
@@ -89,9 +98,12 @@ export function DemoShellProvider({
         workspaces[0],
       setActiveWorkspaceId,
       pendingNotificationCount,
+      initialWorkspaceMenuOpen,
     };
   }, [
     useCaseKey,
+    suppliedWorkspaces,
+    initialWorkspaceMenuOpen,
     activeWorkspaceId,
     setActiveWorkspaceId,
     pendingNotificationCount,
@@ -99,7 +111,11 @@ export function DemoShellProvider({
 
   return (
     <DemoShellContext.Provider value={value}>
-      {children}
+      <ScopedUseCaseLabelsProvider
+        useCaseKey={getDemoWorkspaceUseCaseKey(useCaseKey)}
+      >
+        {children}
+      </ScopedUseCaseLabelsProvider>
     </DemoShellContext.Provider>
   );
 }

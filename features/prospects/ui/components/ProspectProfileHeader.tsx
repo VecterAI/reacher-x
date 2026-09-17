@@ -43,6 +43,8 @@ import type { Id, Doc } from "@/convex/_generated/dataModel";
 import { getProspectStatusMenuOptions } from "@/features/prospects/lib/statusMenuOptions";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 
+import type { WorkspaceUseCaseKey } from "@/shared/lib/workspaceUseCases";
+
 type ProspectStatus = Doc<"prospects">["status"];
 
 export interface ProspectProfileHeaderProps {
@@ -76,6 +78,13 @@ export interface ProspectProfileHeaderProps {
   onOpenDmPanel?: () => void;
   /** Preview mode flags for non-live surfaces */
   mode?: "default" | "onboarding_preview" | "ui_preview";
+  /** Local preview wiring; never invokes a status mutation. */
+  preview?: {
+    useCaseKey?: WorkspaceUseCaseKey;
+    menuOpen?: boolean;
+    onStatusChange?: (status: ProspectStatus) => void;
+    onShareProfile?: () => void;
+  };
   /** Surface-specific affordances */
   surface?: "panel" | "inline_card";
 }
@@ -97,10 +106,13 @@ export function ProspectProfileHeader({
   onOpenDmPanel,
   mode = "default",
   surface = "panel",
+  preview,
 }: ProspectProfileHeaderProps) {
   const isOrg = prospectType === "organization";
   const avatarShape = isOrg ? "rounded-md" : "rounded-full";
-  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(
+    mode === "ui_preview" && !!preview?.menuOpen
+  );
   const updateStatus = useMutation(api.prospects.updateProspectStatus);
   const {
     activeUseCaseKey,
@@ -110,8 +122,13 @@ export function ProspectProfileHeader({
     stageLabels,
   } = useActiveUseCaseLabels();
   const statusOptions = React.useMemo(
-    () => getProspectStatusMenuOptions(activeUseCaseKey),
-    [activeUseCaseKey]
+    () =>
+      getProspectStatusMenuOptions(
+        mode === "ui_preview"
+          ? (preview?.useCaseKey ?? activeUseCaseKey)
+          : activeUseCaseKey
+      ),
+    [activeUseCaseKey, mode, preview?.useCaseKey]
   );
   const isOnboardingPreview = mode === "onboarding_preview";
   const isPreviewMode = mode !== "default";
@@ -145,6 +162,10 @@ export function ProspectProfileHeader({
   const timestampIso = timestamp ? new Date(timestamp).toISOString() : "";
 
   const handleStatusChange = (newStatus: ProspectStatus) => {
+    if (mode !== "default") {
+      if (mode === "ui_preview") preview?.onStatusChange?.(newStatus);
+      return;
+    }
     if (!prospectId) return;
     const statusLabel = stageLabels[newStatus];
 
@@ -162,6 +183,10 @@ export function ProspectProfileHeader({
   };
 
   const handleArchive = () => {
+    if (mode !== "default") {
+      if (mode === "ui_preview") preview?.onStatusChange?.("archived");
+      return;
+    }
     if (!prospectId) return;
     toast.promise(
       updateStatus({
@@ -177,6 +202,10 @@ export function ProspectProfileHeader({
   };
 
   const handleUnarchive = () => {
+    if (mode !== "default") {
+      if (mode === "ui_preview") preview?.onStatusChange?.("new");
+      return;
+    }
     if (!prospectId) return;
     toast.promise(
       updateStatus({
@@ -192,6 +221,10 @@ export function ProspectProfileHeader({
   };
 
   const handleShareProfile = () => {
+    if (mode === "ui_preview") {
+      preview?.onShareProfile?.();
+      return;
+    }
     if (!prospectId) return;
     // Copy internal prospect profile URL
     const prospectUrl = `${window.location.origin}${routes.detailHref(prospectId)}`;
@@ -281,7 +314,7 @@ export function ProspectProfileHeader({
             size="xs"
             className="flex-1 sm:flex-none"
             disabled={
-              isPreviewMode || !onChatWithAgent || status === "archived"
+              isOnboardingPreview || !onChatWithAgent || status === "archived"
             }
             title={
               status === "archived"
@@ -311,7 +344,11 @@ export function ProspectProfileHeader({
               .map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
-                  disabled={isOnboardingPreview || status === "archived"}
+                  disabled={
+                    isOnboardingPreview ||
+                    (mode === "ui_preview" && !preview?.onStatusChange) ||
+                    status === "archived"
+                  }
                   title={
                     status === "archived"
                       ? "Unarchive to change status"
@@ -327,7 +364,7 @@ export function ProspectProfileHeader({
             <DropdownMenuSeparator />
 
             {/* Share profile */}
-            {!isPreviewMode ? (
+            {!isPreviewMode || preview?.onShareProfile ? (
               <>
                 <DropdownMenuItem onClick={handleShareProfile}>
                   <IosShareIcon className="fill-current" />
@@ -390,7 +427,10 @@ export function ProspectProfileHeader({
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  disabled={isPreviewMode}
+                  disabled={
+                    isOnboardingPreview ||
+                    (mode === "ui_preview" && !preview?.onStatusChange)
+                  }
                   onClick={handleArchive}
                 >
                   <ArchiveIcon className="fill-current" />
@@ -401,7 +441,10 @@ export function ProspectProfileHeader({
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  disabled={isPreviewMode}
+                  disabled={
+                    isOnboardingPreview ||
+                    (mode === "ui_preview" && !preview?.onStatusChange)
+                  }
                   onClick={handleUnarchive}
                 >
                   <UnarchiveIcon className="fill-current" />

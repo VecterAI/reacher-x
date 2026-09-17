@@ -10,7 +10,12 @@ import { toast } from "sonner";
 
 import { cn } from "@/shared/lib/utils";
 import { GITHUB_REPO_URL } from "@/features/landing/lib/github";
-import { Button, buttonVariants } from "@/shared/ui/components/Button";
+import {
+  DISCORD_INVITE_URL,
+  PATREON_URL,
+  X_PROFILE_URL,
+} from "@/features/landing/lib/communityUrls";
+import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Separator } from "@/shared/ui/components/Separator";
@@ -57,6 +62,7 @@ import {
   ArrowOutwardIcon,
   TwitterIcon,
   DiscordOutlineIcon,
+  PatreonIcon,
   LinkedinIcon,
   BlueskyIcon,
   ThreadsIcon,
@@ -94,13 +100,14 @@ import {
 } from "@/shared/lib/workspaceUseCases";
 import { getWorkspaceRoutes } from "@/shared/lib/workspaceRoutes";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
+import { LOGIN_HREF, LOGOUT_HREF } from "@/shared/lib/urls/authRoutes";
+import { MarketingNavigation } from "./marketing/MarketingNavigation";
 import {
-  LOGIN_HREF,
-  LOGOUT_HREF,
-  SETUP_SIGN_UP_HREF,
-} from "@/shared/lib/urls/authRoutes";
+  marketingButton,
+  marketingPageWidth,
+} from "./marketing/MarketingLayout";
 import { LandingAuthLink } from "./LandingAuthLink";
-import { LandingBookDemoCta, LandingBookDemoLink } from "./LandingBookDemoCta";
+import { LandingPrimaryCta } from "./LandingPrimaryCta";
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                   */
@@ -116,8 +123,19 @@ function getInitials(name?: string) {
 }
 
 const NAV_LINKS = [
-  { href: "/use-cases", label: "Use cases", isAnchor: false },
-  { href: "/threads", label: "Threads", isAnchor: false },
+  { href: "/product", label: "Product", isAnchor: false },
+  { href: "/blog", label: "Blog", isAnchor: false },
+  { href: "/blog/category/comparisons", label: "Comparisons", isAnchor: false },
+  {
+    href: DISCORD_INVITE_URL,
+    label: "Join the Discord",
+    isAnchor: true,
+  },
+  {
+    href: PATREON_URL,
+    label: "Support on Patreon",
+    isAnchor: true,
+  },
   {
     href: "mailto:creativecoder.crco@gmail.com",
     label: "Contact",
@@ -144,7 +162,7 @@ function GitHubButton({ starsCount }: { starsCount: number }) {
       rel="noopener noreferrer"
       aria-label={`View ReacherX on GitHub (${starsCount} stars)`}
       className={cn(
-        buttonVariants({ variant: "ghost", size: "xs" }),
+        marketingButton({ variant: "ghost", size: "sm" }),
         "gap-1.5"
       )}
     >
@@ -787,40 +805,22 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         scrolled ? "border-border border-b" : "border-b border-transparent"
       )}
     >
-      <div className="mx-auto flex w-full max-w-[1288px] items-center justify-between px-4 md:grid md:grid-cols-[1fr_auto_1fr]">
+      <div
+        className={cn(
+          marketingPageWidth,
+          "flex items-center justify-between xl:grid xl:grid-cols-[1fr_auto_1fr]"
+        )}
+      >
         {/* Left side: Brand */}
         <div className="flex min-w-0 items-center gap-4 justify-self-start">
           <LandingWordmark />
         </div>
 
         {/* Desktop nav */}
-        <nav
-          className="hidden items-center gap-6 justify-self-center md:flex"
-          aria-label="Main navigation"
-        >
-          {NAV_LINKS.map(({ href, label, isAnchor }) => {
-            const active = isLinkActive(href, pathname);
-            const cls = cn(
-              "text-sm font-medium transition-colors underline-offset-[6px] decoration-2",
-              active
-                ? "text-foreground underline"
-                : "text-muted-foreground hover:text-foreground"
-            );
-
-            return isAnchor ? (
-              <a key={href} href={href} className={cls}>
-                {label}
-              </a>
-            ) : (
-              <Link key={href} href={href} className={cls}>
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
+        <MarketingNavigation />
 
         {/* Desktop right side */}
-        <div className="hidden min-w-[280px] items-center justify-end gap-2 justify-self-end md:flex">
+        <div className="hidden min-w-[280px] items-center justify-end gap-2 justify-self-end xl:flex">
           <GitHubButton starsCount={githubStarsCount} />
           <Separator orientation="vertical" className="h-6" />
 
@@ -828,7 +828,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
             <Skeleton className="h-10 w-10 rounded-full" />
           ) : user ? (
             <>
-              <LandingBookDemoCta size="xs" />
+              <LandingPrimaryCta variant="outline" size="sm" />
               <Separator orientation="vertical" className="h-6" />
               <AvatarDropdown user={user} />
             </>
@@ -836,29 +836,24 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
             <>
               <LandingAuthLink
                 href={LOGIN_HREF}
-                className={buttonVariants({ variant: "ghost", size: "xs" })}
+                className={marketingButton({
+                  variant: "outline",
+                  size: "sm",
+                })}
               >
                 Log in
               </LandingAuthLink>
-              <LandingAuthLink
-                href={SETUP_SIGN_UP_HREF}
-                className={buttonVariants({
-                  variant: "outline",
-                  size: "xs",
-                })}
-              >
-                Sign up
-              </LandingAuthLink>
-              <Separator orientation="vertical" className="h-6" />
-              <LandingBookDemoCta size="xs" />
+              <LandingPrimaryCta size="sm" />
             </>
           )}
         </div>
 
         {/* Mobile right side */}
-        <div className="flex items-center gap-2 md:hidden">
-          <GitHubButton starsCount={githubStarsCount} />
-          <Separator orientation="vertical" className="h-6" />
+        <div className="flex shrink-0 items-center gap-2 xl:hidden">
+          <div className="hidden items-center gap-2 sm:flex">
+            <GitHubButton starsCount={githubStarsCount} />
+            <Separator orientation="vertical" className="h-6" />
+          </div>
           <Button
             variant="ghost"
             onClick={() => setIsDrawerOpen(true)}
@@ -872,7 +867,10 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         {/* Mobile Drawer */}
         <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
           <DrawerContent>
-            <aside aria-label="Mobile navigation">
+            <aside
+              aria-label="Mobile navigation"
+              className="max-h-[85dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+            >
               <DrawerHeader className="flex items-center justify-between p-4">
                 <DrawerTitle>Menu</DrawerTitle>
                 <Button
@@ -885,37 +883,25 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
               </DrawerHeader>
 
               <menu className="flex flex-col items-start px-4 pb-4">
-                {/* Unauthenticated: auth actions above nav */}
-                {!loading && !user && (
-                  <>
-                    <li>
-                      <DrawerClose asChild>
-                        <LandingAuthLink
-                          href={LOGIN_HREF}
-                          className="text-foreground py-2 text-xl font-normal hover:underline"
-                        >
-                          Log in
-                        </LandingAuthLink>
-                      </DrawerClose>
-                    </li>
-                    <li>
-                      <DrawerClose asChild>
-                        <LandingAuthLink
-                          href={SETUP_SIGN_UP_HREF}
-                          className="text-foreground py-2 text-xl font-normal hover:underline"
-                        >
-                          Sign up
-                        </LandingAuthLink>
-                      </DrawerClose>
-                    </li>
-                    <Separator className="my-4" />
-                  </>
-                )}
-
-                <li>
-                  <DrawerClose asChild>
-                    <LandingBookDemoLink className="text-foreground py-2 text-xl font-normal hover:underline" />
-                  </DrawerClose>
+                <li className="mb-4 flex w-full items-center gap-2">
+                  {!loading && !user && (
+                    <DrawerClose asChild>
+                      <LandingAuthLink
+                        href={LOGIN_HREF}
+                        className={marketingButton({
+                          variant: "outline",
+                          className: "min-w-0 flex-1",
+                        })}
+                      >
+                        Log in
+                      </LandingAuthLink>
+                    </DrawerClose>
+                  )}
+                  <LandingPrimaryCta
+                    variant={user ? "outline" : "default"}
+                    className="min-w-0 flex-1"
+                    onClick={() => setIsDrawerOpen(false)}
+                  />
                 </li>
 
                 {NAV_LINKS.map(({ href, label, isAnchor }) => {
@@ -962,17 +948,14 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
                   <SocialLink href={GITHUB_REPO_URL} label="GitHub">
                     <GitHubOutlineIcon />
                   </SocialLink>
-                  <SocialLink
-                    href="https://x.com/ReacherXfounder"
-                    label="X/Twitter"
-                  >
+                  <SocialLink href={X_PROFILE_URL} label="X/Twitter">
                     <TwitterIcon />
                   </SocialLink>
-                  <SocialLink
-                    href="https://discord.gg/76dF9NPH"
-                    label="Discord"
-                  >
+                  <SocialLink href={DISCORD_INVITE_URL} label="Discord">
                     <DiscordOutlineIcon />
+                  </SocialLink>
+                  <SocialLink href={PATREON_URL} label="Patreon">
+                    <PatreonIcon className="fill-current" />
                   </SocialLink>
                   <SocialLink
                     href="https://www.linkedin.com/in/noobships"
@@ -1016,15 +999,15 @@ function SocialLink({
   children: React.ReactNode;
 }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      <Button
+    <Button asChild variant="ghost" size="icon" className="[&_svg]:size-5">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
         aria-label={`ReacherX on ${label}`}
-        variant="ghost"
-        size="icon"
-        className="[&_svg]:size-5"
       >
         {children}
-      </Button>
-    </a>
+      </a>
+    </Button>
   );
 }

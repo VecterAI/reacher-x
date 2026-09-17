@@ -1,3 +1,9 @@
+import {
+  getProspectListFilterArgs,
+  type ProspectListFilters,
+} from "@/features/prospects/lib/prospectListFilters";
+import type { ProspectListSortOption } from "@/features/prospects/lib/prospectListSort";
+import { compareProspectRowsForSort } from "@/convex/lib/prospectListFeedUtils";
 /**
  * Shared helpers for the demo prospect list pages.
  */
@@ -31,4 +37,49 @@ export function matchesProspectSearch(
     .join(" ")
     .toLowerCase();
   return haystack.includes(query);
+}
+
+/** Local dataset adapter using the app's filter arguments and exact sort comparator. */
+export function filterAndSortDemoProspects(
+  prospects: Doc<"prospects">[],
+  query: string,
+  filters: ProspectListFilters,
+  sort: ProspectListSortOption,
+  now?: Date
+) {
+  const args = getProspectListFilterArgs(filters, now);
+  const needle = query.trim().toLowerCase();
+  return prospects
+    .filter((p) => {
+      const score = p.qualificationScore ?? 0;
+      return (
+        (!args.platform || p.platform === args.platform) &&
+        (!args.prospectType ||
+          (p.prospectType ?? "individual") === args.prospectType) &&
+        score >= args.fitScoreMin &&
+        score <= args.fitScoreMax &&
+        (args.createdAfterMs === undefined ||
+          p._creationTime >= args.createdAfterMs) &&
+        (args.createdBeforeMs === undefined ||
+          p._creationTime < args.createdBeforeMs) &&
+        (!needle || matchesProspectSearch(p, needle))
+      );
+    })
+    .sort((a, b) =>
+      compareProspectRowsForSort(
+        {
+          sortQualificationScore: a.qualificationScore ?? 0,
+          prospectCreatedAt: a._creationTime,
+          prospectId: a._id,
+          prospectType: a.prospectType,
+        },
+        {
+          sortQualificationScore: b.qualificationScore ?? 0,
+          prospectCreatedAt: b._creationTime,
+          prospectId: b._id,
+          prospectType: b.prospectType,
+        },
+        sort
+      )
+    );
 }

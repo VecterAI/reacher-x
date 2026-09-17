@@ -28,7 +28,7 @@ export function SetupExampleProfiles({
         {profiles.flatMap((profile) =>
           (profile.syntheticExamples ?? []).map((example) => (
             <ProspectCard
-              key={`${profile.title}:${example.platform}`}
+              key={`${profile.title}:${example.platform}:${example.displayName}`}
               prospect={{
                 synthetic: true,
                 displayName: example.displayName,

@@ -1,0 +1,62 @@
+---
+title: "How ReacherX remembers instructions and learns from work"
+description: "Trace explicit instructions, workflow events, evaluated lessons, retrieval, and the limits of application memory."
+category: engineering
+date: "2026-07-13"
+updated: "2026-09-10"
+related: ["how-reacherx-reporting-works", "help-build-reacherx"]
+tags: ["engineering", "memory", "contributors"]
+---
+
+There are two different reasons ReacherX might remember something: a user explicitly asked it to, or the system inferred a reusable lesson from work it observed.
+
+Those sources should not have equal authority. A user's instruction to avoid meeting requests must not lose to a pattern that says meeting requests sometimes got replies.
+
+This walkthrough follows v4 beta at commit `8ea2662`. It describes application memory, not training new model weights.
+
+## Capture the user's instruction
+
+Start with [convex/agents/tools/rememberWorkspaceMemory.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/agents/tools/rememberWorkspaceMemory.ts). The tool accepts structured information such as a stable memory key, instruction kind, summary, scope, and relevant channels. It resolves the workspace and optional prospect from thread context, then calls shared persistence and indexing code.
+
+The stable key allows a correction to address the same topic. Scope distinguishes a general workspace instruction from something that applies only to one person.
+
+[convex/lib/workspaceMemoryScope.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/workspaceMemoryScope.ts) resolves context from prospect threads, setup sessions, and workspace threads. Don't replace that with whichever workspace happens to be first in a query. A valid memory saved to the wrong workspace is still a serious bug.
+
+## Turn recorded events into possible lessons
+
+Workflows record events such as qualification completion, outreach approval, task failure, a reply, or an edited draft. [convex/workflows/memory.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workflows/memory.ts) queues evaluation by workspace and handles stale work.
+
+[convex/lib/learningCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/learningCore.ts) contains the distillation functions. These ask for reusable lessons from qualification, enrichment, outreach, or operator information. [convex/lib/memoryEvaluatorCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/memoryEvaluatorCore.ts) defines relevant event types and the promotion rule.
+
+The current rule is small enough to read directly:
+
+```ts
+return (
+  args.confidence >= AUTO_PROMOTE_MEMORY_CONFIDENCE ||
+  (args.confidence >= 0.72 && impactScore >= 0.85)
+);
+```
+
+`AUTO_PROMOTE_MEMORY_CONFIDENCE` is `0.78` in this revision. These are implementation thresholds, not measured probabilities that a lesson is correct. Inspect the evaluator result and supporting event when judging quality.
+
+An event, an evaluation run, a suggestion, and a promoted memory are separate records. Don't count every event as something △ Agent has learned.
+
+## Retrieve the right memory with the right authority
+
+[convex/lib/workspaceMemoryCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/workspaceMemoryCore.ts) holds the canonical memory model, applicability checks, ranking, and context construction. It distinguishes active, superseded, and disabled memories, and checks relevant scope, surface, and channel.
+
+Operator instructions have priority over learned context. Retrieval is bounded; it does not paste every historical memory into every prompt. The system also maintains indexing state so a failed embedding operation can be retried without losing the canonical instruction.
+
+This separation is useful for debugging. “The instruction exists” and “the relevant operation received it” are two different claims. Trace both persistence and context assembly.
+
+## Evaluate behavior, not just storage
+
+A good test saves an instruction, asks for later work in the same workspace, and checks that the applicable context contains it. Add a second workspace and verify the instruction does not cross over. Test a correction, a disabled memory, and an indexing failure too.
+
+Read these for existing coverage:
+
+- [convex/workspaceMemory.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceMemory.integration.test.ts) saves instructions and builds workspace context.
+- [convex/workspaceMemoryIndexRetry.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceMemoryIndexRetry.integration.test.ts) retries failed memory indexing with backoff.
+- [convex/memoryEvaluationQueue.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/memoryEvaluationQueue.integration.test.ts) keeps memory evaluation queues FIFO per workspace.
+
+The system can use feedback to change later work. That doesn't guarantee steadily improving outcomes, and it doesn't make inferred lessons true. The [user-facing memory guide](/blog/teach-reacherx-what-you-want) explains how to steer it; [Agent observability](/blog/understand-agent-observability) exposes records that help people check what happened.

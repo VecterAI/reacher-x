@@ -9,11 +9,11 @@ export const homepageFaqItems: FaqItem[] = [
     id: "what-is-reacherx",
     question: "What is ReacherX?",
     answer:
-      "ReacherX is an open-source Agent that helps you reach the right people on X/Twitter and LinkedIn.",
+      "ReacherX is an open-source △ Agent that finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
   },
   {
     id: "why-agent",
-    question: "Why do you call ReacherX an Agent?",
+    question: "Do I need sales experience to use it?",
     answer:
       "Because it does more than search. It keeps running in the background, checks matches, reads recent posts, drafts messages, and improves from your feedback.",
   },
@@ -31,13 +31,13 @@ export const homepageFaqItems: FaqItem[] = [
   },
   {
     id: "account-safety",
-    question: "Will connecting my social accounts get me banned?",
+    question: "How should I use my connected accounts?",
     answer:
-      "No. Connecting your accounts alone will not get them banned. ReacherX is designed for personalized, human-paced outreach, but if you use it to spam people, blast generic messages, or force unnatural volume, your accounts can still be at risk.",
+      "Use relevant, personal outreach and follow each platform's rules. Review messages and sending activity, and avoid bulk or repetitive outreach. ReacherX cannot guarantee that a platform will never restrict an account.",
   },
   {
     id: "runs-24-7",
-    question: "Does ReacherX really run 24/7?",
+    question: "Does it keep working when I close the browser?",
     answer:
       "Yes. Agent keeps searching for people and checking matches in the background.",
   },
@@ -45,13 +45,13 @@ export const homepageFaqItems: FaqItem[] = [
     id: "approval",
     question: "Does ReacherX send anything without approval?",
     answer:
-      "No. Replies, DMs, invites, and other actions stay under your control. Nothing sends without your approval.",
+      "Sending approvals are on by default. If you turn them off in workspace settings, supported replies and DMs can send without another approval. You can review the settings and pause △ Agent at any time.",
   },
   {
     id: "different-from-other-tools",
     question: "How is ReacherX different from other outreach tools?",
     answer:
-      "Most tools help you build lists or automate sequences. ReacherX is an open-source Agent that works from live social context, learns over time, and helps you reach the right people with more relevance.",
+      "You work with △ Agent in a conversation. It uses profiles and posts to research people, prepares outreach plans, and uses your saved feedback to guide later work. You can inspect the research and edit the plans.",
   },
   {
     id: "open-source",
@@ -71,7 +71,7 @@ export const pricingFaqItems: FaqItem[] = [
   {
     id: "credit-card",
     question: "Do I need a credit card to get started?",
-    answer: "Yes. A paid plan is required to start Agent during launch.",
+    answer: "Yes. A paid plan is required to start △ Agent during launch.",
   },
   {
     id: "plan-limits",
@@ -83,11 +83,11 @@ export const pricingFaqItems: FaqItem[] = [
     id: "hit-limit",
     question: "What happens if I hit my plan limit?",
     answer:
-      "Agent pauses discovery for that workspace until your limit resets or you upgrade.",
+      "△ Agent pauses discovery for that workspace until your limit resets or you upgrade.",
   },
   {
     id: "other-pause-reasons",
-    question: "Can Agent pause for other reasons?",
+    question: "Can △ Agent pause for other reasons?",
     answer:
       "Yes. It can also pause if the workspace becomes inactive, and you can resume it when you are ready.",
   },

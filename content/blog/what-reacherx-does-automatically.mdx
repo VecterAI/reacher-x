@@ -1,0 +1,41 @@
+---
+title: "What does ReacherX do on its own?"
+description: "Understand background discovery, automatic outreach, approval settings, and how to pause △ Agent."
+category: tutorials
+date: "2026-07-05"
+updated: "2026-09-11"
+related: ["read-your-reacherx-analytics", "understand-agent-observability"]
+tags: ["automation", "autonomy", "sending approvals", "pause", "self driving"]
+---
+
+Once a workspace is running, ReacherX can keep finding people, checking whether they fit, and preparing outreach without you moving every step along. That's the point of v4's agentic design. After v3 taught me that people expect the tool to do the work, I rebuilt v4 around △ Agent carrying work out. It's still beta, so I want to be clear about what that means in the app today.
+
+## What can it do while I'm away?
+
+Discovery, fit checks, background gathering, and plan preparation can all continue after you close the browser.
+
+Supported replies and other activity can cause △ Agent to reconsider a plan. It might continue, finish, or stop it. A plan can also wait until a scheduled time or ask you for input.
+
+You can see what's happening in the workspace status. Sometimes one part can keep working while another needs attention. For example, discovery might be running while a messaging account needs reconnecting. Work can also stop when you hit a usage limit or pause △ Agent yourself.
+
+## Will it send messages without asking me?
+
+By default, sending approvals are on. You review plans and messages through the approval flow. I'd leave that on at first. Read what it wants to send and make sure it understands the people you're looking for.
+
+You can switch sending approvals off in the workspace's agent settings. Then supported replies and DMs can send without another approval. The confirmation shows whether existing draft plans will start as well. Read that count, because the change can affect work you've already prepared.
+
+<BlogAppDemo
+  scenario="what-reacherx-does-automatically"
+  title="Review approvals and pause automation"
+  caption="Set which outreach steps need your approval."
+/>
+
+## What do I still need to do?
+
+Tell it when something is wrong. Give it a useful correction and [ask it to remember the instruction](/blog/teach-reacherx-what-you-want). If it keeps finding the wrong people, change the audience requirements. If you've changed your offer, tell it what the new offer is.
+
+Keep track of things that happen elsewhere, too. A person accepting an invitation on a phone call won't automatically become a recorded outcome in ReacherX. Finishing an outreach plan doesn't prove they accepted.
+
+And you can stop the work. Open the workspace status and choose “Pause △ Agent”. This pauses new discovery, monitoring, and queued background work for that workspace. A task already running may finish safely. Your saved people and progress stay there, and you can resume from the same dialog.
+
+I want ReacherX to do more of the work over time. I also want you to be able to see what it's doing. [Analytics](/blog/read-your-reacherx-analytics) shows recorded outcomes. [Agent observability](/blog/understand-agent-observability) lets you inspect the activity behind them.

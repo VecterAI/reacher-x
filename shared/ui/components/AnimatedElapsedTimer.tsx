@@ -1,5 +1,7 @@
 "use client";
 
+import { useAnimationActivity } from "@/shared/contexts/AnimationActivityProvider";
+
 import { useEffect, useState } from "react";
 import { cn, getCurrentUTCTimestamp } from "@/shared/lib/utils";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
@@ -29,6 +31,7 @@ export function AnimatedElapsedTimer({
   className,
   prefix,
 }: AnimatedElapsedTimerProps) {
+  const active = useAnimationActivity();
   const [elapsedSeconds, setElapsedSeconds] = useState(() =>
     getElapsedSeconds(startedAt, pausedAt)
   );
@@ -36,7 +39,7 @@ export function AnimatedElapsedTimer({
   useEffect(() => {
     setElapsedSeconds(getElapsedSeconds(startedAt, pausedAt));
 
-    if (!startedAt || pausedAt) {
+    if (!active || !startedAt || pausedAt) {
       return;
     }
 
@@ -45,7 +48,7 @@ export function AnimatedElapsedTimer({
     }, 1000);
 
     return () => window.clearInterval(id);
-  }, [pausedAt, startedAt]);
+  }, [active, pausedAt, startedAt]);
 
   const minutes = Math.floor(elapsedSeconds / 60);
   const seconds = elapsedSeconds % 60;

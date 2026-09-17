@@ -58,13 +58,13 @@ import { LandingAuthLink } from "./LandingAuthLink";
 
 export { LANDING_PROMPT_STORAGE_KEY };
 
-const DEFAULT_PLACEHOLDER =
-  "Find founders posting about hiring their first SDR...";
+const DEFAULT_PLACEHOLDER = "Tell me who you want to find and why...";
 
 interface LandingPromptCtaProps {
   authenticatedHref?: string;
   anonymousHref?: AuthRouteHref;
   placeholder?: string;
+  initialPrompt?: string;
   className?: string;
   /** Show the full "Reach people" pill under the composer shell. */
   showLabeledCta?: boolean;
@@ -96,12 +96,13 @@ export function LandingPromptCta({
   authenticatedHref,
   anonymousHref = buildLoginHref(NEW_WORKSPACE_SETUP_AUTH_RETURN_TO),
   placeholder = DEFAULT_PLACEHOLDER,
+  initialPrompt = "",
   className,
   showLabeledCta = true,
 }: LandingPromptCtaProps) {
   const { user, loading } = useAuth();
   const contentEditableId = useId();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialPrompt);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [isSubmittingPrompt, setIsSubmittingPrompt] = useState(false);
   const editorApiRef = useRef<ComposerEditorAPI | null>(null);
@@ -403,11 +404,11 @@ export function LandingPromptCta({
         onPasteCapture={handlePasteCapture}
       >
         <label className="sr-only" htmlFor={contentEditableId}>
-          Describe who you need Agent to find
+          Describe who you need △ Agent to find
         </label>
         <ComposerEditor
           className="min-h-20 w-full min-w-0 text-left text-sm"
-          initialContent={buildSerializedTextState("")}
+          initialContent={buildSerializedTextState(initialPrompt)}
           placeholder={placeholder}
           maxLength={10000}
           characterCountMode="raw"
@@ -437,7 +438,7 @@ export function LandingPromptCta({
                   type="button"
                   disabled
                   aria-label="Attach media"
-                  title="Available after you start with Agent"
+                  title="Available after you start with △ Agent"
                 >
                   <AttachFileIcon className="fill-current" />
                 </Button>
@@ -485,7 +486,7 @@ export function LandingPromptCta({
       {showLabeledCta ? (
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-muted-foreground text-sm">
-            Nothing sends without your approval.
+            Review before sending by default.
           </p>
           {labeledCta}
         </div>

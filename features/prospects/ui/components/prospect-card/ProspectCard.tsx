@@ -17,7 +17,10 @@ import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { ProspectCardHeader } from "./ProspectCardHeader";
 import { ProspectCardBody } from "./ProspectCardBody";
 import { ProspectCardFooter } from "./ProspectCardFooter";
-import { ProspectCardMenu } from "./ProspectCardMenu";
+import {
+  ProspectCardMenu,
+  type ProspectCardMenuActions,
+} from "./ProspectCardMenu";
 
 export type ProspectSurfaceMode =
   | "default"
@@ -49,6 +52,7 @@ interface ProspectCardProps {
   className?: string;
   interactive?: boolean;
   showMenu?: boolean;
+  actions?: ProspectCardMenuActions;
   mode?: ProspectSurfaceMode;
   /** Unread when the user has not opened the profile panel for this prospect */
   unread?: boolean;
@@ -62,6 +66,7 @@ export function ProspectCard({
   className,
   interactive = true,
   showMenu = true,
+  actions,
   mode = "default",
   unread = false,
 }: ProspectCardProps) {
@@ -114,6 +119,7 @@ export function ProspectCard({
 
   return (
     <article
+      data-prospect-id={prospectId}
       onClick={canInteract ? onClick : undefined}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -128,7 +134,11 @@ export function ProspectCard({
       onKeyDown={
         canInteract
           ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
+              if (
+                e.target === e.currentTarget &&
+                (e.key === "Enter" || e.key === " ")
+              ) {
+                e.preventDefault();
                 onClick?.();
               }
             }
@@ -151,6 +161,7 @@ export function ProspectCard({
       >
         {showMenu && prospectId && storedProspect ? (
           <ProspectCardMenu
+            actions={actions}
             prospectId={prospectId}
             platform={platform}
             profileUrl={profileUrl}
@@ -165,12 +176,12 @@ export function ProspectCard({
 
       <ProspectCardBody
         text={
-          storedProspect && mode !== "ui_preview"
+          storedProspect && (mode !== "ui_preview" || actions)
             ? storedProspect.qualificationReasoning
             : prospect.briefIntro
         }
         urlEntities={
-          storedProspect && mode !== "ui_preview"
+          storedProspect && (mode !== "ui_preview" || actions)
             ? undefined
             : normalizeTwitterUrlEntities(prospect.bioUrlEntities)
         }

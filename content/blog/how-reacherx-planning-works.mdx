@@ -1,0 +1,55 @@
+---
+title: "How ReacherX prepares an outreach plan"
+description: "Trace research, grounded drafts, validation, batch selection, and the boundary between creating a plan and running it."
+category: engineering
+date: "2026-07-11"
+updated: "2026-09-10"
+related: ["how-reacherx-outreach-runs", "how-reacherx-memory-works"]
+tags: ["engineering", "planning", "contributors"]
+---
+
+An outreach plan is more than a generated message. It describes a sequence of actions for one person, using the workspace's goal and what the system knows about that person.
+
+The hard part is making those actions refer to real people, posts, and available channels. A convincing plan that targets the wrong post is still wrong.
+
+This article follows v4 beta at commit `8ea2662`.
+
+## Read the plan inputs before the prompt
+
+Start with [convex/lib/autoPlanCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/autoPlanCore.ts). `AutoPlanGroundingContext` describes the context used for automatic planning. Nearby helpers build research queries, assess whether enough grounding exists, and validate the resulting draft.
+
+Grounding means giving the plan real information it can refer to. The system should not invent a social post or assume a messaging channel exists simply because that would make a neat plan.
+
+Follow `buildGroundedAutoPlanPrompt`, `parseAutoPlanTransportDraft`, and `validateAutoPlanDraftAgainstGrounding`. They separate model-facing output from the application's accepted draft. Parsing valid JSON is only one check; the actions also need to fit the available context.
+
+## Save a plan through shared rules
+
+[convex/lib/outreachCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/outreachCore.ts) owns `createOutreachPlan`. Before writing, it checks that the prospect belongs to the supplied workspace and user, verifies outreach eligibility, checks for an existing active plan, and validates task inputs.
+
+This is an actual state choice in that function:
+
+```ts
+const initialPlanStatus =
+  (agentSettings?.autonomyMode ?? DEFAULT_WORKSPACE_AGENT_AUTONOMY_MODE) ===
+  "autonomous"
+    ? "approved"
+    : "draft";
+```
+
+Review-required is the default, but an autonomous workspace behaves differently.
+
+The single-active-plan rule also matters when two operations run close together. Updating an existing plan and creating another plan are different operations. Don't solve a duplicate-plan error by bypassing the check.
+
+## Keep selected people and instructions separate
+
+For the user-selected batch path, start with [convex/agents/tools/planBatch.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/agents/tools/planBatch.ts) and follow [convex/lib/planBatchCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/planBatchCore.ts). The user may give a shared instruction and different instructions for each selected person.
+
+Those selections need real application IDs and workspace validation. A model-generated string that looks like a database ID is not proof of a valid selection. Trace the selection context and batch records rather than trusting names in the generated answer.
+
+A batch can also have mixed outcomes. One person may already have a plan while another is ready for a new one. The UI should explain those results individually. “Batch failed” is not enough if some work succeeded.
+
+## Test the boundary that could send the wrong thing
+
+Useful tests include a fabricated post reference, unavailable channel, duplicate plan, stale batch result, and instructions accidentally crossing between selected people. The repository's `tests/plan-batch-core.test.ts` and `tests/agent-thread-target-selection.test.ts` cover parts of that path.
+
+Start with the [user's batch-planning flow](/blog/create-plans-for-several-people) if you need to understand the controls before reading the code. Then follow [outreach execution](/blog/how-reacherx-outreach-runs) to see how an approved plan becomes durable work, waits for events, and reacts to replies.

@@ -25,15 +25,17 @@ export function DemoOutreachPlanSection({
   const isPaused = status === "paused";
 
   return (
-    <OutreachPlanCard
-      variant="current"
-      status={status}
-      rationale={plan.rationale}
-      tasks={plan.tasks}
-      prospectId={prospectId}
-      onApprove={isDraft ? () => setStatus("executing") : undefined}
-      onPause={isExecuting ? () => setStatus("paused") : undefined}
-      onResume={isPaused ? () => setStatus("executing") : undefined}
-    />
+    <section data-demo-plan>
+      <OutreachPlanCard
+        variant="current"
+        status={status}
+        rationale={plan.rationale}
+        tasks={plan.tasks}
+        prospectId={prospectId}
+        onApprove={isDraft ? () => setStatus("executing") : undefined}
+        onPause={isExecuting ? () => setStatus("paused") : undefined}
+        onResume={isPaused ? () => setStatus("executing") : undefined}
+      />
+    </section>
   );
 }

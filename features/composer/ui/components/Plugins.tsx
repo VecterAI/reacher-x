@@ -112,10 +112,12 @@ export function Plugins({
         {enableEntityMentions ? (
           <MentionsPlugin entityMentions={entityMentions} />
         ) : null}
-        <InlineAutocompletePlugin
-          inlineAutocompleteContext={inlineAutocompleteContext}
-          editable={editable}
-        />
+        {inlineAutocompleteContext?.enabled !== false ? (
+          <InlineAutocompletePlugin
+            inlineAutocompleteContext={inlineAutocompleteContext}
+            editable={editable}
+          />
+        ) : null}
         <MediaPastePlugin />
         {/* editor plugins */}
       </div>

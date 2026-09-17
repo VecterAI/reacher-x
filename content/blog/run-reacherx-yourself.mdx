@@ -1,0 +1,68 @@
+---
+title: "Run ReacherX on your own computer"
+description: "Install the app, connect the services it needs, and start making changes to the open-source project."
+category: engineering
+date: "2026-09-09"
+updated: "2026-09-10"
+related: ["how-reacherx-agent-works", "help-build-reacherx"]
+
+tags: ["self hosting", "setup", "contributors", "pnpm", "Convex", "open source"]
+---
+
+ReacherX is open source. You can download the code, run it, and change it for your own needs.
+
+You'll need Node.js 22 or newer, pnpm 11, and accounts for the services you want to use. The code is available, but it doesn't come with free access to AI models or social-platform providers.
+
+## Download and install
+
+Open a terminal and run:
+
+```bash title="Get ReacherX"
+git clone https://github.com/VecterAI/reacher-x.git
+cd reacher-x
+corepack enable pnpm
+pnpm install
+cp .env.example .env.local
+```
+
+If you've already installed pnpm 11 directly, you can skip the Corepack command. If your Node installation doesn't include Corepack, install pnpm 11 first.
+
+The last command creates your local settings file. Open [the configuration guide](https://github.com/VecterAI/reacher-x/blob/main/docs/configuration.md) to see which values you need and where to get them.
+
+## Connect the services you need
+
+Convex runs the backend. WorkOS handles sign-in. AI features need a model provider, and X/Twitter and LinkedIn features need their respective connections.
+
+Follow the guide for the part of the app you want to work on. Missing settings can stop that part from working, even if the rest of the app starts.
+
+Some values belong in `.env.local`; others belong in your Convex deployment settings. The guide lists the right place for each. Don't commit your local settings or keys to Git.
+
+## Start the app
+
+Set up the backend once:
+
+```bash title="Set up Convex"
+npx convex dev --once
+```
+
+Then leave this running in one terminal:
+
+```bash title="Run the backend"
+npx convex dev
+```
+
+In a second terminal, start the website:
+
+```bash title="Run the website"
+pnpm dev
+```
+
+Open the localhost address printed in the terminal, usually `http://localhost:3000`.
+
+## Make one useful change
+
+A confusing error message or a setup step that didn't work is a good first contribution. You don't have to begin with a large feature.
+
+Read the [contribution guide](https://github.com/VecterAI/reacher-x/blob/main/CONTRIBUTING.md), look for an existing component or helper you can reuse, and test the behavior you change. For bigger ideas, talk to me before you start so we can agree on what to build.
+
+If you want to work on the AI side, [the agent walkthrough](/blog/how-reacherx-agent-works) points to the main files. And if you're wondering why the whole application is open, [here's the story behind that decision](/blog/why-i-open-sourced-reacherx).

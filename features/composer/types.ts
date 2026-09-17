@@ -19,6 +19,8 @@ export type ComposerAttachmentDestination = {
 };
 
 export interface ComposerSubmitResult {
+  /** A confirmed intermediate action succeeded, but the draft still needs review. */
+  preserveDraft?: boolean;
   /** The submit target now owns and will revoke the uploads' blob URLs. */
   retainMediaObjectUrls?: boolean;
 }

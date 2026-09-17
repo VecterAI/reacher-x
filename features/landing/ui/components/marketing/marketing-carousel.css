@@ -1,0 +1,35 @@
+.capability-demo {
+  aspect-ratio: 16 / 9;
+  background: #a4a4a4 url("/blog-media/demo-background.svg") center / cover;
+}
+.capability-demo .blog-app-demo-figure {
+  margin: 0;
+}
+.capability-demo .blog-app-demo {
+  border: 0;
+  border-radius: 0;
+}
+.capability-demo .blog-app-demo-caption {
+  display: none;
+}
+.blog-card:hover .blog-app-demo-controls,
+.blog-card:focus-within .blog-app-demo-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .capability-demo .blog-app-demo-controls {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.capability-carousel {
+  cursor: grab;
+}
+.capability-carousel:active {
+  cursor: grabbing;
+}
+/* The page edge clips the strip; the carousel itself can bleed into its gutters. */
+.capability-carousel .blog-card {
+  user-select: none;
+}

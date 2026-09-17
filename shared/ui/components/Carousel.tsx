@@ -87,6 +87,13 @@ const Carousel = React.forwardRef<
 
     const handleKeyDown = React.useCallback(
       (event: React.KeyboardEvent<HTMLDivElement>) => {
+        // Nested form controls own their arrow keys (for example, demo timelines).
+        if (
+          event.target instanceof HTMLElement &&
+          (event.target.isContentEditable ||
+            event.target.closest('input, textarea, select, [role="slider"]'))
+        )
+          return;
         if (event.key === "ArrowLeft") {
           event.preventDefault();
           scrollPrev();
@@ -152,12 +159,15 @@ Carousel.displayName = "Carousel";
 
 const CarouselContent = React.forwardRef<
   HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => {
+  React.HTMLAttributes<HTMLDivElement> & { viewportClassName?: string }
+>(({ className, viewportClassName, ...props }, ref) => {
   const { carouselRef, orientation } = useCarousel();
 
   return (
-    <div ref={carouselRef} className="h-full overflow-hidden">
+    <div
+      ref={carouselRef}
+      className={cn("h-full overflow-hidden", viewportClassName)}
+    >
       <div
         ref={ref}
         className={cn(

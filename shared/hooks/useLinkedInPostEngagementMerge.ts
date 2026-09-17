@@ -67,12 +67,15 @@ function mergeLinkedInEngagementIntoPost(
   } satisfies UnifiedPost;
 }
 
-export function useLinkedInPostEngagementMerge(posts: UnifiedPost[]) {
+export function useLinkedInPostEngagementMerge(
+  posts: UnifiedPost[],
+  enabled = true
+) {
   const postKeys = React.useMemo(() => dedupeSortedPostKeys(posts), [posts]);
 
   const engagements = useQuery(
     api.linkedinEngagement.getEngagementsForPostKeys,
-    postKeys.length > 0 ? { postKeys } : "skip"
+    enabled && postKeys.length > 0 ? { postKeys } : "skip"
   );
 
   return React.useMemo(

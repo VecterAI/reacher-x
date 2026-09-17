@@ -8,27 +8,7 @@ import * as React from "react";
 import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/shared/ui/components/DropdownMenu";
-import { Button } from "@/shared/ui/components/Button";
-import {
-  ArchiveIcon,
-  ChangeHistoryIcon,
-  ContentCopyIcon,
-  IosShareIcon,
-  MailIcon,
-  MoreHorizIcon,
-  OpenInNewIcon,
-  PersonIcon,
-  UnarchiveIcon,
-  XChatIcon,
-} from "@/shared/ui/components/icons";
+import { ProspectCardMenuView } from "./ProspectCardMenuView";
 import { usePanelStack } from "@/features/prospects/contexts/PanelStackContext";
 import { useProspectProfile } from "@/features/prospects/contexts/ProspectProfileContext";
 import { useProspectDmState } from "@/features/prospects/hooks/useProspectDmState";
@@ -40,9 +20,21 @@ import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { useTwitterProfileNavigation } from "@/features/webapp/ui/components/tweet/useTwitterProfileNavigation";
 import { useLinkedInProfileNavigation } from "@/features/webapp/ui/components/linkedin/useLinkedInProfileNavigation";
 
+import type { WorkspaceUseCaseKey } from "@/shared/lib/workspaceUseCases";
+
 type ProspectStatus = Doc<"prospects">["status"];
 
+export interface ProspectCardMenuActions {
+  useCaseKey: WorkspaceUseCaseKey;
+  onStatusChange: (status: ProspectStatus) => void;
+  onOpenConversation: () => void;
+  onOpenAgent: () => void;
+  onViewPlatformProfile: () => void;
+  onShareProfile: () => void;
+}
+
 interface ProspectCardMenuProps {
+  actions?: ProspectCardMenuActions;
   prospectId: Id<"prospects">;
   platform: "twitter" | "linkedin";
   profileUrl?: string;
@@ -54,7 +46,7 @@ interface ProspectCardMenuProps {
   onStatusChange?: (newStatus: ProspectStatus) => void;
 }
 
-export function ProspectCardMenu({
+function LiveProspectCardMenu({
   prospectId,
   platform,
   profileUrl,
@@ -230,129 +222,87 @@ export function ProspectCardMenu({
   };
 
   return (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="xsIcon"
-          variant="ghost"
-          onClick={(e) => e.stopPropagation()}
-          aria-label="More options"
-        >
-          <MoreHorizIcon className="fill-muted-foreground" aria-hidden />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
-        <DropdownMenuSeparator />
+    <ProspectCardMenuView
+      menuOpen={menuOpen}
+      setMenuOpen={setMenuOpen}
+      platform={platform}
+      profileUrl={profileUrl}
+      resolvedTwitterUsername={resolvedTwitterUsername}
+      status={status}
+      statusOptions={statusOptions}
+      isPreviewMode={isPreviewMode}
+      isOnboardingPreview={isOnboardingPreview}
+      dmEligibility={dmEligibility}
+      handleOpenAgentPanel={handleOpenAgentPanel}
+      handleViewProfile={handleViewProfile}
+      handleShareProfile={handleShareProfile}
+      handleStatusChange={handleStatusChange}
+      handleViewPlatformProfile={handleViewPlatformProfile}
+      handleCopyProfileLink={handleCopyProfileLink}
+      handleOpenDmPanel={handleOpenDmPanel}
+      handleArchive={handleArchive}
+      handleUnarchive={handleUnarchive}
+    />
+  );
+}
 
-        {/* Agent */}
-        <DropdownMenuItem
-          disabled={isPreviewMode || status === "archived"}
-          title={
-            status === "archived"
-              ? "Unarchive this profile to chat with the agent"
-              : undefined
-          }
-          onClick={handleOpenAgentPanel}
-        >
-          <ChangeHistoryIcon className="fill-current" aria-hidden />
-          Agent
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
+export function ProspectCardMenu(props: ProspectCardMenuProps) {
+  return props.actions ? (
+    <LocalProspectCardMenu {...props} actions={props.actions} />
+  ) : (
+    <LiveProspectCardMenu {...props} />
+  );
+}
 
-        {/* View & Share */}
-        <DropdownMenuItem onClick={handleViewProfile}>
-          <PersonIcon className="fill-current" aria-hidden />
-          View profile
-        </DropdownMenuItem>
-        {!isPreviewMode ? (
-          <DropdownMenuItem onClick={handleShareProfile}>
-            <IosShareIcon className="fill-current" aria-hidden />
-            Share profile
-          </DropdownMenuItem>
-        ) : null}
-
-        {!isPreviewMode ? <DropdownMenuSeparator /> : null}
-
-        {/* Status options - exclude current status */}
-        {statusOptions
-          .filter((opt) => opt.value !== status)
-          .map((opt) => (
-            <DropdownMenuItem
-              key={opt.value}
-              disabled={isPreviewMode || status === "archived"}
-              title={
-                status === "archived" ? "Unarchive to change status" : undefined
-              }
-              onClick={(e) => handleStatusChange(e, opt.value)}
-            >
-              {opt.icon}
-              {opt.label}
-            </DropdownMenuItem>
-          ))}
-
-        <DropdownMenuSeparator />
-
-        {/* Platform-specific links */}
-        {platform === "twitter" && resolvedTwitterUsername && (
-          <DropdownMenuItem onClick={handleViewPlatformProfile}>
-            <OpenInNewIcon className="fill-current" aria-hidden />
-            View X/Twitter profile
-          </DropdownMenuItem>
-        )}
-        {platform === "linkedin" && profileUrl && (
-          <DropdownMenuItem onClick={handleViewPlatformProfile}>
-            <OpenInNewIcon className="fill-current" aria-hidden />
-            View LinkedIn profile
-          </DropdownMenuItem>
-        )}
-        {profileUrl && (
-          <DropdownMenuItem onClick={handleCopyProfileLink}>
-            <ContentCopyIcon className="fill-current" aria-hidden />
-            Copy profile link
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem
-          disabled={isOnboardingPreview || !dmEligibility.enabled}
-          onClick={dmEligibility.enabled ? handleOpenDmPanel : undefined}
-          title={
-            isOnboardingPreview
-              ? "DMs are disabled in onboarding preview."
-              : !dmEligibility.enabled
-                ? dmEligibility.reasonLabel
-                : undefined
-          }
-        >
-          {platform === "linkedin" ? (
-            <MailIcon className="fill-current" aria-hidden />
-          ) : (
-            <XChatIcon aria-hidden />
-          )}
-          {platform === "linkedin" ? "Message on LinkedIn" : "DM on X/Twitter"}
-        </DropdownMenuItem>
-
-        {/* Archive / Unarchive */}
-        {status !== "archived" ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={isPreviewMode} onClick={handleArchive}>
-              <ArchiveIcon className="fill-current" aria-hidden />
-              Archive
-            </DropdownMenuItem>
-          </>
-        ) : (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={isPreviewMode}
-              onClick={handleUnarchive}
-            >
-              <UnarchiveIcon className="fill-current" aria-hidden />
-              Unarchive
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+function LocalProspectCardMenu({
+  actions,
+  onViewProfile,
+  platform,
+  profileUrl,
+  twitterUsername,
+  status,
+}: ProspectCardMenuProps & { actions: ProspectCardMenuActions }) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const handle =
+    (action: () => void): React.MouseEventHandler =>
+    (event) => {
+      event.stopPropagation();
+      action();
+    };
+  return (
+    <ProspectCardMenuView
+      menuOpen={menuOpen}
+      setMenuOpen={setMenuOpen}
+      platform={platform}
+      profileUrl={profileUrl}
+      resolvedTwitterUsername={
+        twitterUsername ||
+        (profileUrl ? extractTwitterUsername(profileUrl) : undefined)
+      }
+      status={status}
+      statusOptions={getProspectStatusMenuOptions(actions.useCaseKey)}
+      isPreviewMode={false}
+      isOnboardingPreview={false}
+      dmEligibility={{ enabled: true }}
+      handleOpenAgentPanel={handle(actions.onOpenAgent)}
+      handleViewProfile={handle(onViewProfile)}
+      handleShareProfile={handle(actions.onShareProfile)}
+      handleStatusChange={(event, value) => {
+        event.stopPropagation();
+        actions.onStatusChange(value);
+      }}
+      handleViewPlatformProfile={handle(actions.onViewPlatformProfile)}
+      handleCopyProfileLink={handle(() => {
+        if (profileUrl)
+          navigator.clipboard.writeText(profileUrl).then(
+            () =>
+              toast.success("Copied!", { description: "Profile link copied." }),
+            () => toast.error("Error!", { description: "Unable to copy." })
+          );
+      })}
+      handleOpenDmPanel={handle(actions.onOpenConversation)}
+      handleArchive={handle(() => actions.onStatusChange("archived"))}
+      handleUnarchive={handle(() => actions.onStatusChange("new"))}
+    />
   );
 }

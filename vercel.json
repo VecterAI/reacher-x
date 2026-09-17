@@ -1,6 +1,20 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "corepack install && corepack pnpm install --frozen-lockfile",
+  "routes": [
+    {
+      "src": "/(?:home|product|pricing|use-cases(?:/.*)?|blog(?:/.*)?)",
+      "continue": true,
+      "transforms": [
+        {
+          "type": "response.headers",
+          "op": "append",
+          "target": { "key": "Vary" },
+          "args": "Accept"
+        }
+      ]
+    }
+  ],
   "git": {
     "deploymentEnabled": {
       "codex/fix-agent-ops-convex-typecheck": false,

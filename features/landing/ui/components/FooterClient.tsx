@@ -9,6 +9,14 @@ import {
   GITHUB_REPO_ISSUES_URL,
   GITHUB_REPO_URL,
 } from "@/features/landing/lib/github";
+import {
+  BLUESKY_PROFILE_URL,
+  DISCORD_INVITE_URL,
+  LINKEDIN_PROFILE_URL,
+  PATREON_URL,
+  THREADS_PROFILE_URL,
+  X_PROFILE_URL,
+} from "@/features/landing/lib/communityUrls";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { LandingWordmark } from "@/features/landing/ui/components/LandingWordmark";
@@ -23,6 +31,7 @@ import {
 import {
   TwitterIcon,
   DiscordOutlineIcon,
+  PatreonIcon,
   LinkedinIcon,
   BlueskyIcon,
   ThreadsIcon,
@@ -39,7 +48,7 @@ const FOOTER_COLUMNS = [
   {
     title: "Product",
     links: [
-      { label: "Use cases", href: "/use-cases" },
+      { label: "Product", href: "/product" },
       { label: "Pricing", href: "/pricing" },
       {
         label: "Changelog",
@@ -50,7 +59,8 @@ const FOOTER_COLUMNS = [
   {
     title: "Resources",
     links: [
-      { label: "Threads", href: "/threads" },
+      { label: "Blog", href: "/blog" },
+      { label: "For AI agents", href: "/llms.txt" },
       { label: "Book a demo", href: "#book-demo" },
       { label: "Contact", href: "mailto:creativecoder.crco@gmail.com" },
     ],
@@ -64,6 +74,8 @@ const FOOTER_COLUMNS = [
         href: "https://github.com/VecterAI/reacher-x/blob/main/README.md",
       },
       { label: "Contribute", href: GITHUB_REPO_ISSUES_URL },
+      { label: "Patreon", href: PATREON_URL },
+      { label: "Discord community", href: DISCORD_INVITE_URL },
       {
         label: "License (Apache-2.0)",
         href: "https://github.com/VecterAI/reacher-x/blob/main/LICENSE",
@@ -79,27 +91,32 @@ const SOCIALS = [
     icon: <GitHubOutlineIcon />,
   },
   {
-    href: "https://x.com/ReacherXfounder",
+    href: X_PROFILE_URL,
     label: "X/Twitter",
     icon: <TwitterIcon />,
   },
   {
-    href: "https://discord.gg/76dF9NPH",
+    href: DISCORD_INVITE_URL,
     label: "Discord",
     icon: <DiscordOutlineIcon />,
   },
   {
-    href: "https://www.linkedin.com/in/noobships",
+    href: PATREON_URL,
+    label: "Patreon",
+    icon: <PatreonIcon className="fill-current" />,
+  },
+  {
+    href: LINKEDIN_PROFILE_URL,
     label: "LinkedIn",
     icon: <LinkedinIcon className="fill-current" />,
   },
   {
-    href: "https://bsky.app/profile/reacherxfounder.bsky.social",
+    href: BLUESKY_PROFILE_URL,
     label: "Bluesky",
     icon: <BlueskyIcon />,
   },
   {
-    href: "https://threads.net/@reacherxfounder",
+    href: THREADS_PROFILE_URL,
     label: "Threads",
     icon: <ThreadsIcon className="fill-current" />,
   },
@@ -170,7 +187,12 @@ export function FooterClient({
     THEME_OPTIONS[0];
 
   const handleScrollToTop = React.useCallback(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({
+      top: 0,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+    });
   }, []);
 
   return (
@@ -183,7 +205,7 @@ export function FooterClient({
               href="mailto:creativecoder.crco@gmail.com"
               className="text-muted-foreground font-mono text-sm font-medium hover:underline"
             >
-              creativecoder.crco@gmail.com
+              Get in touch
             </a>
           </address>
         </div>
@@ -210,7 +232,7 @@ export function FooterClient({
                         >
                           {label}
                         </a>
-                      ) : href.startsWith("mailto:") ? (
+                      ) : href.startsWith("mailto:") || href === "/llms.txt" ? (
                         <a href={href} className="text-sm hover:underline">
                           {label}
                         </a>
@@ -239,21 +261,22 @@ export function FooterClient({
             </span>
             <div className="flex flex-wrap">
               {SOCIALS.map(({ href, label, icon }) => (
-                <a
+                <Button
+                  asChild
                   key={label}
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  variant="ghost"
+                  size="icon"
+                  className="[&_svg]:size-5"
                 >
-                  <Button
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     aria-label={`ReacherX on ${label}`}
-                    variant="ghost"
-                    size="icon"
-                    className="[&_svg]:size-5"
                   >
                     {icon}
-                  </Button>
-                </a>
+                  </a>
+                </Button>
               ))}
             </div>
           </div>
@@ -265,21 +288,22 @@ export function FooterClient({
           </span>
           <div className="flex flex-wrap">
             {SOCIALS.map(({ href, label, icon }) => (
-              <a
+              <Button
+                asChild
                 key={label}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
+                variant="ghost"
+                size="icon"
+                className="[&_svg]:size-5"
               >
-                <Button
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   aria-label={`ReacherX on ${label}`}
-                  variant="ghost"
-                  size="icon"
-                  className="[&_svg]:size-5"
                 >
                   {icon}
-                </Button>
-              </a>
+                </a>
+              </Button>
             ))}
           </div>
         </div>

@@ -48,7 +48,10 @@ test("prospect evidence posts open the dedicated full-post panel", () => {
 
   assert.match(panelSource, /pushPanel\("twitter-post"/);
   assert.match(panelSource, /pushPanel\("linkedin-post-thread"/);
-  assert.match(panelSource, /onPostSelect=\{handlePostSelect\}/);
+  assert.match(
+    panelSource,
+    /onPostSelect=\{offline \? undefined : handlePostSelect\}/
+  );
   assert.match(
     listSource,
     /<LinkedInPostCard[\s\S]*onClick=\{\s*onPostSelect[\s\S]*linkedInPostsById/

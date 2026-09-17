@@ -1,0 +1,61 @@
+:root {
+  --marketing-demo-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04), 0 24px 48px -16px rgb(0 0 0 / 0.1);
+}
+.dark {
+  --marketing-demo-shadow:
+    0 1px 2px rgb(0 0 0 / 0.4), 0 24px 48px -16px hsl(var(--foreground) / 0.07);
+}
+.marketing-app-demo {
+  margin: 0;
+  min-width: 0;
+}
+.marketing-app-demo .blog-app-demo {
+  aspect-ratio: 1280 / 850;
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 18px;
+  isolation: isolate;
+  box-shadow: var(--marketing-demo-shadow);
+}
+.marketing-app-demo .blog-app-demo-window {
+  background: hsl(var(--background));
+  box-shadow: none;
+  border-radius: 0;
+}
+.marketing-app-demo .blog-app-demo-controls {
+  z-index: 1;
+  width: min(280px, calc(100% - 24px));
+}
+.marketing-app-demo .blog-app-demo-cursor svg {
+  width: 20px;
+  height: 26px;
+}
+@media (pointer: coarse) {
+  .marketing-app-demo .blog-app-demo-controls button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+.marketing-app-demo .blog-app-demo-expanded {
+  width: min(100vw, calc(100dvh * 1280 / 850));
+}
+
+.marketing-demo-viewport {
+  aspect-ratio: 1280 / 850;
+  min-width: 0;
+  border-radius: 18px;
+  background: hsl(var(--background));
+}
+
+.marketing-demo-viewport:empty {
+  box-shadow: var(--marketing-demo-shadow);
+}
+
+@media (width < 48rem) {
+  .marketing-demo-viewport,
+  .marketing-app-demo .blog-app-demo {
+    border-radius: 6px;
+  }
+}

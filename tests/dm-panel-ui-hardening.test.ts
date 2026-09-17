@@ -41,7 +41,7 @@ test("both DM panels share the Agent Chat message-scroller behavior", () => {
     assert.match(panel, /scrollToLatestRequest/);
     assert.match(panel, /scrollerItems/);
     assert.match(
-      panel,
+      read("features/composer/ui/components/DmComposer.tsx"),
       /bg-background shrink-0 px-4 pb-\[max\(1rem,env\(safe-area-inset-bottom\)\)\] backdrop-blur-xl/
     );
     assert.doesNotMatch(
@@ -545,7 +545,7 @@ test("XChat branding stays on X direct-message surfaces", () => {
     "features/prospects/ui/components/ProspectProfileHeader.tsx"
   );
   const cardMenu = read(
-    "features/prospects/ui/components/prospect-card/ProspectCardMenu.tsx"
+    "features/prospects/ui/components/prospect-card/ProspectCardMenuView.tsx"
   );
   const twitterProfile = read(
     "features/profile/ui/components/TwitterProfilePanel.tsx"
