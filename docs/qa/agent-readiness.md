@@ -19,7 +19,7 @@ Merging into main and promoting to production remain outside this authorization.
 - [x] Record local evidence and remaining deployment checks.
 - [x] Push the reviewed change to PR #85 and verify the new preview.
 - [x] Run a fresh public is-agentic scan and inspect its findings.
-- [ ] Verify deployed HTML/Markdown responses and cache behavior.
+- [x] Verify deployed HTML/Markdown responses and cache behavior.
 
 ## Scope and constraints
 
@@ -144,7 +144,7 @@ The links and successful response bodies are verified by HTTP instead. The full
 HTML experience still uses JavaScript; no-JavaScript users get a document-reading
 fallback. Browser viewport and script-execution overrides were restored.
 
-### Deployment checks and accepted limitations
+### Initial deployment gates and accepted limitations (historical)
 
 1. **Authenticated end-to-end:** the environment's registered callback is
    `http://localhost:3000/callback`, while the isolated modified build runs at
@@ -185,7 +185,7 @@ Before commit approval, the final Git check fetched origin again; `HEAD` remaine
 `origin/codex/marketing-variants` (0 ahead / 0 behind). The index is empty. PR #85
 and the separate PR #84 were not modified.
 
-### Deployed verification, September 17
+### First deployed verification, September 17 (historical)
 
 Commit `6dbf0863` built successfully on Vercel. Its temporarily public preview
 scored **98/100** using `npx is-agentic@1.0.1 <preview-url> --json`, with all five
@@ -219,3 +219,51 @@ demo rendered, with no captured console warnings/errors. Both acquisition/login
 links returned to the homepage in the available browser session; a complete
 customer login/setup flow remains unverified and is skipped under the user's
 explicit exception. No workspace or customer outreach was created.
+
+### Final deployed verification
+
+The application/configuration commit tested is `d1ecaa50`, deployment
+`dpl_7w2d7apbnAKf6ZRwYQjTbjiEPxEW`. Both the main and demo Vercel production builds
+passed. This section records verification only; no application code changed after
+that commit.
+
+- Fresh official scan: **98/100**, September 17, 2026 at 11:36 UTC. All five
+  essential checks passed (80/80). [Final preview report](https://is-agentic.com/scan/reacher-x-v3-nyqd1357x-creative-coders-projects.vercel.app).
+  The same preview-domain attribution limits described above apply; this is not a
+  measured production-domain score.
+- All 33 repeated cache probes passed, including alternating HTML/Markdown,
+  explicit Markdown exclusion, direct Markdown, llms.txt and sitemap requests.
+  Both formats returned the right content across cold/warm requests. Cached HTML
+  retains `Accept` plus all four Next.js RSC header names. Markdown responses can
+  contain repeated `Accept` values after the append transform; these are equivalent
+  HTTP field-list entries and do not change cache semantics.
+- All four deployed marketing HTTP tests passed, covering use cases, canonical
+  homepage, retired variants and invalid/supporting route status.
+- Built-in browser verification passed for homepage FAQ expansion, pricing
+  navigation and yearly amounts, blog search (`replies`: three results), and opening
+  the matching article. At 390px viewport width the article document measured
+  exactly 390px with no horizontal overflow. No captured console warnings/errors.
+- Customer sign-in testing was explicitly skipped as requested. Agent-readability
+  does not expose the authenticated app, customer data, or new API/MCP tools.
+
+All six deployed agent-readiness HTTP tests passed, including all 81 canonical
+pages in three representations, Flight/HEAD, invalid/private paths, metadata,
+JSON-LD, crawler policy, sitemap and search. The broader blog suite passed 13 of 14
+tests: the remaining image check found a real deployment packaging defect.
+The temporary public exception was removed; unauthenticated HTTP returned 302.
+
+### Social-image packaging follow-up
+
+The blog image route returned 500 on Vercel because
+`node_modules/geist/dist/fonts/geist-sans/Geist-SemiBold.ttf` was absent. Runtime
+logs confirmed ENOENT at that exact path. A narrowly scoped
+`outputFileTracingIncludes` entry now includes the existing font for
+`/blog/*/opengraph-image`; no rendering logic or font dependency changed.
+The local production build passed, and its generated route trace includes the
+127,872-byte font at the expected runtime path. Hosted image verification is
+pending. This follow-up changes packaging only; the 98/100 score above is explicitly
+attributed to the earlier scanned deployment.
+
+Raw final evidence: `deployed-agent-http-final.log`, `deployed-blog-final.log`,
+`deployed-marketing-final.log`, `deployed-cache-final.log`, `deployed-cache.json`,
+and `preview-is-agentic-final.json` in `/tmp/reacherx-agent-readiness/`.
