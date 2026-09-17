@@ -1,3 +1,5 @@
+import { marketingMetadata } from "@/features/landing/lib/agentReadinessHelpers";
+import { MarketingStructuredData } from "@/features/landing/ui/components/MarketingStructuredData";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -26,17 +28,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const item = getMarketingUseCase((await params).slug);
   if (!item) return { title: "Use case not found", robots: { index: false } };
-  return {
-    title: item.goal,
-    description: item.explanation,
-    alternates: { canonical: `https://reacherx.com${item.href}` },
-    openGraph: {
-      title: item.goal,
-      description: item.explanation,
-      url: `https://reacherx.com${item.href}`,
-      images: ["/og-default.jpg"],
-    },
-  };
+  return marketingMetadata(item.href);
 }
 export default async function UseCasePage({
   params,
@@ -47,6 +39,7 @@ export default async function UseCasePage({
   if (!item) notFound();
   return (
     <>
+      <MarketingStructuredData pathname={item.href} />
       <MarketingHero
         title={item.heading}
         actions={

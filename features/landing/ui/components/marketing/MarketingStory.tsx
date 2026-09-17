@@ -1,3 +1,4 @@
+import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { GITHUB_REPO_URL } from "@/features/landing/lib/github";
@@ -23,11 +24,10 @@ export function MarketingConnections() {
       <header className="mb-8 flex flex-wrap items-end justify-between gap-5">
         <div>
           <h2 id="connections-heading" className={marketingSectionTitle}>
-            Find anyone.
+            {MARKETING_COPY.story.connectionsHeading}
           </h2>
           <p className="text-muted-foreground mt-5 max-w-lg text-base leading-7">
-            Customers, candidates, investors, partners. The problem is always
-            the same: the right people.
+            {MARKETING_COPY.story.connections}
           </p>
         </div>
       </header>
@@ -40,7 +40,7 @@ export function MarketingAuthenticity() {
   return (
     <MarketingSection labelledBy="authenticity-heading">
       <h2 id="authenticity-heading" className={marketingSectionTitle}>
-        Get access to the right network. Because your network is your net worth.
+        {MARKETING_COPY.story.authenticityHeading}
       </h2>
     </MarketingSection>
   );
@@ -52,11 +52,10 @@ export function MarketingDevelopers() {
       <div className="flex flex-col justify-between gap-10 lg:flex-row lg:items-center">
         <div>
           <h2 id="developers-heading" className={marketingSectionTitle}>
-            Open source.
+            {MARKETING_COPY.story.developersHeading}
           </h2>
           <p className="text-muted-foreground mt-5 max-w-lg text-base leading-7">
-            Use, modify, and self-host ReacherX under Apache 2.0, as part of the
-            Convex Open Source program.
+            {MARKETING_COPY.story.developers}
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -82,11 +81,10 @@ export function MarketingCommunity() {
     <MarketingSection labelledBy="community-heading">
       <header className="mb-10">
         <h2 id="community-heading" className={marketingSectionTitle}>
-          Join the community.
+          {MARKETING_COPY.story.communityHeading}
         </h2>
         <p className="text-muted-foreground mt-5 max-w-lg text-base leading-7">
-          ReacherX is built in the open, with people using it, not just around
-          it.
+          {MARKETING_COPY.story.community}
         </p>
       </header>
       <div className="grid gap-4 sm:grid-cols-2">

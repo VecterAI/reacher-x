@@ -21,7 +21,9 @@
     "test:blog:http": "tsx --test tests/blog-http.test.ts",
     "dev:demo": "next dev demos/app --port 3001",
     "build:demo": "next build demos/app",
-    "start:demo": "next start demos/app --port 3001"
+    "start:demo": "next start demos/app --port 3001",
+    "test:agent-readiness": "tsx --test tests/agent-readiness.test.ts",
+    "test:agent-readiness:http": "tsx --test tests/agent-readiness-http.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.72",

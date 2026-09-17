@@ -5,45 +5,23 @@ import {
   getPublishedBlogCategories,
   blogCategoryHref,
   blogHref,
+  BLOG_ORIGIN,
 } from "@/features/blog/lib/blogHelpers";
 
-import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
+import { PUBLIC_MARKETING_PAGES } from "@/features/landing/lib/agentReadinessHelpers";
 
-const BASE_URL = "https://reacherx.com";
+const BASE_URL = BLOG_ORIGIN;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseEntries: MetadataRoute.Sitemap = [
-    {
-      url: BASE_URL,
-      lastModified: new Date(),
-      changeFrequency: "yearly",
-      priority: 1,
-    },
-    {
-      url: `${BASE_URL}/home`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/use-cases`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.8,
-    },
-    {
-      url: `${BASE_URL}/pricing`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.8,
-    },
-  ];
+  // Include canonical public pages only. Do not invent lastmod timestamps on
+  // every request; article dates come from the content's editorial metadata.
+  const baseEntries: MetadataRoute.Sitemap = PUBLIC_MARKETING_PAGES.map(
+    (page) => ({ url: `${BASE_URL}${page.href}` })
+  );
 
   const posts = await getBlogPosts();
   baseEntries.push(
     { url: `${BASE_URL}/blog` },
-    { url: `${BASE_URL}/product` },
-    ...MARKETING_USE_CASES.map(({ href }) => ({ url: `${BASE_URL}${href}` })),
     ...getPublishedBlogCategories(posts).map((category) => ({
       url: `${BASE_URL}${blogCategoryHref(category.slug)}`,
     })),

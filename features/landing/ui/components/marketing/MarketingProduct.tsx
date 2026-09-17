@@ -1,3 +1,4 @@
+import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 import Link from "next/link";
 import {
   marketingButton as buttonVariants,
@@ -43,8 +44,7 @@ function MarketingCapabilities() {
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          ReacherX keeps searching X/Twitter and LinkedIn around the clock, and
-          researches every person it finds before you see them.
+          {MARKETING_COPY.product.discovery}
         </p>
         <CapabilityLink href="/blog/how-reacherx-discovery-works">
           How discovery works
@@ -62,8 +62,7 @@ function MarketingCapabilities() {
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          △ Agent turns its research into an outreach plan for each person,
-          with a draft message you can edit before anything sends.
+          {MARKETING_COPY.product.plans}
         </p>
         <CapabilityLink href="/blog/how-reacherx-planning-works">
           How planning works
@@ -80,8 +79,7 @@ function MarketingCapabilities() {
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          Send voice notes, images, and video. Mention several people in one
-          message with @ tags.
+          {MARKETING_COPY.product.messages}
         </p>
         <CapabilityLink href="/blog/send-voice-notes">
           About voice notes
@@ -99,8 +97,7 @@ function MarketingCapabilities() {
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          Tell △ Agent how you write and who you look for, once. It applies
-          your preferences to every later search and message.
+          {MARKETING_COPY.product.memory}
         </p>
         <CapabilityLink href="/blog/how-reacherx-memory-works">
           How memory works
@@ -114,7 +111,7 @@ function MarketingCapabilityIndex() {
   return (
     <MarketingSection labelledBy="capability-index-heading">
       <h2 id="capability-index-heading" className={marketingSectionTitle}>
-        More, built in.
+        {MARKETING_COPY.product.moreHeading}
       </h2>
       <div className="mt-14">
         <MarketingCapabilityCarousel />

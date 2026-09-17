@@ -60,6 +60,7 @@ const FOOTER_COLUMNS = [
     title: "Resources",
     links: [
       { label: "Blog", href: "/blog" },
+      { label: "For AI agents", href: "/llms.txt" },
       { label: "Book a demo", href: "#book-demo" },
       { label: "Contact", href: "mailto:creativecoder.crco@gmail.com" },
     ],
@@ -231,7 +232,7 @@ export function FooterClient({
                         >
                           {label}
                         </a>
-                      ) : href.startsWith("mailto:") ? (
+                      ) : href.startsWith("mailto:") || href === "/llms.txt" ? (
                         <a href={href} className="text-sm hover:underline">
                           {label}
                         </a>

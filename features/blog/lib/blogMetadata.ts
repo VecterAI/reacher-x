@@ -19,7 +19,10 @@ export function blogListingMetadata(
     description,
     alternates: {
       canonical: `${BLOG_ORIGIN}${pathname}`,
-      types: { "application/rss+xml": `${BLOG_ORIGIN}/blog/feed.xml` },
+      types: {
+        "application/rss+xml": `${BLOG_ORIGIN}/blog/feed.xml`,
+        "text/markdown": `${BLOG_ORIGIN}/markdown${pathname}`,
+      },
     },
     openGraph: {
       title: `${title} | ReacherX`,

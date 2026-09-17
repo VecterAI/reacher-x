@@ -1,11 +1,7 @@
 import type { FaqItem } from "@/features/landing/lib/faqs";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/shared/ui/components/Accordion";
+import { KeyboardArrowDownIcon } from "@/shared/ui/components/icons";
 
+/** Native disclosure keeps answers in the HTML and works without hydration. */
 export function FaqsAccordion({
   items,
   className,
@@ -14,22 +10,28 @@ export function FaqsAccordion({
   className?: string;
 }) {
   return (
-    <Accordion type="single" collapsible className={className}>
+    <div className={className}>
       {items.map((item) => (
-        <AccordionItem
+        <details
           key={item.id}
-          value={item.id}
+          name="marketing-faq"
           data-slot="faq-item"
-          className="last:border-b-0"
+          className="group border-b last:border-b-0"
         >
-          <AccordionTrigger className="gap-6 py-5 text-left text-base font-medium hover:no-underline focus-visible:underline focus-visible:ring-0 md:text-lg">
-            {item.question}
-          </AccordionTrigger>
-          <AccordionContent className="text-muted-foreground pb-5 text-sm leading-6 md:text-base">
+          <summary className="cursor-pointer list-none py-5 text-left focus-visible:underline [&::-webkit-details-marker]:hidden">
+            <h3 className="flex items-center justify-between gap-6 text-base font-medium md:text-lg">
+              {item.question}
+              <KeyboardArrowDownIcon
+                aria-hidden="true"
+                className="size-4 shrink-0 fill-current transition-transform group-open:rotate-180 motion-reduce:transition-none"
+              />
+            </h3>
+          </summary>
+          <p className="text-muted-foreground pb-5 text-sm leading-6 md:text-base">
             {item.answer}
-          </AccordionContent>
-        </AccordionItem>
+          </p>
+        </details>
       ))}
-    </Accordion>
+    </div>
   );
 }

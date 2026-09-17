@@ -1,3 +1,4 @@
+import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 import Link from "next/link";
 import { Button } from "@/shared/ui/components/Button";
 import { MarketingUseCaseExplorer } from "../marketing/MarketingUseCaseExplorer";
@@ -29,9 +30,7 @@ export function UseCasesDirectory() {
         }
       >
         <p className="mb-7 max-w-sm text-base leading-7 text-pretty">
-          Find your first customers, hire someone, or meet people working on the
-          same problem. ReacherX helps you find and reach them on X/Twitter and
-          LinkedIn.
+          {MARKETING_COPY.useCases.description}
         </p>
         <LandingPromptCta
           placeholder="Tell us who you need to find and why…"
@@ -43,7 +42,7 @@ export function UseCasesDirectory() {
         className={`${marketingPageWidth} scroll-mt-24 pb-16 lg:pb-24`}
       >
         <h2 className="mb-8 text-3xl font-normal tracking-tight sm:text-4xl">
-          See what ReacherX can do.
+          {MARKETING_COPY.useCases.examplesHeading}
         </h2>
         <MarketingUseCaseExplorer />
       </section>
@@ -51,7 +50,7 @@ export function UseCasesDirectory() {
         className={`${marketingPageWidth} flex flex-wrap items-center justify-between gap-8 py-16`}
       >
         <h2 className="text-2xl font-normal text-balance sm:text-3xl">
-          Have something else in mind?
+          {MARKETING_COPY.useCases.otherHeading}
         </h2>
         <div className="flex flex-wrap gap-3">
           <Button asChild variant="outline" className="rounded-full">

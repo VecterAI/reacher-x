@@ -1,3 +1,4 @@
+import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 import { Suspense } from "react";
 import { MarketingFaq } from "./MarketingFaq";
 import { MarketingProof } from "./MarketingProof";
@@ -25,9 +26,7 @@ export function MarketingHome() {
         }
       >
         <p className="text-base leading-7 text-pretty">
-          Tell ReacherX <strong>△</strong> Agent who you need to reach. It finds
-          the right people, explains why they fit, and helps you start the
-          conversation.
+          {MARKETING_COPY.home.description}
         </p>
         <div className="mt-7">
           <LandingPromptCta

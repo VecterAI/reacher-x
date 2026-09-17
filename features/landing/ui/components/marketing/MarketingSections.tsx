@@ -1,5 +1,7 @@
 "use client";
 
+import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
+
 import Link from "next/link";
 import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 import { LandingPrimaryCta } from "../LandingPrimaryCta";
@@ -24,11 +26,10 @@ export function MarketingWorkflow() {
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          No tables or sales jargon. Tell △ Agent what you are working on and
-          who you want to reach, in plain words.
+          {MARKETING_COPY.workflow.setup}
         </p>
         <p className="text-muted-foreground mt-5 text-sm leading-6">
-          It asks what it needs to know and starts looking.
+          {MARKETING_COPY.workflow.setupDetail}
         </p>
         <Link
           href="/blog/getting-started-with-reacherx"
@@ -51,12 +52,10 @@ export function MarketingWorkflow() {
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          ReacherX finds people on X/Twitter and LinkedIn, researches their
-          background, and explains every match.
+          {MARKETING_COPY.workflow.research}
         </p>
         <p className="text-muted-foreground mt-5 text-sm leading-6">
-          Check the posts and profile details behind each result before you
-          decide.
+          {MARKETING_COPY.workflow.researchDetail}
         </p>
         <Link
           href="/blog/how-reacherx-qualification-works"
@@ -78,11 +77,10 @@ export function MarketingWorkflow() {
         }
       >
         <p className="text-lg leading-7 text-pretty">
-          △ Agent turns its research into a personal introduction, ready for
-          your review. Nothing sends without your approval.
+          {MARKETING_COPY.workflow.outreach}
         </p>
         <p className="text-muted-foreground mt-5 text-sm leading-6">
-          Conversations, notes, and your writing style stay in one place.
+          {MARKETING_COPY.workflow.outreachDetail}
         </p>
         <Link
           href="/blog/what-reacherx-does-automatically"
@@ -102,7 +100,7 @@ export function MarketingFinish() {
       <div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-center">
         <div>
           <h2 className="text-3xl leading-tight font-normal tracking-tight sm:text-4xl">
-            Who will you and your △ Agent reach?
+            {MARKETING_COPY.workflow.finishHeading}
           </h2>
         </div>
         <div className="grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto">

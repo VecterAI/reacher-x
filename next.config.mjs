@@ -7,6 +7,10 @@ const nextConfig = {
   // Next.js 16: Enable Cache Components (PPR + "use cache" directive)
   cacheComponents: true,
 
+  // Keep Flight headers visible to proxy.ts so Markdown negotiation cannot
+  // rewrite a React navigation/prefetch response into plain text.
+  skipProxyUrlNormalize: true,
+
   async redirects() {
     return [
       {

@@ -5,10 +5,9 @@ import {
   applyResponseHeaders,
 } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextRequest } from "next/server";
-import {
-  classifyBlogRoute,
-  prefersBlogMarkdown,
-} from "@/features/blog/lib/blogRouteCore";
+import { classifyBlogRoute } from "@/features/blog/lib/blogRouteCore";
+import { prefersMarkdown } from "@/shared/lib/urls/contentNegotiationCore";
+import { publicMarkdownHref } from "@/features/landing/lib/agentReadinessHelpers";
 import { BLOG_NOT_FOUND_HTML } from "@/features/blog/lib/blogNotFound";
 
 import { isInvalidMarketingPath } from "@/features/landing/lib/marketingUseCaseHelpers";
@@ -24,6 +23,7 @@ const PUBLIC_PATH_PATTERNS = [
   /^\/product$/,
   /^\/pricing$/,
   /^\/blog(?:\/.*)?$/,
+  /^\/markdown(?:\/.*)?$/,
   /^\/blog-media\/(?:reading-demo\.(?:mp4|vtt)|reacherx-v3\/[a-z-]+\.mp4)$/,
   /^\/(?:sitemap\.xml|robots\.txt|llms\.txt)$/,
   /^\/api\/describe-url$/,
@@ -68,10 +68,7 @@ export async function proxy(request: NextRequest) {
           await (await import("@/features/blog/lib/blogPosts")).getBlogPosts()
         ).some((item) => item.category === blogRoute.category)
       : false;
-    const { requestHeaders, responseHeaders } = partitionAuthkitHeaders(
-      request,
-      headers
-    );
+    const { responseHeaders } = partitionAuthkitHeaders(request, headers);
     if (
       blogRoute.kind === "invalid" ||
       emptyCategory ||
@@ -91,19 +88,6 @@ export async function proxy(request: NextRequest) {
         responseHeaders
       );
     }
-    if (
-      blogRoute.kind === "post" &&
-      prefersBlogMarkdown(request.headers.get("accept") ?? "")
-    ) {
-      const response = applyResponseHeaders(
-        NextResponse.rewrite(new URL(`${pathname}/markdown`, request.url), {
-          request: { headers: requestHeaders },
-        }),
-        responseHeaders
-      );
-      response.headers.append("Vary", "Accept");
-      return response;
-    }
   }
 
   if (pathname === "/" && !session.user) {
@@ -118,8 +102,40 @@ export async function proxy(request: NextRequest) {
     });
   }
 
-  const response = handleAuthkitProxy(request, headers);
-  if (blogRoute?.kind === "post") response.headers.append("Vary", "Accept");
+  const markdownHref =
+    blogRoute?.kind === "post"
+      ? `${pathname}/markdown`
+      : publicMarkdownHref(pathname);
+  // Never rewrite Flight, server actions, or mutation requests to text.
+  const negotiate =
+    markdownHref &&
+    ["GET", "HEAD"].includes(request.method) &&
+    !request.headers.has("rsc") &&
+    !request.headers.has("next-action");
+  let response;
+  if (negotiate && prefersMarkdown(request.headers.get("accept") ?? "")) {
+    const { requestHeaders, responseHeaders } = partitionAuthkitHeaders(
+      request,
+      headers
+    );
+    const destination = new URL(markdownHref, request.url);
+    destination.search = search;
+    response = applyResponseHeaders(
+      NextResponse.rewrite(destination, {
+        request: { headers: requestHeaders },
+      }),
+      responseHeaders
+    );
+  } else {
+    response = handleAuthkitProxy(request, headers);
+  }
+  if (markdownHref) {
+    response.headers.append("Vary", "Accept");
+    response.headers.append(
+      "Link",
+      `<${markdownHref}>; rel="alternate"; type="text/markdown"`
+    );
+  }
   if (blogRoute?.kind === "listing" && request.nextUrl.searchParams.get("q"))
     response.headers.set("X-Robots-Tag", "noindex, follow");
   return response;

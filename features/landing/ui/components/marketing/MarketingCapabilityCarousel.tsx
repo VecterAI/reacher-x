@@ -26,6 +26,7 @@ import { useDemoVisibility } from "@/features/blog/ui/components/app-demo/useDem
 import { BlogAppDemo } from "@/features/blog/ui/components/app-demo/BlogAppDemo";
 import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 import "./marketing-carousel.css";
+import { MARKETING_CAPABILITY_CONTENT } from "@/features/landing/lib/marketingContentHelpers";
 
 export type CapabilityItem = {
   icon: ComponentType<{ className?: string }>;
@@ -35,64 +36,21 @@ export type CapabilityItem = {
   demo: BlogDemoId;
 };
 
-export const MARKETING_CAPABILITIES: CapabilityItem[] = [
-  {
-    icon: PersonCheckIcon,
-    title: "Qualification and enrichment",
-    body: "Every match comes with research: profile details, recent posts, and why the person fits.",
-    href: "/blog/how-reacherx-enrichment-works",
-    demo: "how-reacherx-enrichment-works",
-  },
-  {
-    icon: GroupIcon,
-    title: "People management",
-    body: "Track status, notes, and conversations for everyone you find. A light CRM without the sales jargon.",
-    href: "/blog/manage-people-with-reacherx",
-    demo: "manage-people-with-reacherx",
-  },
-  {
-    icon: FolderCopyIcon,
-    title: "Workspaces",
-    body: "Give each goal or client its own △ Agent, people, and settings.",
-    href: "/blog/workspaces-explained",
-    demo: "workspaces-explained",
-  },
-  {
-    icon: InsertChartIcon,
-    title: "Analytics",
-    body: "See replies, conversations, and results across your outreach in one report.",
-    href: "/blog/read-your-reacherx-analytics",
-    demo: "read-your-reacherx-analytics",
-  },
-  {
-    icon: ActivityZoneIcon,
-    title: "Agent observability",
-    body: "Check what △ Agent did and why, at any moment. Pause it whenever you want.",
-    href: "/blog/understand-agent-observability",
-    demo: "understand-agent-observability",
-  },
-  {
-    icon: ForumIcon,
-    title: "Conversations in one place",
-    body: "Read and reply to X/Twitter and LinkedIn messages side by side.",
-    href: "/blog/manage-dm-conversations",
-    demo: "manage-dm-conversations",
-  },
-  {
-    icon: EditIcon,
-    title: "Autocomplete",
-    body: "Write faster with suggestions that match your voice.",
-    href: "/blog/write-with-autocomplete",
-    demo: "write-with-autocomplete",
-  },
-  {
-    icon: AutorenewIcon,
-    title: "What runs on its own",
-    body: "Discovery and research keep working when you are away. Sending waits for you.",
-    href: "/blog/what-reacherx-does-automatically",
-    demo: "what-reacherx-does-automatically",
-  },
+const capabilityIcons = [
+  PersonCheckIcon,
+  GroupIcon,
+  FolderCopyIcon,
+  InsertChartIcon,
+  ActivityZoneIcon,
+  ForumIcon,
+  EditIcon,
+  AutorenewIcon,
 ];
+export const MARKETING_CAPABILITIES: CapabilityItem[] =
+  MARKETING_CAPABILITY_CONTENT.map((item, index) => ({
+    ...item,
+    icon: capabilityIcons[index],
+  }));
 
 export function MarketingCapabilityCarousel() {
   const [api, setApi] = useState<CarouselApi>();

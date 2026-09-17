@@ -111,6 +111,31 @@ export default function RootLayout({
         suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} ${geistPixelSquare.variable} antialiased`}
       >
+        <noscript>
+          <nav aria-label="Read without JavaScript" className="p-6">
+            <p>Read ReacherX without JavaScript:</p>
+            <ul className="list-inside list-disc">
+              <li>
+                <a href="/markdown/home">Home</a>
+              </li>
+              <li>
+                <a href="/markdown/product">Product</a>
+              </li>
+              <li>
+                <a href="/markdown/pricing">Pricing</a>
+              </li>
+              <li>
+                <a href="/markdown/use-cases">Use cases</a>
+              </li>
+              <li>
+                <a href="/markdown/blog">Blog and guides</a>
+              </li>
+              <li>
+                <a href="/llms.txt">All public pages</a>
+              </li>
+            </ul>
+          </nav>
+        </noscript>
         <PostHogProvider>
           <ThemeProvider
             attribute="class"

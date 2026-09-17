@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { proxy } from "../../../proxy";
 import sitemap from "../../../app/sitemap";
 import nextConfig from "../../../next.config.mjs";
@@ -19,6 +19,7 @@ vi.mock("@workos-inc/authkit-nextjs", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.handleAuthkitProxy.mockImplementation(() => NextResponse.next());
   mocks.authkit.mockResolvedValue({
     session: { user: null },
     headers: new Headers(),
@@ -33,7 +34,6 @@ describe("routing after public thread removal", () => {
       const entries = await sitemap();
       expect(entries.map((entry) => entry.url)).toEqual(
         expect.arrayContaining([
-          "https://reacherx.com",
           "https://reacherx.com/home",
           "https://reacherx.com/use-cases",
           "https://reacherx.com/pricing",
@@ -186,4 +186,51 @@ test("retired homepage variants also return 404 when authenticated", async () =>
     expect(response.status).toBe(404);
     expect(response.headers.get("location")).toBeNull();
   }
+});
+
+describe("agent format negotiation preserves auth and Next.js protocols", () => {
+  test.each(["/home", "/product", "/pricing", "/use-cases/investors", "/blog"])(
+    "negotiates public Markdown at %s",
+    async (path) => {
+      const response = await proxy(
+        new NextRequest(`https://reacherx.com${path}?utm_source=qa`, {
+          headers: { Accept: "text/markdown" },
+        })
+      );
+      expect(response.headers.get("x-middleware-rewrite")).toBe(
+        `https://reacherx.com/markdown${path}?utm_source=qa`
+      );
+      expect(response.headers.get("vary")).toMatch(/Accept/);
+      expect(response.headers.get("link")).toContain('type="text/markdown"');
+    }
+  );
+  test.each<{ method: string; headers: Record<string, string> }>([
+    { method: "GET", headers: { Accept: "text/markdown", RSC: "1" } },
+    { method: "POST", headers: { Accept: "text/markdown" } },
+    {
+      method: "POST",
+      headers: { Accept: "text/markdown", "next-action": "action-id" },
+    },
+  ])("preserves RSC and server-action requests: %j", async (init) => {
+    const response = await proxy(
+      new NextRequest("https://reacherx.com/home", init)
+    );
+    expect(response.headers.has("x-middleware-rewrite")).toBe(false);
+  });
+  test("authenticated root remains the app when Markdown is requested", async () => {
+    mocks.authkit.mockResolvedValue({
+      session: { user: { id: "test-user" } },
+      headers: new Headers(),
+    });
+    const response = await proxy(
+      new NextRequest("https://reacherx.com/", {
+        headers: { Accept: "text/markdown" },
+      })
+    );
+    expect(response.headers.has("x-middleware-rewrite")).toBe(false);
+    expect(mocks.handleAuthkitProxy).toHaveBeenCalledWith(
+      expect.any(NextRequest),
+      expect.any(Headers)
+    );
+  });
 });
