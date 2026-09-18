@@ -2,9 +2,9 @@
 
 This roadmap is here to make product direction clearer for contributors.
 
-If you want to work on any roadmap item, please contact Salman first so ideas, UX, and architecture can be aligned before implementation.
+If you want to work on any roadmap item, please talk to me first so ideas, UX, and architecture can be aligned before implementation.
 
-[Email Salman](mailto:creativecoder.crco@gmail.com) · [Discord](https://discord.gg/BQttyr8jY) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [LinkedIn](https://www.linkedin.com/in/noobships)
+[Discord](https://discord.gg/BQttyr8jY) · [X/Twitter DM](https://x.com/ReacherXfounder) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [LinkedIn](https://www.linkedin.com/in/noobships)
 
 ## Available Today
 

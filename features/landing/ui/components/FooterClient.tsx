@@ -77,7 +77,7 @@ const FOOTER_COLUMNS = [
       { label: "Patreon", href: PATREON_URL },
       { label: "Discord community", href: DISCORD_INVITE_URL },
       {
-        label: "License (Apache-2.0)",
+        label: "License (AGPL-3.0)",
         href: "https://github.com/VecterAI/reacher-x/blob/main/LICENSE",
       },
     ],

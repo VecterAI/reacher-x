@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Roadmap and feature discussion
+  - name: Discord community
     url: https://discord.gg/76dF9NPH
-    about: For new features, integrations, and roadmap ideas, discuss with Salman before implementation.
+    about: For new features, integrations, and roadmap ideas, talk to me before implementation.
+  - name: X/Twitter DM
+    url: https://x.com/ReacherXfounder
+    about: Fastest way to reach me directly for brainstorming, partnership ideas, or maintainer contact.
   - name: Direct email
     url: mailto:creativecoder.crco@gmail.com
-    about: Use email for direct brainstorming, partnership ideas, or maintainer contact.
+    about: Use email if you prefer it over Discord or X/Twitter.

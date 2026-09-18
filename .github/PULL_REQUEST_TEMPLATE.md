@@ -42,4 +42,4 @@ Note any env var, schema, migration, webhook, integration, or deployment impact.
 
 ## Notes For Maintainer
 
-Anything you want Salman to know before review.
+Anything you want me to know before review.

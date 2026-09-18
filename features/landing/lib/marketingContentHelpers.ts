@@ -28,7 +28,7 @@ export const MARKETING_COPY = {
       "Get access to the right network. Because your network is your net worth.",
     developersHeading: "Open source.",
     developers:
-      "Use, modify, and self-host ReacherX under Apache 2.0, as part of the Convex Open Source program.",
+      "Use, modify, and self-host ReacherX under AGPL-3.0, as part of the Convex Open Source program. Improvements stay open for everyone.",
     communityHeading: "Join the community.",
     community:
       "ReacherX is built in the open, with people using it, not just around it.",
