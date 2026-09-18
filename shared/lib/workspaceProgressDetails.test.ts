@@ -17,9 +17,9 @@ describe("workspace progress details", () => {
 
   describe("formatEnrichedProfilesDetail", () => {
     it.each([
-      [0, "Details found for 0 profiles"],
-      [1, "Details found for 1 profile"],
-      [12, "Details found for 12 profiles"],
+      [0, "0 profiles ready"],
+      [1, "1 profile ready"],
+      [12, "12 profiles ready"],
     ])("formats %i enriched profiles as %s", (enrichedCount, expected) => {
       expect(formatEnrichedProfilesDetail(enrichedCount)).toBe(expected);
     });

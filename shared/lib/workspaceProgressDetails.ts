@@ -5,5 +5,5 @@ export function formatAverageFitScoreDetail(
 }
 
 export function formatEnrichedProfilesDetail(enrichedCount: number): string {
-  return `Details found for ${enrichedCount === 1 ? "1 profile" : `${enrichedCount} profiles`}`;
+  return `${enrichedCount === 1 ? "1 profile" : `${enrichedCount} profiles`} ready`;
 }

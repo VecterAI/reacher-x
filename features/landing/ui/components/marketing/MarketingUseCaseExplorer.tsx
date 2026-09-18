@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { WheelGesturesPlugin } from "embla-carousel-wheel-gestures";
 import {
   Carousel,
   CarouselContent,
@@ -19,12 +20,17 @@ import {
 import { useDemoVisibility } from "@/features/blog/ui/components/app-demo/useDemoVisibility";
 import { BlogAppDemo } from "@/features/blog/ui/components/app-demo/BlogAppDemo";
 import "./marketing-carousel.css";
+import {
+  MARKETING_CAROUSEL_OPTIONS,
+  preserveDemoWheelInteraction,
+} from "@/features/landing/lib/marketingCarouselHelpers";
 
 type UseCaseCardItem = (typeof MARKETING_USE_CASES)[number];
 
 /** Each slide mounts only its visible demo; hover or focus starts playback. */
 export function MarketingUseCaseExplorer() {
   const [api, setApi] = useState<CarouselApi>();
+  const [plugins] = useState(() => [WheelGesturesPlugin()]);
   const [canPrev, setCanPrev] = useState(false);
   const [canNext, setCanNext] = useState(false);
 
@@ -47,16 +53,10 @@ export function MarketingUseCaseExplorer() {
     <div>
       <Carousel
         setApi={setApi}
-        opts={{
-          align: "start",
-          watchDrag: (_api, event) =>
-            !(
-              event.target instanceof Element &&
-              event.target.closest(
-                ".blog-app-demo-controls, .blog-app-demo-expanded"
-              )
-            ),
-        }}
+        plugins={plugins}
+        tabIndex={0}
+        opts={MARKETING_CAROUSEL_OPTIONS}
+        onWheelCapture={preserveDemoWheelInteraction}
         className="capability-carousel"
         aria-label="Who you can find"
       >

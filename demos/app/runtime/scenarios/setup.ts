@@ -77,6 +77,7 @@ export function registerSetupStory(
     seedDescription: null,
     improvedDescription: null,
     generationRevision: 0,
+    generationRequestedAt: null,
     generationSourceMessageId: null,
     generatedProfiles: [],
     preferenceChoice: null,

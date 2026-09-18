@@ -56,6 +56,8 @@ export const setupSessionWorkflow = workflowManager.define({
         }
 
         case "generating_profiles": {
+          // Setup generation is scheduled independently so onboarding does not
+          // wait behind the tenant background queue.
           await step.runMutation(
             internal.setupSessions.ensureSetupGenerationInternal,
             { sessionId }

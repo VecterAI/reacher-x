@@ -1,20 +1,24 @@
 # 🆁 ReacherX
 
-Open-source △ Agent that helps anyone find the right people and reach them across X/Twitter and LinkedIn, with more channels and actions expanding over time.
+Open-source △ Agentic platform and infrastructure that works 24/7 across X/Twitter and LinkedIn to find, qualify, enrich, and help you reach the right people. Think Cursor for finding and reaching your target audience/network.
 
-<p align="left">
-  <a href="https://reacherx.com"><img alt="live" src="https://img.shields.io/badge/live-reacherx.com-000000?style=flat-square"></a>
-  <a href="./LICENSE"><img alt="license" src="https://img.shields.io/badge/license-apache--2.0-white?style=flat-square&logo=apache&logoColor=black"></a>
-  <a href="https://www.typescriptlang.org/"><img alt="typescript" src="https://img.shields.io/badge/typescript-000000?style=flat-square&logo=typescript&logoColor=white"></a>
-  <a href="https://nextjs.org/"><img alt="next.js" src="https://img.shields.io/badge/next.js-16-white?style=flat-square&logo=next.js&logoColor=black"></a>
-  <a href="https://convex.link/coss"><img alt="convex open source" src="https://img.shields.io/badge/convex-open%20source-EE342F?style=flat-square&logo=convex&logoColor=white"></a>
-</p>
+<div align="left">
 
-[Live site](https://reacherx.com) · [Configuration](./docs/configuration.md) · [Contributing](./CONTRIBUTING.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/BQttyr8jY) · [Email Salman](mailto:creativecoder.crco@gmail.com)
+[![Live site](https://img.shields.io/badge/Live-reacherx.com-000000?style=for-the-badge&logo=googlechrome&logoColor=white)](https://reacherx.com)
+[![Interactive demo](https://img.shields.io/badge/Interactive_demo-reacherx--demos.vercel.app-000000?style=for-the-badge&logo=v&logoColor=white)](https://reacherx-demos.vercel.app/)
+[![License](https://img.shields.io/badge/License-AGPL--3.0-000000?style=for-the-badge&logo=gnu&logoColor=white)](./LICENSE)
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![Convex](https://img.shields.io/badge/Convex-000000?style=for-the-badge&logo=convex&logoColor=white)](https://convex.link/coss)
+
+</div>
+
+[Configuration](./docs/configuration.md) · [Contributing](./CONTRIBUTING.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/BQttyr8jY) · [X/Twitter](https://x.com/ReacherXfounder)
 
 ## Built with Convex
 
-ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-source-program) program. The product backend runs on [Convex](https://convex.link/coss).
+ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-source-program) program and runs on [Convex](https://convex.link/coss).
 
 <p align="left">
   <a href="https://convex.link/coss">
@@ -25,9 +29,7 @@ ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-sou
   </a>
 </p>
 
-## Video Demo
-
-GitHub does not embed YouTube players in repository READMEs, so the demo is linked through a clickable preview instead.
+## Demo
 
 <a href="https://www.youtube.com/watch?v=xlyUWC-Uwr8" target="_blank" rel="noopener noreferrer">
   <img alt="Watch the ReacherX demo" src="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NQHHwCka4qAIrfoSx2BgCKNLtujOXE63PUeG1">
@@ -35,92 +37,70 @@ GitHub does not embed YouTube players in repository READMEs, so the demo is link
 
 [Watch the demo on YouTube](https://www.youtube.com/watch?v=xlyUWC-Uwr8)
 
-## What ReacherX Does
+There is also an [interactive demo](https://reacherx-demos.vercel.app/). It is a dashboard prepopulated with fictional data, so you can click around and get a general understanding of the product. It is not a walkthrough, and nothing sends from it.
 
-ReacherX is built for anyone, not just specialists or teams with complex GTM setups. You describe who you need, ReacherX finds matching people, builds context around them, and helps you take action through the product UI or by asking the agent directly.
+## Who it is for
 
-The goal is simple: make finding and reaching the right people feel accessible, useful, and powerful without requiring special knowledge or experience.
+Anyone who needs to find a specific kind of person on X/Twitter or LinkedIn. Customers, candidates, investors, partners, community members. Those are examples, not categories. Describe the person you need in plain words and ReacherX starts looking.
 
-## How It Works
+You do not need a sales background or a GTM playbook. If you can say who you need, you can use it.
 
-The product story here follows the same flow as the `/home` landing experience:
+### How it works
 
 1. Describe who you need in plain English.
 2. ReacherX turns that into search and discovery strategies.
-3. The agent gathers context, signals, and proof behind each match.
-4. ReacherX proposes next actions and drafts content, including image, GIF, and video attachments.
-5. You stay in control and approve important actions.
-6. The system improves over time through feedback, memory, and evaluations.
+3. The agent gathers context and proof behind each match.
+4. It proposes next actions and drafts messages, with image, GIF, and video attachments when useful.
+5. You review and approve anything that sends.
+6. Feedback, memory, and evaluations improve results over time.
 
-## Why It Feels Different
+What makes it different from a contact database:
 
-- Real people, found from real activity instead of static lists.
-- Human-in-the-loop by default for high-trust actions.
-- Open-source and deployable as your own instance using your own provider accounts.
-- Built around an agent-first product experience, not just dashboards and forms.
-- Designed so users can work manually in the UI or ask the agent to do the same work for them.
+- Matches come from real platform activity, not scraped lists.
+- You can work in the UI yourself or ask the agent to do the same work.
+- You can run your own instance with your own provider accounts, or use the hosted app.
 
-## Use Cases
+## Why it is open source
 
-- Customer prospecting: find and engage people already expressing the right need.
-- Recruiting: source candidates from real conversations and platform activity.
-- Partnerships: identify operators, founders, and companies worth reaching.
-- Investor outreach: discover investors whose interests match your opportunity.
-- User research: recruit participants who actually fit the problem space.
-- Creator and community growth: find the right people to collaborate with or invite in.
+I started ReacherX in 2023 to solve a problem I had myself: finding and reaching the right people was harder than it should have been. Three years in, it became a full product, and I opened the code.
 
-## What Is Open Source
+Developers solve problems. If ReacherX does not do what you need, change it. Fork it, extend it, build on it, improve it. If you adapt it for a problem you know well, your work helps everyone else with that problem. The AGPL license keeps those improvements open.
 
-- The application code is public.
-- Contributors can inspect how the product, core logic, and agent behaviors are built.
-- Running your own ReacherX deployment is part of the intended value of the project; full functionality requires your own external provider accounts.
-- If you want to shape product direction, feature ideas, or implementation approach, contact Salman directly.
-- Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
-- Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
-- GitHub Issues: [github.com/VecterAI/reacher-x/issues](https://github.com/VecterAI/reacher-x/issues)
+More on that:
 
-For feature ideas and bigger changes, please reach out first so we can brainstorm and align before you spend time building.
+- [Why I open-sourced ReacherX](https://reacherx.com/blog/why-i-open-sourced-reacherx), the story behind the decision
+- [Think in networks, not funnels](https://reacherx.com/blog/think-in-networks), the idea the product is built on
+- [A developer's guide to the ReacherX codebase](https://reacherx.com/blog/how-reacherx-agent-works), where to start in the code
+- [Help build ReacherX](https://reacherx.com/blog/help-build-reacherx), what help is needed right now
+
+## Support the project
+
+I went full time on ReacherX in 2026 and I am funding it myself. If the project is useful to you, Patreon is a way to help it keep going.
+
+<div align="left">
+
+[![Patreon](https://img.shields.io/badge/Patreon-Support_the_project-000000?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/cw/ReacherX)
+[![Discord](https://img.shields.io/badge/Discord-Join_the_community-000000?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/BQttyr8jY)
+[![X/Twitter](https://img.shields.io/badge/X/Twitter-DM_@ReacherXfounder-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/ReacherXfounder)
+
+</div>
+
+Fastest way to reach me is a DM on [X/Twitter](https://x.com/ReacherXfounder) or a message in the [Discord](https://discord.gg/BQttyr8jY).
+
+## Contributing
+
+Start with [CONTRIBUTING.md](./CONTRIBUTING.md). For features, roadmap items, or architectural changes, talk to me first. Most contributions here touch product direction, agent behavior, or workflow design, and a short conversation saves rework.
+
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [Security Policy](./SECURITY.md)
 
 ## Roadmap
 
-The fuller roadmap lives in [ROADMAP.md](./ROADMAP.md). High-level priorities:
+Full roadmap in [ROADMAP.md](./ROADMAP.md). Reliability and evaluations now, email and calendar integrations next, more platforms and agent swarms later.
 
-### Now
+## Self-hosting
 
-- Improve reliability across current X and LinkedIn workflows.
-- Make contributor onboarding and local development much easier.
-- Add stronger benchmarks and evaluations so agent performance is measurable.
-- Harden the product and codebase with tooling such as React Doctor, Convex tooling, linting, audits, and better tests.
-
-### Next
-
-- Email integration: let users send emails directly from ReacherX through the UI or by asking the agent.
-- Calendar integration: Google Calendar and Outlook Calendar support so users can book calls and meetings from the UI or by asking the agent.
-- Cross-platform identity resolution: show the same person across multiple channels in the prospect profile panel.
-- App-originated email delivery: send product emails, notifications, and workflow-driven messages to users.
-- General document support: add PDF, document, spreadsheet, and presentation extraction so the agent can reason over more than the image, GIF, and video attachments supported today.
-
-### Later
-
-- More platforms: Reddit, Bluesky, and Threads.
-- Sub-agents and agent swarms for parallel task execution.
-- Broader workflow automation across prospecting, outreach, research, and follow-up.
-
-### Help Wanted
-
-- Evaluations and benchmark design.
-- Platform integrations and identity matching.
-- Frontend polish, accessibility, and interaction quality.
-- Local development experience and contributor docs.
-
-## Getting Started
-
-### Requirements
-
-- Node.js 22+
-- pnpm 11.x
-
-### Install
+Requirements: Node.js 22+ and pnpm 11.x.
 
 ```bash
 git clone https://github.com/VecterAI/reacher-x.git
@@ -128,85 +108,36 @@ cd reacher-x
 corepack enable pnpm
 pnpm install
 cp .env.example .env.local
-```
-
-If you do not use Corepack, install a pnpm 11 release before continuing.
-
-### Run
-
-Push and validate the Convex backend once:
-
-```bash
 npx convex dev --once
 ```
 
-Then keep the backend and frontend running in separate terminals.
-
-Terminal 1:
+Then run the backend and frontend in separate terminals:
 
 ```bash
 npx convex dev
 ```
 
-Terminal 2:
-
 ```bash
 pnpm dev
 ```
 
-For the marketing/blog interactive demos, also run:
+For the marketing and blog interactive demos, run `cp demos/app/.env.example demos/app/.env.local` and `pnpm dev:demo`. The demo app runs at `http://localhost:3001`. See [interactive demo configuration](./docs/configuration.md#interactive-demos) for production demo hosting.
 
-```bash
-cp demos/app/.env.example demos/app/.env.local
-pnpm dev:demo
-```
+### Environment notes
 
-Open [http://localhost:3000](http://localhost:3000). The isolated demo app runs at `http://localhost:3001`; both apps must be running for embedded demos. See [interactive demo configuration](./docs/configuration.md#interactive-demos) for hosting and production builds.
+Next.js reads local values from `.env.local`. Convex secrets are set per deployment with `npx convex env set`. Copying `.env.example` does not configure the Convex backend. [docs/configuration.md](./docs/configuration.md) has the full variable groups, model routing, and provider limits. Production builds of the main app also need `NEXT_PUBLIC_BLOG_DEMO_ORIGIN` set.
 
-### Environment Notes
+Full functionality needs external provider accounts: Convex, WorkOS, AI providers, X/Twitter, LinkdAPI and Unipile (LinkedIn), Polar (billing), and Resend (email). You only need credentials for the area you work on.
 
-Use `.env.example` as the template for local values, but do not assume that copying it configures the Convex backend. Next.js reads local values from `.env.local`; Convex function secrets and runtime controls are stored separately per deployment.
+## Project structure
 
-See [docs/configuration.md](./docs/configuration.md) for the exact variable groups, development and production guidance, model-routing roles, provider limits, and `npx convex env set` commands.
-
-Full product functionality uses external provider accounts for:
-
-- Convex
-- WorkOS
-- AI provider keys
-- X/Twitter keys for X workflows
-- LinkdAPI and Unipile for LinkedIn workflows
-- Polar for billing
-- Resend for the waitlist welcome email
-
-You only need the provider credentials for the feature area you are developing.
-
-## Architecture At A Glance
-
-- `app/`: Next.js routes and app entry points.
-- `features/`: product UI and feature-specific logic.
+- `app/`: Next.js routes and entry points.
+- `features/`: product UI and feature logic.
 - `shared/`: shared utilities, components, hooks, and types.
 - `convex/agents/tools/`: thin agent-facing tool layer.
 - `convex/workflows/`: orchestration and durable workflows.
 - `convex/lib/`: core business logic and integrations.
 
-## Contributing
-
-If you want to contribute, start with [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-Repo health files:
-
-- [Code of Conduct](./CODE_OF_CONDUCT.md)
-- [Security Policy](./SECURITY.md)
-
-If you want to work on a new feature, roadmap item, or architectural change, please contact Salman first:
-
-- Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
-- Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
-- LinkedIn: [linkedin.com/in/noobships](https://www.linkedin.com/in/noobships)
-
-That upfront conversation is important for this project because many contributions touch product direction, agent behavior, workflow design, and platform strategy.
-
 ## License
 
-Apache-2.0. See [LICENSE](./LICENSE).
+Released under the [GNU Affero General Public License v3](./LICENSE) (AGPL-3.0-only). You can use, modify, and self-host ReacherX, including for commercial work. If you offer a modified version to users over a network, you must make the modified source available under the same license.

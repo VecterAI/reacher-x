@@ -11,7 +11,10 @@ import {
   internalQuery,
   query,
 } from "./lib/functionBuilders";
-import { requireOwnedWorkspace } from "./lib/accessHelpers";
+import { getUserByIdentity, requireOwnedWorkspace } from "./lib/accessHelpers";
+import { getSetupSessionByThreadId } from "./lib/setupSessionCore";
+import { isSetupSessionAccessibleForUser } from "./lib/workspaceEntitlements";
+import { deriveWorkspaceSystemStatus } from "./lib/workspaceSystem";
 import { tenantExecutionPool } from "./lib/tenantExecutionPool";
 import { workflow } from "./lib/workflow";
 import { tenantSchedulerRateLimiter } from "./lib/tenantSchedulerRateLimiter";
@@ -29,6 +32,8 @@ import {
   clampTenantBurstSlots,
   clampTenantSchedulerSlotCount,
   getTenantDispatchCap,
+  getSetupGenerationJobKey,
+  deriveHighLoadNotice,
 } from "./lib/tenantSchedulerCore";
 import {
   completeTenantJob,
@@ -40,6 +45,8 @@ import {
   tenantJobKindValidator,
   tenantJobPayloadValidator,
   tenantSchedulerModeValidator,
+  highLoadScopeValidator,
+  highLoadNoticeValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { enqueueTenantJobWithRetry } from "./lib/tenantSchedulerEnqueue";
@@ -47,6 +54,97 @@ import { enqueueTenantJobWithRetry } from "./lib/tenantSchedulerEnqueue";
 const WORKER_NAME = "tenant-fair-dispatcher-v1";
 const DISPATCH_BATCH_SIZE = 8;
 const LANE_SCAN_SIZE = 64;
+
+/** Small, reactive notice query; never downloads the workspace's job backlog. */
+export const getHighLoadNotice = query({
+  args: { scope: highLoadScopeValidator },
+  returns: highLoadNoticeValidator,
+  handler: async (ctx, { scope }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await getUserByIdentity(ctx, identity);
+    if (!user) return null;
+
+    let tenantKey: string;
+    let setupJobKey: string | undefined;
+    if (scope.kind === "workspace") {
+      const workspace = await requireOwnedWorkspace(ctx, scope.workspaceId, {
+        user,
+      });
+      if (deriveWorkspaceSystemStatus(workspace).mode !== "running")
+        return null;
+      tenantKey = buildTenantKey({
+        userId: user._id,
+        workspaceId: workspace._id,
+      });
+    } else {
+      const session = await getSetupSessionByThreadId(ctx.db, scope.threadId);
+      if (!session || session.userId !== user._id) return null;
+      if (
+        session.status !== "generating_profiles" ||
+        !(await isSetupSessionAccessibleForUser(ctx, session))
+      )
+        return null;
+      tenantKey = buildTenantKey({ userId: user._id });
+      setupJobKey = getSetupGenerationJobKey(session);
+    }
+
+    const [mode, lane] = await Promise.all([
+      resolveSchedulerMode(
+        ctx,
+        scope.kind === "workspace" ? scope.workspaceId : undefined
+      ),
+      ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_tenant_key", (q) => q.eq("tenantKey", tenantKey))
+        .unique(),
+    ]);
+    if (mode !== "enforced" || !lane || lane.state !== "ready") return null;
+    const queuedJob = setupJobKey
+      ? await ctx.db
+          .query("tenantJobs")
+          .withIndex("by_idempotency_key", (q) =>
+            q.eq("idempotencyKey", setupJobKey)
+          )
+          .unique()
+      : await ctx.db
+          .query("tenantJobs")
+          .withIndex("by_lane_and_status_and_priority_and_queued_at", (q) =>
+            q.eq("laneId", lane._id).eq("status", "queued")
+          )
+          .first();
+    if (
+      !queuedJob ||
+      queuedJob.status !== "queued" ||
+      queuedJob.laneId !== lane._id ||
+      queuedJob.errorMessage
+    )
+      return null;
+
+    const control = await getGlobalControl(ctx);
+    if (!control) return null;
+    const [slots, dispatcher] = await Promise.all([
+      ctx.db
+        .query("tenantSchedulerSlots")
+        .withIndex("by_slot_number", (q) =>
+          q.gte("slotNumber", 0).lt("slotNumber", control.slotCount)
+        )
+        .take(TENANT_EXECUTION_POOL_MAX_PARALLELISM + 1),
+      ctx.runQuery(components.batchWorker.lib.status, { name: WORKER_NAME }),
+    ]);
+    const notice = deriveHighLoadNotice({
+      slotCount: control.slotCount,
+      slots,
+      tenantKey,
+      // The worker is also healthy while sleeping between capacity checks.
+      dispatcherAvailable: dispatcher != null && dispatcher.kind !== "stopped",
+    });
+    // A setup notice describes this generation, not another draft's work.
+    return notice && scope.kind === "setup"
+      ? { ...notice, state: "queued" as const }
+      : notice;
+  },
+});
 
 const enqueueRouteValidator = v.union(
   v.object({

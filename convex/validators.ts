@@ -1309,6 +1309,33 @@ export const paidPlanTierValidator = v.union(
   v.literal("base"),
   v.literal("pro")
 );
+export const billingPeriodValidator = v.union(
+  v.literal("monthly"),
+  v.literal("yearly")
+);
+export const planOfferValidator = v.object({
+  tier: paidPlanTierValidator,
+  billingPeriod: billingPeriodValidator,
+});
+export const polarCheckoutArgs = {
+  productIds: v.array(v.string()),
+  origin: v.string(),
+  successUrl: v.string(),
+  subscriptionId: v.optional(v.string()),
+  metadata: v.optional(v.record(v.string(), v.string())),
+  trialInterval: v.optional(
+    v.union(
+      v.literal("day"),
+      v.literal("week"),
+      v.literal("month"),
+      v.literal("year"),
+      v.null()
+    )
+  ),
+  trialIntervalCount: v.optional(v.union(v.number(), v.null())),
+  locale: v.optional(v.string()),
+};
+
 export const planTierValidator = v.union(
   v.literal("free"),
   paidPlanTierValidator
@@ -1758,6 +1785,21 @@ export const tenantSchedulerModeValidator = v.union(
   v.literal("legacy"),
   v.literal("shadow"),
   v.literal("enforced")
+);
+
+export const highLoadScopeValidator = v.union(
+  v.object({ kind: v.literal("workspace"), workspaceId: v.id("workspaces") }),
+  v.object({ kind: v.literal("setup"), threadId: v.string() })
+);
+
+export const highLoadNoticeValidator = v.union(
+  v.null(),
+  v.object({
+    state: v.union(v.literal("queued"), v.literal("slow")),
+    // The client stops showing reassurance when a capacity lease expires,
+    // even if no database write has happened yet.
+    validUntil: v.number(),
+  })
 );
 
 export const tenantJobClassValidator = v.union(

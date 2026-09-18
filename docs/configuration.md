@@ -209,10 +209,67 @@ Prefer `UNIPILE_BASE_URL`. The client also accepts `UNIPILE_API_URL` and `UNIPIL
 | `POLAR_WEBHOOK_SECRET`     | Convex                    | Verifies Polar subscription webhooks at `/polar/events`                                                          |
 | `POLAR_PRODUCT_*`          | Convex                    | Hobby, Base, and Pro monthly/yearly product IDs                                                                  |
 | `POLAR_SERVER`             | Convex                    | `sandbox` by default; use `production` for live billing                                                          |
+| `AVAILABLE_PLAN_OFFERS`    | Convex                    | Enabled plan and billing-period combinations for new purchases; see [Plan Availability](#plan-availability)      |
 
 `CONVEX_SITE_URL` is automatically available inside Convex functions and is used for webhook URLs. Override it only when intentionally configuring custom deployment domains.
 
 For billing, register `https://<your-deployment>.convex.site/polar/events` (or the corresponding custom Convex HTTP-action origin) as the Polar webhook endpoint. Set its signing secret as `POLAR_WEBHOOK_SECRET` on that Convex deployment. The organization token, product IDs, and webhook secret must all belong to the environment selected by `POLAR_SERVER`. Subscription events update the application's plan state; checkout alone is not a substitute for working webhooks.
+
+## Plan Availability
+
+Set `AVAILABLE_PLAN_OFFERS` in each Convex deployment's **Settings → Environment Variables**, or use the CLI below. This is a backend runtime setting. Copying it into `.env.local`, a Next.js hosting environment, or the isolated demo app does not configure Convex. Do not add a `NEXT_PUBLIC_` version.
+
+The value is a comma-separated list of `tier:billingPeriod` pairs. Supported tiers are `hobby`, `base`, and `pro`; supported billing periods are `monthly` and `yearly`. You can enable each pair independently.
+
+| Selection                          | `AVAILABLE_PLAN_OFFERS`                                                      |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| Base + Pro, both periods (default) | `base:monthly,base:yearly,pro:monthly,pro:yearly`                            |
+| Pro only, both periods             | `pro:monthly,pro:yearly`                                                     |
+| Base + Pro, yearly only            | `base:yearly,pro:yearly`                                                     |
+| Pro yearly only                    | `pro:yearly`                                                                 |
+| All plans, including Hobby         | `hobby:monthly,hobby:yearly,base:monthly,base:yearly,pro:monthly,pro:yearly` |
+| Base monthly + Pro yearly          | `base:monthly,pro:yearly`                                                    |
+
+For the development deployment selected by this checkout:
+
+```bash
+npx convex env set AVAILABLE_PLAN_OFFERS 'base:monthly,base:yearly,pro:monthly,pro:yearly'
+npx convex env get AVAILABLE_PLAN_OFFERS
+```
+
+For the same project's production deployment, explicitly use `--prod`:
+
+```bash
+npx convex env set --prod AVAILABLE_PLAN_OFFERS 'base:monthly,base:yearly,pro:monthly,pro:yearly'
+npx convex env get --prod AVAILABLE_PLAN_OFFERS
+```
+
+Development, preview, and production values are independent. Confirm the deployment shown by the CLI or dashboard before changing it. This variable contains public plan selections, so reading it individually is safe; avoid printing all environment variables because other values contain secrets.
+
+### Defaults and invalid values
+
+- An unset variable uses Base + Pro with monthly and yearly billing. Removing the variable restores that default; it does **not** disable all plans.
+- An empty or whitespace-only value disables all new offers. To do this intentionally, use `npx convex env set AVAILABLE_PLAN_OFFERS ''` (add `--prod` for production).
+- Any invalid pair disables the entire selection, including valid pairs beside it. For example, `pro:annual` and `base:monthly,typo` are invalid. A trailing comma is also invalid.
+- Whitespace around pairs and letter case are normalized; repeated pairs are ignored.
+
+### What users see
+
+After the initial deployment of the backend and frontend, changing this Convex value needs no code change or redeploy. Connected pricing, onboarding, and upgrade screens update from the public availability query. Markdown pricing reads the same selection without caching it. Only enabled offers are shown; the billing toggle is omitted when only one billing period is available. Upgrade screens also account for the user's existing plan.
+
+While availability is loading, pricing shows a loading state. If the query fails or there are no enabled offers, it shows “Plans are temporarily unavailable. Please try again shortly.” The backend rejects disabled offers even when a caller uses an old page or calls a checkout/subscription-change action directly.
+
+This controls what is for sale. Existing subscriptions, grants, limits, billing history, and plan labels remain intact, including Hobby customers. Keep the `POLAR_PRODUCT_*` mappings for hidden plans so existing subscriptions can still be recognized.
+
+### Keep Polar in sync
+
+Convex availability and the Polar catalog are separate controls. The application does not archive or unarchive Polar products automatically.
+
+To hide an offer completely, remove its pair from `AVAILABLE_PLAN_OFFERS` and archive the corresponding Polar product in the matching sandbox or production organization. Convex cannot invalidate a Polar checkout session that has already been created or control purchases made through direct Polar links or the customer portal. Archiving is therefore still required for those purchase paths.
+
+To restore an offer, unarchive its Polar product, check its price and checkout description, confirm the corresponding `POLAR_PRODUCT_*` mapping, and add the pair back to `AVAILABLE_PLAN_OFFERS`. Recheck the pricing page and a checkout link. Polar product names, descriptions, prices, and benefits are maintained separately; keep their copy consistent with the app when editing them.
+
+Polar documents that archiving stops new purchases while existing subscriptions continue. See [Polar product archival](https://polar.sh/docs/features/products#archive-a-product), [Convex environment variables](https://docs.convex.dev/production/environment-variables), and the [Convex env CLI reference](https://docs.convex.dev/cli/reference/env).
 
 ## AI Model Configuration
 
@@ -423,4 +480,5 @@ Before enabling a feature in development or production:
 6. Configure provider callback and webhook URLs for the correct Convex site URL.
 7. Test with development credentials before applying production values.
 8. Never copy production secrets into development or commit them to the repository.
-9. For marketing/blog pages, deploy the isolated demo and configure both build-time origins using the [interactive demo setup](#interactive-demos). Verify playback from the configured site origin before merging.
+9. For billing, confirm [plan availability](#plan-availability) on the intended Convex deployment and align the matching Polar catalog. Deploy the availability backend before the frontend that queries it.
+10. For marketing/blog pages, deploy the isolated demo and configure both build-time origins using the [interactive demo setup](#interactive-demos). Verify playback from the configured site origin before merging.

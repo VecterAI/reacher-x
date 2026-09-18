@@ -1,4 +1,9 @@
 import {
+  isPlanOfferAvailable,
+  type PlanOffer,
+  PLAN_OFFERS_UNAVAILABLE,
+} from "@/shared/lib/billing/planOfferHelpers";
+import {
   BLOG_DESCRIPTION,
   BLOG_ORIGIN,
   blogHref,
@@ -43,7 +48,8 @@ const footer = `## More information\n\n${PUBLIC_MARKETING_PAGES.slice(0, 4)
 export function publicPageMarkdown(
   pathname: string,
   posts: BlogPostSummary[],
-  query = ""
+  query = "",
+  offers: readonly PlanOffer[] = []
 ): string | null {
   let title: string;
   let body: string;
@@ -72,21 +78,28 @@ export function publicPageMarkdown(
     ].join("\n\n");
   } else if (pathname === "/pricing") {
     title = "Pricing";
-    body = `Prices in USD. Yearly plans charge ten months for twelve months of access.\n\n${ONBOARDING_PLAN_TIERS.map(
-      (tier) =>
-        `## ${tier.title}\n\n${tier.subtitle}\n\n${(
-          ["monthly", "yearly"] as const
+    body = `Prices in USD.\n\n${
+      ONBOARDING_PLAN_TIERS.filter((tier) =>
+        offers.some((offer) => offer.tier === tier.id)
+      )
+        .map(
+          (tier) =>
+            `## ${tier.title}\n\n${tier.subtitle}\n\n${(
+              ["monthly", "yearly"] as const
+            )
+              .filter((period) => isPlanOfferAvailable(offers, tier.id, period))
+              .map((period) => {
+                const amount = tier.pricing[period].amount;
+                return amount === null
+                  ? ""
+                  : `${period === "monthly" ? "Monthly" : "Yearly"}: ${formatPlanPriceLabel(amount, period)}`;
+              })
+              .join(
+                "\n\n"
+              )}\n\n${tier.featureLeadIn ?? ""}\n\n${tier.features.map((feature) => `- ${feature}`).join("\n")}`
         )
-          .map((period) => {
-            const amount = tier.pricing[period].amount;
-            return amount === null
-              ? ""
-              : `${period === "monthly" ? "Monthly" : "Yearly"}: ${formatPlanPriceLabel(amount, period)}`;
-          })
-          .join(
-            "\n\n"
-          )}\n\n${tier.featureLeadIn ?? ""}\n\n${tier.features.map((feature) => `- ${feature}`).join("\n")}`
-    ).join("\n\n")}\n\n${faqs(pricingFaqItems)}`;
+        .join("\n\n") || PLAN_OFFERS_UNAVAILABLE
+    }\n\n${faqs(pricingFaqItems)}`;
   } else if (pathname === "/use-cases") {
     title = "Who are you looking for?";
     body = `${MARKETING_COPY.useCases.description}\n\n${useCases()}`;

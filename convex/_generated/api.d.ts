@@ -169,6 +169,7 @@ import type * as lib_planCycleUtils from "../lib/planCycleUtils.js";
 import type * as lib_planGrantCore from "../lib/planGrantCore.js";
 import type * as lib_planHelpers from "../lib/planHelpers.js";
 import type * as lib_planLimitNotificationCore from "../lib/planLimitNotificationCore.js";
+import type * as lib_planOfferHelpers from "../lib/planOfferHelpers.js";
 import type * as lib_planQualifiedUsageCore from "../lib/planQualifiedUsageCore.js";
 import type * as lib_planTransitionCore from "../lib/planTransitionCore.js";
 import type * as lib_planUsageCore from "../lib/planUsageCore.js";
@@ -557,6 +558,7 @@ declare const fullApi: ApiFromModules<{
   "lib/planGrantCore": typeof lib_planGrantCore;
   "lib/planHelpers": typeof lib_planHelpers;
   "lib/planLimitNotificationCore": typeof lib_planLimitNotificationCore;
+  "lib/planOfferHelpers": typeof lib_planOfferHelpers;
   "lib/planQualifiedUsageCore": typeof lib_planQualifiedUsageCore;
   "lib/planTransitionCore": typeof lib_planTransitionCore;
   "lib/planUsageCore": typeof lib_planUsageCore;

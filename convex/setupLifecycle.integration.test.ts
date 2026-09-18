@@ -1637,3 +1637,46 @@ describe("setup session and workspace lifecycle", () => {
     ).toBeUndefined();
   });
 });
+
+test("public setup state keeps the generation start stable across reads and changes it for retries", async () => {
+  const t = convexTest(schema, modules);
+  const { userId, workosUserId } = await seedUser(t, "generation-timer");
+  const sessionId = await seedSetupSession(t, {
+    userId,
+    suffix: "generation-timer",
+  });
+  const viewer = t.withIdentity({ subject: workosUserId });
+  expect(
+    (await viewer.query(api.setupSessions.getSetupSessionState, { sessionId }))
+      ?.generationRequestedAt
+  ).toBeNull();
+  await t.run((ctx) =>
+    ctx.db.patch("workspaceSetupSessions", sessionId, {
+      status: "generating_profiles",
+      generationRequestedAt: 123000,
+    })
+  );
+  for (let read = 0; read < 2; read++) {
+    expect(
+      (
+        await viewer.query(api.setupSessions.getSetupSessionState, {
+          sessionId,
+        })
+      )?.generationRequestedAt
+    ).toBe(123000);
+  }
+  await t.run((ctx) =>
+    ctx.db.patch("workspaceSetupSessions", sessionId, {
+      generationRequestedAt: 456000,
+    })
+  );
+  expect(
+    (await viewer.query(api.setupSessions.getSetupSessionState, { sessionId }))
+      ?.generationRequestedAt
+  ).toBe(456000);
+  await expect(
+    t
+      .withIdentity({ subject: "another-user" })
+      .query(api.setupSessions.getSetupSessionState, { sessionId })
+  ).rejects.toThrow();
+});

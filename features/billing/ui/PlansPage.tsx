@@ -24,6 +24,8 @@ import { cn } from "@/shared/lib/utils";
 import { ArrowBackIcon, CloseIcon } from "@/shared/ui/components/icons";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import { PLANS_UPGRADE_VALUE } from "@/features/billing/lib/plansUpgradeUrl";
+import { useAvailablePlanOffers } from "@/features/billing/hooks/useAvailablePlanOffers";
+import { getUpgradeOffers } from "@/shared/lib/billing/planOfferHelpers";
 
 export function PlansPage() {
   const { entityPlural } = useActiveUseCaseLabels();
@@ -48,6 +50,7 @@ export function PlansPage() {
 
   const planQuery = useQueryWithStatus(api.plans.getCurrentPlan);
   const subscriptionQuery = useQueryWithStatus(api.polar.getSubscription);
+  const availabilityQuery = useAvailablePlanOffers();
 
   const plan = planQuery.data;
   const subscription = subscriptionQuery.data;
@@ -57,6 +60,9 @@ export function PlansPage() {
   const purchaseTier = plan?.complimentaryGrant
     ? (plan.subscriptionTier ?? "free")
     : tier;
+  const hasUpgradeOffer = availabilityQuery.data
+    ? getUpgradeOffers(availabilityQuery.data, purchaseTier).length > 0
+    : undefined;
   const showUpgradePanel = purchaseTier !== "pro";
   const upgradeOpen = showUpgradePanel && upgradeParam === PLANS_UPGRADE_VALUE;
 
@@ -182,6 +188,7 @@ export function PlansPage() {
             onUpgrade={() => void setUpgradeParam(PLANS_UPGRADE_VALUE)}
             onUpgradeToPro={() => void setUpgradeParam(PLANS_UPGRADE_VALUE)}
             onManageBilling={openPortal}
+            hasUpgradeOffer={hasUpgradeOffer}
           />
           {showHistoryPanel ? (
             historyLoading && historyRows.length === 0 ? (

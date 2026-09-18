@@ -4,7 +4,7 @@
 
 Please do not open public GitHub issues for security vulnerabilities.
 
-Instead, report security problems directly to Salman:
+Instead, report security problems directly to me:
 
 - Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
 

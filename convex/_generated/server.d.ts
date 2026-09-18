@@ -38,6 +38,7 @@ type Env = {
   readonly AI_SETUP_AGENT_MODEL: string | undefined;
   readonly AI_TEXT_EMBEDDING_MODEL: string | undefined;
   readonly AI_VISION_MODEL: string | undefined;
+  readonly AVAILABLE_PLAN_OFFERS: string | undefined;
   readonly ENRICHMENT_MAX_PARALLELISM: string | undefined;
   readonly ENRICHMENT_RETRY_INITIAL_BACKOFF_MS: string | undefined;
   readonly ENRICHMENT_RETRY_MAX_ATTEMPTS: string | undefined;

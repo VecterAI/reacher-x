@@ -1,7 +1,7 @@
 {
   "name": "reacher-x",
   "version": "4.0.0-beta",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "private": false,
   "engines": {
     "pnpm": ">=11 <12"
@@ -103,6 +103,7 @@
     "convex-helpers": "^0.1.119",
     "date-fns": "^4.4.0",
     "embla-carousel-react": "^8.6.0",
+    "embla-carousel-wheel-gestures": "8.1.0",
     "evlog": "^2.19.1",
     "exa-js": "^2.14.0",
     "frimousse": "^0.3.0",

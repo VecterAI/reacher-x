@@ -146,6 +146,7 @@ type SetupSessionPublicState = {
   seedDescription: string | null;
   improvedDescription: string | null;
   generationRevision: number;
+  generationRequestedAt: number | null;
   generationSourceMessageId: string | null;
   generatedProfiles: NonNullable<SetupSessionDoc["generatedProfiles"]>;
   preferenceChoice: SetupSessionDoc["preferenceChoice"] | null;
@@ -235,6 +236,7 @@ async function toPublicSetupSessionState(
     seedDescription: session.seedDescription ?? null,
     improvedDescription: session.improvedDescription ?? null,
     generationRevision: session.generationRevision ?? 0,
+    generationRequestedAt: session.generationRequestedAt ?? null,
     generationSourceMessageId: session.generationSourceMessageId ?? null,
     generatedProfiles: session.generatedProfiles ?? [],
     preferenceChoice: session.preferenceChoice ?? null,
