@@ -2,6 +2,7 @@
 
 import { finishScheduledBatches } from "../test/finishScheduledBatches";
 import { convexTest } from "convex-test";
+import rateLimiterTest from "@convex-dev/rate-limiter/test";
 import polarTest from "@convex-dev/polar/test";
 import agentTest from "@convex-dev/agent/test";
 import type { WorkflowId } from "@convex-dev/workflow";
@@ -14,6 +15,11 @@ import { buildLegacyWorkspaceTargetingSpec } from "./lib/targetingSpecCore";
 import { workflow } from "./lib/workflow";
 
 const modules = import.meta.glob("./**/*.ts");
+function createSetupTest() {
+  const t = convexTest(schema, modules);
+  rateLimiterTest.register(t);
+  return t;
+}
 
 async function registerWorkflowComponent(t: ReturnType<typeof convexTest>) {
   const workflowTestPath = ["@convex-dev/workflow", "test"].join("/");
@@ -153,7 +159,7 @@ describe("setup session and workspace lifecycle", () => {
   test("deletes large preview sets through bounded scheduled batches", async () => {
     vi.useFakeTimers();
     try {
-      const t = convexTest(schema, modules);
+      const t = createSetupTest();
       const { userId } = await seedUser(t, "bounded-preview-cleanup");
       const workspaceId = await seedProvisionalWorkspace(t, {
         userId,
@@ -205,7 +211,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("recovers a stale setup workflow and exposes a bounded retry failure", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     await registerWorkflowComponent(t);
     const { userId, workosUserId } = await seedUser(t, "workflow-recovery");
     const sessionId = await seedSetupSession(t, {
@@ -248,8 +254,8 @@ describe("setup session and workspace lifecycle", () => {
     const recoveredSession = await t.run((ctx) =>
       ctx.db.get("workspaceSetupSessions", sessionId)
     );
-    expect(recoveredSession?.workflowId).not.toBe(originalWorkflowId);
-    expect(recoveredSession?.workflowRecoveryAttempts).toBe(1);
+    expect(recoveredSession?.workflowId).toBe(originalWorkflowId);
+    expect(recoveredSession?.generationExecution?.attempt).toBe(1);
 
     await t.run(async (ctx) => {
       await ctx.db.patch("workspaceSetupSessions", sessionId, {
@@ -258,6 +264,9 @@ describe("setup session and workspace lifecycle", () => {
         generationRequestedAt: 1,
       });
     });
+    await t.run((ctx) =>
+      workflow.cancel(ctx, originalWorkflowId as WorkflowId)
+    );
     const exhausted = await authenticated.mutation(
       api.setupSessions.ensureSetupSessionWorkflow,
       { threadId: "setup-thread-workflow-recovery" }
@@ -272,7 +281,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("recovers stale setup work even when the setup UI is no longer open", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     await registerWorkflowComponent(t);
     const { userId, workosUserId } = await seedUser(
       t,
@@ -306,7 +315,7 @@ describe("setup session and workspace lifecycle", () => {
     expect(
       await t.run((ctx) => ctx.db.get("workspaceSetupSessions", sessionId))
     ).toMatchObject({
-      workflowRecoveryAttempts: 1,
+      generationExecution: { attempt: 1 },
       status: "generating_profiles",
     });
     expect(
@@ -314,11 +323,11 @@ describe("setup session and workspace lifecycle", () => {
         async (ctx) =>
           (await ctx.db.get("workspaceSetupSessions", sessionId))?.workflowId
       )
-    ).not.toBe(originalWorkflowId);
+    ).toBe(originalWorkflowId);
   });
 
   test("excludes legacy refine sessions without hiding normal active setup", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId, workosUserId } = await seedUser(t, "legacy-refine");
     await seedSetupSession(t, {
       userId,
@@ -345,7 +354,7 @@ describe("setup session and workspace lifecycle", () => {
   test.each(["awaiting_connections", "awaiting_plan"] as const)(
     "legacy refinement cannot provision a completed workspace through %s",
     async (status) => {
-      const t = convexTest(schema, modules);
+      const t = createSetupTest();
       const { userId, workosUserId } = await seedUser(t, `refine-${status}`);
       const workspaceId = await seedCompletedWorkspace(t, {
         userId,
@@ -384,7 +393,7 @@ describe("setup session and workspace lifecycle", () => {
   test.each(["awaiting_connections", "awaiting_plan"] as const)(
     "legacy existing-workspace fallback cannot overwrite a completed workspace through %s",
     async (status) => {
-      const t = convexTest(schema, modules);
+      const t = createSetupTest();
       const { userId, workosUserId } = await seedUser(t, `existing-${status}`);
       const workspaceId = await seedCompletedWorkspace(t, {
         userId,
@@ -422,7 +431,7 @@ describe("setup session and workspace lifecycle", () => {
   );
 
   test("starting New workspace creates one reusable setup draft and no workspace document", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     agentTest.register(t);
     const { userId, workosUserId } = await seedUser(t, "start-draft");
     await seedCompletedWorkspace(t, {
@@ -484,7 +493,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("keeps the exact chat input when the setup agent submits a shortened tool argument", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId } = await seedUser(t, "verbatim-input");
     const sessionId = await seedSetupSession(t, {
       userId,
@@ -524,7 +533,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("persists AI-generated profile provenance when generation completes", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId } = await seedUser(t, "generated-profile-provenance");
     const sessionId = await seedSetupSession(t, {
       userId,
@@ -581,7 +590,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("repairs legacy setup descriptions without changing generated profiles", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId } = await seedUser(t, "repair-description");
     const workspaceId = await seedCompletedWorkspace(t, {
       userId,
@@ -636,7 +645,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("keeps descriptions unchanged when an ICP revision is requested", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId } = await seedUser(t, "icp-only-revision");
     const sessionId = await seedSetupSession(t, {
       userId,
@@ -675,7 +684,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("keeps generated profile cards immutable and owned by their completion message", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId, workosUserId } = await seedUser(t, "profile-snapshot");
     const threadId = "setup-thread-profile-snapshot";
     const sessionId = await seedSetupSession(t, {
@@ -735,7 +744,7 @@ describe("setup session and workspace lifecycle", () => {
 
   test("approval persists examples once without provisioning or searching", async () => {
     vi.useFakeTimers();
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     agentTest.register(t);
     const { userId, workosUserId } = await seedUser(t, "examples");
     const thread = await t.mutation(components.agent.threads.createThread, {
@@ -755,6 +764,13 @@ describe("setup session and workspace lifecycle", () => {
         }),
       })
     );
+    await t.run(async (ctx) => {
+      const plan = await ctx.db
+        .query("userPlans")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .unique();
+      await ctx.db.patch(plan!._id, { tier: "free" });
+    });
     const viewer = t.withIdentity({ subject: workosUserId });
     await expect(
       viewer.mutation(api.setupSessions.approveSetupGeneration, {
@@ -766,7 +782,7 @@ describe("setup session and workspace lifecycle", () => {
       api.setupSessions.approveSetupGeneration,
       { sessionId, generationRevision: 1 }
     );
-    expect(first.status).toBe("awaiting_connections");
+    expect(first.status).toBe("awaiting_plan");
     const repeat = await viewer.mutation(
       api.setupSessions.approveSetupGeneration,
       { sessionId, generationRevision: 1 }
@@ -811,7 +827,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("rejects incomplete platform examples before creating a workspace", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     agentTest.register(t);
     const { userId, workosUserId } = await seedUser(t, "missing-example");
     const thread = await t.mutation(components.agent.threads.createThread, {
@@ -844,7 +860,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("late legacy preview completion cannot change a new draft", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId } = await seedUser(t, "late-preview");
     const sessionId = await seedSetupSession(t, {
       userId,
@@ -862,7 +878,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("anonymous and unknown authenticated visitors do not bootstrap database state", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
 
     expect(await t.query(api.setupSessions.getSetupBootstrapState, {})).toEqual(
       {
@@ -883,7 +899,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("an authenticated user without a completed workspace requires first-workspace setup", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { workosUserId } = await seedUser(t, "bootstrap-first");
 
     expect(
@@ -898,7 +914,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("an authenticated user with a completed workspace needs no setup bootstrap", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId, workosUserId } = await seedUser(t, "bootstrap-complete");
     await seedCompletedWorkspace(t, {
       userId,
@@ -919,7 +935,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("an authenticated user with a completed workspace resumes an additional-workspace draft", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId, workosUserId } = await seedUser(t, "bootstrap-additional");
     await seedCompletedWorkspace(t, {
       userId,
@@ -944,7 +960,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("an additional-workspace draft is resumable but does not trap a selected completed workspace", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId, workosUserId } = await seedUser(t, "switch-context");
     const workspaceId = await seedCompletedWorkspace(t, {
       userId,
@@ -989,7 +1005,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("switching completed workspaces changes the workspace context while preserving the draft", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId, workosUserId } = await seedUser(t, "switch-default");
     await seedCompletedWorkspace(t, {
       userId,
@@ -1039,7 +1055,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("a first-workspace draft remains setup context because no completed workspace exists", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId, workosUserId } = await seedUser(t, "first-workspace");
     const sessionId = await seedSetupSession(t, {
       userId,
@@ -1063,7 +1079,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("a provisioned preview workspace is still a draft and cannot become default", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId, workosUserId } = await seedUser(t, "provisional");
     const completedWorkspaceId = await seedCompletedWorkspace(t, {
       userId,
@@ -1116,7 +1132,7 @@ describe("setup session and workspace lifecycle", () => {
   });
 
   test("discarding an additional-workspace draft deletes its provisional workspace", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId, workosUserId } = await seedUser(t, "discard");
     await seedCompletedWorkspace(t, {
       userId,
@@ -1148,10 +1164,10 @@ describe("setup session and workspace lifecycle", () => {
     expect(state.workspace).toBeNull();
   });
 
-  test("connected X keeps the persisted connection gate visible and completes paid setup idempotently", async () => {
+  test("old connection-step sessions show plans and remain compatible with an already-open client", async () => {
     vi.useFakeTimers();
     vi.useFakeTimers();
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     agentTest.register(t);
     await registerWorkflowComponent(t);
     const { userId, workosUserId } = await seedUser(t, "complete-connections");
@@ -1206,12 +1222,12 @@ describe("setup session and workspace lifecycle", () => {
     );
     expect(returnedState).toMatchObject({
       status: "awaiting_connections",
-      currentStepId: "connections",
-      requiresConnections: true,
+      currentStepId: "plan",
+      requiresConnections: false,
     });
     expect(returnedState?.visibleSteps.map((step) => step.id)).toEqual([
       "input",
-      "connections",
+      "plan",
     ]);
 
     const completion = await authenticated.mutation(
@@ -1267,7 +1283,7 @@ describe("setup session and workspace lifecycle", () => {
 
   test("finishing setup promotes the provisional workspace to completed and default", async () => {
     vi.useFakeTimers();
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     agentTest.register(t);
     const { userId, workosUserId } = await seedUser(t, "finish");
     const existingWorkspaceId = await seedCompletedWorkspace(t, {
@@ -1318,7 +1334,7 @@ describe("setup session and workspace lifecycle", () => {
   });
   test("free users can approve and skip accounts, but cannot forge payment; finalization creates once", async () => {
     vi.useFakeTimers();
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     agentTest.register(t);
     const { userId, workosUserId } = await seedUser(t, "free-to-paid");
     const thread = await t.mutation(components.agent.threads.createThread, {
@@ -1392,11 +1408,11 @@ describe("setup session and workspace lifecycle", () => {
     ).toHaveLength(1);
   });
 
-  test.each(["before_connections", "at_plan_gate"] as const)(
+  test.each(["before_approval", "at_plan_gate"] as const)(
     "complimentary access preserves onboarding and finishes %s without checkout",
     async (timing) => {
       vi.useFakeTimers();
-      const t = convexTest(schema, modules);
+      const t = createSetupTest();
       agentTest.register(t);
       polarTest.register(t);
       const { userId, workosUserId } = await seedUser(t, `gift-${timing}`);
@@ -1431,7 +1447,7 @@ describe("setup session and workspace lifecycle", () => {
           tier: "hobby",
           durationDays: 60,
         });
-      if (timing === "before_connections") await grant();
+      if (timing === "before_approval") await grant();
       expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
         "awaiting_icp_confirmation"
       );
@@ -1440,12 +1456,8 @@ describe("setup session and workspace lifecycle", () => {
         generationRevision: 1,
       });
       expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
-        "awaiting_connections"
+        timing === "before_approval" ? "ready" : "awaiting_plan"
       );
-      await viewer.mutation(api.setupSessions.completeSetupConnections, {
-        sessionId,
-        connectedX: false,
-      });
       if (timing === "at_plan_gate") {
         expect((await t.run((ctx) => ctx.db.get(sessionId)))?.status).toBe(
           "awaiting_plan"
@@ -1486,7 +1498,7 @@ describe("setup session and workspace lifecycle", () => {
   );
 
   test("late generation and failure callbacks cannot replace a newer revision", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const { userId } = await seedUser(t, "stale-generation");
     const sessionId = await seedSetupSession(t, {
       userId,
@@ -1522,7 +1534,7 @@ describe("setup session and workspace lifecycle", () => {
   });
   test("generation retry preserves the failed refinement and URL context", async () => {
     vi.useFakeTimers();
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     await registerWorkflowComponent(t);
     const { userId, workosUserId } = await seedUser(t, "retry-refinement");
     const sessionId = await seedSetupSession(t, {
@@ -1572,7 +1584,7 @@ describe("setup session and workspace lifecycle", () => {
 
   test("unfinished legacy previews upgrade once and require new example approval", async () => {
     vi.useFakeTimers();
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     await registerWorkflowComponent(t);
     const { userId } = await seedUser(t, "legacy-upgrade");
     const sessionId = await seedSetupSession(t, {
@@ -1605,7 +1617,7 @@ describe("setup session and workspace lifecycle", () => {
     ).toBe(2);
   });
   test("agent approval validates the owner supplied by trusted tool context", async () => {
-    const t = convexTest(schema, modules);
+    const t = createSetupTest();
     const owner = await seedUser(t, "agent-approval-owner");
     const other = await seedUser(t, "agent-approval-other");
     const sessionId = await seedSetupSession(t, {

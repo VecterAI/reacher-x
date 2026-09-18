@@ -3,10 +3,6 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { workflow as workflowManager } from "../lib/workflow";
 import { getSetupWorkflowEventName } from "../lib/setupWorkflowEvents";
-import {
-  TENANT_JOB_PRIORITY,
-  getSetupGenerationJobKey,
-} from "../lib/tenantSchedulerCore";
 
 export const setupSessionWorkflow = workflowManager.define({
   args: {
@@ -60,28 +56,13 @@ export const setupSessionWorkflow = workflowManager.define({
         }
 
         case "generating_profiles": {
-          const route = await step.runAction(
-            internal.tenantScheduler.enqueueTenantJobWithRetryInternal,
-            {
-              userId: session.userId,
-              class: "interactive",
-              priority: TENANT_JOB_PRIORITY.interactive,
-              idempotencyKey: getSetupGenerationJobKey(session),
-              payload: {
-                kind: "setup_generation",
-                sessionId,
-              },
-            },
-            { retry: true }
+          // Setup generation is scheduled independently so onboarding does not
+          // wait behind the tenant background queue.
+          await step.runMutation(
+            internal.setupSessions.ensureSetupGenerationInternal,
+            { sessionId }
           );
-          if (route.route === "enforced") {
-            await step.awaitEvent({ name: stateChangedEventName });
-          } else {
-            await step.runAction(
-              internal.setupSessions.runSetupGenerationInternal,
-              { sessionId }
-            );
-          }
+          await step.awaitEvent({ name: stateChangedEventName });
           break;
         }
 

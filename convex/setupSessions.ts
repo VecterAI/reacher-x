@@ -82,6 +82,11 @@ import {
   toStoredXConnectionStatus,
 } from "./lib/xConnectionStateCore";
 
+import {
+  scheduleSetupGeneration,
+  ownsSetupGenerationAttempt,
+} from "./lib/setupGenerationExecutionHelpers";
+
 type SetupSessionDoc = Doc<"workspaceSetupSessions">;
 const setupSessionsLogger = logger.withScope("SetupSessions");
 type ViewerCtx = QueryCtx | MutationCtx;
@@ -91,6 +96,7 @@ async function startSetupWorkflow(
   session: SetupSessionDoc,
   recovery?: { reason: string; now: number }
 ): Promise<string> {
+  await scheduleSetupGeneration(ctx, session);
   const workflowId: Awaited<ReturnType<typeof workflowManager.start>> =
     await workflowManager.start(
       ctx,
@@ -463,7 +469,10 @@ async function applySetupPlanSelection(
     });
   }
 
-  if (session.status !== "awaiting_plan") {
+  if (
+    session.status !== "awaiting_plan" &&
+    session.status !== "awaiting_connections"
+  ) {
     throw new Error("Setup session is not awaiting a plan choice.");
   }
 
@@ -490,6 +499,12 @@ async function maybeSignalStateChanged(
   ctx: MutationCtx,
   session: SetupSessionDoc
 ) {
+  // The AI action starts in this transaction, independent of workflow capacity.
+  // Reload because callers may hold a snapshot from before the request was saved.
+  if (session.status === "generating_profiles") {
+    const current = await ctx.db.get(session._id);
+    if (current) await scheduleSetupGeneration(ctx, current);
+  }
   // Terminal transitions must wake the workflow so it can finish its wait.
   if (!session.workflowId) {
     return;
@@ -837,6 +852,19 @@ async function ensureSetupWorkflowHealth(
   now = getCurrentUTCTimestamp()
 ): Promise<SetupWorkflowHealthResult> {
   session = await upgradeLegacySetup(ctx, session);
+  if (session.status === "awaiting_connections") {
+    await ctx.db.patch(session._id, {
+      status: "awaiting_plan",
+      statusUpdatedAt: now,
+    });
+    session = { ...session, status: "awaiting_plan", statusUpdatedAt: now };
+    await maybeSignalStateChanged(ctx, session);
+  }
+  let generationScheduled = false;
+  if (session.status === "generating_profiles") {
+    generationScheduled = await scheduleSetupGeneration(ctx, session);
+    session = (await ctx.db.get(session._id))!;
+  }
   let workflowStatus: WorkflowStatus | null = null;
   if (session.workflowId) {
     try {
@@ -859,6 +887,12 @@ async function ensureSetupWorkflowHealth(
     now,
   });
   if (decision.kind === "none") {
+    if (session.status === "failed") {
+      return { scheduled: false, recovered: false, state: "failed" };
+    }
+    if (generationScheduled) {
+      return { scheduled: true, recovered: true, state: "recovered" };
+    }
     return {
       scheduled: false,
       recovered: false,
@@ -1767,9 +1801,8 @@ export const completeSetupConnections = mutation({
     }
 
     if (
-      (session.status === "awaiting_plan" ||
-        session.status === "awaiting_preferences") &&
-      typeof session.connectionsCompletedAt === "number"
+      session.status === "awaiting_plan" ||
+      session.status === "awaiting_preferences"
     ) {
       return {
         success: true as const,
@@ -2020,7 +2053,7 @@ export const getSetupUserFlowContextInternal = internalQuery({
     return {
       planTier,
       xConnected: connectionState.xConnected,
-      requiresConnections: !connectionState.xConnected,
+      requiresConnections: false,
     };
   },
 });
@@ -2078,12 +2111,86 @@ export const touchAgentActionInternal = internalMutation({
   },
 });
 
+export const ensureSetupGenerationInternal = internalMutation({
+  args: { sessionId: v.id("workspaceSetupSessions") },
+  returns: v.boolean(),
+  handler: async (ctx, { sessionId }) => {
+    const session = await ctx.db.get(sessionId);
+    return session ? await scheduleSetupGeneration(ctx, session) : false;
+  },
+});
+
+export const claimSetupGenerationInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    generationRevision: v.number(),
+    attempt: v.number(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, { sessionId, generationRevision, attempt }) => {
+    const session = await ctx.db.get(sessionId);
+    if (
+      !ownsSetupGenerationAttempt(session, generationRevision, attempt) ||
+      session.generationExecution!.claimed
+    )
+      return false;
+    await ctx.db.patch(sessionId, {
+      generationExecution: { ...session.generationExecution!, claimed: true },
+    });
+    return true;
+  },
+});
+
+export const retrySetupGenerationAttemptInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    generationRevision: v.number(),
+    attempt: v.number(),
+    errorMessage: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (
+    ctx,
+    { sessionId, generationRevision, attempt, errorMessage }
+  ) => {
+    const session = await ctx.db.get(sessionId);
+    if (!ownsSetupGenerationAttempt(session, generationRevision, attempt))
+      return false;
+    return await scheduleSetupGeneration(ctx, session, {
+      retryAfterFailure: true,
+      errorMessage,
+    });
+  },
+});
+
 export const runSetupGenerationInternal = internalAction({
   args: {
     sessionId: v.id("workspaceSetupSessions"),
     feedback: v.optional(v.string()),
+    generationRevision: v.optional(v.number()),
+    attempt: v.optional(v.number()),
   },
-  handler: async (ctx, { sessionId, feedback }) => {
+  handler: async (
+    ctx,
+    { sessionId, feedback, generationRevision: requestedRevision, attempt }
+  ) => {
+    // Keep queued jobs and old workflow journals callable across deployment.
+    if (requestedRevision === undefined || attempt === undefined) {
+      await ctx.runMutation(
+        internal.setupSessions.ensureSetupGenerationInternal,
+        { sessionId }
+      );
+      return { success: false, delegated: true };
+    }
+    const claimed = await ctx.runMutation(
+      internal.setupSessions.claimSetupGenerationInternal,
+      {
+        sessionId,
+        generationRevision: requestedRevision,
+        attempt,
+      }
+    );
+    if (!claimed) return { success: false, stale: true };
     const session = await ctx.runQuery(internal.setupSessions.getByIdInternal, {
       sessionId,
     });
@@ -2091,7 +2198,7 @@ export const runSetupGenerationInternal = internalAction({
       throw new Error("Setup session not found");
     }
 
-    if (session.status !== "generating_profiles")
+    if (!ownsSetupGenerationAttempt(session, requestedRevision, attempt))
       return { success: false, stale: true };
 
     const generationFeedback =
@@ -2198,6 +2305,7 @@ export const runSetupGenerationInternal = internalAction({
         {
           sessionId,
           generationRevision,
+          attempt,
           improvedDescription,
           generatedProfiles,
           targetingSpec,
@@ -2245,10 +2353,11 @@ export const runSetupGenerationInternal = internalAction({
         threadId: session.setupThreadId,
       });
       await ctx.runMutation(
-        internal.setupSessions.markGenerationFailedInternal,
+        internal.setupSessions.retrySetupGenerationAttemptInternal,
         {
           sessionId,
           generationRevision,
+          attempt,
           errorMessage:
             generationStage === "url_analysis"
               ? "We couldn't analyze that website. Try again or paste a manual description."
@@ -2264,6 +2373,7 @@ export const recordGenerationResultInternal = internalMutation({
   args: {
     sessionId: v.id("workspaceSetupSessions"),
     generationRevision: v.optional(v.number()),
+    attempt: v.optional(v.number()),
     improvedDescription: v.string(),
     generatedProfiles: v.array(icpValidator),
     targetingSpec: workspaceTargetingSpecValidator,
@@ -2275,6 +2385,12 @@ export const recordGenerationResultInternal = internalMutation({
     if (
       !session ||
       session.status !== "generating_profiles" ||
+      (args.attempt !== undefined &&
+        !ownsSetupGenerationAttempt(
+          session,
+          args.generationRevision ?? 0,
+          args.attempt
+        )) ||
       (session.flowVersion === 2 && args.generationRevision === undefined) ||
       (args.generationRevision !== undefined &&
         (session.generationRevision ?? 0) !== args.generationRevision)

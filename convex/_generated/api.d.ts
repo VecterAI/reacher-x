@@ -217,6 +217,7 @@ import type * as lib_retrier from "../lib/retrier.js";
 import type * as lib_runtimeConfigHelpers from "../lib/runtimeConfigHelpers.js";
 import type * as lib_setupFlowCore from "../lib/setupFlowCore.js";
 import type * as lib_setupGenerationCore from "../lib/setupGenerationCore.js";
+import type * as lib_setupGenerationExecutionHelpers from "../lib/setupGenerationExecutionHelpers.js";
 import type * as lib_setupInputClassificationCore from "../lib/setupInputClassificationCore.js";
 import type * as lib_setupPreviewCore from "../lib/setupPreviewCore.js";
 import type * as lib_setupSessionCore from "../lib/setupSessionCore.js";
@@ -605,6 +606,7 @@ declare const fullApi: ApiFromModules<{
   "lib/runtimeConfigHelpers": typeof lib_runtimeConfigHelpers;
   "lib/setupFlowCore": typeof lib_setupFlowCore;
   "lib/setupGenerationCore": typeof lib_setupGenerationCore;
+  "lib/setupGenerationExecutionHelpers": typeof lib_setupGenerationExecutionHelpers;
   "lib/setupInputClassificationCore": typeof lib_setupInputClassificationCore;
   "lib/setupPreviewCore": typeof lib_setupPreviewCore;
   "lib/setupSessionCore": typeof lib_setupSessionCore;
