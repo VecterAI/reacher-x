@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { useQueryWithStatus } from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
@@ -12,7 +12,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/shared/ui/components/Card";
-import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
+import { BillingPeriodSelector } from "./BillingPeriodSelector";
+import { PlanOffersSkeleton } from "./PlanOffersSkeleton";
+import { useAvailablePlanOffers } from "../../hooks/useAvailablePlanOffers";
+import {
+  getPlanOfferSelection,
+  getUpgradeOffers,
+  PLAN_OFFERS_UNAVAILABLE,
+} from "@/shared/lib/billing/planOfferHelpers";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { CheckIcon } from "@/shared/ui/components/icons";
 import {
@@ -42,31 +49,6 @@ export interface PlanSelectorProps {
   entityPlural?: string;
 }
 
-function visibleTiersForMode(
-  mode: PlanSelectorMode,
-  currentTier: "free" | "hobby" | "base" | "pro"
-): typeof ONBOARDING_PLAN_TIERS {
-  if (mode === "onboarding") {
-    return currentTier === "base"
-      ? ONBOARDING_PLAN_TIERS.filter((t) => t.id === "pro")
-      : currentTier === "hobby"
-        ? ONBOARDING_PLAN_TIERS.filter((t) => t.id === "base" || t.id === "pro")
-        : ONBOARDING_PLAN_TIERS;
-  }
-  if (currentTier === "free") {
-    return ONBOARDING_PLAN_TIERS;
-  }
-  if (currentTier === "hobby") {
-    return ONBOARDING_PLAN_TIERS.filter(
-      (t) => t.id === "base" || t.id === "pro"
-    );
-  }
-  if (currentTier === "base") {
-    return ONBOARDING_PLAN_TIERS.filter((t) => t.id === "pro");
-  }
-  return [];
-}
-
 function PlanPriceBlock({
   tier,
   billing,
@@ -94,6 +76,7 @@ function PlanPriceBlock({
         value={amount}
         prefix="$"
         decimals={2}
+        format={{ minimumFractionDigits: 2 }}
         suffix={suffix}
         className="text-foreground text-2xl font-semibold tracking-tight"
       />
@@ -207,11 +190,16 @@ export function PlanSelector({
   hideMarketingHeadline = false,
   entityPlural,
 }: PlanSelectorProps) {
-  const [billing, setBilling] = useState<BillingPeriod>("monthly");
+  const [preferredBilling, setBilling] = useState<BillingPeriod>("monthly");
   const productsQuery = useQueryWithStatus(api.polar.getConfiguredProducts);
-  const visibleTiers = useMemo(
-    () => visibleTiersForMode(mode, currentTier),
-    [mode, currentTier]
+  const availability = useAvailablePlanOffers();
+  const offers = getUpgradeOffers(availability.data ?? [], currentTier);
+  const { billing, periods, tiers } = getPlanOfferSelection(
+    offers,
+    preferredBilling
+  );
+  const visibleTiers = ONBOARDING_PLAN_TIERS.filter((tier) =>
+    tiers.includes(tier.id)
   );
 
   const livePricing = {
@@ -247,9 +235,15 @@ export function PlanSelector({
     },
   } as const;
 
-  if (visibleTiers.length === 0) {
-    return null;
-  }
+  if (availability.isPending) return <PlanOffersSkeleton />;
+  if (availability.isError || !availability.data?.length)
+    return <p role="status">{PLAN_OFFERS_UNAVAILABLE}</p>;
+  if (visibleTiers.length === 0)
+    return (
+      <p role="status">
+        There are no upgrades available for your plan right now.
+      </p>
+    );
 
   return (
     <section
@@ -280,34 +274,11 @@ export function PlanSelector({
         </header>
       ) : null}
 
-      <Tabs
+      <BillingPeriodSelector
+        periods={periods}
         value={billing}
-        onValueChange={(v) => {
-          if (v === "monthly" || v === "yearly") {
-            setBilling(v);
-          }
-        }}
-        className="w-full"
-      >
-        <TabsList size="sm" className="flex w-full">
-          <TabsTrigger value="monthly" size="sm" className="flex-1">
-            Monthly
-          </TabsTrigger>
-          <TabsTrigger
-            value="yearly"
-            size="sm"
-            className="group flex-1 gap-1.5"
-          >
-            Yearly
-            <Badge
-              variant="outline-strong"
-              className="border-muted-foreground text-muted-foreground group-data-[state=active]:border-foreground group-data-[state=active]:text-foreground"
-            >
-              2 months free
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+        onChange={setBilling}
+      />
 
       <div className="mt-4 space-y-3">
         {visibleTiers.map((tier) => (

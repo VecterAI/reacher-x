@@ -44,7 +44,13 @@ import {
   SelectValue,
 } from "@/shared/ui/components/Select";
 import { CheckIcon } from "@/shared/ui/components/icons";
-import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
+import { BillingPeriodSelector } from "@/features/billing/ui/components/BillingPeriodSelector";
+import { PlanOffersSkeleton } from "@/features/billing/ui/components/PlanOffersSkeleton";
+import { useAvailablePlanOffers } from "@/features/billing/hooks/useAvailablePlanOffers";
+import {
+  getPlanOfferSelection,
+  PLAN_OFFERS_UNAVAILABLE,
+} from "@/shared/lib/billing/planOfferHelpers";
 import { workspaceUseCaseIcons } from "@/shared/ui/components/icons/workspaceUseCaseIconHelpers";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { useQueryWithStatus } from "@/shared/hooks";
@@ -84,6 +90,7 @@ function PriceDisplay({
         value={amount}
         prefix="$"
         decimals={2}
+        format={{ minimumFractionDigits: 2 }}
         suffix={suffix}
         className="text-3xl font-semibold tracking-tight"
       />
@@ -286,7 +293,15 @@ export function PricingSection({
 }: {
   initialUseCaseKey?: WorkspaceUseCaseKey;
 }) {
-  const [billing, setBilling] = useState<BillingPeriod>("monthly");
+  const [preferredBilling, setBilling] = useState<BillingPeriod>("monthly");
+  const availability = useAvailablePlanOffers();
+  const { billing, periods, tiers } = getPlanOfferSelection(
+    availability.data ?? [],
+    preferredBilling
+  );
+  const visibleTiers = ONBOARDING_PLAN_TIERS.filter((tier) =>
+    tiers.includes(tier.id)
+  );
   const persistedUseCaseKey = useSyncExternalStore(
     subscribeWorkspaceUseCaseLocalStorage,
     getWorkspaceUseCaseLocalStorageSnapshot,
@@ -377,44 +392,44 @@ export function PricingSection({
 
       {/* Billing toggle */}
       <div className="mx-auto mb-8 max-w-xs md:mb-10">
-        <Tabs
+        <BillingPeriodSelector
+          periods={periods}
           value={billing}
-          onValueChange={(v) => {
-            if (v === "monthly" || v === "yearly") setBilling(v);
-          }}
-          className="w-full"
-        >
-          <TabsList className="flex w-full">
-            <TabsTrigger value="monthly" className="flex-1">
-              Monthly
-            </TabsTrigger>
-            <TabsTrigger value="yearly" className="group flex-1 gap-1.5">
-              Yearly
-              <Badge
-                variant="outline-strong"
-                className="border-muted-foreground text-muted-foreground group-data-[state=active]:border-foreground group-data-[state=active]:text-foreground"
-              >
-                2 months free
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+          onChange={setBilling}
+        />
       </div>
 
       {/* Tier cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {ONBOARDING_PLAN_TIERS.map((tier) => (
-          <TierCard
-            key={tier.id}
-            tier={tier}
-            billing={billing}
-            isAuthenticated={isAuthenticated}
-            currentTierId={currentTierId}
-            isCheckingCurrentPlan={isCheckingCurrentPlan}
-            useCaseKey={selectedUseCaseKey}
-          />
-        ))}
-      </div>
+      {availability.isPending ? (
+        <PlanOffersSkeleton />
+      ) : availability.isError || !visibleTiers.length ? (
+        <p role="status" className="text-muted-foreground text-center">
+          {PLAN_OFFERS_UNAVAILABLE}
+        </p>
+      ) : (
+        <div
+          className={cn(
+            "mx-auto grid grid-cols-1 gap-4",
+            visibleTiers.length === 1
+              ? "max-w-lg"
+              : visibleTiers.length === 2
+                ? "max-w-4xl md:grid-cols-2"
+                : "md:grid-cols-3"
+          )}
+        >
+          {visibleTiers.map((tier) => (
+            <TierCard
+              key={tier.id}
+              tier={tier}
+              billing={billing}
+              isAuthenticated={isAuthenticated}
+              currentTierId={currentTierId}
+              isCheckingCurrentPlan={isCheckingCurrentPlan}
+              useCaseKey={selectedUseCaseKey}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

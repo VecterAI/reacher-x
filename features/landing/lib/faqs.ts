@@ -63,10 +63,10 @@ export const homepageFaqItems: FaqItem[] = [
 
 export const pricingFaqItems: FaqItem[] = [
   {
-    id: "hobby-plan",
+    id: "free-plan",
     question: "Is there a free plan?",
     answer:
-      "No. Hobby is the entry plan during launch and includes the original starter limits. A Free plan may be added in the future.",
+      "No. A paid plan is required to run △ Agent. The available plans are listed above.",
   },
   {
     id: "credit-card",

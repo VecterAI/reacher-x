@@ -1300,6 +1300,33 @@ export const paidPlanTierValidator = v.union(
   v.literal("base"),
   v.literal("pro")
 );
+export const billingPeriodValidator = v.union(
+  v.literal("monthly"),
+  v.literal("yearly")
+);
+export const planOfferValidator = v.object({
+  tier: paidPlanTierValidator,
+  billingPeriod: billingPeriodValidator,
+});
+export const polarCheckoutArgs = {
+  productIds: v.array(v.string()),
+  origin: v.string(),
+  successUrl: v.string(),
+  subscriptionId: v.optional(v.string()),
+  metadata: v.optional(v.record(v.string(), v.string())),
+  trialInterval: v.optional(
+    v.union(
+      v.literal("day"),
+      v.literal("week"),
+      v.literal("month"),
+      v.literal("year"),
+      v.null()
+    )
+  ),
+  trialIntervalCount: v.optional(v.union(v.number(), v.null())),
+  locale: v.optional(v.string()),
+};
+
 export const planTierValidator = v.union(
   v.literal("free"),
   paidPlanTierValidator

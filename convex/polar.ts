@@ -4,11 +4,13 @@
 
 import { Polar } from "@convex-dev/polar";
 import { api, components } from "./_generated/api";
-import { internalMutation, query } from "./lib/functionBuilders";
+import { action, internalMutation, query } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { getUserFromIdentity } from "./lib/userUtils";
 import { refreshUserPlanFromBilling } from "./lib/planTransitionCore";
+import { assertProductOffersAvailable } from "./lib/planOfferHelpers";
+import { polarCheckoutArgs } from "./validators";
 import { getWideEventLogger } from "./lib/wideEventLogger";
 
 // ============================================================================
@@ -63,15 +65,56 @@ export const {
   getConfiguredProducts,
   // List all non-archived products
   listAllProducts,
-  // Generate checkout link for given product IDs
-  generateCheckoutLink,
   // Generate customer portal URL for subscription management
   generateCustomerPortalUrl,
-  // Change current subscription to a different product
-  changeCurrentSubscription,
   // Cancel current subscription
   cancelCurrentSubscription,
 } = polar.api();
+
+/** Guard every public purchase entry point, including calls that bypass the UI. */
+export const generateCheckoutLink = action({
+  args: polarCheckoutArgs,
+  returns: v.object({ url: v.string() }),
+  handler: async (ctx, args) => {
+    assertProductOffersAvailable(args.productIds);
+    const user = await ctx.runQuery(api.polar.getCurrentUserInfo);
+    const userId = user._id;
+    const email = user.email;
+    const checkout = await polar.createCheckoutSession(
+      {
+        runQuery: (reference, ...[args]) => ctx.runQuery(reference, args),
+        runMutation: (reference, ...[args]) => ctx.runMutation(reference, args),
+      },
+      {
+        ...args,
+        userId,
+        email,
+      }
+    );
+    const url = new URL(checkout.url);
+    if (args.locale) url.searchParams.set("locale", args.locale);
+    return { url: url.toString() };
+  },
+});
+
+export const changeCurrentSubscription = action({
+  args: { productId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertProductOffersAvailable([args.productId]);
+    await polar.changeSubscription(
+      {
+        ...ctx,
+        runQuery: (reference, ...[queryArgs]) =>
+          ctx.runQuery(reference, queryArgs),
+        runMutation: (reference, ...[mutationArgs]) =>
+          ctx.runMutation(reference, mutationArgs),
+      },
+      args
+    );
+    return null;
+  },
+});
 
 // ============================================================================
 // Queries

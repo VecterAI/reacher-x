@@ -5,34 +5,23 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action } from "./lib/functionBuilders";
 
-function resolvePolarProductId(args: {
-  tier: "hobby" | "base" | "pro";
-  billingPeriod: "monthly" | "yearly";
-}) {
-  const productId = (() => {
-    if (args.tier === "hobby") {
-      return args.billingPeriod === "monthly"
-        ? process.env.POLAR_PRODUCT_HOBBY_MONTHLY
-        : process.env.POLAR_PRODUCT_HOBBY_YEARLY;
-    }
+import {
+  billingPeriodValidator,
+  paidPlanTierValidator,
+  planOfferValidator,
+} from "./validators";
+import { query } from "./lib/functionBuilders";
+import {
+  assertPlanOfferAvailable,
+  getAvailablePlanOffers,
+  getPlanOfferProductId,
+} from "./lib/planOfferHelpers";
 
-    if (args.tier === "base") {
-      return args.billingPeriod === "monthly"
-        ? process.env.POLAR_PRODUCT_BASE_MONTHLY
-        : process.env.POLAR_PRODUCT_BASE_YEARLY;
-    }
-
-    return args.billingPeriod === "monthly"
-      ? process.env.POLAR_PRODUCT_PRO_MONTHLY
-      : process.env.POLAR_PRODUCT_PRO_YEARLY;
-  })();
-
-  if (!productId) {
-    throw new Error("Polar product is not configured for that plan.");
-  }
-
-  return productId;
-}
+export const getAvailableOffers = query({
+  args: {},
+  returns: v.array(planOfferValidator),
+  handler: () => getAvailablePlanOffers(),
+});
 
 function normalizeReturnTo(returnTo?: string) {
   if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) {
@@ -91,8 +80,8 @@ async function ensurePolarCustomerLinkedForUser(
 
 export const startCheckoutFlow = action({
   args: {
-    tier: v.union(v.literal("hobby"), v.literal("base"), v.literal("pro")),
-    billingPeriod: v.union(v.literal("monthly"), v.literal("yearly")),
+    tier: paidPlanTierValidator,
+    billingPeriod: billingPeriodValidator,
     source: v.union(
       v.literal("onboarding_plan"),
       v.literal("header_upgrade"),
@@ -107,6 +96,7 @@ export const startCheckoutFlow = action({
     url: v.string(),
   }),
   handler: async (ctx, args): Promise<{ url: string }> => {
+    assertPlanOfferAvailable(args);
     let originUrl: URL;
     try {
       originUrl = new URL(args.origin);
@@ -123,7 +113,9 @@ export const startCheckoutFlow = action({
       successUrl.searchParams.set("threadId", args.threadId);
     }
 
-    const productId = resolvePolarProductId(args);
+    const productId = getPlanOfferProductId(args);
+    if (!productId)
+      throw new Error("Polar product is not configured for that plan.");
 
     const user = await ctx.runQuery(api.polar.getCurrentUserInfo);
     await ensurePolarCustomerLinkedForUser(ctx, user);
