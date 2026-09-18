@@ -57,7 +57,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "open-source",
     question: "Is ReacherX open source?",
     answer:
-      "Yes. The code is public, and you can inspect it, self-host it, and contribute to it.",
+      "Yes. The code is public under AGPL-3.0. You can inspect it, self-host it, modify it, and contribute to it. If you modify ReacherX and offer it to users over a network, the license asks you to share those changes under the same terms.",
   },
 ];
 

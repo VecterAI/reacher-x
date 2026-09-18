@@ -6,16 +6,16 @@ ReacherX is an open-source agent product focused on finding the right people, bu
 
 ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-source-program) program. Learn more about Convex at [convex.link/coss](https://convex.link/coss).
 
-[README](./README.md) · [Configuration](./docs/configuration.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/BQttyr8jY) · [Email Salman](mailto:creativecoder.crco@gmail.com)
+[README](./README.md) · [Configuration](./docs/configuration.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/BQttyr8jY) · [X/Twitter](https://x.com/ReacherXfounder)
 
 Supporting repo policies:
 
 - [Code of Conduct](./CODE_OF_CONDUCT.md)
 - [Security Policy](./SECURITY.md)
 
-## Before You Start
+## Before you start
 
-Please contact Salman before working on:
+Please talk to me before working on:
 
 - new features
 - roadmap items
@@ -28,14 +28,13 @@ That is important here because feature work usually benefits from brainstorming 
 
 Reach out here:
 
-- Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
 - Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
-- LinkedIn: [linkedin.com/in/noobships](https://www.linkedin.com/in/noobships)
+- X/Twitter DM: [@ReacherXfounder](https://x.com/ReacherXfounder)
 - GitHub Issues: [github.com/VecterAI/reacher-x/issues](https://github.com/VecterAI/reacher-x/issues)
 
 Small bug fixes, typo fixes, and focused polish PRs are fine without a long pre-discussion.
 
-## Fastest Ways To Help
+## Fastest ways to help
 
 - Fix docs that are unclear or outdated.
 - Improve accessibility and responsive behavior.
@@ -44,7 +43,7 @@ Small bug fixes, typo fixes, and focused polish PRs are fine without a long pre-
 - Improve local setup and contributor onboarding.
 - Work on a roadmap item after checking in first.
 
-## Local Setup
+## Local setup
 
 Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned.
 
@@ -71,7 +70,7 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Environment Expectations
+## Environment expectations
 
 Use `.env.example` as the local template and follow [docs/configuration.md](./docs/configuration.md) for the complete setup. Next.js reads `.env.local`, while Convex backend variables are configured per deployment with `npx convex env set`.
 
@@ -85,9 +84,9 @@ Depending on what you work on, you may need:
 - Email provider configuration
 - Billing configuration
 
-You only need the provider credentials for the feature area you are developing. Do not upload the whole `.env.local` file to Convex: it contains frontend and local-only values as well as secrets intended for other runtimes.
+You only need the provider credentials for the feature area you are developing. Do not upload the whole `.env.local` file to Convex. It contains frontend and local-only values as well as secrets intended for other runtimes.
 
-## How The Codebase Is Organized
+## How the codebase is organized
 
 - `app/`: route structure and page-level entry points.
 - `features/`: product features and UI modules.
@@ -96,7 +95,7 @@ You only need the provider credentials for the feature area you are developing. 
 - `convex/workflows/`: orchestration, retries, durable flows.
 - `convex/lib/`: core business logic and reusable backend helpers.
 
-## Core Repo Rules
+## Core repo rules
 
 Read [`agents.md`](./agents.md) before making architectural assumptions.
 
@@ -111,7 +110,7 @@ Important rules:
 - Keep agent tools thin.
 - Use the existing validators, type guards, and helper patterns when available.
 
-## Best Contribution Paths
+## Best contribution paths
 
 ### Frontend
 
@@ -138,14 +137,14 @@ Important rules:
 - plan quality
 - guardrails and review flows
 
-### Product Infrastructure
+### Product infrastructure
 
 - local-dev ergonomics
 - docs quality
 - email delivery flows
 - observability and diagnostics
 
-## Roadmap And Help Wanted
+## Roadmap and help wanted
 
 The active roadmap lives in [ROADMAP.md](./ROADMAP.md).
 
@@ -160,25 +159,25 @@ Especially valuable areas:
 - PDF, document, spreadsheet, and presentation extraction for richer agent workflows. Image, GIF, and video attachments are already supported.
 - Reliability and optimization work using tools such as React Doctor, Convex tooling, linting, audits, and stronger automated testing.
 
-If you want to work on any of the items above, please contact Salman first so you can align on approach and product intent.
+If you want to work on any of the items above, please talk to me first so we can align on approach and product intent.
 
-## How To Propose Work
+## How to propose work
 
-### Small Changes
+### Small changes
 
 For typo fixes, targeted bug fixes, and small polish improvements:
 
 - open a PR directly, or
 - open a quick issue first if you want feedback before implementing
 
-### Bigger Changes
+### Bigger changes
 
 For features, roadmap items, integrations, or architectural work:
 
 - open an issue, and
-- message Salman directly by email or Discord so you can brainstorm together before implementation
+- message me on Discord or X/Twitter so we can brainstorm before implementation
 
-## PR Checklist
+## PR checklist
 
 Before opening a PR:
 
@@ -200,10 +199,14 @@ pnpm build
 
 Run the focused test commands that cover your change as well. Keep editor/LSP diagnostics clean for every touched code file.
 
-## Where To Ask Questions
+## Where to ask questions
 
-- GitHub Issues: [github.com/VecterAI/reacher-x/issues](https://github.com/VecterAI/reacher-x/issues)
 - Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
-- Email Salman directly: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
+- X/Twitter DM: [@ReacherXfounder](https://x.com/ReacherXfounder)
+- GitHub Issues: [github.com/VecterAI/reacher-x/issues](https://github.com/VecterAI/reacher-x/issues)
 
-For anything roadmap-related, feature-related, or exploratory, direct contact is preferred.
+For anything roadmap-related, feature-related, or exploratory, Discord or X/Twitter is preferred.
+
+## License for contributions
+
+ReacherX is licensed under [AGPL-3.0](./LICENSE). By contributing code, documentation, or other material to this repository, you agree that your contributions are licensed under AGPL-3.0. This keeps every improvement open for the community.

@@ -27,13 +27,13 @@ Examples of unacceptable behavior:
 
 ReacherX is a collaborative project, but product direction still matters.
 
-Salman may redirect discussions, close proposals, or ask for feature discussions to move to direct maintainer contact when a change affects roadmap, product strategy, agent behavior, or architecture.
+I may redirect discussions, close proposals, or ask for feature discussions to move to direct maintainer contact when a change affects roadmap, product strategy, agent behavior, or architecture.
 
 That is not meant to shut people down. It is part of keeping the project coherent.
 
 ## Reporting
 
-If you experience or witness behavior that violates this Code of Conduct, contact Salman directly:
+If you experience or witness behavior that violates this Code of Conduct, contact me directly:
 
 - Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
 - Discord: [discord.gg/BQttyr8jY](https://discord.gg/BQttyr8jY)
