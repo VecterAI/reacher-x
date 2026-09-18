@@ -6,7 +6,8 @@ import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import { ONBOARDING_PLAN_TIERS } from "@/features/agent/ui/components/onboarding/planStepConfig";
 import { parseIsoToTimestamp } from "@/shared/lib/utils/time/timeUtils";
-import { CheckIcon } from "@/shared/ui/components/icons";
+import { CheckIcon, ForumIcon } from "@/shared/ui/components/icons";
+import { getCustomWorkspaceLimitHref } from "@/features/billing/lib/plansUpgradeUrl";
 
 type PlanSummary = {
   tier: "free" | "hobby" | "base" | "pro";
@@ -32,6 +33,8 @@ export interface ActivePlanSectionProps {
   onManageBilling: () => void;
   isPaid: boolean;
   entityPlural?: string;
+  /** Whether the current paid tier has a higher plan currently for sale. */
+  hasUpgradeOffer?: boolean;
 }
 
 function tierTitle(tier: "free" | "hobby" | "base" | "pro"): string {
@@ -49,6 +52,7 @@ export function ActivePlanSection({
   onManageBilling,
   isPaid,
   entityPlural,
+  hasUpgradeOffer,
 }: ActivePlanSectionProps) {
   const tier = plan?.tier ?? "free";
   const grant = plan?.complimentaryGrant;
@@ -151,21 +155,33 @@ export function ActivePlanSection({
       </ul>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {grant && tier === "pro" && billingTier !== "pro" ? (
+        {grant &&
+        tier === "pro" &&
+        billingTier !== "pro" &&
+        hasUpgradeOffer !== false ? (
           <Button type="button" size="xs" onClick={onUpgrade}>
             Choose a paid plan
           </Button>
         ) : null}
-        {tier === "free" ? (
+        {tier === "free" && hasUpgradeOffer !== false ? (
           <Button type="button" size="xs" onClick={onUpgrade}>
             Upgrade
           </Button>
         ) : null}
         {tier === "hobby" || tier === "base" ? (
           <>
-            <Button type="button" size="xs" onClick={onUpgradeToPro}>
-              Upgrade plan
-            </Button>
+            {hasUpgradeOffer === false ? (
+              <Button asChild size="xs">
+                <a href={getCustomWorkspaceLimitHref()}>
+                  <ForumIcon className="fill-current" aria-hidden="true" />
+                  Get a custom plan
+                </a>
+              </Button>
+            ) : (
+              <Button type="button" size="xs" onClick={onUpgradeToPro}>
+                Upgrade plan
+              </Button>
+            )}
             {hasSubscription ? (
               <Button
                 type="button"

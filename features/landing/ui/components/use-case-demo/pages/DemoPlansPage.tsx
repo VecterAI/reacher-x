@@ -21,9 +21,10 @@ import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { ArrowBackIcon, CloseIcon } from "@/shared/ui/components/icons";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
+import { getUpgradeOffers } from "@/shared/lib/billing/planOfferHelpers";
 
 // Example billing dates; the plan and billing period follow current availability.
-const DEMO_RENEWS_AT = Date.UTC(2026, 8, 15);
+const DEMO_RENEWS_AT = Date.UTC(2026, 9, 15);
 
 // ---------------------------------------------------------------------------
 // DemoPlansPage (replica of features/billing/ui/PlansPage.tsx)
@@ -35,6 +36,9 @@ export function DemoPlansPage() {
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const availability = useAvailablePlanOffers();
   const offer = availability.data?.[0];
+  const hasUpgradeOffer = offer
+    ? getUpgradeOffers(availability.data ?? [], offer.tier).length > 0
+    : undefined;
   const tierConfig = ONBOARDING_PLAN_TIERS.find(
     (tier) => tier.id === offer?.tier
   );
@@ -110,6 +114,7 @@ export function DemoPlansPage() {
             onUpgrade={openUpgradePanel}
             onUpgradeToPro={openUpgradePanel}
             onManageBilling={noop}
+            hasUpgradeOffer={hasUpgradeOffer}
           />
           <SubscriptionHistorySection
             rows={historyRows}
