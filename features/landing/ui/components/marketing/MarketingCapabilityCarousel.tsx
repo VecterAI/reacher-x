@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ComponentType } from "react";
 import Link from "next/link";
+import { WheelGesturesPlugin } from "embla-carousel-wheel-gestures";
 import {
   Carousel,
   CarouselContent,
@@ -26,6 +27,10 @@ import { useDemoVisibility } from "@/features/blog/ui/components/app-demo/useDem
 import { BlogAppDemo } from "@/features/blog/ui/components/app-demo/BlogAppDemo";
 import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 import "./marketing-carousel.css";
+import {
+  MARKETING_CAROUSEL_OPTIONS,
+  preserveDemoWheelInteraction,
+} from "@/features/landing/lib/marketingCarouselHelpers";
 import { MARKETING_CAPABILITY_CONTENT } from "@/features/landing/lib/marketingContentHelpers";
 
 export type CapabilityItem = {
@@ -54,6 +59,7 @@ export const MARKETING_CAPABILITIES: CapabilityItem[] =
 
 export function MarketingCapabilityCarousel() {
   const [api, setApi] = useState<CarouselApi>();
+  const [plugins] = useState(() => [WheelGesturesPlugin()]);
   const [canPrev, setCanPrev] = useState(false);
   const [canNext, setCanNext] = useState(false);
 
@@ -76,16 +82,10 @@ export function MarketingCapabilityCarousel() {
     <div>
       <Carousel
         setApi={setApi}
-        opts={{
-          align: "start",
-          watchDrag: (_api, event) =>
-            !(
-              event.target instanceof Element &&
-              event.target.closest(
-                ".blog-app-demo-controls, .blog-app-demo-expanded"
-              )
-            ),
-        }}
+        plugins={plugins}
+        tabIndex={0}
+        opts={MARKETING_CAROUSEL_OPTIONS}
+        onWheelCapture={preserveDemoWheelInteraction}
         className="capability-carousel"
         aria-label="More capabilities"
       >

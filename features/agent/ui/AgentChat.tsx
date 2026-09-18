@@ -3211,6 +3211,10 @@ export function AgentChat({
           stepTotal={setupSessionForInlineCard.totalSteps}
           inputPhase={setupSessionForInlineCard.inputPhase}
           generatedProfiles={setupSessionForInlineCard.generatedProfiles}
+          generationStartedAt={
+            setupSessionForInlineCard.generationRequestedAt ??
+            setupSessionForInlineCard.statusUpdatedAt
+          }
           errorMessage={setupSessionForInlineCard.errorMessage}
           onRetry={handleRetrySetup}
           onContinue={onOpenSetupOnboardingPanel}

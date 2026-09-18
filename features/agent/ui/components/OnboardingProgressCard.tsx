@@ -385,7 +385,7 @@ export function OnboardingProgressCard({
           }
         />
         <StatCell
-          label="Details found"
+          label="Ready"
           value={data.enriched}
           detail={formatEnrichedProfilesDetail(data.enriched)}
         />
