@@ -44,7 +44,7 @@ const STEP_LABELS: Record<SetupVisibleStepId, string> = {
  * Use-case is auto-detected; preferences are dropped (fit 70–100 on finish).
  * `use_case` / `preference` remain in the type for older session UI fallbacks.
  */
-const ORDERED_STEP_IDS: SetupVisibleStepId[] = ["input", "connections", "plan"];
+const ORDERED_STEP_IDS: SetupVisibleStepId[] = ["input", "plan"];
 
 /** Statuses where the setup chat composer stays unlocked. */
 const COMPOSER_UNLOCKED_STATUSES = new Set<SetupStatus>([
@@ -70,7 +70,7 @@ export function getSetupStatusStepId(status: SetupStatus): SetupVisibleStepId {
     case "discarded":
       return "input";
     case "awaiting_connections":
-      return "connections";
+      return "plan";
     case "awaiting_plan":
       return "plan";
     case "awaiting_preferences":
@@ -126,9 +126,6 @@ export function getNextSetupStatusAfterProvisioning(args: {
   requiresConnections: boolean;
   requiresPlan: boolean;
 }): SetupPostProvisioningStatus {
-  if (args.requiresConnections) {
-    return "awaiting_connections";
-  }
   if (args.requiresPlan) {
     return "awaiting_plan";
   }
@@ -141,21 +138,13 @@ export function getNextSetupStatusAfterConnections(args: {
   return args.requiresPlan ? "awaiting_plan" : "ready";
 }
 
-/**
- * Keep the persisted connection gate visible until its completion mutation has
- * advanced the session. A successful OAuth exchange makes the account live
- * before `connectionsCompletedAt` is written, so relying on live account state
- * alone would remove the only step capable of completing the lifecycle.
- */
-export function requiresSetupConnectionsStep(args: {
+/** Compatibility for callers holding the retired connection-step fields. */
+export function requiresSetupConnectionsStep(_args: {
   status: SetupStatus;
   googleConnected: boolean;
   xConnected: boolean;
 }): boolean {
-  return (
-    args.status === "awaiting_connections" ||
-    !(args.googleConnected && args.xConnected)
-  );
+  return false;
 }
 
 export function getVisibleSetupStatus(args: {
@@ -163,17 +152,7 @@ export function getVisibleSetupStatus(args: {
   requiresConnections: boolean;
   connectionsCompletedAt?: number | null;
 }): SetupStatus {
-  const shouldGateConnections =
-    args.requiresConnections && typeof args.connectionsCompletedAt !== "number";
-
-  if (
-    shouldGateConnections &&
-    (args.status === "awaiting_plan" || args.status === "awaiting_preferences")
-  ) {
-    return "awaiting_connections";
-  }
-
-  return args.status;
+  return args.status === "awaiting_connections" ? "awaiting_plan" : args.status;
 }
 
 export function getSetupInputPhase(
@@ -221,11 +200,12 @@ export function buildSetupFlowState(args: {
   requiresPlan: boolean;
 } {
   const visibleSteps = buildVisibleSetupSteps({
-    requiresConnections: args.requiresConnections,
+    requiresConnections: false,
     // A grant can satisfy payment while this persisted step still needs the
     // user's final Continue. Keep that action visible until setup is ready.
     requiresPlan:
       args.requiresPlan ||
+      args.status === "awaiting_connections" ||
       args.status === "awaiting_plan" ||
       args.status === "awaiting_preferences",
   });
@@ -243,7 +223,7 @@ export function buildSetupFlowState(args: {
     visibleSteps,
     inputPhase: getSetupInputPhase(args.status),
     composerLocked: isSetupComposerLocked(args.status),
-    requiresConnections: args.requiresConnections,
+    requiresConnections: false,
     requiresPlan: args.requiresPlan,
   };
 }

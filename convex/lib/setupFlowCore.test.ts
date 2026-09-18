@@ -9,13 +9,13 @@ import {
 } from "./setupFlowCore";
 
 describe("setupFlowCore lean chat-first flow", () => {
-  it("exposes input → connections → plan visible steps", () => {
+  it("exposes audience and plan even without connected accounts", () => {
     expect(
       buildVisibleSetupSteps({
         requiresConnections: true,
         requiresPlan: true,
       }).map((step) => step.id)
-    ).toEqual(["input", "connections", "plan"]);
+    ).toEqual(["input", "plan"]);
   });
 
   it("skips connections and plan when not required", () => {
@@ -36,13 +36,13 @@ describe("setupFlowCore lean chat-first flow", () => {
     ).toBe("ready");
   });
 
-  it("routes to connections then plan when required", () => {
+  it("routes directly to plan when payment is required", () => {
     expect(
       getNextSetupStatusAfterProvisioning({
         requiresConnections: true,
         requiresPlan: true,
       })
-    ).toBe("awaiting_connections");
+    ).toBe("awaiting_plan");
     expect(getNextSetupStatusAfterConnections({ requiresPlan: true })).toBe(
       "awaiting_plan"
     );
@@ -51,14 +51,14 @@ describe("setupFlowCore lean chat-first flow", () => {
     );
   });
 
-  it("keeps the persisted connection gate visible after OAuth succeeds", () => {
+  it("does not require connections for old or new sessions", () => {
     expect(
       requiresSetupConnectionsStep({
         status: "awaiting_connections",
         googleConnected: true,
         xConnected: true,
       })
-    ).toBe(true);
+    ).toBe(false);
 
     expect(
       requiresSetupConnectionsStep({
@@ -79,7 +79,7 @@ describe("setupFlowCore lean chat-first flow", () => {
     ).toMatchObject({
       currentStepId: "plan",
       requiresPlan: false,
-      totalSteps: 3,
+      totalSteps: 2,
     });
   });
 

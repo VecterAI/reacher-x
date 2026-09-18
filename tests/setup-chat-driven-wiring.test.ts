@@ -191,7 +191,7 @@ test("workspace details prefer the immutable raw description", () => {
   assert.ok(seedDescription > rawDescription);
 });
 
-test("X OAuth completion persists the connection step before leaving setup", () => {
+test("onboarding omits account connections while old OAuth callbacks remain compatible", () => {
   const connectionsStep = read(
     "features/agent/ui/components/onboarding/ConnectionsStep.tsx"
   );
@@ -207,7 +207,7 @@ test("X OAuth completion persists the connection step before leaving setup", () 
     /void persistConnectionsStep\(\{ connectedX: true \}\)/
   );
   assert.match(connectionsStep, /onCompleteStep\(result\.status\)/);
-  assert.match(onboardingPanel, /<ConnectionsStep/);
+  assert.doesNotMatch(onboardingPanel, /ConnectionsStep/);
   assert.match(
     read("features/agent/ui/AgentChat.tsx"),
     /<OnboardingProgressCard/

@@ -1,8 +1,17 @@
 import { v } from "convex/values";
+
 import { WORKSPACE_NAME_CONSTRAINTS } from "../shared/lib/utils/validation/validation";
 import { WORKSPACE_USE_CASE_KEYS } from "../shared/lib/workspaceUseCases";
 import { SETUP_PREVIEW_REVIEW_MODES } from "./lib/setupPreviewCore";
 import { LINKEDIN_MESSAGE_REACTIONS } from "../shared/lib/linkedin/messageReaction";
+
+/** Ownership of a directly scheduled setup generation attempt. */
+export const setupGenerationExecutionValidator = v.object({
+  revision: v.number(),
+  attempt: v.number(),
+  claimed: v.boolean(),
+  scheduledFunctionId: v.id("_scheduled_functions"),
+});
 
 const [firstLinkedInMessageReaction, ...remainingLinkedInMessageReactions] =
   LINKEDIN_MESSAGE_REACTIONS;

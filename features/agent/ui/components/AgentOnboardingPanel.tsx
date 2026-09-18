@@ -16,7 +16,6 @@ import {
   PageHeader,
   DESKTOP_PANEL_BORDER_CLASS_NAME,
 } from "@/features/webapp/ui/components";
-import { ConnectionsStep } from "./onboarding/ConnectionsStep";
 import { GrantedPlanStep } from "./onboarding/GrantedPlanStep";
 import { PlanStep } from "./onboarding/PlanStep";
 import { SetupExampleProfiles } from "./onboarding/SetupExampleProfiles";
@@ -105,11 +104,9 @@ export function AgentOnboardingPanel({
   );
 
   const title =
-    step === "connections"
-      ? "Connect accounts"
-      : step === "plan"
-        ? "Choose a plan"
-        : `Example ${labels.entityPlural.toLowerCase()}`;
+    step === "plan"
+      ? "Choose a plan"
+      : `Example ${labels.entityPlural.toLowerCase()}`;
   return (
     <aside
       id="rx-onboarding-panel"
@@ -124,7 +121,7 @@ export function AgentOnboardingPanel({
         onBack={onClose}
         titleSuffix={
           <span className="text-muted-foreground font-mono text-xs font-medium">
-            · {session?.currentStepNumber ?? 1}/{session?.totalSteps ?? 3}
+            · {session?.currentStepNumber ?? 1}/{session?.totalSteps ?? 2}
           </span>
         }
       />
@@ -143,11 +140,6 @@ export function AgentOnboardingPanel({
         <div className="p-4">
           <AsciiSpinnerText text="Loading setup..." />
         </div>
-      ) : step === "connections" ? (
-        <ConnectionsStep
-          sessionId={session.sessionId}
-          onCompleteStep={() => {}}
-        />
       ) : (
         <>
           <ScrollArea className="min-h-0 flex-1">

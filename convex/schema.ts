@@ -93,6 +93,7 @@ import {
   queryCandidateStatusValidator,
   queryCandidateTypeValidator,
   setupInputModeValidator,
+  setupGenerationExecutionValidator,
   setupSessionModeValidator,
   setupSessionStatusValidator,
   setupSessionPreferenceValidator,
@@ -561,6 +562,7 @@ export default defineSchema({
     // Monotonically increasing generation identity. The client anchors cards
     // to this version rather than moving a live card across old messages.
     generationRevision: v.optional(v.number()),
+    generationExecution: v.optional(setupGenerationExecutionValidator),
     generationSourceMessageId: v.optional(v.string()),
     lastAgentActionAt: v.optional(v.number()),
     lastUserActionAt: v.optional(v.number()),

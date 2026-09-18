@@ -87,7 +87,7 @@ export const getUserStatus = createTool({
           googleConnected,
           xConnected: flowContext.xConnected,
         })
-      : !googleConnected || flowContext.requiresConnections;
+      : false;
     const visibleSetupStatus = setupSession
       ? getVisibleSetupStatus({
           status: setupSession.status,
