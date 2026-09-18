@@ -39,6 +39,8 @@ export function HighLoadNotice({
 }: HighLoadNoticeProps) {
   return (
     <aside
+      role="status"
+      aria-live="polite"
       aria-label="High load notice"
       data-high-load-notice=""
       data-high-load-notice-state={state}

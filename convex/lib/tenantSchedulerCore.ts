@@ -1,4 +1,4 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 
 export const TENANT_EXECUTION_POOL_MAX_PARALLELISM = 36;
 export const TENANT_JOB_START_RATE_PER_MINUTE = 240;
@@ -16,6 +16,50 @@ export const TENANT_JOB_PRIORITY = {
   preview: 10,
   background: 50,
 } as const;
+
+export function getSetupGenerationJobKey(
+  session: Pick<
+    Doc<"workspaceSetupSessions">,
+    "_id" | "generationRevision" | "workflowRecoveryRevision"
+  >
+) {
+  return `setup-generation:${String(session._id)}:${session.generationRevision ?? 0}:${session.workflowRecoveryRevision ?? 0}`;
+}
+
+/** A queued job alone is not evidence of overload (fairness caps also queue). */
+export function deriveHighLoadNotice(args: {
+  slotCount: number;
+  slots: readonly Pick<
+    Doc<"tenantSchedulerSlots">,
+    "slotNumber" | "status" | "jobId" | "tenantKey" | "leaseExpiresAt"
+  >[];
+  tenantKey: string;
+  dispatcherAvailable: boolean;
+}) {
+  if (
+    !args.dispatcherAvailable ||
+    args.slotCount < 1 ||
+    args.slotCount > TENANT_EXECUTION_POOL_MAX_PARALLELISM ||
+    args.slots.length !== args.slotCount ||
+    new Set(args.slots.map((slot) => slot.slotNumber)).size !==
+      args.slotCount ||
+    args.slots.some(
+      (slot) =>
+        slot.status !== "claimed" ||
+        !slot.jobId ||
+        !slot.tenantKey ||
+        !slot.leaseExpiresAt
+    )
+  ) {
+    return null;
+  }
+  return {
+    state: args.slots.some((slot) => slot.tenantKey === args.tenantKey)
+      ? ("slow" as const)
+      : ("queued" as const),
+    validUntil: Math.min(...args.slots.map((slot) => slot.leaseExpiresAt!)),
+  };
+}
 
 export function buildTenantKey(args: {
   workspaceId?: Id<"workspaces">;
