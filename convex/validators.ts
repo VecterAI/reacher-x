@@ -1778,6 +1778,21 @@ export const tenantSchedulerModeValidator = v.union(
   v.literal("enforced")
 );
 
+export const highLoadScopeValidator = v.union(
+  v.object({ kind: v.literal("workspace"), workspaceId: v.id("workspaces") }),
+  v.object({ kind: v.literal("setup"), threadId: v.string() })
+);
+
+export const highLoadNoticeValidator = v.union(
+  v.null(),
+  v.object({
+    state: v.union(v.literal("queued"), v.literal("slow")),
+    // The client stops showing reassurance when a capacity lease expires,
+    // even if no database write has happened yet.
+    validUntil: v.number(),
+  })
+);
+
 export const tenantJobClassValidator = v.union(
   v.literal("interactive"),
   v.literal("preview"),

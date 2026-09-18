@@ -3,7 +3,10 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { workflow as workflowManager } from "../lib/workflow";
 import { getSetupWorkflowEventName } from "../lib/setupWorkflowEvents";
-import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
+import {
+  TENANT_JOB_PRIORITY,
+  getSetupGenerationJobKey,
+} from "../lib/tenantSchedulerCore";
 
 export const setupSessionWorkflow = workflowManager.define({
   args: {
@@ -63,7 +66,7 @@ export const setupSessionWorkflow = workflowManager.define({
               userId: session.userId,
               class: "interactive",
               priority: TENANT_JOB_PRIORITY.interactive,
-              idempotencyKey: `setup-generation:${String(sessionId)}:${session.generationRevision ?? 0}:${session.workflowRecoveryRevision ?? 0}`,
+              idempotencyKey: getSetupGenerationJobKey(session),
               payload: {
                 kind: "setup_generation",
                 sessionId,
