@@ -75,6 +75,20 @@ npx convex dev
 pnpm dev
 ```
 
+## Convex Deployment Credentials
+
+For the main site's hosted build command (`npx convex deploy --cmd 'npm run build'`), set `CONVEX_DEPLOY_KEY` as a secret in the main hosting project or CI environment. Generate it in the Convex dashboard; never put a real key in this repository, a `NEXT_PUBLIC_` variable, the demo project, or the Convex function environment.
+
+| Hosting environment | Key to use                                                                                                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Production          | A deploy key for the intended production deployment, with permission to deploy functions. Scope it to Production only.                                                                            |
+| Preview             | A project preview deploy key for branch-specific Convex backends. Configure the backend's required auth/provider variables through Convex project defaults or on the selected preview deployment. |
+| Local development   | Use `npx convex dev` and the generated `CONVEX_DEPLOYMENT` selection. A deploy key is normally unnecessary.                                                                                       |
+
+A Vercel Preview environment does not itself isolate Convex. A key for a shared development deployment makes previews update that shared backend; use that only intentionally. Check the target printed by the Convex CLI before deployment. The CLI supplies `NEXT_PUBLIC_CONVEX_URL` to the Next.js build for its selected backend; the demo-origin settings below select a separate frontend app.
+
+See [Convex deploy keys](https://docs.convex.dev/cli/deploy-key-types) and [Convex on Vercel](https://docs.convex.dev/production/hosting/vercel).
+
 ## Interactive Demos
 
 The marketing pages and blog embed a separate Next.js app from `demos/app`. It reuses product components with fictional local data. It needs neither a Convex deployment nor real authentication or provider credentials. The main site and demo must use different origins.
@@ -134,7 +148,7 @@ Environment changes affect **new builds**, not existing deployments. Rebuild the
 
 If the demo reports a missing `NEXT_PUBLIC_DEMO_PARENT_ORIGIN`, set it in the **demo project** and rebuild. If a build passes but playback is blank or unresponsive, check that the demo is reachable without a login and that the browser's main-site origin exactly matches the demo's configured parent.
 
-The main project's Convex deploy key selects its backend independently. Preview keys should target the intended development or preview backend, and Production keys should target production. These demo variables do not change that selection. See [Convex deployment environments](https://docs.convex.dev/production/multiple-deployments).
+The main project's `CONVEX_DEPLOY_KEY` selects its backend independently. These demo variables do not change that selection; see [Convex Deployment Credentials](#convex-deployment-credentials).
 
 ## Minimum Configuration By Feature
 
@@ -177,6 +191,8 @@ These are Convex deployment variables.
 | `UNIPILE_WEBHOOK_SECRET` | Validates Unipile webhook requests                            |
 
 These are Convex deployment variables. LinkdAPI is the LinkedIn read plane; Unipile is the connected-account auth/write plane.
+
+Prefer `UNIPILE_BASE_URL`. The client also accepts `UNIPILE_API_URL` and `UNIPILE_DSN` as fallback names, in that order, when earlier values are empty. Set only one; the client normalizes a DSN or API URL to its base URL.
 
 ### Optional Product Services
 
@@ -246,9 +262,21 @@ The RAG component is configured for exactly 1536 dimensions. Any value assigned 
 
 Onboarding generates targeting criteria, ideal profiles, and fictional example people with AI. These examples let the user review the intended audience without waiting for real prospect searches. They are not discovered people or evidence of real activity.
 
-Real discovery is scheduled in the background when setup becomes ready: the user has approved the current examples, completed any required connections step, and has a confirmed paid plan. An unpaid user can generate and review examples, but setup does not start real discovery until payment is confirmed. AI generation itself still uses the configured model provider.
+The visible flow is audience input and example review, followed by plan selection when needed. Account connections are not an onboarding step; users can connect accounts later in Settings. A confirmed paid subscription or active complimentary plan grant satisfies the plan requirement. Real discovery starts in the background when setup finishes with approved examples and plan access. Unpaid users can generate and review examples before selecting a plan.
 
-For an additional workspace, the existing user plan and connection state are reused. Steps that are already satisfied are skipped; the new workspace still needs its own description and approved examples. Discovery starts when that workspace finishes setup, subject to the existing plan capacity and workflow checks. Updating an existing workspace's targeting uses workspace settings.
+Example generation is scheduled directly through Convex, outside the shared 36-slot tenant background queue. The setup workflow still coordinates progress. Session state and generated profiles are persisted: leaving and returning reuses saved examples or pending work. Revision and attempt checks reject duplicate execution and late results. This removes contention with background admission, but Convex capacity and AI provider latency/rate limits still apply.
+
+Generation controls are code constants in [`setupGenerationExecutionHelpers.ts`](../convex/lib/setupGenerationExecutionHelpers.ts), not environment variables:
+
+| Control                                            | Current value                                              |
+| -------------------------------------------------- | ---------------------------------------------------------- |
+| Maximum scheduled attempts per generation revision | 3 total, including the first attempt                       |
+| Retry delay                                        | 1 second before attempt 2; 2 seconds before attempt 3      |
+| Per-user attempt allowance                         | Token bucket with capacity 20, refilling at 20 tokens/hour |
+
+Retries consume the same per-user allowance. Other users have independent allowances. These controls count scheduled attempts, not individual provider requests; an attempt can include URL analysis and model-helper retries. They limit repeated work but do not impose a hard dollar spending cap. Exhausted attempts or allowance leave a failed session that the user can retry when eligible.
+
+For an additional workspace, existing plan access is reused; each workspace still needs its own description and approved examples, subject to plan capacity. Existing sessions at the retired connections step advance to plans on resume. No migration or backfill is required for the optional execution metadata, and existing people are not rewritten. Updating an existing workspace's targeting uses workspace settings. This onboarding change adds no required environment variables.
 
 ## Real Prospecting Scheduling
 
@@ -354,6 +382,21 @@ Increasing workpool parallelism without increasing provider capacity can increas
 | `PROVIDER_TRANSIENT_FAILURES_BEFORE_OPEN` |           `3` | Consecutive transient failures before opening a provider circuit |
 | `PROVIDER_RATE_LIMIT_RETRY_SECONDS`       |          `60` | Default retry delay for rate limits without provider guidance    |
 | `PROVIDER_TRANSIENT_RETRY_SECONDS`        |          `60` | Default retry delay for transient provider failures              |
+
+## Optional Overrides
+
+These settings are not required for a normal installation. Leave them unset unless the default behavior needs to change.
+
+| Variable                         | Location                        | Behavior when set / fallback when unset                                                                                                                                                                                       |
+| -------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LANDING_USE_MOCK_TESTIMONIALS`  | Main Next.js server environment | Set to `1` to allow fictional testimonial fallback when no live testimonials are returned. Development already allows this fallback; leave unset on public production sites. It does not replace available live testimonials. |
+| `TWITTER_LINK_RESOLVER_BASE_URL` | Convex                          | Public main-app origin used by the X/Twitter profile-link resolution fallback. Defaults to `NEXT_PUBLIC_SITE_URL`. The destination must serve the app's link-resolution endpoint; use your own deployment's origin.           |
+| `LOG_ENVIRONMENT`                | Runtime emitting logs           | Overrides the log `environment` label. Otherwise uses the resolved deployment environment.                                                                                                                                    |
+| `LOG_DEPLOYMENT_ENVIRONMENT`     | Runtime emitting logs           | Overrides the log `deploymentEnvironment` label. Otherwise derives it from `CONVEX_DEPLOYMENT`, then `VERCEL_ENV` / `NODE_ENV`, then `development`.                                                                           |
+| `SERVICE_VERSION`                | Runtime emitting logs           | Overrides the version attached to logs; defaults to `package.json` version.                                                                                                                                                   |
+| `COMMIT_SHA`                     | Runtime emitting logs           | Supplies commit metadata when `VERCEL_GIT_COMMIT_SHA` is unavailable; otherwise omitted.                                                                                                                                      |
+
+Logging overrides affect metadata, not deployment selection or feature flags. For Next.js server logs, set them in the main hosting project or `.env.local`; for Convex logs, set them on that Convex deployment. Host/runtime metadata such as `NODE_ENV`, `NEXT_RUNTIME`, `VERCEL_ENV`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `AWS_REGION`, and `HOSTNAME` is normally supplied by the platform, not copied into the env template.
 
 ## Feature Flags And Reserved Variables
 
