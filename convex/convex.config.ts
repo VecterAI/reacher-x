@@ -14,6 +14,7 @@ import aggregate from "@convex-dev/aggregate/convex.config";
 
 const app = defineApp({
   env: {
+    AVAILABLE_PLAN_OFFERS: v.optional(v.string()),
     AI_FAST_MODEL: v.optional(v.string()),
     AI_REASONING_MODEL: v.optional(v.string()),
     AI_AUTOCOMPLETE_MODEL: v.optional(v.string()),

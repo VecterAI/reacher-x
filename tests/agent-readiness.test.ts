@@ -1,3 +1,4 @@
+import { parsePlanOffers } from "../shared/lib/billing/planOfferHelpers";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -95,7 +96,14 @@ test("FAQ answers and monthly/yearly plan amounts remain consistent across forma
     for (const faq of homepageFaqItems)
       assert.ok(md.includes(faq.answer), faq.id);
   }
-  const pricing = publicPageMarkdown("/pricing", posts)!;
+  const pricing = publicPageMarkdown(
+    "/pricing",
+    posts,
+    "",
+    parsePlanOffers(
+      "hobby:monthly,hobby:yearly,base:monthly,base:yearly,pro:monthly,pro:yearly"
+    )
+  )!;
   for (const faq of pricingFaqItems)
     assert.ok(pricing.includes(faq.answer), faq.id);
   for (const tier of ONBOARDING_PLAN_TIERS) {

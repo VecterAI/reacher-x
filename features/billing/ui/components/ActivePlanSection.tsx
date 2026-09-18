@@ -55,7 +55,6 @@ export function ActivePlanSection({
   const billingTier = plan?.subscriptionTier ?? tier;
   const hasSubscription = Boolean(subscription) && billingTier !== "free";
   const tierConfig = ONBOARDING_PLAN_TIERS.find((candidate) => {
-    if (tier === "free") return candidate.id === "hobby";
     return candidate.id === tier;
   });
   const features = tierConfig?.features ?? [];
@@ -165,7 +164,7 @@ export function ActivePlanSection({
         {tier === "hobby" || tier === "base" ? (
           <>
             <Button type="button" size="xs" onClick={onUpgradeToPro}>
-              {tier === "hobby" ? "Upgrade plan" : "Upgrade to Pro"}
+              Upgrade plan
             </Button>
             {hasSubscription ? (
               <Button

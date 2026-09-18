@@ -5,7 +5,8 @@
 
 export type OnboardingPlanTierId = "hobby" | "base" | "pro";
 
-export type BillingPeriod = "monthly" | "yearly";
+import type { BillingPeriod } from "@/shared/lib/billing/planOfferHelpers";
+export type { BillingPeriod } from "@/shared/lib/billing/planOfferHelpers";
 
 export interface OnboardingPlanTierConfig {
   id: OnboardingPlanTierId;
@@ -56,8 +57,9 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
     id: "base",
     title: "Base",
     subtitle: "For individuals running outreach regularly.",
-    featureLeadIn: "Everything in Hobby, plus:",
     features: [
+      "X/Twitter + LinkedIn integrated",
+      "Find people, check matches, gather details, and reach out, 24/7",
       "1000 people who match per workspace / month",
       "2 workspaces",
       "Priority support",
@@ -72,8 +74,9 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
     title: "Pro",
     badge: "50% off · Limited time",
     subtitle: "For power users and growing teams.",
-    featureLeadIn: "Everything in Base, plus:",
     features: [
+      "X/Twitter + LinkedIn integrated",
+      "Find people, check matches, gather details, and reach out, 24/7",
       "Unlimited people who match per workspace / month",
       "5 workspaces",
       "Calendar integration (Coming soon)",
