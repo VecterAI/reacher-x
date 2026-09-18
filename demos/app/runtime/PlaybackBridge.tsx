@@ -14,6 +14,7 @@ import {
   revealDemoTarget,
 } from "@/features/blog/lib/blogDemoDomHelpers";
 import { isRecord, getNumberProperty } from "@/convex/lib/typeGuards";
+import { guardPlaybackKeyboard } from "./playbackInputHelpers";
 import { performPlaybackAction } from "./playbackActions";
 import { waitForPlaybackFrame as frame } from "./playbackTimingHelpers";
 import { getBlogDemoInitialPath } from "@/features/blog/lib/blogDemoCatalog";
@@ -40,6 +41,10 @@ export function PlaybackBridge({
       throw new Error(
         "Set NEXT_PUBLIC_DEMO_PARENT_ORIGIN before building the embedded demo app."
       );
+    const keyboard = guardPlaybackKeyboard(
+      document,
+      window.matchMedia("(any-pointer: coarse)")
+    );
     let revision = -1;
     let activeIndex = 0;
     let actedRevision = -1;
@@ -152,6 +157,7 @@ export function PlaybackBridge({
     ) => {
       const token = ++generation;
       userHasFocused = false;
+      keyboard.suppress();
       revision = nextRevision;
       activeIndex = index;
       const shot = BLOG_DEMO_SHOTS[scenario][index];
@@ -294,6 +300,7 @@ export function PlaybackBridge({
     };
     const interact = (event: Event) => {
       if (event.isTrusted) {
+        keyboard.release(event);
         generation += 1;
         // A wheel gesture over an editor focused by the script is not editing.
         // Pointer/keyboard interaction can establish real editing ownership.
@@ -338,6 +345,7 @@ export function PlaybackBridge({
     send("reacherx:ready", { bridgeId });
     return () => {
       disposed = true;
+      keyboard.dispose();
       document.body.inert = initialInert;
       if (initialAmbient === undefined)
         delete document.documentElement.dataset.demoAmbient;

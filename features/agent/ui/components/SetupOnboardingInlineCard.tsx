@@ -6,6 +6,7 @@ import {
   getWorkspaceUseCase,
   type WorkspaceUseCaseKey,
 } from "@/shared/lib/workspaceUseCases";
+import { AnimatedElapsedTimer } from "@/shared/ui/components/AnimatedElapsedTimer";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { Button } from "@/shared/ui/components/Button";
 import { InlineProgressCard } from "./InlineProgressCard";
@@ -19,6 +20,7 @@ export function SetupOnboardingInlineCard({
   stepTotal,
   inputPhase,
   generatedProfiles,
+  generationStartedAt = null,
   className,
   onContinue,
   errorMessage,
@@ -30,6 +32,7 @@ export function SetupOnboardingInlineCard({
   stepTotal: number;
   inputPhase: SetupInputPhase;
   generatedProfiles: NonNullable<Doc<"workspaces">["icps"]>;
+  generationStartedAt?: number | null;
   className?: string;
   onContinue?: () => void;
   errorMessage?: string | null;
@@ -63,6 +66,12 @@ export function SetupOnboardingInlineCard({
         title={`Creating example ${entities}`}
         progress={45}
         className={className}
+        footerAction={
+          <AnimatedElapsedTimer
+            startedAt={generationStartedAt}
+            className="text-muted-foreground shrink-0 text-xs"
+          />
+        }
         status={
           <AsciiSpinnerText
             text="Working..."

@@ -283,7 +283,7 @@ export function DemoAgentStatusDialog({
                 }
               />
               <StatCell
-                label="Details found"
+                label="Ready"
                 value={DEMO_PROGRESS.enriched}
                 detail={formatEnrichedProfilesDetail(DEMO_PROGRESS.enriched)}
               />
