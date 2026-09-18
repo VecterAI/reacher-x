@@ -1,6 +1,5 @@
 import { WorkspacePlanUsageProvider } from "@/features/billing/ui/components/WorkspacePlanUsageProvider";
 import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
-import { HighLoadNoticeDemo } from "./HighLoadNoticeDemo";
 import { Suspense, type CSSProperties, type ReactNode } from "react";
 import {
   Sidebar,
@@ -49,11 +48,6 @@ export function WebAppChromeScaffold({ children }: WebAppChromeScaffoldProps) {
                 <SidebarFooter />
               </Sidebar>
               <main className="flex h-full min-h-0 w-full flex-col overflow-auto">
-                {process.env.NEXT_PUBLIC_HIGH_LOAD_NOTICE_DEMO === "true" ? (
-                  <Suspense fallback={null}>
-                    <HighLoadNoticeDemo />
-                  </Suspense>
-                ) : null}
                 <WorkspacePlanLimitAlert />
                 <div className="min-h-0 flex-1">{children}</div>
               </main>
