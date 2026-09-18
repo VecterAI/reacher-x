@@ -59,8 +59,9 @@ describe("HighLoadNotice", () => {
   });
 
   test("disables the dismiss button while dismissing", () => {
+    expect(renderNotice({ onDismiss() {} })).not.toContain('disabled=""');
     expect(renderNotice({ onDismiss() {}, dismissing: true })).toContain(
-      "disabled"
+      'disabled=""'
     );
   });
 
