@@ -245,6 +245,29 @@ export const agentArtifactCatalog = defineCatalog(schema, {
       description:
         "Displays workspace attachments inline using the existing attachment presentation.",
     },
+    BlogCardArtifact: {
+      props: z.object({
+        slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/i),
+        title: z.string().nullable().optional(),
+        description: z.string().nullable().optional(),
+        sourceUrl: z.string().url().nullable().optional(),
+      }),
+      description:
+        "Displays an existing ReacherX blog card when a ReacherX guide is relevant.",
+    },
+    BlogDemoArtifact: {
+      props: z.object({
+        scenario: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/i),
+        title: z.string(),
+        caption: z.string(),
+        sceneRange: z
+          .tuple([z.number().int().min(0), z.number().int().min(0)])
+          .optional(),
+        sourceUrl: z.string().url().nullable().optional(),
+      }),
+      description:
+        "Displays an existing ReacherX interactive blog demo from a validated scenario reference.",
+    },
   },
   actions: {},
 });
@@ -402,6 +425,16 @@ export function getAgentArtifactSemanticKey(
     return attachmentRefs.length > 0
       ? `${type}:${attachmentRefs.join(",")}`
       : null;
+  }
+
+  if (type === "BlogCardArtifact") {
+    const slug = getStringProperty(props, "slug");
+    return slug ? `${type}:${slug}` : null;
+  }
+
+  if (type === "BlogDemoArtifact") {
+    const scenario = getStringProperty(props, "scenario");
+    return scenario ? `${type}:${scenario}` : null;
   }
 
   return null;
@@ -812,5 +845,37 @@ export function createAttachmentPreviewArtifact(input: {
 }) {
   return createAgentArtifact("AttachmentPreview", {
     attachments: input.attachments,
+  });
+}
+
+export function createBlogCardArtifact(input: {
+  slug: string;
+  title?: string;
+  description?: string;
+  sourceUrl?: string;
+}) {
+  return createAgentArtifact("BlogCardArtifact", {
+    slug: input.slug,
+    title: input.title ?? null,
+    description: input.description ?? null,
+    sourceUrl: input.sourceUrl ?? null,
+  });
+}
+
+export function createBlogDemoArtifact(input: {
+  scenario: string;
+  title: string;
+  caption: string;
+  sceneRange?: readonly [number, number];
+  sourceUrl?: string;
+}) {
+  return createAgentArtifact("BlogDemoArtifact", {
+    scenario: input.scenario,
+    title: input.title,
+    caption: input.caption,
+    sceneRange: input.sceneRange
+      ? [input.sceneRange[0], input.sceneRange[1]]
+      : undefined,
+    sourceUrl: input.sourceUrl ?? null,
   });
 }

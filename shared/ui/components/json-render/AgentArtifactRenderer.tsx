@@ -28,6 +28,15 @@ import {
 } from "@/features/prospects/ui/components/outreach-plan";
 import { InlineDmPreviewCard } from "@/features/agent/ui/components/InlineDmPreviewCard";
 import { InlineAttachmentPreview } from "@/features/agent/ui/components/InlineAttachmentPreview";
+import { BlogCard } from "@/features/blog/ui/components/BlogCard";
+import { BlogAuthorDetails } from "@/features/blog/ui/components/BlogAuthorDetails";
+import { BlogAppDemo } from "@/features/blog/ui/components/app-demo/BlogAppDemo";
+import {
+  isBlogDemoId,
+  type BlogDemoId,
+} from "@/features/blog/lib/blogDemoHelpers";
+import type { BlogPostSummary } from "@/features/blog/lib/blogHelpers";
+import type { BlogAuthorProfile } from "@/features/blog/lib/blogAuthorHelpers";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -878,6 +887,101 @@ function TwitterActionArtifactCard({
   );
 }
 
+function BlogCardArtifactCard({
+  props,
+}: {
+  props: {
+    slug: string;
+    title?: string | null;
+    description?: string | null;
+    sourceUrl?: string | null;
+  };
+}) {
+  const [resource, setResource] = React.useState<{
+    post: BlogPostSummary;
+    author: BlogAuthorProfile;
+  } | null>(null);
+  const [loaded, setLoaded] = React.useState(false);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    setLoaded(false);
+    setResource(null);
+
+    void fetch(`/api/blog-resources/${encodeURIComponent(props.slug)}`, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then(
+        (
+          value: {
+            post: BlogPostSummary;
+            author: BlogAuthorProfile;
+          } | null
+        ) => {
+          if (!controller.signal.aborted) {
+            setResource(value);
+            setLoaded(true);
+          }
+        }
+      )
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setLoaded(true);
+        }
+      });
+
+    return () => controller.abort();
+  }, [props.slug]);
+
+  if (!loaded) {
+    return (
+      <div
+        className="bg-muted/30 h-28 animate-pulse rounded-lg border"
+        aria-label="Loading ReacherX guide"
+      />
+    );
+  }
+
+  if (!resource) {
+    return null;
+  }
+
+  return (
+    <BlogCard
+      author={<BlogAuthorDetails profile={resource.author} />}
+      post={resource.post}
+      featured
+    />
+  );
+}
+
+function BlogDemoArtifactCard({
+  props,
+}: {
+  props: {
+    scenario: string;
+    title: string;
+    caption: string;
+    sceneRange?: readonly [number, number];
+  };
+}) {
+  if (!isBlogDemoId(props.scenario)) {
+    return null;
+  }
+
+  return (
+    <BlogAppDemo
+      scenario={props.scenario as BlogDemoId}
+      title={props.title}
+      caption={props.caption}
+      sceneRange={props.sceneRange}
+      interaction="inline"
+    />
+  );
+}
+
 const { registry } = defineRegistry(agentArtifactCatalog, {
   components: {
     OnboardingCard: ({ props }) => (
@@ -904,6 +1008,8 @@ const { registry } = defineRegistry(agentArtifactCatalog, {
     AttachmentPreview: ({ props }) => (
       <InlineAttachmentPreview attachments={props.attachments} />
     ),
+    BlogCardArtifact: ({ props }) => <BlogCardArtifactCard props={props} />,
+    BlogDemoArtifact: ({ props }) => <BlogDemoArtifactCard props={props} />,
   },
 });
 

@@ -47,6 +47,7 @@ import {
   searchWorkspaceMemories,
   socialAction,
   workspaceAttachments,
+  webResearch,
 } from "./tools";
 import { getStoredXPostLimitContextForAgentUser } from "./tools/xPostLimitHelpers";
 import { logger } from "../../../shared/lib/logger";
@@ -81,6 +82,7 @@ export const outreachAgentBaseTools = {
   getProspectPlan,
   inspectWorkspace,
   workspaceAttachments,
+  webResearch,
   proposeWorkspaceProfiles,
   approveWorkspaceProfiles,
   rejectWorkspaceProfiles,

@@ -1,4 +1,11 @@
+import { isBlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 import {
+  getReacherXBlogSlug,
+  isReacherXUrl,
+} from "@/convex/lib/webResearchCore";
+import {
+  createBlogCardArtifact,
+  createBlogDemoArtifact,
   getAgentArtifactFromResult,
   getAgentArtifactSemanticKey,
   validateAgentArtifactEnvelope,
@@ -6,12 +13,109 @@ import {
 } from "@/shared/lib/json-render/agentArtifacts";
 
 interface ArtifactBearingToolCall {
+  toolName?: string;
   toolCallId?: string;
+  args?: unknown;
   result?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeToolResult(value: unknown): unknown {
+  if (typeof value === "string") {
+    try {
+      return normalizeToolResult(JSON.parse(value));
+    } catch {
+      return value;
+    }
+  }
+
+  if (!isRecord(value) || !("type" in value) || !("value" in value)) {
+    return value;
+  }
+
+  if (value.type === "json") {
+    return normalizeToolResult(value.value);
+  }
+
+  if (value.type === "text" && typeof value.value === "string") {
+    return normalizeToolResult(value.value);
+  }
+
+  return value;
+}
+
+function getHistoricalWebResearchArtifact(
+  result: unknown,
+  input: unknown
+): AgentArtifactEnvelope | null {
+  const normalizedResult = normalizeToolResult(result);
+  if (!isRecord(normalizedResult) || normalizedResult.success !== true) {
+    return null;
+  }
+
+  if (!isRecord(input) || input.operation !== "show") {
+    return null;
+  }
+
+  const sourceUrl = input.sourceUrl;
+  if (typeof sourceUrl !== "string" || !isReacherXUrl(sourceUrl)) {
+    return null;
+  }
+
+  if (input.resourceType === "article") {
+    const slug = input.slug;
+    if (
+      typeof slug !== "string" ||
+      getReacherXBlogSlug(sourceUrl) !== slug.toLowerCase()
+    ) {
+      return null;
+    }
+
+    return (
+      createBlogCardArtifact({
+        slug: slug.toLowerCase(),
+        title: typeof input.title === "string" ? input.title : undefined,
+        description:
+          typeof input.description === "string" ? input.description : undefined,
+        sourceUrl,
+      }) ?? null
+    );
+  }
+
+  if (input.resourceType === "demo") {
+    const demoId = input.demoId;
+    if (typeof demoId !== "string" || !isBlogDemoId(demoId)) {
+      return null;
+    }
+
+    const sceneRange = Array.isArray(input.sceneRange)
+      ? input.sceneRange.length === 2 &&
+        input.sceneRange.every((value) => typeof value === "number")
+        ? ([input.sceneRange[0], input.sceneRange[1]] as [number, number])
+        : undefined
+      : undefined;
+
+    return (
+      createBlogDemoArtifact({
+        scenario: demoId,
+        title:
+          typeof input.title === "string"
+            ? input.title
+            : "Interactive walkthrough",
+        caption:
+          typeof input.caption === "string"
+            ? input.caption
+            : "Explore this workflow in ReacherX.",
+        sceneRange,
+        sourceUrl,
+      }) ?? null
+    );
+  }
+
+  return null;
 }
 
 function getLegacyPlanSemanticKey(result: unknown): string | null {
@@ -26,14 +130,22 @@ function getLegacyPlanSemanticKey(result: unknown): string | null {
 }
 
 export function getAgentArtifactsFromToolResult(
-  result: unknown
+  result: unknown,
+  input?: unknown
 ): AgentArtifactEnvelope[] {
-  if (!isRecord(result)) {
+  const normalizedResult = normalizeToolResult(result);
+  if (!isRecord(normalizedResult)) {
     return [];
   }
 
-  const candidates = Array.isArray(result.artifacts) ? result.artifacts : [];
-  const directArtifact = getAgentArtifactFromResult(result);
+  const candidates = Array.isArray(normalizedResult.artifacts)
+    ? normalizedResult.artifacts
+    : [];
+  const directArtifact = getAgentArtifactFromResult(normalizedResult);
+  const historicalWebResearchArtifact = getHistoricalWebResearchArtifact(
+    normalizedResult,
+    input
+  );
   const validatedArtifacts = [
     ...candidates
       .map((candidate) => validateAgentArtifactEnvelope(candidate))
@@ -41,6 +153,7 @@ export function getAgentArtifactsFromToolResult(
         (artifact): artifact is AgentArtifactEnvelope => artifact !== null
       ),
     ...(directArtifact ? [directArtifact] : []),
+    ...(historicalWebResearchArtifact ? [historicalWebResearchArtifact] : []),
   ];
   const seenSemanticKeys = new Set<string>();
 
@@ -57,8 +170,11 @@ export function getAgentArtifactsFromToolResult(
   });
 }
 
-export function getToolResultArtifactSemanticKeys(result: unknown): string[] {
-  const keys = getAgentArtifactsFromToolResult(result)
+export function getToolResultArtifactSemanticKeys(
+  result: unknown,
+  input?: unknown
+): string[] {
+  const keys = getAgentArtifactsFromToolResult(result, input)
     .map((artifact) => getAgentArtifactSemanticKey(artifact))
     .filter((key): key is string => key !== null);
   const legacyPlanKey = getLegacyPlanSemanticKey(result);
@@ -73,7 +189,8 @@ export function getSupersededArtifactKeysByToolCallId(
 
   toolCalls.forEach((toolCall, index) => {
     for (const semanticKey of getToolResultArtifactSemanticKeys(
-      toolCall.result
+      toolCall.result,
+      toolCall.args
     )) {
       lastToolIndexBySemanticKey.set(semanticKey, index);
     }
@@ -87,7 +204,8 @@ export function getSupersededArtifactKeysByToolCallId(
     }
 
     const supersededKeys = getToolResultArtifactSemanticKeys(
-      toolCall.result
+      toolCall.result,
+      toolCall.args
     ).filter(
       (semanticKey) =>
         (lastToolIndexBySemanticKey.get(semanticKey) ?? index) > index
