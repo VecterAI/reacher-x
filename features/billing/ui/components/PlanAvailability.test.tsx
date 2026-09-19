@@ -101,10 +101,27 @@ test.each(["pricing", "plans", "onboarding"] as const)(
     expect(text()).not.toContain("Hobby");
     expect(text()).toContain("Base");
     expect(text()).toContain("Pro");
+    expect(text()).toContain("2 months free");
     expect(text().match(/X\/Twitter \+ LinkedIn integrated/g)).toHaveLength(2);
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
   }
 );
+
+test("pricing uses server-provided offers immediately", async () => {
+  Object.assign(state, { data: undefined, isPending: true });
+  await act(async () => {
+    root.render(
+      <PricingSection
+        initialOffers={parsePlanOffers(undefined)}
+        initialOffersError={false}
+      />
+    );
+  });
+
+  expect(text()).not.toContain("Loading plans");
+  expect(text()).toContain("Base");
+  expect(text()).toContain("Pro");
+});
 
 test.each(["pricing", "plans", "onboarding"] as const)(
   "%s reacts to yearly only, restored Hobby, mixed offers and an empty selection",

@@ -48,6 +48,7 @@ import { BillingPeriodSelector } from "@/features/billing/ui/components/BillingP
 import { PlanOffersSkeleton } from "@/features/billing/ui/components/PlanOffersSkeleton";
 import { useAvailablePlanOffers } from "@/features/billing/hooks/useAvailablePlanOffers";
 import {
+  type PlanOffer,
   getPlanOfferSelection,
   PLAN_OFFERS_UNAVAILABLE,
 } from "@/shared/lib/billing/planOfferHelpers";
@@ -290,13 +291,19 @@ function UseCaseSelectItem({
 
 export function PricingSection({
   initialUseCaseKey = DEFAULT_WORKSPACE_USE_CASE_KEY,
+  initialOffers,
+  initialOffersError = false,
 }: {
   initialUseCaseKey?: WorkspaceUseCaseKey;
+  initialOffers?: PlanOffer[];
+  initialOffersError?: boolean;
 }) {
   const [preferredBilling, setBilling] = useState<BillingPeriod>("monthly");
-  const availability = useAvailablePlanOffers();
+  const hasInitialOffers = initialOffers !== undefined;
+  const availability = useAvailablePlanOffers(!hasInitialOffers);
+  const offers = hasInitialOffers ? initialOffers : availability.data;
   const { billing, periods, tiers } = getPlanOfferSelection(
-    availability.data ?? [],
+    offers ?? [],
     preferredBilling
   );
   const visibleTiers = ONBOARDING_PLAN_TIERS.filter((tier) =>
@@ -400,9 +407,10 @@ export function PricingSection({
       </div>
 
       {/* Tier cards */}
-      {availability.isPending ? (
+      {!hasInitialOffers && availability.isPending ? (
         <PlanOffersSkeleton />
-      ) : availability.isError || !visibleTiers.length ? (
+      ) : (hasInitialOffers ? initialOffersError : availability.isError) ||
+        !visibleTiers.length ? (
         <p role="status" className="text-muted-foreground text-center">
           {PLAN_OFFERS_UNAVAILABLE}
         </p>

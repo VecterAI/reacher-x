@@ -1,6 +1,7 @@
 "use client";
 
 import type { BillingPeriod } from "@/shared/lib/billing/planOfferHelpers";
+import { Badge } from "@/shared/ui/components/Badge";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
 
 export function BillingPeriodSelector({
@@ -28,8 +29,20 @@ export function BillingPeriodSelector({
     >
       <TabsList className="flex w-full" aria-label="Billing period">
         {periods.map((period) => (
-          <TabsTrigger key={period} value={period} className="flex-1">
+          <TabsTrigger
+            key={period}
+            value={period}
+            className={period === "yearly" ? "group flex-1 gap-1.5" : "flex-1"}
+          >
             {period === "monthly" ? "Monthly" : "Yearly"}
+            {period === "yearly" ? (
+              <Badge
+                variant="outline-strong"
+                className="border-muted-foreground text-muted-foreground group-data-[state=active]:border-foreground group-data-[state=active]:text-foreground"
+              >
+                2 months free
+              </Badge>
+            ) : null}
           </TabsTrigger>
         ))}
       </TabsList>
