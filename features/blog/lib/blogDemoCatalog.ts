@@ -9,6 +9,30 @@ export const AUDIENCE_DEMO_IDS = [
 ] as const;
 export type AudienceDemoId = (typeof AUDIENCE_DEMO_IDS)[number];
 
+export const BLOG_DEMO_IDS = [
+  "reach-out-writing-preferences",
+  "reach-out-personal-video",
+  "reach-out-message-bubbles",
+  "reach-out-unicode-formatting",
+  "how-reacherx-enrichment-works",
+  "send-voice-notes",
+  "create-plans-for-several-people",
+  "getting-started-with-reacherx",
+  "manage-dm-conversations",
+  "introducing-reacherx-v4",
+  "outreach-with-images-and-video",
+  "write-with-autocomplete",
+  "find-candidates",
+  "manage-people-with-reacherx",
+  "workspaces-explained",
+  ...AUDIENCE_DEMO_IDS,
+  "what-reacherx-does-automatically",
+  "read-your-reacherx-analytics",
+  "teach-reacherx-what-you-want",
+  "understand-agent-observability",
+] as const;
+export type BlogDemoId = (typeof BLOG_DEMO_IDS)[number];
+
 export function isAudienceDemoId(value: string): value is AudienceDemoId {
   return AUDIENCE_DEMO_IDS.some((id) => id === value);
 }

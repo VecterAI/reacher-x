@@ -55,6 +55,7 @@ import type * as agents_tools_searchProspects from "../agents/tools/searchProspe
 import type * as agents_tools_searchWorkspaceMemories from "../agents/tools/searchWorkspaceMemories.js";
 import type * as agents_tools_setupSessionChat from "../agents/tools/setupSessionChat.js";
 import type * as agents_tools_startWorkspacePlans from "../agents/tools/startWorkspacePlans.js";
+import type * as agents_tools_webResearch from "../agents/tools/webResearch.js";
 import type * as agents_tools_workspaceAttachments from "../agents/tools/workspaceAttachments.js";
 import type * as agents_tools_workspaceMemoryHelpers from "../agents/tools/workspaceMemoryHelpers.js";
 import type * as agents_tools_workspaceProfileChanges from "../agents/tools/workspaceProfileChanges.js";
@@ -251,6 +252,7 @@ import type * as lib_unipileWebhookReconciliationCore from "../lib/unipileWebhoo
 import type * as lib_usageDashboardCore from "../lib/usageDashboardCore.js";
 import type * as lib_userPostSearchCore from "../lib/userPostSearchCore.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
+import type * as lib_webResearchCore from "../lib/webResearchCore.js";
 import type * as lib_wideEventLogger from "../lib/wideEventLogger.js";
 import type * as lib_workflow from "../lib/workflow.js";
 import type * as lib_workflowSafeProspect from "../lib/workflowSafeProspect.js";
@@ -444,6 +446,7 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/searchWorkspaceMemories": typeof agents_tools_searchWorkspaceMemories;
   "agents/tools/setupSessionChat": typeof agents_tools_setupSessionChat;
   "agents/tools/startWorkspacePlans": typeof agents_tools_startWorkspacePlans;
+  "agents/tools/webResearch": typeof agents_tools_webResearch;
   "agents/tools/workspaceAttachments": typeof agents_tools_workspaceAttachments;
   "agents/tools/workspaceMemoryHelpers": typeof agents_tools_workspaceMemoryHelpers;
   "agents/tools/workspaceProfileChanges": typeof agents_tools_workspaceProfileChanges;
@@ -640,6 +643,7 @@ declare const fullApi: ApiFromModules<{
   "lib/usageDashboardCore": typeof lib_usageDashboardCore;
   "lib/userPostSearchCore": typeof lib_userPostSearchCore;
   "lib/userUtils": typeof lib_userUtils;
+  "lib/webResearchCore": typeof lib_webResearchCore;
   "lib/wideEventLogger": typeof lib_wideEventLogger;
   "lib/workflow": typeof lib_workflow;
   "lib/workflowSafeProspect": typeof lib_workflowSafeProspect;

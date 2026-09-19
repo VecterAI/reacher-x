@@ -13,6 +13,7 @@ import { BackendStatusBanner } from "@/shared/ui/components/BackendStatusBanner"
 import { isBackendStatusBannerEnabled } from "@/shared/lib/backendStatusBanner";
 import { geistSans, geistMono, geistPixelSquare } from "./fonts";
 import "./globals.css";
+import "@/features/blog/ui/blog.css";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { APP_DESCRIPTION, APP_NAME } from "@/shared/lib/metadata";
 

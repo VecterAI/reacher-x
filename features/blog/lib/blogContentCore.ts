@@ -135,13 +135,14 @@ export function blogBodyMarkdown(content: string): string {
         }
         const children = clean(node.children as Node[]);
         if (node.name === "BlogAppDemo") {
+          const scenario = attribute("scenario");
           return [
             {
               type: "paragraph",
               children: [
                 {
                   type: "text",
-                  value: `Interactive demo: ${attribute("title")}. ${attribute("caption") || "Fictional example data."}`,
+                  value: `Interactive demo${scenario ? ` (resource: ${scenario})` : ""}: ${attribute("title")}. ${attribute("caption") || "Fictional example data."}`,
                 },
               ],
             },

@@ -117,6 +117,12 @@ import {
   getAgentArtifactsFromToolResult,
   getSupersededArtifactKeysByToolCallId,
 } from "@/features/agent/lib/toolArtifacts";
+import {
+  getToolIconKey,
+  getToolLabel,
+  isInlineWebResearchCall,
+  type ToolIconKey,
+} from "@/features/agent/lib/toolPresentation";
 import { AgentProspectEmptyState } from "./components/AgentProspectEmptyState";
 import { AgentWorkspaceEmptyState } from "./components/AgentWorkspaceEmptyState";
 import {
@@ -144,6 +150,7 @@ import {
   useRef,
   startTransition,
   type ClipboardEvent,
+  type ComponentType,
   type UIEvent,
 } from "react";
 import { useStore } from "@nanostores/react";
@@ -177,6 +184,27 @@ import {
   RadioButtonUncheckedIcon,
   PersonIcon,
   ChangeHistoryIcon,
+  AccountCircleIcon,
+  CognitionIcon,
+  DeleteIcon,
+  DescriptionIcon,
+  DraftIcon,
+  EditIcon,
+  FolderIcon,
+  FramePersonIcon,
+  GroupIcon,
+  LinkedinIcon,
+  NeurologyIcon,
+  SwapVertIcon,
+  TwitterIcon,
+  FactCheckIcon,
+  ForumIcon,
+  GlobeIcon,
+  LinkIcon,
+  PauseCircleIcon,
+  RefreshIcon,
+  SearchIcon,
+  SettingsIcon,
 } from "@/shared/ui/components/icons";
 import {
   useOutreachPlanPreviewState,
@@ -368,20 +396,36 @@ function getProgressStatusIcon(status: ProgressStep["status"]) {
   }
 }
 
-const TOOL_LABELS: Record<string, string> = {
-  analyzeUrl: "Analyzing website",
-  generateImprovedDescriptionAndICPs: "Defining who to look for",
-  getUserStatus: "Checking account",
-  createWorkspace: "Creating workspace",
-  updateWorkspace: "Updating workspace",
-  searchProspects: "Finding matches",
-  qualifyProspect: "Checking match",
-  enrichProspect: "Finding details",
-  generateSeedKeywords: "Generating keywords",
-  convertToSocialQueries: "Preparing searches",
-  getSocialContext: "Reading recent posts",
-  displayEntity: "Showing details",
-  socialAction: "Taking social action",
+const TOOL_ICON_COMPONENTS: Record<
+  ToolIconKey,
+  ComponentType<{ className?: string }>
+> = {
+  account: AccountCircleIcon,
+  attachment: AttachFileIcon,
+  brain: NeurologyIcon,
+  check: CheckCircleIcon,
+  change: ChangeHistoryIcon,
+  cognition: CognitionIcon,
+  delete: DeleteIcon,
+  document: DescriptionIcon,
+  draft: DraftIcon,
+  edit: EditIcon,
+  factCheck: FactCheckIcon,
+  folder: FolderIcon,
+  forum: ForumIcon,
+  framePerson: FramePersonIcon,
+  globe: GlobeIcon,
+  group: GroupIcon,
+  link: LinkIcon,
+  linkedin: LinkedinIcon,
+  pause: PauseCircleIcon,
+  person: PersonIcon,
+  refresh: RefreshIcon,
+  search: SearchIcon,
+  searchActivity: SearchActivityIcon,
+  settings: SettingsIcon,
+  swap: SwapVertIcon,
+  twitter: TwitterIcon,
 };
 
 const AGENT_DISPLAY_NAME = "Agent";
@@ -594,19 +638,21 @@ function LivePlanPreviewCard({
 function ToolCallMarker({
   toolCall,
 }: {
-  toolCall: Pick<ToolCallInfo, "toolName" | "state">;
+  toolCall: Pick<ToolCallInfo, "toolName" | "state" | "args">;
 }) {
   const isComplete =
     toolCall.state === "result" || toolCall.state === "output-available";
   const isError = toolCall.state === "output-error";
-  const label = TOOL_LABELS[toolCall.toolName] || toolCall.toolName;
+  const label = getToolLabel(toolCall.toolName, toolCall.args);
+  const ToolIcon =
+    TOOL_ICON_COMPONENTS[getToolIconKey(toolCall.toolName, toolCall.args)];
   const showsPendingState = !isComplete && !isError;
   const showsTrailingState = showsPendingState || isError;
 
   return (
     <Marker role="status" className="w-full gap-2 py-0.5 text-xs">
       <MarkerIcon className="border-border bg-background text-primary flex size-5 items-center justify-center rounded-md border">
-        <ChangeHistoryIcon className="text-primary size-3.5 fill-current" />
+        <ToolIcon className="text-primary size-3.5 fill-current" />
       </MarkerIcon>
       <MarkerContent
         className={cn(
@@ -642,7 +688,7 @@ function ToolCallMarker({
 function ToolCallGroup({
   toolCalls,
 }: {
-  toolCalls: Pick<ToolCallInfo, "toolName" | "state">[];
+  toolCalls: Pick<ToolCallInfo, "toolName" | "state" | "args">[];
 }) {
   const totalCalls = toolCalls.length;
   const hasError = toolCalls.some(
@@ -705,7 +751,10 @@ function ToolCallVisualization({
   if (!toolCalls.length) return null;
 
   const renderedToolCallNodes: React.ReactNode[] = [];
-  const pendingMarkerToolCalls: Pick<ToolCallInfo, "toolName" | "state">[] = [];
+  const pendingMarkerToolCalls: Pick<
+    ToolCallInfo,
+    "toolName" | "state" | "args"
+  >[] = [];
 
   for (const [idx, tc] of toolCalls.entries()) {
     // Check if this tool result has a progress array (e.g., searchProspects)
@@ -740,7 +789,9 @@ function ToolCallVisualization({
       continue;
     }
     const allArtifacts =
-      isToolComplete && result ? getAgentArtifactsFromToolResult(result) : [];
+      isToolComplete && result
+        ? getAgentArtifactsFromToolResult(result, tc.args)
+        : [];
     const supersededArtifactKeys =
       tc.toolCallId && tc.toolCallId.length > 0
         ? supersededArtifactKeysByToolCallId?.get(tc.toolCallId)
@@ -760,7 +811,7 @@ function ToolCallVisualization({
         pendingMarkerToolCalls.length = 0;
       }
       for (const resultArtifact of artifacts) {
-        renderedToolCallNodes.push(
+        const artifactNode = (
           <ArtifactToolResult
             key={`${tc.toolCallId ?? tc.toolName}:${getAgentArtifactStableKey(resultArtifact)}`}
             artifact={resultArtifact}
@@ -781,6 +832,21 @@ function ToolCallVisualization({
               );
             }}
           />
+        );
+
+        renderedToolCallNodes.push(
+          tc.toolName === "webResearch" &&
+            !isInlineWebResearchCall(tc.toolName, tc.args) ? (
+            <div
+              key={`web-research-${tc.toolCallId ?? getAgentArtifactStableKey(resultArtifact)}`}
+              className="space-y-2"
+            >
+              <ToolCallMarker toolCall={tc} />
+              {artifactNode}
+            </div>
+          ) : (
+            artifactNode
+          )
         );
       }
       continue;
@@ -920,7 +986,9 @@ function ToolCallVisualization({
       continue;
     }
 
-    pendingMarkerToolCalls.push(tc);
+    if (!isInlineWebResearchCall(tc.toolName, tc.args)) {
+      pendingMarkerToolCalls.push(tc);
+    }
   }
 
   if (pendingMarkerToolCalls.length > 0) {

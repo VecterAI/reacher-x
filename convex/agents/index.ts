@@ -56,6 +56,7 @@ import { socialAction } from "./outreach/tools/socialAction";
 import { stopOnDeferredAgentExecution } from "../lib/deferredAgentTurn";
 import { createWorkspaceMemoryContextHandler } from "./workspaceMemoryContext";
 import { workspaceAttachments } from "./tools/workspaceAttachments";
+import { webResearch } from "./tools/webResearch";
 
 // ============================================================================
 // Lazy Model Provider
@@ -122,6 +123,7 @@ const mainAgentBaseTools = {
   // Workspace context. Global discovery is intentionally setup-only.
   inspectWorkspace,
   workspaceAttachments,
+  webResearch,
   queryWorkspace,
   listProspectPlans,
   managePlanBatch,
@@ -202,6 +204,7 @@ export const setupAgent = new Agent(components.agent, {
     reviseSetupAudience,
     approveSetupExamples,
     getSetupTargeting,
+    webResearch,
     // Prospecting tools
     // Qualification tools
     // Enrichment tools
@@ -237,6 +240,3 @@ export const setupAgent = new Agent(components.agent, {
 
 // Export prompts for external use
 export * from "./prompts";
-
-// Export tools for testing/direct use
-export * from "./tools";

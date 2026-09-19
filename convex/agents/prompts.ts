@@ -60,6 +60,14 @@ const CONVERSATION_MEDIA_LIMITATIONS = `## Conversation Media Limitations
 - Never claim that you viewed, heard, read, or understood conversation media that was not provided to you.
 - When the evidence shows one or more excluded attachments, clearly and naturally tell the user that you analyzed the message text but not the media, so some context may be missing. Do not use a canned response; adapt the disclosure to the answer.`;
 
+const WEB_RESEARCH_RULES = `## Web Research and ReacherX Guides
+- Use \`webResearch\` when current or external information, a URL supplied by the user, a prospect's website, or a ReacherX guide would materially improve the answer. Use \`search\` for discovery and \`read\` for a specific URL.
+- Do not use it for ordinary workspace facts that belong to the app's workspace tools.
+- The tool returns bounded excerpts. Never ask for or reproduce HTML, SVG, React, iframe, or interactive-demo source code.
+- ReacherX article cards and interactive demos are special inline UI. Use \`show\` only when a ReacherX source informed the answer or the user explicitly asks for that guide or demo. Never show a ReacherX card for an unrelated external-only source.
+- When search or read returns a ReacherX resource reference and it materially helps, call \`show\` with that exact reference. Otherwise answer normally and include the source URL when web research supports the answer.
+- Do not claim to have searched or read the web unless the tool was called.`;
+
 export function buildAdditionalWorkspaceSetupPrompt(
   input?: WorkspaceUseCasePromptInput
 ): string {
@@ -190,8 +198,11 @@ The application renders example prospect cards; do not duplicate those cards in 
 - When the user asks what you've learned so far, what patterns work best, or what to avoid, call \`searchWorkspaceMemories\` first, then answer using the returned memories in plain language.
 - Users never need to mention tool names or click buttons to save memories. You are responsible for deciding when to call memory tools and for confirming that a memory has been saved.
 
+${WEB_RESEARCH_RULES}
+
 ## Available Tools
 - getSetupTargeting: read saved ICPs and targeting criteria when the user asks about them.
+- webResearch: search the web, read a specific URL, or show a relevant ReacherX guide/demo using bounded references.
 
 **Setup Tools:**
 - getUserStatus: Check user's current state and workspace (CALL THIS FIRST)
@@ -248,7 +259,9 @@ ${buildUseCaseContextBlock(useCase)}
 - Use \`getProspectPlan\` directly in this thread when the user only wants to inspect the current plan state without changing it.
 - When exactly one ${entitySingularLower} is selected and the user asks what was said or what happened across DMs, comments, or replies, call \`getProspectInteractionHistory\` before answering. Do not substitute public timeline posts or agent-chat history for the real interaction record. Read its per-platform \`evidence\`: live data supports current factual claims; cached or failed data requires you to explain that current conversation state could not be verified, rather than inferring a reply or no reply. On X/Twitter, distinguish readable \`legacyDm\` coverage from optional \`xChat\` evidence: \`encrypted_locked\` XChat data is live envelope metadata (counts, directions, timestamps, and coverage), not message text or message intent.
 
-${CONVERSATION_MEDIA_LIMITATIONS}
+ ${CONVERSATION_MEDIA_LIMITATIONS}
+
+${WEB_RESEARCH_RULES}
 
 ## Visual Rendering Rules
 - For any request to show a profile, post, post list, or thread, ALWAYS call \`displayEntity\`.
@@ -315,6 +328,7 @@ ${CONVERSATION_MEDIA_LIMITATIONS}
 - inspectWorkspace
 - workspaceAttachments
 - queryWorkspace
+- webResearch: search the web, read a specific URL, or show a relevant ReacherX guide/demo using bounded references.
 - listProspectPlans
 - managePlanBatch
 - startWorkspacePlans
@@ -564,6 +578,8 @@ When you are in a record-specific conversation, context is automatically injecte
 
 ${CONVERSATION_MEDIA_LIMITATIONS}
 
+${WEB_RESEARCH_RULES}
+
 ## Corrections and Revisions
 - The latest injected workspace context and the user's latest correction are authoritative. They override an existing plan, earlier assistant statements, retrieved memories, and prior assumptions.
 - When the user says an answer or plan misunderstood their offering, compare the disputed claim with the injected workspace context before responding.
@@ -634,6 +650,7 @@ ${CONVERSATION_MEDIA_LIMITATIONS}
 - inspectWorkspace: Get the workspace's offering description, ideal customer profiles, connected accounts, and autonomy settings. Use this to ground strategy in the user's real goals before generating or refining plans.
 - workspaceAttachments: Count, search, inspect, show, or resolve memory-linked workspace attachments from live data. Use operation=show for inline rendering and operation=resolve_memory when an applicable memory supplies a memoryKey with linked attachments.
 - researchProspect: Deep web research on the prospect and their company (recent news, launches, funding, hiring, public opinions). Use BEFORE generating a plan when prospect context is thin, and whenever the user asks for deeper research. Cite what you learned when proposing angles.
+- webResearch: Search the web or read a specific URL when current external context or a ReacherX guide would help. Use \`show\` only for a relevant ReacherX article/demo or an explicit user request.
 - proposeWorkspaceProfiles: Create or refine the workspace-wide ${useCase.profileLabelPlural.toLowerCase()} proposal after an explicit user request.
 - approveWorkspaceProfiles: Apply the pending workspace profile proposal after explicit approval.
 - rejectWorkspaceProfiles: Reject the pending workspace profile proposal after explicit rejection.
