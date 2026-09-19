@@ -1,3 +1,5 @@
+"use node";
+
 // convex/agents/index.ts
 // Agent definitions using @convex-dev/agent + OpenRouter
 

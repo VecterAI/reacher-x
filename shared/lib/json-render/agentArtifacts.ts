@@ -5,7 +5,10 @@ import {
 } from "@json-render/core";
 import { schema } from "@json-render/react/schema";
 import { z } from "zod";
-import { BLOG_DEMO_SHOTS } from "@/features/blog/lib/blogDemoHelpers";
+import {
+  BLOG_DEMO_SHOTS,
+  isBlogDemoId,
+} from "@/features/blog/lib/blogDemoHelpers";
 import { getTwitterPostRef, summarizeTwitterPost } from "../twitter/contracts";
 
 export const AGENT_ARTIFACT_KIND = "reacherx-agent-artifact";
@@ -92,9 +95,7 @@ const blogDemoArtifactPropsSchema = z
     sourceUrl: z.string().url().nullable().optional(),
   })
   .superRefine((props, context) => {
-    const shotCount =
-      BLOG_DEMO_SHOTS[props.scenario as keyof typeof BLOG_DEMO_SHOTS]?.length;
-    if (!shotCount) {
+    if (!isBlogDemoId(props.scenario)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["scenario"],
@@ -102,6 +103,8 @@ const blogDemoArtifactPropsSchema = z
       });
       return;
     }
+
+    const shotCount = BLOG_DEMO_SHOTS[props.scenario].length;
 
     const sceneRange = props.sceneRange;
     if (

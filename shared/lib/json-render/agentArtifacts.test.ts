@@ -49,4 +49,14 @@ describe("blog agent artifacts", () => {
       })
     ).toBeUndefined();
   });
+
+  it("rejects unknown demo scenarios", () => {
+    expect(
+      createBlogDemoArtifact({
+        scenario: "not-a-real-demo",
+        title: "Unknown walkthrough",
+        caption: "This scenario is not registered.",
+      })
+    ).toBeUndefined();
+  });
 });

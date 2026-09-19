@@ -29,18 +29,6 @@ import {
   type StreamArgs,
 } from "@convex-dev/agent";
 import {
-  mainAgent,
-  setupAgent,
-  workspaceLanguageModel,
-  workspaceVisionLanguageModel,
-} from "./agents";
-import {
-  createOutreachThreadLanguageModel,
-  outreachAgent,
-  outreachAgentBaseTools,
-  outreachVisionLanguageModel,
-} from "./agents/outreach";
-import {
   buildMainAgentPrompt,
   buildOutreachAgentPrompt,
   buildSetupAgentPrompt,
@@ -125,7 +113,17 @@ import {
 
 type ViewerCtx = QueryCtx | MutationCtx;
 type ReadableCtx = QueryCtx | MutationCtx | ActionCtx;
-type OutreachAgentTools = typeof outreachAgentBaseTools;
+async function loadWorkspaceAgents() {
+  return await import("./agents");
+}
+
+async function loadOutreachAgents() {
+  return await import("./agents/outreach");
+}
+
+type OutreachAgentTools = Awaited<
+  ReturnType<typeof loadOutreachAgents>
+>["outreachAgentBaseTools"];
 const chatLogger = logger.withScope("Chat");
 type WorkspaceAgentSurface = "main" | "setup";
 type AgentTurnContextMessage = ModelMessage;
@@ -279,6 +277,7 @@ async function getOutreachToolsForThread(
 ): Promise<OutreachAgentTools> {
   void ctx;
   void threadId;
+  const { outreachAgentBaseTools } = await loadOutreachAgents();
   return outreachAgentBaseTools;
 }
 
@@ -1179,6 +1178,8 @@ async function runOutreachStreamText(
     ? { ...ctx, runMutation: instrumentedRunMutation }
     : ctx;
 
+  const { outreachAgent } = await loadOutreachAgents();
+
   return outreachAgent.streamText(
     streamCtx,
     { threadId: args.threadId },
@@ -1308,6 +1309,8 @@ async function runSetupStreamText(
     model?: LanguageModel;
   }
 ) {
+  const { setupAgent } = await loadWorkspaceAgents();
+
   return setupAgent.streamText(
     ctx,
     { threadId: args.threadId },
@@ -1338,6 +1341,8 @@ async function runMainStreamText(
     disableTools?: boolean;
   }
 ) {
+  const { mainAgent } = await loadWorkspaceAgents();
+
   return mainAgent.streamText(
     ctx,
     { threadId: args.threadId },
@@ -2439,7 +2444,9 @@ export const deleteThread = mutation({
       .withIndex("by_thread", (q) => q.eq("threadId", threadId))
       .unique();
 
-    await outreachAgent.deleteThreadAsync(ctx, { threadId });
+    await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
+      threadId,
+    });
 
     await Promise.all([
       ...threadLinks.map((link) => ctx.db.delete(link._id)),
@@ -2630,6 +2637,8 @@ async function runStreamOutreachResponse(
     const shouldUseHistorySearch =
       hasSearchablePrompt && historySignals.hasSearchableHistory;
     const streamStartedAt = getCurrentUTCTimestamp();
+    const { createOutreachThreadLanguageModel, outreachVisionLanguageModel } =
+      await loadOutreachAgents();
     const result = await streamOutreachTextWithFallback(ctx, {
       threadId: args.threadId,
       promptMessageId: args.promptMessageId,
@@ -3557,6 +3566,7 @@ async function runStreamAgentResponse(
   }
 ): Promise<{ text: string; finishReason: string | null } | void> {
   try {
+    const { workspaceVisionLanguageModel } = await loadWorkspaceAgents();
     const useCase = await resolveSetupUseCaseForThread(ctx, args.threadId);
     const surface = await resolveWorkspaceAgentSurface(ctx, args.threadId);
     if (args.transientXChatContext && surface !== "main") {
@@ -3845,6 +3855,8 @@ export const resumePlanBatchAgentResponse = internalAction({
         runId: String(runId),
         result: responseContext.result,
       });
+      const { mainAgent, workspaceLanguageModel } =
+        await loadWorkspaceAgents();
       const attempts = [
         {
           model: undefined,
@@ -4091,6 +4103,7 @@ export const sendMessage = action({
 
     const surface = await resolveWorkspaceAgentSurface(ctx, args.threadId);
     const useCase = await resolveSetupUseCaseForThread(ctx, args.threadId);
+    const { mainAgent, setupAgent } = await loadWorkspaceAgents();
     const result =
       surface === "main"
         ? await mainAgent.generateText(
@@ -4296,6 +4309,7 @@ export const respondToAskHuman = internalAction({
     // Continue agent generation with the tool result
     const useCase = await resolveOutreachUseCaseForThread(ctx, args.threadId);
     const tools = await getOutreachToolsForThread(ctx, args.threadId);
+    const { createOutreachThreadLanguageModel } = await loadOutreachAgents();
 
     const result = await streamOutreachTextWithFallback(ctx, {
       threadId: args.threadId,
@@ -4465,6 +4479,7 @@ export const searchProspectMessages = action({
     };
 
     const results: SearchResult[] = [];
+    const { outreachAgent } = await loadOutreachAgents();
 
     // Search messages in each thread using agent's fetchContextMessages
     for (const thread of prospectThreads) {
@@ -4616,6 +4631,7 @@ export const searchWorkspaceMessages = action({
     };
 
     const results: SearchResult[] = [];
+    const { mainAgent } = await loadWorkspaceAgents();
 
     for (const thread of mergedWorkspaceThreads) {
       try {

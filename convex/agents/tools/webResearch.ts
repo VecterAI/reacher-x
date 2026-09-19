@@ -242,16 +242,26 @@ export const webResearch = createTool({
       };
     }
 
+    const artifact = createBlogDemoArtifact({
+      scenario: input.demoId,
+      title: input.title ?? "Interactive walkthrough",
+      caption: input.caption ?? "Explore this workflow in ReacherX.",
+      sceneRange: input.sceneRange,
+      sourceUrl: input.sourceUrl,
+    });
+
+    if (!artifact) {
+      return {
+        success: false,
+        operation: input.operation,
+        error: "The selected interactive demo range is invalid.",
+      };
+    }
+
     return {
       success: true,
       operation: input.operation,
-      artifact: createBlogDemoArtifact({
-        scenario: input.demoId,
-        title: input.title ?? "Interactive walkthrough",
-        caption: input.caption ?? "Explore this workflow in ReacherX.",
-        sceneRange: input.sceneRange,
-        sourceUrl: input.sourceUrl,
-      }),
+      artifact,
     };
   },
   toModelOutput: (_ctx, { output }) => getWebResearchModelOutput(output),
