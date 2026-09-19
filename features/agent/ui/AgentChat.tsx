@@ -852,9 +852,7 @@ function ToolCallVisualization({
       continue;
     }
     if (allArtifacts.length > 0) {
-      if (!isInlineWebResearchCall(tc.toolName, tc.args)) {
-        pendingMarkerToolCalls.push(tc);
-      }
+      pendingMarkerToolCalls.push(tc);
       continue;
     }
 

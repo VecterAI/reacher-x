@@ -1,5 +1,3 @@
-"use node";
-
 import { createTool, type ToolCtx } from "@convex-dev/agent";
 import { z } from "zod";
 

@@ -34,8 +34,19 @@ describe("blog agent artifacts", () => {
     expect(artifact).toBeDefined();
     expect(validateAgentArtifactEnvelope(artifact)).toEqual(artifact);
     expect(getAgentArtifactSemanticKey(artifact!)).toBe(
-      "BlogDemoArtifact:reach-out-writing-preferences"
+      "BlogDemoArtifact:reach-out-writing-preferences:0-2"
     );
     expect(JSON.stringify(artifact)).not.toMatch(/<iframe|<svg|<html/i);
+  });
+
+  it("rejects scene ranges outside the selected demo", () => {
+    expect(
+      createBlogDemoArtifact({
+        scenario: "reach-out-writing-preferences",
+        title: "Invalid walkthrough",
+        caption: "This range is outside the demo.",
+        sceneRange: [0, 999],
+      })
+    ).toBeUndefined();
   });
 });

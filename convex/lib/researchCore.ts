@@ -1,10 +1,10 @@
-"use node";
-
 /**
  * Deep research core (Layer 3) built on Exa.
  *
  * Runs neural web searches with content extraction so the △ Agent can
  * research prospects and companies before generating or refining plans.
+ * The Exa SDK uses a browser-compatible fetch implementation, so this module
+ * intentionally stays importable from Convex's default runtime.
  */
 
 import Exa from "exa-js";
@@ -132,6 +132,7 @@ export function rankReacherXBlogResults(
   const terms = query
     .trim()
     .toLocaleLowerCase("en")
+    .replace(/[^a-z0-9]+/g, " ")
     .split(/\s+/)
     .filter((term) => term.length >= 3 && !REACHERX_BLOG_STOP_WORDS.has(term));
   if (!terms.length) return [];
@@ -173,7 +174,9 @@ export async function searchReacherXBlog(
   options: WebSearchOptions = {}
 ): Promise<ResearchFinding[]> {
   try {
-    const response = await fetch(REACHERX_BLOG_INDEX_URL);
+    const response = await fetch(REACHERX_BLOG_INDEX_URL, {
+      signal: AbortSignal.timeout(5_000),
+    });
     if (response.ok) {
       const matches = rankReacherXBlogResults(
         query,

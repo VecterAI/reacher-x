@@ -1,5 +1,3 @@
-"use node";
-
 // convex/agents/index.ts
 // Agent definitions using @convex-dev/agent + OpenRouter
 
@@ -242,6 +240,3 @@ export const setupAgent = new Agent(components.agent, {
 
 // Export prompts for external use
 export * from "./prompts";
-
-// Export tools for testing/direct use
-export * from "./tools";

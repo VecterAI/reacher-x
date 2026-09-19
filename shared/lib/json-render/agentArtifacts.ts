@@ -5,6 +5,7 @@ import {
 } from "@json-render/core";
 import { schema } from "@json-render/react/schema";
 import { z } from "zod";
+import { BLOG_DEMO_SHOTS } from "@/features/blog/lib/blogDemoHelpers";
 import { getTwitterPostRef, summarizeTwitterPost } from "../twitter/contracts";
 
 export const AGENT_ARTIFACT_KIND = "reacherx-agent-artifact";
@@ -79,6 +80,41 @@ const twitterPostSummarySchema = z.object({
   lang: z.string().optional(),
   source: z.string().optional(),
 });
+
+const blogDemoArtifactPropsSchema = z
+  .object({
+    scenario: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/i),
+    title: z.string(),
+    caption: z.string(),
+    sceneRange: z
+      .tuple([z.number().int().min(0), z.number().int().min(0)])
+      .optional(),
+    sourceUrl: z.string().url().nullable().optional(),
+  })
+  .superRefine((props, context) => {
+    const shotCount =
+      BLOG_DEMO_SHOTS[props.scenario as keyof typeof BLOG_DEMO_SHOTS]?.length;
+    if (!shotCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scenario"],
+        message: "Unknown blog demo scenario",
+      });
+      return;
+    }
+
+    const sceneRange = props.sceneRange;
+    if (
+      sceneRange &&
+      (sceneRange[0] > sceneRange[1] || sceneRange[1] >= shotCount)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sceneRange"],
+        message: "sceneRange must fit the selected blog demo",
+      });
+    }
+  });
 
 export const agentArtifactCatalog = defineCatalog(schema, {
   components: {
@@ -256,15 +292,7 @@ export const agentArtifactCatalog = defineCatalog(schema, {
         "Displays an existing ReacherX blog card when a ReacherX guide is relevant.",
     },
     BlogDemoArtifact: {
-      props: z.object({
-        scenario: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/i),
-        title: z.string(),
-        caption: z.string(),
-        sceneRange: z
-          .tuple([z.number().int().min(0), z.number().int().min(0)])
-          .optional(),
-        sourceUrl: z.string().url().nullable().optional(),
-      }),
+      props: blogDemoArtifactPropsSchema,
       description:
         "Displays an existing ReacherX interactive blog demo from a validated scenario reference.",
     },
@@ -434,7 +462,11 @@ export function getAgentArtifactSemanticKey(
 
   if (type === "BlogDemoArtifact") {
     const scenario = getStringProperty(props, "scenario");
-    return scenario ? `${type}:${scenario}` : null;
+    if (!scenario) return null;
+    const sceneRange = Array.isArray(props.sceneRange)
+      ? props.sceneRange.join("-")
+      : "all";
+    return `${type}:${scenario}:${sceneRange}`;
   }
 
   return null;
@@ -555,6 +587,13 @@ export function createAgentArtifact<T extends AgentArtifactComponent>(
   type: T,
   props: AgentArtifactComponentProps<T>
 ): AgentArtifactEnvelope | undefined {
+  if (
+    type === "BlogDemoArtifact" &&
+    !blogDemoArtifactPropsSchema.safeParse(props).success
+  ) {
+    return undefined;
+  }
+
   const result = agentArtifactCatalog.validate(
     buildSingleElementSpec(type, props)
   );
@@ -579,11 +618,21 @@ export function validateAgentArtifactEnvelope(
   const validatedSpec = agentArtifactCatalog.validate(value.spec);
   if (!validatedSpec.success || !validatedSpec.data) return null;
 
-  return {
+  const artifact: AgentArtifactEnvelope = {
     kind: AGENT_ARTIFACT_KIND,
     version: AGENT_ARTIFACT_VERSION,
     spec: validatedSpec.data as Spec,
   };
+
+  const root = getArtifactRoot(artifact);
+  if (
+    root?.type === "BlogDemoArtifact" &&
+    !blogDemoArtifactPropsSchema.safeParse(root.props).success
+  ) {
+    return null;
+  }
+
+  return artifact;
 }
 
 export function getAgentArtifactFromResult(

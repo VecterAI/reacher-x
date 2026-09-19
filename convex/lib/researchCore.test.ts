@@ -34,6 +34,9 @@ describe("ReacherX blog search index", () => {
     expect(rankReacherXBlogResults("workspace", findings)).toEqual([
       findings[1],
     ]);
+    expect(rankReacherXBlogResults("workspace?", findings)).toEqual([
+      findings[1],
+    ]);
   });
 
   test("does not treat an unrelated request as a first-party match", () => {
