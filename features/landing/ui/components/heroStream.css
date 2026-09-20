@@ -1,55 +1,38 @@
-/* Inline vertical stream for the hero headline: one line of text tall,
-   items drift upward in a seamless loop (track holds two copies, so
-   translating -50% wraps perfectly). Linear timing = constant velocity,
-   no easing hiccups. Height and line-height match the h1 (1.05) so the
-   visible row's baseline aligns with the surrounding text. */
+/* Inline vertical text stream: a one-line window with rows sliding through.
+   Line box size comes from --hero-stream-line so the same component works in
+   the h1 (1.05em, matching the heading's leading) and the composer
+   placeholder (1.25rem, matching leading-5). Rows are hard-clipped — no
+   fade masks. */
 
 .hero-stream {
+  --hero-stream-line: 1.05em;
   display: inline-block;
   vertical-align: bottom;
-  height: 1.05em;
+  max-width: 100%;
+  height: var(--hero-stream-line);
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    #000 22%,
-    #000 78%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    #000 22%,
-    #000 78%,
-    transparent 100%
-  );
-}
-
-.hero-stream__track {
-  display: flex;
-  flex-direction: column;
-  will-change: transform;
-  animation: hero-stream-drift 14s linear infinite;
 }
 
 .hero-stream__item {
   display: block;
-  height: 1.05em;
-  line-height: 1.05;
+  height: var(--hero-stream-line);
+  line-height: var(--hero-stream-line);
   white-space: nowrap;
 }
 
-@keyframes hero-stream-drift {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(-50%);
-  }
+/* Composer variant: single-line prompts clamp with an ellipsis. */
+.hero-stream--composer {
+  width: 100%;
+}
+
+.hero-stream--composer .hero-stream__item {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-stream__track {
-    animation: none;
+  .hero-stream__item {
+    transition: none !important;
+    animation: none !important;
   }
 }
