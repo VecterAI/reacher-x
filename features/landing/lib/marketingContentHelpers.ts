@@ -5,22 +5,6 @@ export const MARKETING_COPY = {
   home: {
     description:
       "Tell ReacherX △ Agent who you need to reach. It finds the right people, explains why they fit, and helps you start the conversation.",
-    /** Fixed hero prefix "Reach your" + a vertical stream of use cases.
-     *  heroPlaceholders[i] is the aligned composer example for stream item i. */
-    heroStreamItems: [
-      "customers",
-      "candidates",
-      "investors",
-      "partners",
-      "podcast guests",
-    ],
-    heroPlaceholders: [
-      "People who asked for something like what you're building this week…",
-      "Designers at early-stage startups open to new work…",
-      "Angels whose thesis matches what you're building…",
-      "Operators in your space open to collaborations…",
-      "Podcast guests who have talked about AI agents…",
-    ],
     setupTimeNote: "Set up in under 5 minutes. Review before anything sends.",
   },
   workflow: {

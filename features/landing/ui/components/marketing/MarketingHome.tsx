@@ -8,7 +8,6 @@ import {
   MarketingDevelopers,
   MarketingCommunity,
 } from "./MarketingStory";
-import { HeroStream } from "../HeroStream";
 import { LandingPromptCta } from "../LandingPromptCta";
 import { marketingButton as buttonVariants } from "./MarketingLayout";
 import { MarketingHero } from "./MarketingLayout";
@@ -19,12 +18,7 @@ export function MarketingHome() {
     <>
       <MarketingHero
         eyebrow="For solo founders and small teams."
-        title={
-          <>
-            Reach your{" "}
-            <HeroStream items={MARKETING_COPY.home.heroStreamItems} />
-          </>
-        }
+        title="Get instant access to people who fit your criteria."
         actions={
           <a href="#how-it-works" className={buttonVariants()}>
             See how it works
@@ -38,7 +32,6 @@ export function MarketingHome() {
           <LandingPromptCta
             placeholder="Who are you looking for, and why?"
             showLabeledCta={false}
-            rotatingPlaceholders={MARKETING_COPY.home.heroPlaceholders}
           />
         </div>
         <p className="text-muted-foreground mt-3 text-sm">

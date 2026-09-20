@@ -55,7 +55,6 @@ import { api } from "@/convex/_generated/api";
 import { useQueryWithStatus } from "@/shared/hooks";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 import { LandingAuthLink } from "./LandingAuthLink";
-import { HeroStream } from "./HeroStream";
 
 export { LANDING_PROMPT_STORAGE_KEY };
 
@@ -69,8 +68,6 @@ interface LandingPromptCtaProps {
   className?: string;
   /** Show the full "Reach people" pill under the composer shell. */
   showLabeledCta?: boolean;
-  /** Example searches flipped in while the composer is empty. Opt-in. */
-  rotatingPlaceholders?: readonly string[];
 }
 
 function persistPromptHandoff(handoff: LandingPromptHandoff) {
@@ -102,7 +99,6 @@ export function LandingPromptCta({
   initialPrompt = "",
   className,
   showLabeledCta = true,
-  rotatingPlaceholders,
 }: LandingPromptCtaProps) {
   const { user, loading } = useAuth();
   const contentEditableId = useId();
@@ -241,9 +237,6 @@ export function LandingPromptCta({
     authenticatedStatePending ||
     workspaceCapacityBlocked;
   const canSubmitPrompt = text.trim().length > 0 && !composerBusy;
-  const isComposerIdle = !composerBusy && text.trim().length === 0;
-  const isRotating = Boolean(rotatingPlaceholders?.length) && isComposerIdle;
-  const rotatingItems = rotatingPlaceholders ?? [];
 
   useEffect(() => {
     if (readError && readError !== lastToastedError.current) {
@@ -413,38 +406,25 @@ export function LandingPromptCta({
         <label className="sr-only" htmlFor={contentEditableId}>
           Describe who you need △ Agent to find
         </label>
-        <div className="relative">
-          <ComposerEditor
-            className="min-h-20 w-full min-w-0 text-left text-sm"
-            initialContent={buildSerializedTextState(initialPrompt)}
-            placeholder={isRotating ? "" : placeholder}
-            maxLength={10000}
-            characterCountMode="raw"
-            showCharacterCount={false}
-            disabled={composerBusy}
-            contentEditableId={contentEditableId}
-            contentEditableClassName={cn(
-              DM_COMPOSER_CONTENT_EDITABLE_CLASS,
-              "min-h-20 max-h-60 w-full min-w-0 overflow-x-hidden overflow-y-auto text-left wrap-anywhere"
-            )}
-            composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
-            onContentChange={handleContentChange}
-            onBridgeReady={handleBridgeReady}
-            submitOnEnter
-            onSubmitShortcut={handleSend}
-          />
-          {isRotating ? (
-            <div
-              aria-hidden="true"
-              className="text-muted-foreground pointer-events-none absolute top-0 left-0 pt-0 pb-2 text-sm leading-5"
-            >
-              <HeroStream
-                items={rotatingItems}
-                className="hero-stream--composer"
-              />
-            </div>
-          ) : null}
-        </div>
+        <ComposerEditor
+          className="min-h-20 w-full min-w-0 text-left text-sm"
+          initialContent={buildSerializedTextState(initialPrompt)}
+          placeholder={placeholder}
+          maxLength={10000}
+          characterCountMode="raw"
+          showCharacterCount={false}
+          disabled={composerBusy}
+          contentEditableId={contentEditableId}
+          contentEditableClassName={cn(
+            DM_COMPOSER_CONTENT_EDITABLE_CLASS,
+            "min-h-20 max-h-60 w-full min-w-0 overflow-x-hidden overflow-y-auto text-left wrap-anywhere"
+          )}
+          composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
+          onContentChange={handleContentChange}
+          onBridgeReady={handleBridgeReady}
+          submitOnEnter
+          onSubmitShortcut={handleSend}
+        />
         <div className="pt-2">
           <UrlDescriptionFooterSlot
             statusText={statusText}
