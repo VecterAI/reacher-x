@@ -46,9 +46,9 @@ export function FlipWords({
                 }
                 animate={{ rotateX: 0, y: 0 }}
                 transition={{
-                  duration: 0.4,
+                  duration: 0.7,
                   ease: "easeOut",
-                  delay: charIndex * 0.045,
+                  delay: charIndex * 0.08,
                 }}
               >
                 {char}

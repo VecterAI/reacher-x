@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const ROTATION_INTERVAL_MS = 4000;
+const ROTATION_INTERVAL_MS = 5000;
 
 export type RotationSnapshot = { index: number; phase: 0 | 1 };
 
