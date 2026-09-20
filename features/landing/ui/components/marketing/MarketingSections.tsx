@@ -15,7 +15,7 @@ export function MarketingWorkflow() {
     <>
       <MarketingFeature
         id="how-it-works"
-        title="Describe what you need."
+        title="Say who you're looking for."
         demo={
           <MarketingDemo
             scenario="find-candidates"

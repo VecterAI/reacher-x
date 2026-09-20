@@ -55,10 +55,41 @@ import { api } from "@/convex/_generated/api";
 import { useQueryWithStatus } from "@/shared/hooks";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 import { LandingAuthLink } from "./LandingAuthLink";
+import "./landingComposerPlaceholder.css";
 
 export { LANDING_PROMPT_STORAGE_KEY };
 
 const DEFAULT_PLACEHOLDER = "Tell me who you want to find and why...";
+
+const ROTATION_INTERVAL_MS = 4000;
+
+/**
+ * Cycles placeholder copy while the composer is empty, so idle visitors see
+ * concrete example searches. Alternating phases restart the CSS flip.
+ */
+function useRotatingPlaceholder({
+  items,
+  enabled,
+  intervalMs = ROTATION_INTERVAL_MS,
+}: {
+  items: readonly string[];
+  enabled: boolean;
+  intervalMs?: number;
+}) {
+  const [index, setIndex] = useState(0);
+  const [phase, setPhase] = useState(0);
+
+  useEffect(() => {
+    if (!enabled || items.length < 2) return;
+    const id = window.setInterval(() => {
+      setIndex((current) => (current + 1) % items.length);
+      setPhase((current) => (current === 0 ? 1 : 0));
+    }, intervalMs);
+    return () => window.clearInterval(id);
+  }, [enabled, items, intervalMs]);
+
+  return { text: items[index] ?? "", phase };
+}
 
 interface LandingPromptCtaProps {
   authenticatedHref?: string;
@@ -68,6 +99,8 @@ interface LandingPromptCtaProps {
   className?: string;
   /** Show the full "Reach people" pill under the composer shell. */
   showLabeledCta?: boolean;
+  /** Example searches flipped in while the composer is empty. Opt-in. */
+  rotatingPlaceholders?: readonly string[];
 }
 
 function persistPromptHandoff(handoff: LandingPromptHandoff) {
@@ -99,6 +132,7 @@ export function LandingPromptCta({
   initialPrompt = "",
   className,
   showLabeledCta = true,
+  rotatingPlaceholders,
 }: LandingPromptCtaProps) {
   const { user, loading } = useAuth();
   const contentEditableId = useId();
@@ -237,6 +271,13 @@ export function LandingPromptCta({
     authenticatedStatePending ||
     workspaceCapacityBlocked;
   const canSubmitPrompt = text.trim().length > 0 && !composerBusy;
+  const isComposerIdle = !composerBusy && text.trim().length === 0;
+  const isRotating = Boolean(rotatingPlaceholders?.length) && isComposerIdle;
+  const rotation = useRotatingPlaceholder({
+    items: rotatingPlaceholders ?? [],
+    enabled: isRotating,
+  });
+  const activePlaceholder = isRotating ? rotation.text : placeholder;
 
   useEffect(() => {
     if (readError && readError !== lastToastedError.current) {
@@ -409,7 +450,7 @@ export function LandingPromptCta({
         <ComposerEditor
           className="min-h-20 w-full min-w-0 text-left text-sm"
           initialContent={buildSerializedTextState(initialPrompt)}
-          placeholder={placeholder}
+          placeholder={activePlaceholder}
           maxLength={10000}
           characterCountMode="raw"
           showCharacterCount={false}
@@ -419,7 +460,13 @@ export function LandingPromptCta({
             DM_COMPOSER_CONTENT_EDITABLE_CLASS,
             "min-h-20 max-h-60 w-full min-w-0 overflow-x-hidden overflow-y-auto text-left wrap-anywhere"
           )}
-          composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
+          composerPlaceholderClassName={cn(
+            DM_COMPOSER_PLACEHOLDER_CLASS,
+            isRotating &&
+              (rotation.phase === 0
+                ? "landing-placeholder-flip-a"
+                : "landing-placeholder-flip-b")
+          )}
           onContentChange={handleContentChange}
           onBridgeReady={handleBridgeReady}
           submitOnEnter

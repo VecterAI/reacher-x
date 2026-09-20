@@ -8,6 +8,7 @@ import {
   MarketingDevelopers,
   MarketingCommunity,
 } from "./MarketingStory";
+import { FlipWords } from "../FlipWords";
 import { LandingPromptCta } from "../LandingPromptCta";
 import { marketingButton as buttonVariants } from "./MarketingLayout";
 import { MarketingHero } from "./MarketingLayout";
@@ -17,8 +18,22 @@ export function MarketingHome() {
   return (
     <>
       <MarketingHero
-        eyebrow="Your network is your net worth."
-        title="Reach the right people."
+        eyebrow="For solo founders and small teams."
+        title={
+          <>
+            Reach the right{" "}
+            <FlipWords
+              words={[
+                "people.",
+                "customers.",
+                "candidates.",
+                "investors.",
+                "podcast guests.",
+              ]}
+              srText="people"
+            />
+          </>
+        }
         actions={
           <a href="#how-it-works" className={buttonVariants()}>
             See how it works
@@ -32,8 +47,12 @@ export function MarketingHome() {
           <LandingPromptCta
             placeholder="Who are you looking for, and why?"
             showLabeledCta={false}
+            rotatingPlaceholders={MARKETING_COPY.home.rotatingPlaceholders}
           />
         </div>
+        <p className="text-muted-foreground mt-3 text-sm">
+          {MARKETING_COPY.home.setupTimeNote}
+        </p>
       </MarketingHero>
       <Suspense fallback={null}>
         <MarketingProof />

@@ -5,6 +5,13 @@ export const MARKETING_COPY = {
   home: {
     description:
       "Tell ReacherX △ Agent who you need to reach. It finds the right people, explains why they fit, and helps you start the conversation.",
+    rotatingPlaceholders: [
+      "Founders in fintech who posted about hiring…",
+      "Podcast guests who have talked about AI agents…",
+      "Designers at early-stage startups open to work…",
+      "Investors whose thesis matches what we're building…",
+    ],
+    setupTimeNote: "Set up in under 5 minutes. Review before anything sends.",
   },
   workflow: {
     setup:
@@ -21,7 +28,7 @@ export const MARKETING_COPY = {
     finishHeading: "Who will you and your △ Agent reach?",
   },
   story: {
-    connectionsHeading: "Find anyone.",
+    connectionsHeading: "Find anyone on X and LinkedIn.",
     connections:
       "Customers, candidates, investors, partners. The problem is always the same: the right people.",
     authenticityHeading:
