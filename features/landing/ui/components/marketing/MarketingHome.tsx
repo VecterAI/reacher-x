@@ -17,8 +17,8 @@ export function MarketingHome() {
   return (
     <>
       <MarketingHero
-        eyebrow="For solo founders and small teams."
-        title="Get instant access to people who fit your criteria."
+        eyebrow={MARKETING_COPY.home.eyebrow}
+        title={MARKETING_COPY.home.headline}
         actions={
           <a href="#how-it-works" className={buttonVariants()}>
             See how it works

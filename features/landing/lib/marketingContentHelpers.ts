@@ -3,6 +3,8 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
+    eyebrow: "Your outreach agent for X/Twitter and LinkedIn.",
+    headline: "Get your first customers without a sales team.",
     description:
       "Tell ReacherX △ Agent who you need to reach. It finds the right people, explains why they fit, and helps you start the conversation.",
     setupTimeNote: "Set up in under 5 minutes. Review before anything sends.",
