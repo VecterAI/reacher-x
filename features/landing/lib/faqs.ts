@@ -12,6 +12,24 @@ export const homepageFaqItems: FaqItem[] = [
       "ReacherX is an open-source △ Agent that finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
   },
   {
+    id: "why-not-diy",
+    question: "Why not just use X/Twitter search and ChatGPT for free?",
+    answer:
+      "For a one-off search, you can. ReacherX is for the ongoing part: it keeps watching X/Twitter and LinkedIn around the clock, checks every person it finds against your criteria, and prepares a researched outreach plan for each match. The screening work you'd redo every week happens continuously — you only see the people who fit.",
+  },
+  {
+    id: "hosted-vs-self-host",
+    question: "What does a hosted plan buy me over self-hosting?",
+    answer:
+      "The code is open source under AGPL-3.0, so self-hosting is free. What isn't free is the social-data layer: X/Twitter and third-party APIs bill per use, and someone has to keep the pipeline running. On a hosted plan, we eat that bill and the maintenance.",
+  },
+  {
+    id: "refund",
+    question: "Can I get a refund?",
+    answer:
+      "Yes. If ReacherX isn't working for you within the first 7 days, email support and we'll refund your first payment.",
+  },
+  {
     id: "why-agent",
     question: "Do I need sales experience to use it?",
     answer:
@@ -66,7 +84,7 @@ export const pricingFaqItems: FaqItem[] = [
     id: "free-plan",
     question: "Is there a free plan?",
     answer:
-      "No. A paid plan is required to run △ Agent. The available plans are listed above.",
+      "No. A paid plan is required to run △ Agent. If you're technical, you can self-host the open-source code under AGPL-3.0 instead — you'd take on the social-data API costs and maintenance yourself.",
   },
   {
     id: "credit-card",

@@ -153,14 +153,20 @@ function TierCard({
     PRICING_TIER_RANK[tier.id] < PRICING_TIER_RANK[currentTierId];
   const ctaHref = isLowerThanCurrentPlan ? PLANS_PATH : getPlansUpgradeHref();
 
+  const priceLabel =
+    amount != null ? formatPlanPriceLabel(amount, billing) : null;
+
   const ctaLabel = (() => {
     if (isLowerThanCurrentPlan) {
       return "Manage plan";
     }
 
-    return amount != null
-      ? `Upgrade for ${formatPlanPriceLabel(amount, billing)}`
-      : "Upgrade";
+    if (!priceLabel) {
+      return "Start";
+    }
+
+    // Anonymous visitors are starting out, not upgrading.
+    return isAuthenticated ? `Upgrade for ${priceLabel}` : `Start for ${priceLabel}`;
   })();
 
   const ctaVariant = isLowerThanCurrentPlan ? "outline" : "default";
@@ -438,6 +444,11 @@ export function PricingSection({
           ))}
         </div>
       )}
+
+      <p className="text-muted-foreground mt-6 text-center text-sm">
+        Self-hosting is free — the social-data APIs aren't. Hosted, we eat the
+        API bill and the maintenance.
+      </p>
     </section>
   );
 }

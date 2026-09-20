@@ -10,7 +10,7 @@ import {
   type CarouselApi,
 } from "@/shared/ui/components/Carousel";
 import { Button } from "@/shared/ui/components/Button";
-import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
+import { HOME_PERSONA_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
 import { workspaceUseCaseIcons } from "@/shared/ui/components/icons/workspaceUseCaseIconHelpers";
 import {
   ArrowBackIcon,
@@ -25,7 +25,7 @@ import {
   preserveDemoWheelInteraction,
 } from "@/features/landing/lib/marketingCarouselHelpers";
 
-type UseCaseCardItem = (typeof MARKETING_USE_CASES)[number];
+type UseCaseCardItem = (typeof HOME_PERSONA_USE_CASES)[number];
 
 /** Each slide mounts only its visible demo; hover or focus starts playback. */
 export function MarketingUseCaseExplorer() {
@@ -64,7 +64,7 @@ export function MarketingUseCaseExplorer() {
           className="-ml-6 touch-pan-y touch-pinch-zoom"
           viewportClassName="overflow-visible"
         >
-          {MARKETING_USE_CASES.map((item) => (
+          {HOME_PERSONA_USE_CASES.map((item) => (
             <CarouselItem
               key={item.slug}
               className="basis-[82%] pl-6 sm:basis-[420px] lg:basis-[560px]"

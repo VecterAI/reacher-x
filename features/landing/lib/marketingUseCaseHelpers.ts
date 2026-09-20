@@ -19,7 +19,7 @@ const STORIES: Record<string, UseCaseStory> = {
     exampleHeading: "From an interesting post to a potential customer.",
     explanation:
       "Research people discussing the problem you solve, then plan a relevant introduction.",
-    goal: "Find potential customers",
+    goal: "Find your first customers",
     prompt:
       "I build an app that keeps client feedback in one place. Find freelance designers who talk about losing feedback across email, chat, and documents.",
     checks: [
@@ -35,7 +35,7 @@ const STORIES: Record<string, UseCaseStory> = {
     exampleHeading: "See the work behind the profile.",
     explanation:
       "Find candidates through their work and experience, then prepare a personal introduction.",
-    goal: "Find candidates",
+    goal: "Find your next teammate",
     prompt:
       "We are a team of three hiring a frontend engineer. Find people on X/Twitter and LinkedIn who share work on accessibility and complex web apps, and are open to joining a small team.",
     checks: [
@@ -51,7 +51,7 @@ const STORIES: Record<string, UseCaseStory> = {
     exampleHeading: "Research the fit before making the introduction.",
     explanation:
       "Find investors whose interests match your company, then prepare your approach.",
-    goal: "Find investors",
+    goal: "Find investors who fit your raise",
     prompt:
       "We're a two-person team building software for independent clinics. Find early-stage investors who discuss health software on X/Twitter and LinkedIn. Help me understand what they back before I contact them.",
     checks: [
@@ -150,6 +150,17 @@ export const MARKETING_USE_CASES = USE_CASES.map((useCase) => ({
   /** Published guide for the same audience; marketing surfaces link here. */
   blogHref: `/blog/${STORIES[useCase.useCaseKey].guide}`,
 }));
+
+/** The three personas featured on the homepage carousel: sell, hire, raise. */
+const HOME_PERSONA_KEYS: readonly string[] = [
+  "customer_prospecting",
+  "recruiting",
+  "investor_outreach",
+];
+
+export const HOME_PERSONA_USE_CASES = MARKETING_USE_CASES.filter((useCase) =>
+  HOME_PERSONA_KEYS.includes(useCase.useCaseKey)
+);
 
 export function getMarketingUseCase(slug: string) {
   return MARKETING_USE_CASES.find((useCase) => useCase.slug === slug);

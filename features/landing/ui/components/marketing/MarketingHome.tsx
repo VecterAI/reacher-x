@@ -28,6 +28,9 @@ export function MarketingHome() {
         <p className="text-base leading-7 text-pretty">
           {MARKETING_COPY.home.description}
         </p>
+        <p className="text-muted-foreground mt-3 text-sm">
+          {MARKETING_COPY.home.statLine}
+        </p>
         <div className="mt-7">
           <LandingPromptCta
             placeholder="Who are you looking for, and why?"

@@ -2,7 +2,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
+import { HOME_PERSONA_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
 import { MarketingUseCaseExplorer } from "./MarketingUseCaseExplorer";
 
 vi.mock("next/link", () => ({
@@ -77,9 +77,9 @@ afterEach(async () => {
 
 test("renders one card per audience with its guide link", () => {
   const cards = container.querySelectorAll("article");
-  expect(cards).toHaveLength(MARKETING_USE_CASES.length);
+  expect(cards).toHaveLength(HOME_PERSONA_USE_CASES.length);
   for (const [index, card] of cards.entries()) {
-    const selected = MARKETING_USE_CASES[index];
+    const selected = HOME_PERSONA_USE_CASES[index];
     expect(card.querySelector("a")?.getAttribute("href")).toBe(
       selected.blogHref
     );
@@ -102,10 +102,10 @@ test("distant cards mount no demo until they become visible", async () => {
   expect(container.querySelectorAll("[data-demo]")).toHaveLength(1);
   expect(
     container.querySelector("[data-demo]")?.getAttribute("data-demo")
-  ).toBe(MARKETING_USE_CASES[0].guide);
+  ).toBe(HOME_PERSONA_USE_CASES[0].guide);
   await act(async () => reveal(1, true));
   expect(container.querySelectorAll("[data-demo]")).toHaveLength(2);
   expect(
     container.querySelectorAll("[data-demo]")[1].getAttribute("data-demo")
-  ).toBe(MARKETING_USE_CASES[1].guide);
+  ).toBe(HOME_PERSONA_USE_CASES[1].guide);
 });

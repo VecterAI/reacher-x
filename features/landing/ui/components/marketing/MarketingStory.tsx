@@ -32,6 +32,16 @@ export function MarketingConnections() {
         </div>
       </header>
       <MarketingUseCaseExplorer />
+      <p className="text-muted-foreground mt-6 text-sm">
+        Also for{" "}
+        <Link
+          href="/use-cases"
+          className="text-foreground underline underline-offset-4"
+        >
+          podcast guests, research participants, partners, and creators
+        </Link>
+        .
+      </p>
     </MarketingSection>
   );
 }
