@@ -1,3 +1,5 @@
+"use node";
+
 // convex/agents/tools/index.ts
 // Barrel exports for agent tools
 
@@ -34,3 +36,4 @@ export { enrichProspect } from "./enrichProspect";
 
 // Main △ Agent plan portfolio + unified batch tools
 export { listProspectPlans, managePlanBatch } from "./planBatch";
+export { webResearch } from "./webResearch";

@@ -18,7 +18,7 @@ import {
   OBSERVABILITY_DEMO_SHOTS,
   MEMORY_DEMO_SHOTS,
 } from "./reportingDemoShots";
-import { AUDIENCE_DEMO_IDS } from "./blogDemoCatalog";
+import { BLOG_DEMO_IDS, type BlogDemoId } from "./blogDemoCatalog";
 import {
   AUDIENCE_DEMO_SHOTS,
   buildUseCaseWalkthroughShots,
@@ -28,29 +28,8 @@ import {
   DEMO_DESIGN_HEIGHT,
 } from "@/features/landing/ui/components/use-case-demo/demoPresentationHelpers";
 
-export const BLOG_DEMO_IDS = [
-  "reach-out-writing-preferences",
-  "reach-out-personal-video",
-  "reach-out-message-bubbles",
-  "reach-out-unicode-formatting",
-  "how-reacherx-enrichment-works",
-  "send-voice-notes",
-  "create-plans-for-several-people",
-  "getting-started-with-reacherx",
-  "manage-dm-conversations",
-  "introducing-reacherx-v4",
-  "outreach-with-images-and-video",
-  "write-with-autocomplete",
-  "find-candidates",
-  "manage-people-with-reacherx",
-  "workspaces-explained",
-  ...AUDIENCE_DEMO_IDS,
-  "what-reacherx-does-automatically",
-  "read-your-reacherx-analytics",
-  "teach-reacherx-what-you-want",
-  "understand-agent-observability",
-] as const;
-export type BlogDemoId = (typeof BLOG_DEMO_IDS)[number];
+export type { BlogDemoId } from "./blogDemoCatalog";
+export { BLOG_DEMO_IDS } from "./blogDemoCatalog";
 export interface DemoCamera {
   x: number;
   y: number;

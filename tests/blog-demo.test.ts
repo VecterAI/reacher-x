@@ -166,6 +166,7 @@ test("demo captions are preserved in readable article Markdown", () => {
   const text = blogBodyMarkdown(
     '<BlogAppDemo scenario="find-candidates" title="Hiring" caption="Review relevant work before reaching out." />'
   );
+  assert.match(text, /resource: find-candidates/);
   assert.match(text, /Review relevant work before reaching out\./);
 });
 

@@ -1,3 +1,5 @@
+"use node";
+
 // convex/agents/outreach/tools/index.ts
 // Barrel exports for outreach agent tools
 
@@ -34,3 +36,4 @@ export {
 export { rememberWorkspaceMemory } from "../../tools/rememberWorkspaceMemory";
 export { searchWorkspaceMemories } from "../../tools/searchWorkspaceMemories";
 export { workspaceAttachments } from "../../tools/workspaceAttachments";
+export { webResearch } from "../../tools/webResearch";
