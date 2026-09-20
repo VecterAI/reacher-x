@@ -6,9 +6,7 @@ export const MARKETING_COPY = {
     eyebrow: "Your outreach agent for X/Twitter and LinkedIn.",
     headline: "Get your first customers without a sales team.",
     description:
-      "Tell ReacherX △ Agent who you need to reach. It watches X/Twitter and LinkedIn around the clock, checks every person it finds, and surfaces only the ones who fit — with the research behind every match.",
-    statLine:
-      "One run: 50,000+ people checked, ~300 surfaced. You only ever see the ones who fit.",
+      "Tell ReacherX △ Agent who you need to reach. It watches X/Twitter and LinkedIn around the clock, checks every person it finds, and surfaces only the people who actually fit. Every match comes with the research behind it.",
     setupTimeNote: "Set up in under 5 minutes. Review before anything sends.",
   },
   workflow: {
@@ -20,7 +18,7 @@ export const MARKETING_COPY = {
     researchDetail:
       "Check the posts and profile details behind each result before you decide.",
     outreach:
-      "△ Agent turns its research into a personal introduction, ready for your review. Sending approvals are on by default; you control them in workspace settings.",
+      "△ Agent turns its research into a personal introduction, ready for your review. You approve every message before it goes out. You can make it hands-off in settings.",
     outreachDetail:
       "Conversations, notes, and your writing style stay in one place.",
     finishHeading: "Who will you and your △ Agent reach?",
@@ -28,7 +26,7 @@ export const MARKETING_COPY = {
   story: {
     connectionsHeading: "Find anyone on X/Twitter and LinkedIn.",
     connections:
-      "Whether you're selling, hiring, or raising — the problem is always the same: the right people.",
+      "Selling, hiring, or raising. The problem is always the same: the right people.",
     authenticityHeading: "Your network is your net worth. Start building it.",
     developersHeading: "Open source.",
     developers:
@@ -51,7 +49,7 @@ export const MARKETING_COPY = {
   productPage: {
     heading: "Find your people.",
     description:
-      "ReacherX searches X/Twitter and LinkedIn around the clock, researches every match, and drafts a personal introduction. Sending approvals are on by default; you control them in workspace settings.",
+      "ReacherX searches X/Twitter and LinkedIn around the clock, researches every match, and drafts a personal introduction. You approve every message before it goes out. You can make it hands-off in workspace settings.",
   },
   useCases: {
     description:
@@ -106,7 +104,7 @@ export const MARKETING_CAPABILITY_CONTENT = [
   },
   {
     title: "What runs on its own",
-    body: "Discovery and research keep working when you are away. Sending approvals are on by default and can be changed in settings.",
+    body: "Discovery and research keep working when you are away. Every message waits for your approval unless you change that in settings.",
     href: "/blog/what-reacherx-does-automatically",
     demo: "what-reacherx-does-automatically",
   },
