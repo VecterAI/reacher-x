@@ -55,41 +55,12 @@ import { api } from "@/convex/_generated/api";
 import { useQueryWithStatus } from "@/shared/hooks";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 import { LandingAuthLink } from "./LandingAuthLink";
+import { useHeroRotation } from "@/features/landing/lib/heroRotationStore";
 import "./landingComposerPlaceholder.css";
 
 export { LANDING_PROMPT_STORAGE_KEY };
 
 const DEFAULT_PLACEHOLDER = "Tell me who you want to find and why...";
-
-const ROTATION_INTERVAL_MS = 4000;
-
-/**
- * Cycles placeholder copy while the composer is empty, so idle visitors see
- * concrete example searches. Alternating phases restart the CSS flip.
- */
-function useRotatingPlaceholder({
-  items,
-  enabled,
-  intervalMs = ROTATION_INTERVAL_MS,
-}: {
-  items: readonly string[];
-  enabled: boolean;
-  intervalMs?: number;
-}) {
-  const [index, setIndex] = useState(0);
-  const [phase, setPhase] = useState(0);
-
-  useEffect(() => {
-    if (!enabled || items.length < 2) return;
-    const id = window.setInterval(() => {
-      setIndex((current) => (current + 1) % items.length);
-      setPhase((current) => (current === 0 ? 1 : 0));
-    }, intervalMs);
-    return () => window.clearInterval(id);
-  }, [enabled, items, intervalMs]);
-
-  return { text: items[index] ?? "", phase };
-}
 
 interface LandingPromptCtaProps {
   authenticatedHref?: string;
@@ -273,11 +244,11 @@ export function LandingPromptCta({
   const canSubmitPrompt = text.trim().length > 0 && !composerBusy;
   const isComposerIdle = !composerBusy && text.trim().length === 0;
   const isRotating = Boolean(rotatingPlaceholders?.length) && isComposerIdle;
-  const rotation = useRotatingPlaceholder({
-    items: rotatingPlaceholders ?? [],
-    enabled: isRotating,
-  });
-  const activePlaceholder = isRotating ? rotation.text : placeholder;
+  const rotation = useHeroRotation(isRotating);
+  const rotatingItems = rotatingPlaceholders ?? [];
+  const activePlaceholder = isRotating
+    ? rotatingItems[rotation.index % rotatingItems.length]
+    : placeholder;
 
   useEffect(() => {
     if (readError && readError !== lastToastedError.current) {

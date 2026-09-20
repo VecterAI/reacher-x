@@ -23,13 +23,7 @@ export function MarketingHome() {
           <>
             Reach the right{" "}
             <FlipWords
-              words={[
-                "people.",
-                "customers.",
-                "candidates.",
-                "investors.",
-                "podcast guests.",
-              ]}
+              words={MARKETING_COPY.home.heroWords}
               srText="people"
             />
           </>
@@ -47,7 +41,7 @@ export function MarketingHome() {
           <LandingPromptCta
             placeholder="Who are you looking for, and why?"
             showLabeledCta={false}
-            rotatingPlaceholders={MARKETING_COPY.home.rotatingPlaceholders}
+            rotatingPlaceholders={MARKETING_COPY.home.heroPlaceholders}
           />
         </div>
         <p className="text-muted-foreground mt-3 text-sm">

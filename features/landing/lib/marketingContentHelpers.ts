@@ -5,11 +5,20 @@ export const MARKETING_COPY = {
   home: {
     description:
       "Tell ReacherX △ Agent who you need to reach. It finds the right people, explains why they fit, and helps you start the conversation.",
-    rotatingPlaceholders: [
-      "Founders in fintech who posted about hiring…",
+    /** Aligned pairs: the headline word and the composer example swap together. */
+    heroWords: [
+      "people.",
+      "customers.",
+      "candidates.",
+      "investors.",
+      "podcast guests.",
+    ],
+    heroPlaceholders: [
+      "Who are you looking for, and why?",
+      "People who asked for something like what you're building this week…",
+      "Designers at early-stage startups open to new work…",
+      "Angels whose thesis matches what you're building…",
       "Podcast guests who have talked about AI agents…",
-      "Designers at early-stage startups open to work…",
-      "Investors whose thesis matches what we're building…",
     ],
     setupTimeNote: "Set up in under 5 minutes. Review before anything sends.",
   },
@@ -28,11 +37,10 @@ export const MARKETING_COPY = {
     finishHeading: "Who will you and your △ Agent reach?",
   },
   story: {
-    connectionsHeading: "Find anyone on X and LinkedIn.",
+    connectionsHeading: "Find anyone on X/Twitter and LinkedIn.",
     connections:
       "Customers, candidates, investors, partners. The problem is always the same: the right people.",
-    authenticityHeading:
-      "Get access to the right network. Because your network is your net worth.",
+    authenticityHeading: "Your network is your net worth. Start building it.",
     developersHeading: "Open source.",
     developers:
       "Use, modify, and self-host ReacherX under AGPL-3.0, as part of the Convex Open Source program. Improvements stay open for everyone.",
