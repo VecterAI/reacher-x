@@ -8,7 +8,7 @@ import {
   MarketingDevelopers,
   MarketingCommunity,
 } from "./MarketingStory";
-import { FlipWords } from "../FlipWords";
+import { HeroStream } from "../HeroStream";
 import { LandingPromptCta } from "../LandingPromptCta";
 import { marketingButton as buttonVariants } from "./MarketingLayout";
 import { MarketingHero } from "./MarketingLayout";
@@ -21,11 +21,8 @@ export function MarketingHome() {
         eyebrow="For solo founders and small teams."
         title={
           <>
-            Reach the right{" "}
-            <FlipWords
-              words={MARKETING_COPY.home.heroWords}
-              srText="people"
-            />
+            Reach your{" "}
+            <HeroStream items={MARKETING_COPY.home.heroStreamItems} />
           </>
         }
         actions={

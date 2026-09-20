@@ -1,0 +1,55 @@
+/* Inline vertical stream for the hero headline: one line of text tall,
+   items drift upward in a seamless loop (track holds two copies, so
+   translating -50% wraps perfectly). Linear timing = constant velocity,
+   no easing hiccups. Height and line-height match the h1 (1.05) so the
+   visible row's baseline aligns with the surrounding text. */
+
+.hero-stream {
+  display: inline-block;
+  vertical-align: bottom;
+  height: 1.05em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 22%,
+    #000 78%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 22%,
+    #000 78%,
+    transparent 100%
+  );
+}
+
+.hero-stream__track {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+  animation: hero-stream-drift 14s linear infinite;
+}
+
+.hero-stream__item {
+  display: block;
+  height: 1.05em;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+@keyframes hero-stream-drift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-stream__track {
+    animation: none;
+  }
+}

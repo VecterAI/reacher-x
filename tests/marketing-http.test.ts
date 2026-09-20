@@ -30,7 +30,8 @@ test("the approved homepage is canonical and indexable", async () => {
   const response = await request("/home");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Reach the right people/);
+  assert.match(html, /Reach your/);
+  assert.match(html, /customers/);
   assert.match(html, /Describe who you need △ Agent to find/);
   assert.match(html, /rel="canonical" href="https:\/\/reacherx.com\/home"/);
   assert.doesNotMatch(

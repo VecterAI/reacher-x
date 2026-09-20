@@ -5,13 +5,13 @@ export const MARKETING_COPY = {
   home: {
     description:
       "Tell ReacherX △ Agent who you need to reach. It finds the right people, explains why they fit, and helps you start the conversation.",
-    /** Aligned pairs: the headline word and the composer example swap together. */
-    heroWords: [
-      "people.",
-      "customers.",
-      "candidates.",
-      "investors.",
-      "podcast guests.",
+    /** Fixed hero prefix "Reach your" + a vertical stream of use cases. */
+    heroStreamItems: [
+      "customers",
+      "candidates",
+      "investors",
+      "partners",
+      "podcast guests",
     ],
     heroPlaceholders: [
       "Who are you looking for, and why?",
