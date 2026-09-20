@@ -1,8 +1,9 @@
-/* Inline vertical text stream: a one-line window with rows sliding through.
-   Line box size comes from --hero-stream-line so the same component works in
-   the h1 (1.05em, matching the heading's leading) and the composer
-   placeholder (1.25rem, matching leading-5). Rows are hard-clipped — no
-   fade masks. */
+/* Inline vertical text stream: a one-line window with items drifting upward
+   in a seamless loop (track holds two copies, so translating -50% wraps
+   perfectly). Linear timing = constant velocity, no easing hiccups. Rows are
+   hard-clipped — no fade masks. Line box size comes from --hero-stream-line
+   so the same component works in the h1 (1.05em, matching the heading's
+   leading) and the composer placeholder (1.25rem, matching leading-5). */
 
 .hero-stream {
   --hero-stream-line: 1.05em;
@@ -11,6 +12,13 @@
   max-width: 100%;
   height: var(--hero-stream-line);
   overflow: hidden;
+}
+
+.hero-stream__track {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+  animation: hero-stream-drift 14s linear infinite;
 }
 
 .hero-stream__item {
@@ -30,9 +38,17 @@
   text-overflow: ellipsis;
 }
 
+@keyframes hero-stream-drift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .hero-stream__item {
-    transition: none !important;
-    animation: none !important;
+  .hero-stream__track {
+    animation: none;
   }
 }
