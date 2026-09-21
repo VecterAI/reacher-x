@@ -17,6 +17,7 @@ import {
   ANALYTICS_DEMO_SHOTS,
   OBSERVABILITY_DEMO_SHOTS,
   MEMORY_DEMO_SHOTS,
+  AGENT_CLOCK_DEMO_SHOTS,
 } from "./reportingDemoShots";
 import { BLOG_DEMO_IDS, type BlogDemoId } from "./blogDemoCatalog";
 import {
@@ -100,6 +101,7 @@ export const BLOG_DEMO_SHOTS: Record<BlogDemoId, readonly BlogDemoShot[]> = {
   "teach-reacherx-what-you-want": MEMORY_DEMO_SHOTS,
   "read-your-reacherx-analytics": ANALYTICS_DEMO_SHOTS,
   "understand-agent-observability": OBSERVABILITY_DEMO_SHOTS,
+  "agent-around-the-clock": AGENT_CLOCK_DEMO_SHOTS,
   "how-reacherx-enrichment-works": [
     { label: "Research attached to each person", duration: 2200, camera: wide },
     {

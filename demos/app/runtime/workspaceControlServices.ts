@@ -125,4 +125,5 @@ export function registerWorkspaceControlServices(
       burstSlotsPerTenant: 2,
     })
   );
+  client.register(api.tenantScheduler.getHighLoadNotice, () => null);
 }

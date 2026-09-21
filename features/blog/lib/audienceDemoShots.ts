@@ -99,6 +99,17 @@ export function buildUseCaseWalkthroughShots(
       camera: detail,
       focus: { selector: '[role="tabpanel"]' },
     },
+    click("Open the full profile details", tab("Overview")),
+    click("Expand the researched details", {
+      selector: 'aside [role="tabpanel"] section > div > button',
+      text: "Show more",
+    }),
+    {
+      label: "Inspect the researched details",
+      duration: 3000,
+      camera: detail,
+      focus: { selector: "aside section", containsText: "Location" },
+    },
     click("Open profile options", profileMenu),
     click("Inspect the dedicated LinkedIn profile", menu("Open on LinkedIn")),
     {
@@ -188,29 +199,17 @@ export function buildUseCaseWalkthroughShots(
       waitFor: { selector: "aside article", containsText: "Completed" },
       focus: { selector: "aside article" },
     },
-    click("Return to people", {
-      selector: 'nav a[href="/"], [data-sidebar="menu-button"][href="/"]',
+    click("Open the delivered message", {
+      selector: "aside article li button",
+      text: "View",
+      within: {
+        selector: "aside article li",
+        containsText:
+          id === "find-candidates"
+            ? "Introduce the frontend engineer role"
+            : "Send a relevant introduction",
+      },
     }),
-    click("See people who replied", {
-      selector: '[role="tab"][id$="trigger-in_progress"]',
-    }),
-    click("Open the updated prospect", {
-      selector: `[data-prospect-id="${firstId}"]`,
-    }),
-    ...(publicCopy
-      ? [
-          click("Review your public interaction", tab("Your interactions")),
-          {
-            label: "The comment is attached to its original discussion",
-            duration: 3000,
-            camera: detail,
-            waitFor: { selector: '[role="tabpanel"] article' },
-            focus: { selector: '[role="tabpanel"]' },
-          },
-        ]
-      : []),
-    click("Open the conversation options", profileMenu),
-    click("Follow the conversation", menu("Message on LinkedIn")),
     {
       label: "The sent message and reply belong to the same plan",
       duration: 4000,

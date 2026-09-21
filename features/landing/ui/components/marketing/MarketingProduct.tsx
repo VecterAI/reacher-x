@@ -37,10 +37,9 @@ function MarketingCapabilities() {
         title="Working around the clock."
         demo={
           <MarketingDemo
-            scenario="find-candidates"
-            sceneRange={[9, 19]}
-            title="Find people through their work"
-            caption="Search results with the evidence behind each match."
+            scenario="agent-around-the-clock"
+            title="The agent at work, around the clock"
+            caption="Live workspace progress, one click away."
           />
         }
       >
@@ -57,7 +56,7 @@ function MarketingCapabilities() {
           <MarketingDemo
             scenario="create-plans-for-several-people"
             title="Create and review individual outreach plans"
-            caption="A personal introduction for each person, ready for your review."
+            caption="Three people, three different invitations."
           />
         }
       >
@@ -73,17 +72,17 @@ function MarketingCapabilities() {
         title="Send more than text."
         demo={
           <MarketingDemo
-            scenario="send-voice-notes"
+            scenario="outreach-with-images-and-video"
             title="Send media in a conversation"
-            caption="A voice note shared inside a real conversation."
+            caption="A clip shared inside a real conversation."
           />
         }
       >
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.product.messages}
         </p>
-        <CapabilityLink href="/blog/send-voice-notes">
-          About voice notes
+        <CapabilityLink href="/blog/outreach-with-images-and-video">
+          About media in conversations
         </CapabilityLink>
       </MarketingFeature>
       <MarketingFeature

@@ -12,6 +12,43 @@ const option = (text: string) => ({ selector: '[role="option"]', text });
 const close = { selector: "main button", text: "Close" };
 const row = { selector: "main tbody tr" };
 
+export const AGENT_CLOCK_DEMO_SHOTS: readonly BlogDemoShot[] = [
+  { label: "The workspace while you are away", duration: 2400, camera: wide },
+  {
+    label: "Agent working, around the clock",
+    duration: 2400,
+    camera: detail,
+    focus: { selector: "button", containsText: "Agent working" },
+  },
+  click("Open the workspace status", {
+    selector: "button",
+    containsText: "Agent working",
+  }),
+  {
+    label: "Live workspace progress",
+    duration: 3200,
+    camera: detail,
+    waitFor: { selector: '[role="dialog"]' },
+    focus: { selector: '[role="dialog"]' },
+  },
+  click("Pause whenever you want", {
+    selector: '[role="dialog"] button',
+    text: "Pause △ Agent",
+  }),
+  {
+    label: "Pausing keeps everything you have",
+    duration: 2600,
+    camera: detail,
+    waitFor: { selector: '[role="dialog"]', containsText: "Pause △ Agent?" },
+    focus: { selector: '[role="dialog"]' },
+  },
+  click("Keep the agent running", {
+    selector: '[role="dialog"] button',
+    text: "Cancel",
+  }),
+  { label: "Discovery never stops for this goal", duration: 2600, camera: wide },
+];
+
 export const OBSERVABILITY_DEMO_SHOTS: readonly BlogDemoShot[] = [
   { label: "△ Agent's work in context", duration: 2200, camera: wide },
   click("Choose an area to inspect", section),
@@ -68,10 +105,10 @@ export const ANALYTICS_DEMO_SHOTS: readonly BlogDemoShot[] = [
   },
   click("Compare a longer period", { selector: '[role="tab"]', text: "30d" }),
   {
-    label: "Read the count beneath the response rate",
+    label: "Read the count beneath the reply rate",
     duration: 3200,
     camera: detail,
-    focus: { selector: "main article", containsText: "Response rate" },
+    focus: { selector: "main article", containsText: "Reply rate" },
   },
   {
     label: "Separate qualification from readiness",
@@ -162,7 +199,7 @@ export const MEMORY_DEMO_SHOTS = buildMemoryDemoShots({
   instruction:
     "Remember this for outreach: keep the first message under 80 words. Ask one question. Don't ask for a meeting in the first message.",
   request:
-    "Draft a first message to Isabelle about the frontend role. Use the instruction you saved.",
+    "Draft a first message to Nora about collecting client feedback. Use the instruction you saved.",
 });
 
 export const AUTOMATION_DEMO_SHOTS: readonly BlogDemoShot[] = [

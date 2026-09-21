@@ -18,10 +18,10 @@ export function MarketingWorkflow() {
         title="Say who you're looking for."
         demo={
           <MarketingDemo
-            scenario="find-candidates"
-            sceneRange={[0, 9]}
+            scenario="find-potential-customers"
+            sceneRange={[0, 12]}
             title="Set up a search by talking to ReacherX"
-            caption="The setup conversation, from your goal to a search brief."
+            caption="The setup conversation, from your goal to the people who fit."
           />
         }
       >
@@ -41,9 +41,9 @@ export function MarketingWorkflow() {
         title="See who fits, and why."
         demo={
           <MarketingDemo
-            scenario="find-candidates"
-            sceneRange={[10, 19]}
-            title="Research the frontend candidates"
+            scenario="find-potential-customers"
+            sceneRange={[13, 20]}
+            title="Research the designers who fit"
             caption="Search results with the evidence behind each match."
           />
         }
@@ -63,8 +63,8 @@ export function MarketingWorkflow() {
         title="Reach out like a human."
         demo={
           <MarketingDemo
-            scenario="find-candidates"
-            sceneRange={[20, 34]}
+            scenario="find-potential-customers"
+            sceneRange={[23, 41]}
             title="Review an introduction and follow the reply"
             caption="A personal introduction for each person, ready for your review."
           />

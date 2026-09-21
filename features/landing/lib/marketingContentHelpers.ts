@@ -31,9 +31,9 @@ export const MARKETING_COPY = {
     discovery:
       "ReacherX keeps searching X/Twitter and LinkedIn around the clock, and researches every person it finds before you see them.",
     plans:
-      "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review.",
+      "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review. Mention several people in one message with @ tags.",
     messages:
-      "Send voice notes, images, and video inside your conversations. In agent chat, mention several people in one message with @ tags.",
+      "Send voice notes, images, and video inside your conversations.",
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",
     moreHeading: "More, built in.",
