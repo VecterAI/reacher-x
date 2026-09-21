@@ -64,9 +64,6 @@ export function MarketingUseCaseTabs() {
             <p className="text-lg leading-7 text-pretty">
               {active.explanation}
             </p>
-            <p className="text-muted-foreground mt-5 text-sm leading-6">
-              {active.exampleHeading}
-            </p>
             <Link
               href={active.blogHref}
               className={marketingButton({

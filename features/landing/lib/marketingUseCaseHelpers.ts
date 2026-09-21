@@ -6,7 +6,6 @@ type UseCaseStory = {
   tabLabel: string;
   heading: string;
   explanation: string;
-  exampleHeading: string;
   navigationDescription: string;
   goal: string;
   prompt: string;
@@ -19,7 +18,6 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Getting customers",
     heading: "Find the people who need what you’re building.",
     navigationDescription: "People discussing the problem you solve.",
-    exampleHeading: "From a public post to a real relationship.",
     explanation:
       "The people who should be in your network are already out there discussing the problem you solve. It finds them and helps you build the relationship.",
     goal: "Find your first customers",
@@ -36,7 +34,6 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Hiring",
     heading: "Meet your next teammate.",
     navigationDescription: "People with experience your team needs.",
-    exampleHeading: "Each match comes with the work behind the profile.",
     explanation:
       "Your next teammate is probably already posting about the work you need. It finds them and helps you build the relationship before you ever post the job.",
     goal: "Find your next teammate",
@@ -53,7 +50,6 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Fundraising",
     heading: "Build relationships with relevant investors.",
     navigationDescription: "Backers focused on your sector and stage.",
-    exampleHeading: "Every match comes with the research behind it.",
     explanation:
       "It finds investors focused on your sector and stage and helps you get on their radar before the raise.",
     goal: "Find investors who fit your raise",
@@ -70,7 +66,6 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Partnerships",
     heading: "Find people you could build something with.",
     navigationDescription: "People serving the same audience.",
-    exampleHeading: "Turn a shared audience into a reason to connect.",
     explanation:
       "It finds partners already serving your audience and helps you turn shared work into a real partnership.",
     goal: "Find partners",
@@ -87,7 +82,6 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Community building",
     heading: "Bring the right people into your community.",
     navigationDescription: "People already interested in your topic.",
-    exampleHeading: "Matches go beyond your existing audience.",
     explanation:
       "It finds people who already care about your topic and helps you turn them into your first members.",
     goal: "Grow a community",
@@ -104,7 +98,6 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Creator outreach",
     heading: "Meet creators who fit your audience.",
     navigationDescription: "Creators whose work fits your audience.",
-    exampleHeading: "The creator’s work, understood before any pitch.",
     explanation:
       "It finds creators whose work fits your audience and helps you build the relationship behind the collaboration.",
     goal: "Find creators",
@@ -121,7 +114,6 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "User research",
     heading: "Talk to people who have lived the problem.",
     navigationDescription: "People with firsthand experience.",
-    exampleHeading: "Matched on firsthand experience.",
     explanation:
       "It finds people with firsthand experience of your problem and helps you bring them into your research.",
     goal: "Find research participants",
@@ -138,7 +130,6 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Podcast guests",
     heading: "Find the voices your audience should hear.",
     navigationDescription: "People with a story for your listeners.",
-    exampleHeading: "A guest and a conversation worth having.",
     explanation:
       "It finds guests with a story your listeners need and helps you build the relationship behind the invite.",
     goal: "Find podcast guests",

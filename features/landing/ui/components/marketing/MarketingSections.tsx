@@ -28,9 +28,6 @@ export function MarketingWorkflow() {
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.workflow.setup}
         </p>
-        <p className="text-muted-foreground mt-5 text-sm leading-6">
-          {MARKETING_COPY.workflow.setupDetail}
-        </p>
         <Link
           href="/blog/getting-started-with-reacherx"
           className={buttonVariants({ variant: "outline", className: "mt-8" })}
@@ -54,9 +51,6 @@ export function MarketingWorkflow() {
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.workflow.research}
         </p>
-        <p className="text-muted-foreground mt-5 text-sm leading-6">
-          {MARKETING_COPY.workflow.researchDetail}
-        </p>
         <Link
           href="/blog/how-reacherx-qualification-works"
           className={buttonVariants({ variant: "outline", className: "mt-8" })}
@@ -78,9 +72,6 @@ export function MarketingWorkflow() {
       >
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.workflow.outreach}
-        </p>
-        <p className="text-muted-foreground mt-5 text-sm leading-6">
-          {MARKETING_COPY.workflow.outreachDetail}
         </p>
         <Link
           href="/blog/what-reacherx-does-automatically"

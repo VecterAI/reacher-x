@@ -11,15 +11,10 @@ export const MARKETING_COPY = {
   workflow: {
     setup:
       "No tables or sales jargon. Tell △ Agent what you are working on and who you want to reach, in plain words.",
-    setupDetail: "It asks what it needs to know and starts looking.",
     research:
       "ReacherX finds people on X/Twitter and LinkedIn, researches their background, and explains every match.",
-    researchDetail:
-      "Check the posts and profile details behind each result before you decide.",
     outreach:
       "△ Agent starts each conversation with a personal introduction, then keeps every reply, note, and follow-up in one place, so the relationship keeps moving.",
-    outreachDetail:
-      "You approve every message before it goes out. You can make it hands-off in settings.",
     finishHeading: "Who should be in your network?",
   },
   story: {
@@ -40,7 +35,7 @@ export const MARKETING_COPY = {
     plans:
       "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review.",
     messages:
-      "Conversations are not just text: send voice notes, images, and video. When you brief △ Agent, mention several people in one message with @ tags.",
+      "Send voice notes, images, and video inside your conversations. In agent chat, mention several people in one message with @ tags.",
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",
     moreHeading: "More, built in.",
