@@ -32,15 +32,6 @@ export function MarketingConnections() {
         </div>
       </header>
       <MarketingUseCaseExplorer />
-      <p className="text-muted-foreground mt-6 text-sm">
-        <Link
-          href="/use-cases"
-          className="text-foreground underline underline-offset-4"
-        >
-          See all the ways to use ReacherX
-        </Link>
-        .
-      </p>
     </MarketingSection>
   );
 }

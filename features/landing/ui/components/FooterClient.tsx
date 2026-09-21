@@ -48,7 +48,7 @@ const FOOTER_COLUMNS = [
   {
     title: "Product",
     links: [
-      { label: "Product", href: "/product" },
+      { label: "Home", href: "/home" },
       { label: "Pricing", href: "/pricing" },
       {
         label: "Changelog",

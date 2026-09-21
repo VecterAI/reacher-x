@@ -123,7 +123,6 @@ function getInitials(name?: string) {
 }
 
 const NAV_LINKS = [
-  { href: "/product", label: "Product", isAnchor: false },
   { href: "/blog", label: "Blog", isAnchor: false },
   { href: "/blog/category/comparisons", label: "Comparisons", isAnchor: false },
   {

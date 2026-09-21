@@ -3,11 +3,10 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
-    eyebrow: "Your outreach agent for X/Twitter and LinkedIn.",
-    headline: "Get your first customers without a sales team.",
+    headline: "The △ Agent that brings you high-intent customers.",
     description:
-      "Tell ReacherX △ Agent who you need to reach. It watches X/Twitter and LinkedIn around the clock, checks every person it finds, and surfaces only the people who actually fit. Every match comes with the research behind it.",
-    setupTimeNote: "Set up in under 5 minutes. Review before anything sends.",
+      "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds people who actually fit, and hands you the research behind every match.",
+    setupTimeNote: "Set up in under 5 minutes.",
   },
   workflow: {
     setup:
@@ -24,7 +23,7 @@ export const MARKETING_COPY = {
     finishHeading: "Who will you and your △ Agent reach?",
   },
   story: {
-    connectionsHeading: "Find anyone on X/Twitter and LinkedIn.",
+    connectionsHeading: "Whatever you need people for.",
     connections:
       "Selling, hiring, or raising. The problem is always the same: the right people.",
     authenticityHeading: "Your network is your net worth. Start building it.",
@@ -45,17 +44,6 @@ export const MARKETING_COPY = {
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",
     moreHeading: "More, built in.",
-  },
-  productPage: {
-    heading: "Find your people.",
-    description:
-      "ReacherX searches X/Twitter and LinkedIn around the clock, researches every match, and drafts a personal introduction. You approve every message before it goes out. You can make it hands-off in workspace settings.",
-  },
-  useCases: {
-    description:
-      "Find your first customers, hire someone, or meet people working on the same problem. ReacherX helps you find and reach them on X/Twitter and LinkedIn.",
-    examplesHeading: "See what ReacherX can do.",
-    otherHeading: "Have something else in mind?",
   },
 } as const;
 

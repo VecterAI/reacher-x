@@ -130,10 +130,8 @@ export function MarketingNavigation() {
   const [open, setOpen] = useState(false);
   const linkClass =
     "block rounded-md px-3 py-2 text-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
-  const isUseCasesActive = MARKETING_USE_CASES.some(
-    (useCase) =>
-      isActiveHref(useCase.href, pathname) ||
-      isActiveHref(useCase.blogHref, pathname)
+  const isUseCasesActive = MARKETING_USE_CASES.some((useCase) =>
+    isActiveHref(useCase.blogHref, pathname)
   );
   const isResourcesActive =
     isActiveHref("/blog", pathname) && !isUseCasesActive;
@@ -177,25 +175,6 @@ export function MarketingNavigation() {
     >
       <NavigationOverlay open={open} />
       <NavigationMenu.List className="flex list-none items-center gap-1">
-        <NavigationMenu.Item>
-          <NavigationMenu.Link
-            asChild
-            active={isActiveHref("/product", pathname)}
-          >
-            <Link
-              href="/product"
-              aria-current={
-                isActiveHref("/product", pathname) ? "page" : undefined
-              }
-              className={cn(
-                linkClass,
-                isActiveHref("/product", pathname) && activeLinkClass
-              )}
-            >
-              Product
-            </Link>
-          </NavigationMenu.Link>
-        </NavigationMenu.Item>
         {groups.map((group) => (
           <NavigationMenu.Item key={group.label}>
             <NavigationMenu.Trigger

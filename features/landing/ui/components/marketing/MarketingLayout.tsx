@@ -56,7 +56,7 @@ export function MarketingHero({
 }: {
   title: ReactNode;
   children: ReactNode;
-  actions: ReactNode;
+  actions?: ReactNode;
   eyebrow?: ReactNode;
 }) {
   return (
@@ -75,9 +75,11 @@ export function MarketingHero({
           <h1 className="text-4xl leading-[1.05] font-normal tracking-tight text-balance sm:text-6xl lg:text-7xl">
             {title}
           </h1>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            {actions}
-          </div>
+          {actions && (
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              {actions}
+            </div>
+          )}
         </div>
         <div className={cn(marketingTextColumn, "w-full lg:justify-self-end")}>
           {children}

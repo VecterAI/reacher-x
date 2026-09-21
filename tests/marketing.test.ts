@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import {
   MARKETING_USE_CASES,
-  getMarketingUseCase,
   isInvalidMarketingPath,
 } from "../features/landing/lib/marketingUseCaseHelpers";
 import {
@@ -31,10 +30,6 @@ test("job-seeker demo labels match the shared recruiting panels", () => {
 });
 
 test("every public use case has a working demo and published guide", () => {
-  assert.equal(
-    new Set(MARKETING_USE_CASES.map((item) => item.href)).size,
-    MARKETING_USE_CASES.length
-  );
   for (const item of MARKETING_USE_CASES) {
     assert.ok(item.prompt.trim().length > 30, item.slug);
     assert.ok(BLOG_DEMO_IDS.includes(item.guide), item.guide);
@@ -47,10 +42,7 @@ test("every public use case has a working demo and published guide", () => {
       ).length,
       1
     );
-    assert.equal(
-      getMarketingUseCase(item.slug)?.href,
-      `/use-cases/${item.slug}`
-    );
+    assert.ok(item.blogHref.startsWith("/blog/"), item.blogHref);
   }
 });
 
@@ -64,8 +56,10 @@ test("unknown and adversarial route values do not resolve to marketing content",
     "%2Fcustomers",
     "https://example.com",
   ]) {
-    assert.equal(getMarketingUseCase(value), undefined);
     assert.equal(isInvalidMarketingPath(`/home/preview/${value}`), true);
+  }
+  for (const path of ["/use-cases", "/use-cases/customers", "/product"]) {
+    assert.equal(existsSync(`app/(landing)/${path.slice(1)}`), false, path);
   }
 });
 
@@ -124,6 +118,10 @@ test("only the canonical homepage remains; variants have no routes", () => {
     "/home/preview",
     "/home/preview/network",
     "/home/preview/goals",
+    "/product",
+    "/use-cases",
+    "/use-cases/customers",
+    "/use-cases/customers/extra",
   ]) {
     assert.equal(isInvalidMarketingPath(path), true, path);
   }

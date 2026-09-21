@@ -10,15 +10,13 @@ if (!origin)
 const request = (path: string) =>
   fetch(new URL(path, origin), { redirect: "manual" });
 
-test("all use cases are publicly rendered, canonical, and ready to start a relevant search", async () => {
+test("all use case guides are publicly rendered and ready to start a relevant search", async () => {
   for (const item of MARKETING_USE_CASES) {
-    const response = await request(item.href);
-    assert.equal(response.status, 200, item.href);
+    const response = await request(item.blogHref);
+    assert.equal(response.status, 200, item.blogHref);
     const html = await response.text();
     assert.match(html, /<h1/);
-    assert.ok(html.includes(`https://reacherx.com${item.href}`));
-    assert.ok(html.includes(`/blog/${item.guide}`));
-    assert.doesNotMatch(html, /example-brief-heading|Other use cases/);
+    assert.ok(html.includes(`https://reacherx.com${item.blogHref}`));
     assert.doesNotMatch(
       html,
       /NEXT_HTTP_ERROR_FALLBACK;500|Internal Server Error/
@@ -30,7 +28,7 @@ test("the approved homepage is canonical and indexable", async () => {
   const response = await request("/home");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Get your first customers without a sales team/);
+  assert.match(html, /The △ Agent that brings you high-intent customers/);
   assert.match(html, /Describe who you need △ Agent to find/);
   assert.match(html, /rel="canonical" href="https:\/\/reacherx.com\/home"/);
   assert.doesNotMatch(
@@ -56,17 +54,14 @@ test("retired variant URLs return 404 without redirects", async () => {
   }
 });
 
-test("public supporting pages and removed or invalid routes have the right status", async () => {
-  for (const path of ["/use-cases", "/product"])
-    assert.equal((await request(path)).status, 200, path);
+test("removed routes no longer exist and retired variants stay 404", async () => {
+  for (const path of ["/use-cases", "/use-cases/customers", "/product"])
+    assert.equal((await request(path)).status, 404, path);
   for (const path of [
     "/about",
-    "/use-cases/not-real",
     "/home/preview/not-real",
     "/home/preview/describe",
     "/home/preview/goals",
-    "/use-cases/customers/extra",
-    "/use-cases/missing.png",
     "/home/preview/__proto__",
   ])
     assert.equal((await request(path)).status, 404, path);
@@ -76,6 +71,6 @@ test("public supporting pages and removed or invalid routes have the right statu
   assert.equal(legacy.status, 308);
   assert.equal(
     new URL(legacy.headers.get("location")!, origin).pathname,
-    "/use-cases"
+    "/home"
   );
 });

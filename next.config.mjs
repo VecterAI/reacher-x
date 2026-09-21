@@ -23,7 +23,7 @@ const nextConfig = {
     return [
       {
         source: "/home/use-cases",
-        destination: "/use-cases",
+        destination: "/home",
         permanent: true,
       },
       {

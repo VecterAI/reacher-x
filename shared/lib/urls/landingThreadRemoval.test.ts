@@ -35,10 +35,8 @@ describe("routing after public thread removal", () => {
       expect(entries.map((entry) => entry.url)).toEqual(
         expect.arrayContaining([
           "https://reacherx.com/home",
-          "https://reacherx.com/use-cases",
           "https://reacherx.com/pricing",
           "https://reacherx.com/blog",
-          "https://reacherx.com/use-cases/investors",
         ])
       );
       expect(
@@ -75,9 +73,6 @@ describe("routing after public thread removal", () => {
   test.each([
     "/home",
     "/pricing",
-    "/use-cases",
-    "/use-cases/investors",
-    "/product",
     "/login",
     "/signup",
     "/callback",
@@ -130,8 +125,11 @@ describe("routing after public thread removal", () => {
   });
 });
 
-describe("marketing routes reject invalid paths before streaming", () => {
+describe("marketing routes reject invalid and retired paths before streaming", () => {
   test.each([
+    "/product",
+    "/use-cases",
+    "/use-cases/investors",
     "/use-cases/not-real",
     "/use-cases/customers/extra",
     "/use-cases/__proto__",
@@ -151,7 +149,7 @@ describe("marketing routes reject invalid paths before streaming", () => {
     );
     expect(response.status).toBe(404);
     expect(response.headers.get("x-robots-tag")).toBe("noindex");
-    expect(await response.text()).toContain("Explore use cases");
+    expect(await response.text()).toContain("Back to home");
     expect(mocks.handleAuthkitProxy).not.toHaveBeenCalled();
   });
 });
@@ -189,7 +187,7 @@ test("retired homepage variants also return 404 when authenticated", async () =>
 });
 
 describe("agent format negotiation preserves auth and Next.js protocols", () => {
-  test.each(["/home", "/product", "/pricing", "/use-cases/investors", "/blog"])(
+  test.each(["/home", "/pricing", "/blog"])(
     "negotiates public Markdown at %s",
     async (path) => {
       const response = await proxy(

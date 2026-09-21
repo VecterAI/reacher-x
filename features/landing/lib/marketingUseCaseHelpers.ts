@@ -146,7 +146,6 @@ const STORIES: Record<string, UseCaseStory> = {
 export const MARKETING_USE_CASES = USE_CASES.map((useCase) => ({
   ...useCase,
   ...STORIES[useCase.useCaseKey],
-  href: `/use-cases/${useCase.slug}`,
   /** Published guide for the same audience; marketing surfaces link here. */
   blogHref: `/blog/${STORIES[useCase.useCaseKey].guide}`,
 }));
@@ -162,16 +161,17 @@ export const HOME_PERSONA_USE_CASES = MARKETING_USE_CASES.filter((useCase) =>
   HOME_PERSONA_KEYS.includes(useCase.useCaseKey)
 );
 
-export function getMarketingUseCase(slug: string) {
-  return MARKETING_USE_CASES.find((useCase) => useCase.slug === slug);
-}
-
 export function isInvalidMarketingPath(pathname: string) {
   if (pathname === "/about") {
     return true;
   }
-  if (pathname.startsWith("/use-cases/")) {
-    return !getMarketingUseCase(pathname.slice("/use-cases/".length));
+  // Retired marketing routes must return 404 before the shell streams.
+  if (
+    pathname === "/product" ||
+    pathname === "/use-cases" ||
+    pathname.startsWith("/use-cases/")
+  ) {
+    return true;
   }
   // Retired homepage variants must return 404 before the shell streams.
   if (

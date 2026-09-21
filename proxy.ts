@@ -19,8 +19,6 @@ const PUBLIC_PATH_PATTERNS = [
   /^\/logout(?:\/complete)?$/,
   /^\/callback$/,
   /^\/home(?:\/.*)?$/,
-  /^\/use-cases(?:\/.*)?$/,
-  /^\/product$/,
   /^\/pricing$/,
   /^\/blog(?:\/.*)?$/,
   /^\/markdown(?:\/.*)?$/,

@@ -8,23 +8,18 @@ import {
   MarketingDevelopers,
   MarketingCommunity,
 } from "./MarketingStory";
+import {
+  MarketingCapabilities,
+  MarketingCapabilityIndex,
+} from "./MarketingProduct";
 import { LandingPromptCta } from "../LandingPromptCta";
-import { marketingButton as buttonVariants } from "./MarketingLayout";
 import { MarketingHero } from "./MarketingLayout";
 import { MarketingWorkflow, MarketingFinish } from "./MarketingSections";
 
 export function MarketingHome() {
   return (
     <>
-      <MarketingHero
-        eyebrow={MARKETING_COPY.home.eyebrow}
-        title={MARKETING_COPY.home.headline}
-        actions={
-          <a href="#how-it-works" className={buttonVariants()}>
-            See how it works
-          </a>
-        }
-      >
+      <MarketingHero title={MARKETING_COPY.home.headline}>
         <p className="text-base leading-7 text-pretty">
           {MARKETING_COPY.home.description}
         </p>
@@ -42,6 +37,8 @@ export function MarketingHome() {
         <MarketingProof />
       </Suspense>
       <MarketingWorkflow />
+      <MarketingCapabilities />
+      <MarketingCapabilityIndex />
       <MarketingConnections />
       <MarketingAuthenticity />
       <MarketingDevelopers />

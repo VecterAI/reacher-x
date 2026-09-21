@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { BLOG_ORIGIN, getBlogCategory } from "@/features/blog/lib/blogHelpers";
-import { MARKETING_USE_CASES } from "./marketingUseCaseHelpers";
 import { GITHUB_REPO_URL } from "./github";
 import { X_PROFILE_URL, DISCORD_INVITE_URL } from "./communityUrls";
 import { homepageFaqItems } from "./faqs";
@@ -8,27 +7,10 @@ import { homepageFaqItems } from "./faqs";
 export const PUBLIC_MARKETING_PAGES = [
   { href: "/home", title: "ReacherX", description: homepageFaqItems[0].answer },
   {
-    href: "/product",
-    title: "Product",
-    description:
-      "Discovery, research, outreach plans, conversations, memory, and analytics.",
-  },
-  {
     href: "/pricing",
     title: "Pricing",
     description: "Paid plans, monthly and yearly prices, and workspace limits.",
   },
-  {
-    href: "/use-cases",
-    title: "Use cases",
-    description:
-      "Find customers, candidates, investors, partners, creators, community members, research participants, and podcast guests.",
-  },
-  ...MARKETING_USE_CASES.map((item) => ({
-    href: item.href,
-    title: item.goal,
-    description: item.explanation,
-  })),
 ];
 
 /** Only published editorial routes may have public Markdown representations. */
