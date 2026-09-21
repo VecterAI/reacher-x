@@ -46,7 +46,7 @@ export function publicPageMarkdown(
   let title: string;
   let body: string;
   if (pathname === "/home") {
-    title = "Reach the right people.";
+    title = MARKETING_COPY.home.headline;
     body = [
       MARKETING_COPY.home.description,
       "## How it works",
