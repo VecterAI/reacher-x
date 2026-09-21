@@ -20,7 +20,7 @@ export function BlogCard({
 }) {
   const cover = showImage && post.image;
   return (
-    <article className="min-w-0 h-full">
+    <article className="h-full min-w-0">
       <div
         className={cn(
           "blog-card relative flex h-full flex-col",

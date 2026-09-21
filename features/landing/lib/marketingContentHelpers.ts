@@ -21,7 +21,8 @@ export const MARKETING_COPY = {
     connectionsHeading: "Every goal is a network problem.",
     connections:
       "Selling, hiring, or raising. The problem is always the same: the right people.",
-    authenticityHeading: "Your network is your net worth. Build it with △ Agent.",
+    authenticityHeading:
+      "Your network is your net worth. Build it with △ Agent.",
     developersHeading: "Open source.",
     developers:
       "Use, modify, and self-host ReacherX under AGPL-3.0, as part of the Convex Open Source program. Improvements stay open for everyone.",
@@ -32,8 +33,7 @@ export const MARKETING_COPY = {
       "ReacherX keeps searching X/Twitter and LinkedIn around the clock, and researches every person it finds before you see them.",
     plans:
       "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review. Mention several people in one message with @ tags.",
-    messages:
-      "Send voice notes, images, and video inside your conversations.",
+    messages: "Send voice notes, images, and video inside your conversations.",
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",
     moreHeading: "More, built in.",

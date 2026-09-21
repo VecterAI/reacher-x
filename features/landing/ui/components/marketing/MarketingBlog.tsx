@@ -7,10 +7,12 @@ import { MarketingBlogBrowser } from "./MarketingBlogBrowser";
 /** A visible slice of the blog: same cards, tabs, and author as /blog. */
 export async function MarketingBlog() {
   const posts = (await getBlogPosts()).map(summarizeBlogPost);
-  const categories = getPublishedBlogCategories(posts).map(({ slug, label }) => ({
-    slug,
-    label,
-  }));
+  const categories = getPublishedBlogCategories(posts).map(
+    ({ slug, label }) => ({
+      slug,
+      label,
+    })
+  );
 
   return (
     <MarketingSection id="blog" labelledBy="marketing-blog-heading">

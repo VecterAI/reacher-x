@@ -43,7 +43,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/components/Select";
-import { CheckIcon, CheckBoxOutlineBlankIcon } from "@/shared/ui/components/icons";
+import {
+  CheckIcon,
+  CheckBoxOutlineBlankIcon,
+} from "@/shared/ui/components/icons";
 import { BillingPeriodSelector } from "@/features/billing/ui/components/BillingPeriodSelector";
 import { PlanOffersSkeleton } from "@/features/billing/ui/components/PlanOffersSkeleton";
 import { useAvailablePlanOffers } from "@/features/billing/hooks/useAvailablePlanOffers";
@@ -166,7 +169,9 @@ function TierCard({
     }
 
     // Anonymous visitors are starting out, not upgrading.
-    return isAuthenticated ? `Upgrade for ${priceLabel}` : `Start for ${priceLabel}`;
+    return isAuthenticated
+      ? `Upgrade for ${priceLabel}`
+      : `Start for ${priceLabel}`;
   })();
 
   const ctaVariant = isLowerThanCurrentPlan ? "outline" : "default";

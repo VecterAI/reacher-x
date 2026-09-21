@@ -149,7 +149,9 @@ for (const scenario of [
           assert.ok(
             await frame
               .locator("aside")
-              .getByText(/Hi Nora, I saw your post about keeping client feedback/)
+              .getByText(
+                /Hi Nora, I saw your post about keeping client feedback/
+              )
               .isVisible()
           );
           assert.equal(

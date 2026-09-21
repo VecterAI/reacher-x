@@ -162,11 +162,7 @@ export function MarketingFeature({
       id={id}
       className={cn(marketingPageWidth, marketingSection, "scroll-mt-24")}
     >
-      <MarketingFeatureColumns
-        title={title}
-        demo={demo}
-        reverse={reverse}
-      >
+      <MarketingFeatureColumns title={title} demo={demo} reverse={reverse}>
         {children}
       </MarketingFeatureColumns>
     </section>

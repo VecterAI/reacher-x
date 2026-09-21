@@ -46,7 +46,11 @@ export const AGENT_CLOCK_DEMO_SHOTS: readonly BlogDemoShot[] = [
     selector: '[role="dialog"] button',
     text: "Cancel",
   }),
-  { label: "Discovery never stops for this goal", duration: 2600, camera: wide },
+  {
+    label: "Discovery never stops for this goal",
+    duration: 2600,
+    camera: wide,
+  },
 ];
 
 export const OBSERVABILITY_DEMO_SHOTS: readonly BlogDemoShot[] = [

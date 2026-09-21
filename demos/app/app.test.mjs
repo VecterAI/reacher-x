@@ -24,10 +24,7 @@ test(
       await browser("wait", candidate);
       await browser("click", '[role="combobox"]');
       await roleClick("option", "Customers — freelance designers");
-      await browser(
-        "wait",
-        '[data-prospect-id="use_case_demo_customers_1"]'
-      );
+      await browser("wait", '[data-prospect-id="use_case_demo_customers_1"]');
       assert.equal(await evaluate("location.href"), url);
       assert.equal(
         await evaluate(`document.querySelector('${candidate}') === null`),

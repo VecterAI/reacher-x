@@ -34,9 +34,7 @@ function orderAllPosts(posts: BlogPostSummary[]) {
   const curated = CURATED_SLUGS.map((slug) =>
     posts.find((post) => post.slug === slug)
   ).filter((post) => post !== undefined);
-  const rest = posts.filter(
-    (post) => !CURATED_SLUGS.includes(post.slug)
-  );
+  const rest = posts.filter((post) => !CURATED_SLUGS.includes(post.slug));
   return [...curated, ...rest].slice(0, MAX_ALL_POSTS);
 }
 

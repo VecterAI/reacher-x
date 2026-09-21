@@ -6,9 +6,7 @@ import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
 import { PillSelector } from "@/shared/ui/components/pill-navigation/PillSelector";
 import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
-import {
-  cn,
-} from "@/shared/lib/utils";
+import { cn } from "@/shared/lib/utils";
 import {
   marketingButton,
   MarketingSection,
