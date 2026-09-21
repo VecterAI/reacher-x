@@ -408,8 +408,11 @@ describe("workspace plan usage", () => {
       await t.run((ctx) => ctx.db.query("outreachNotifications").collect())
     ).toHaveLength(1);
     await t.run(async (ctx) => {
-      for (let i = 0; i < 100; i++)
-        await ctx.db.insert("prospects", {
+      const aggregate = new DirectAggregate(
+        components.workspaceReportingAggregate
+      );
+      for (let i = 0; i < 100; i++) {
+        const prospectId = await ctx.db.insert("prospects", {
           userId,
           workspaceId,
           platform: "twitter",
@@ -421,6 +424,13 @@ describe("workspace plan usage", () => {
           qualifiedAt: nextCycle,
           updatedAt: nextCycle,
         });
+        await aggregate.insert(ctx, {
+          namespace: [1, workspaceId, "usage"],
+          key: ["qualifiedProspectsCount", nextCycle],
+          id: String(prospectId),
+          sumValue: 1,
+        });
+      }
     });
     await transition();
     const notifications = await t.run((ctx) =>

@@ -1,4 +1,5 @@
 import { getStringProperty, isRecord } from "./lib/typeGuards";
+import { logRagSearch } from "./lib/ragSearchHelpers";
 import { learningEntryReferenceValidator } from "./validators";
 import {
   isCurrentTargetingLearning,
@@ -14,6 +15,7 @@ import {
   getWorkspaceNamespace,
 } from "./agents/outreach/rag";
 import { logger } from "../shared/lib/logger";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   action,
   internalAction,
@@ -92,6 +94,7 @@ const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
 const DISCOVERY_CONTEXT_LIMIT = 6;
 const DISCOVERY_SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
+const DISCOVERY_SEMANTIC_DUPLICATE_RESULT_LIMIT = 3;
 const MEMORY_INVENTORY_BACKFILL_PAGE_SIZE = 500;
 const MEMORY_INVENTORY_ID_PAGE_SIZE = 500;
 const MEMORY_INVENTORY_RECONCILIATION_PAGE_SIZE = 100;
@@ -1113,6 +1116,8 @@ export const searchWorkspaceMemoryNamespaceInternal = internalAction({
       return { matches: [] };
     }
 
+    const searchLimit = limit ?? 3;
+    const searchStartedAt = getCurrentUTCTimestamp();
     try {
       const result = await getAgentMemoryRag().search(ctx, {
         namespace: getWorkspaceNamespace(
@@ -1120,7 +1125,16 @@ export const searchWorkspaceMemoryNamespaceInternal = internalAction({
           namespace as Parameters<typeof getWorkspaceNamespace>[1]
         ),
         query,
-        limit: limit ?? 3,
+        limit: searchLimit,
+      });
+      logRagSearch({
+        caller: "workspace_memory_namespace_search",
+        workspaceId,
+        namespace,
+        limit: searchLimit,
+        resultCount: result.entries.length,
+        durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+        outcome: "success",
       });
 
       const allowedIds =
@@ -1149,7 +1163,7 @@ export const searchWorkspaceMemoryNamespaceInternal = internalAction({
       return {
         matches: result.results
           .filter((entry) => !allowedIds || allowedIds.has(entry.entryId))
-          .slice(0, limit ?? 3)
+          .slice(0, searchLimit)
           .map((entry): WorkspaceSemanticMatch => {
             const text = entry.content.map((chunk) => chunk.text).join("\n");
             return {
@@ -1163,7 +1177,21 @@ export const searchWorkspaceMemoryNamespaceInternal = internalAction({
             };
           }),
       };
-    } catch {
+    } catch (error) {
+      logRagSearch({
+        caller: "workspace_memory_namespace_search",
+        workspaceId,
+        namespace,
+        limit: searchLimit,
+        resultCount: 0,
+        durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+        outcome: "error",
+      });
+      memoryLogger.warn("Workspace memory namespace search failed", {
+        workspaceId,
+        namespace,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return { matches: [] };
     }
   },
@@ -1342,12 +1370,22 @@ async function buildWorkspaceMemoryContextFromStore(
 
   const semanticMemoryIdGroups = await Promise.all(
     SHARED_MEMORY_SEMANTIC_NAMESPACES.map(async (namespace) => {
+      const searchStartedAt = getCurrentUTCTimestamp();
       try {
         const result = await getAgentMemoryRag().search(ctx, {
           namespace: getWorkspaceNamespace(request.workspaceId, namespace),
           query: request.query,
           limit: 4,
           vectorScoreThreshold: SHARED_MEMORY_SEMANTIC_THRESHOLD,
+        });
+        logRagSearch({
+          caller: "shared_workspace_memory_context",
+          workspaceId: request.workspaceId,
+          namespace,
+          limit: 4,
+          resultCount: result.entries.length,
+          durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+          outcome: "success",
         });
         return result.entries
           .map((entry) => entry.metadata?.memoryItemId)
@@ -1356,6 +1394,15 @@ async function buildWorkspaceMemoryContextFromStore(
               typeof memoryId === "string" && memoryId.length > 0
           );
       } catch (error) {
+        logRagSearch({
+          caller: "shared_workspace_memory_context",
+          workspaceId: request.workspaceId,
+          namespace,
+          limit: 4,
+          resultCount: 0,
+          durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+          outcome: "error",
+        });
         memoryLogger.warn("Shared workspace memory semantic search failed", {
           workspaceId: request.workspaceId,
           namespace,
@@ -1887,13 +1934,31 @@ export const searchDiscoverySemanticDuplicatesInternal = internalAction({
       String(workspaceId),
       getNamespaceKindForQueryCandidate()
     );
+    const searchLimit = Math.min(
+      Math.max(
+        Math.floor(limit ?? DISCOVERY_SEMANTIC_DUPLICATE_RESULT_LIMIT),
+        1
+      ),
+      DISCOVERY_SEMANTIC_DUPLICATE_RESULT_LIMIT
+    );
 
+    const searchStartedAt = getCurrentUTCTimestamp();
     try {
       const result = await getAgentMemoryRag().search(ctx, {
         namespace,
         query,
-        limit: limit ?? 3,
+        filters: [{ name: "contentType", value: "query_candidate" }],
+        limit: searchLimit,
         vectorScoreThreshold: DISCOVERY_SEMANTIC_DUPLICATE_THRESHOLD,
+      });
+      logRagSearch({
+        caller: "discovery_semantic_duplicate_screening",
+        workspaceId,
+        namespace,
+        limit: searchLimit,
+        resultCount: result.entries.length,
+        durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+        outcome: "success",
       });
 
       const allowedIds = new Set(
@@ -1919,14 +1984,27 @@ export const searchDiscoverySemanticDuplicatesInternal = internalAction({
       return {
         matches: result.results
           .filter((entry) => allowedIds.has(entry.entryId))
-          .slice(0, limit ?? 3)
+          .slice(0, searchLimit)
           .map((entry) => ({
             score: entry.score,
             text: entry.content.map((chunk) => chunk.text).join("\n"),
             title: null,
           })),
       };
-    } catch {
+    } catch (error) {
+      logRagSearch({
+        caller: "discovery_semantic_duplicate_screening",
+        workspaceId,
+        namespace,
+        limit: searchLimit,
+        resultCount: 0,
+        durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+        outcome: "error",
+      });
+      memoryLogger.warn("Discovery semantic duplicate search failed", {
+        workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return { matches: [] };
     }
   },
@@ -1997,6 +2075,7 @@ export const screenDiscoveryQueryCandidatesInternal = internalAction({
       });
 
       let isExactDuplicate = seenCanonicalHashes.has(canonical.canonicalHash);
+      seenCanonicalHashes.add(canonical.canonicalHash);
       const existingKeyword = await ctx.runQuery(
         internal.keywords.getKeywordByCanonicalHashInternal,
         {
@@ -2016,12 +2095,18 @@ export const screenDiscoveryQueryCandidatesInternal = internalAction({
             canonicalKey: canonical.canonicalKey,
           }
         );
-        if (existingCandidate && existingCandidate.status !== "generated") {
+        if (existingCandidate?.status === "generated") {
+          accepted.push({
+            rawValue: candidate.rawValue,
+            sourceTheme: candidate.sourceTheme,
+            queryCandidateId: existingCandidate._id,
+          });
+          continue;
+        }
+        if (existingCandidate) {
           isExactDuplicate = true;
         }
       }
-
-      seenCanonicalHashes.add(canonical.canonicalHash);
 
       if (isExactDuplicate) {
         const duplicate = await ctx.runMutation(

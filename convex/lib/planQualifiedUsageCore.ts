@@ -1,5 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { getWorkspaceReportingMetricSums } from "./workspaceReportingAggregate";
+import { isWorkspaceReportingAggregateReady } from "./workspaceReportingRollout";
 
 type PlanUsageCtx = QueryCtx | MutationCtx;
 
@@ -116,6 +118,22 @@ export async function computeQualifiedProspectUsageForWorkspaceWindow(
   workspaceId: Id<"workspaces">,
   window: QualifiedUsageWindow
 ) {
+  if (await isWorkspaceReportingAggregateReady(ctx.db, workspaceId)) {
+    const [used = 0] = await getWorkspaceReportingMetricSums(ctx, {
+      workspaceId,
+      dataset: "usage",
+      queries: [
+        {
+          metric: "qualifiedProspectsCount",
+          startMs: window.cycleStart,
+          endMs: window.cycleEnd + 1,
+        },
+      ],
+    });
+
+    return used;
+  }
+
   const usage = await readQualifiedProspectUsageForWorkspaceWindow(
     ctx,
     workspaceId,

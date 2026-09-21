@@ -48,6 +48,45 @@ async function fixture() {
 }
 
 describe("discovery and qualification learning delivery", () => {
+  test("reuses an already accepted candidate without rerunning semantic RAG screening", async () => {
+    const { t, workspaceId } = await fixture();
+    const before = await t.run(async (ctx) => {
+      const result = await upsertQueryCandidateRecord(ctx.db, {
+        workspaceId,
+        type: "social_query",
+        rawValue: "engineering hiring",
+        status: "generated",
+      });
+      return ctx.db.get(result.queryCandidateId);
+    });
+
+    const screened = await t.action(
+      internal.memory.screenDiscoveryQueryCandidatesInternal,
+      {
+        workspaceId,
+        candidates: [{ rawValue: "engineering hiring" }],
+      }
+    );
+    const after = await t.run((ctx) => ctx.db.get(before!._id));
+
+    expect(screened).toMatchObject({
+      accepted: [
+        {
+          rawValue: "engineering hiring",
+          queryCandidateId: before!._id,
+        },
+      ],
+      rejected: [],
+      counts: {
+        generated: 1,
+        accepted: 1,
+        exactDuplicates: 0,
+        semanticDuplicates: 0,
+      },
+    });
+    expect(after).toEqual(before);
+  });
+
   test("batch duplicates retain combined query metadata after retargeting", async () => {
     const { t, workspaceId } = await fixture();
     await t.run((ctx) =>

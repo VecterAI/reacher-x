@@ -10,6 +10,8 @@ import {
 } from "./agents/outreach/rag";
 import { action } from "./lib/functionBuilders";
 import { mergeTierOrderedProspectIds } from "./lib/prospectSearchMerge";
+import { logRagSearch } from "./lib/ragSearchHelpers";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   prospectPlatformValidator,
   prospectStatusValidator,
@@ -112,6 +114,7 @@ export const searchProspectsUnified = action({
     let ftDone = prev?.ftDone ?? false;
 
     if (!prev) {
+      const searchStartedAt = getCurrentUTCTimestamp();
       try {
         const rag = await getAgentMemoryRag().search(ctx, {
           namespace: getWorkspaceNamespace(
@@ -121,6 +124,15 @@ export const searchProspectsUnified = action({
           query: q,
           limit: SEMANTIC_RAG_LIMIT,
           vectorScoreThreshold: VECTOR_THRESHOLD,
+        });
+        logRagSearch({
+          caller: "prospect_search_unified",
+          workspaceId: String(args.workspaceId),
+          namespace: "prospect_search",
+          limit: SEMANTIC_RAG_LIMIT,
+          resultCount: rag.entries.length,
+          durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+          outcome: "success",
         });
 
         const seen = new Set<string>();
@@ -164,6 +176,15 @@ export const searchProspectsUnified = action({
           semanticOrderedIds = [];
         }
       } catch {
+        logRagSearch({
+          caller: "prospect_search_unified",
+          workspaceId: String(args.workspaceId),
+          namespace: "prospect_search",
+          limit: SEMANTIC_RAG_LIMIT,
+          resultCount: 0,
+          durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+          outcome: "error",
+        });
         semanticOrderedIds = [];
       }
     }
