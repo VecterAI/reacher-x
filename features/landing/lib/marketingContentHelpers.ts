@@ -5,7 +5,7 @@ export const MARKETING_COPY = {
   home: {
     headline: "The △ Agent that brings the right people into your network.",
     description:
-      "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds high-intent people who fit, and hands you the research behind every match.",
+      "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn introductions into relationships.",
     setupTimeNote: "Set up in under 5 minutes.",
   },
   workflow: {
@@ -17,16 +17,16 @@ export const MARKETING_COPY = {
     researchDetail:
       "Check the posts and profile details behind each result before you decide.",
     outreach:
-      "△ Agent turns its research into a personal introduction, ready for your review. You approve every message before it goes out. You can make it hands-off in settings.",
+      "△ Agent starts each conversation with a personal introduction, then keeps every reply, note, and follow-up in one place, so the relationship keeps moving.",
     outreachDetail:
-      "Conversations, notes, and your writing style stay in one place.",
-    finishHeading: "Who will you and your △ Agent reach?",
+      "You approve every message before it goes out. You can make it hands-off in settings.",
+    finishHeading: "Who should be in your network?",
   },
   story: {
     connectionsHeading: "Selling, hiring, or raising. Same agent.",
     connections:
       "Selling, hiring, or raising. The problem is always the same: the right people.",
-    authenticityHeading: "Your network is your net worth. Start building it.",
+    authenticityHeading: "Your network is your net worth. Build it with △ Agent.",
     developersHeading: "Open source.",
     developers:
       "Use, modify, and self-host ReacherX under AGPL-3.0, as part of the Convex Open Source program. Improvements stay open for everyone.",
@@ -39,10 +39,10 @@ export const MARKETING_COPY = {
       "ReacherX keeps searching X/Twitter and LinkedIn around the clock, and researches every person it finds before you see them.",
     discoveryDetail: "It keeps working while you are away.",
     plans:
-      "△ Agent turns its research into an outreach plan for each person, with a draft message you can edit before anything sends.",
+      "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review.",
     plansDetail: "Approve in one click, or edit the draft first.",
     messages:
-      "Send voice notes, images, and video. Mention several people in one message with @ tags.",
+      "Conversations are not just text: send voice notes, images, and video, and mention several people in one message with @ tags.",
     messagesDetail: "Rich messages stay inside the conversation.",
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",
