@@ -448,10 +448,6 @@ export function PricingSection({
       <p className="text-foreground mt-6 text-center text-sm">
         Every plan comes with a 30-day money-back guarantee.
       </p>
-      <p className="text-muted-foreground mt-2 text-center text-sm">
-        Self-hosting is free. The social data isn't: X/Twitter and other APIs
-        bill per use, and on a hosted plan that cost and the upkeep are on us.
-      </p>
     </section>
   );
 }
