@@ -5,9 +5,10 @@ import Link from "next/link";
 import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
 import { PillSelector } from "@/shared/ui/components/pill-navigation/PillSelector";
-import { CheckIcon, ArrowOutwardIcon } from "@/shared/ui/components/icons";
+import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 import {
   marketingButton,
+  MarketingFeatureColumns,
   MarketingSection,
   marketingSectionTitle,
 } from "./MarketingLayout";
@@ -18,55 +19,47 @@ const TAB_ITEMS = MARKETING_USE_CASES.map((item) => ({
   label: item.tabLabel,
 }));
 
-/** Homepage use-case explorer: pill tabs above a demo and copy panel. */
+/** Homepage use-case explorer: pill tabs above the shared feature columns. */
 export function MarketingUseCaseTabs() {
   const [activeSlug, setActiveSlug] = useState(TAB_ITEMS[0]?.value ?? "");
-  const active =
-    MARKETING_USE_CASES.find((item) => item.slug === activeSlug) ??
-    MARKETING_USE_CASES[0];
+  const activeIndex = MARKETING_USE_CASES.findIndex(
+    (item) => item.slug === activeSlug
+  );
+  const active = MARKETING_USE_CASES[activeIndex];
   if (!active) return null;
 
   return (
     <MarketingSection id="use-cases" labelledBy="use-case-tabs-heading">
-      <header className="mb-8">
-        <h2 id="use-case-tabs-heading" className={marketingSectionTitle}>
-          {MARKETING_COPY.story.connectionsHeading}
-        </h2>
-        <p className="text-muted-foreground mt-5 max-w-lg text-base leading-7">
-          {MARKETING_COPY.story.connections}
-        </p>
-      </header>
-      <PillSelector
-        items={TAB_ITEMS}
-        value={active.slug}
-        onValueChange={setActiveSlug}
-        label="Pick a use case"
-      />
-      <div
-        key={active.slug}
-        className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,1fr)] lg:gap-x-14 lg:gap-y-10"
-      >
-        <MarketingDemo
-          scenario={active.guide}
-          title={active.goal}
-          caption={active.explanation}
+      <h2 id="use-case-tabs-heading" className={marketingSectionTitle}>
+        {MARKETING_COPY.story.connectionsHeading}
+      </h2>
+      <div className="mt-8">
+        <PillSelector
+          items={TAB_ITEMS}
+          value={active.slug}
+          onValueChange={setActiveSlug}
+          label="Pick a use case"
         />
-        <div className="min-w-0 self-center lg:max-w-xs">
-          <h3 className="text-2xl leading-8 font-normal">{active.heading}</h3>
-          <p className="text-muted-foreground mt-4 text-base leading-7">
+      </div>
+      <div className="mt-10 lg:mt-14" key={active.slug}>
+        <MarketingFeatureColumns
+          title={active.heading}
+          titleAs="h3"
+          reverse={activeIndex % 2 === 1}
+          demo={
+            <MarketingDemo
+              scenario={active.guide}
+              title={active.goal}
+              caption={active.navigationDescription}
+            />
+          }
+        >
+          <p className="text-lg leading-7 text-pretty">
             {active.explanation}
           </p>
-          <ul className="mt-6 space-y-2 text-sm">
-            {active.checks.map((check) => (
-              <li key={check} className="flex gap-2">
-                <CheckIcon
-                  className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
-                  aria-hidden
-                />
-                <span>{check}</span>
-              </li>
-            ))}
-          </ul>
+          <p className="text-muted-foreground mt-5 text-sm leading-6">
+            {active.exampleHeading}
+          </p>
           <Link
             href={active.blogHref}
             className={marketingButton({
@@ -77,7 +70,7 @@ export function MarketingUseCaseTabs() {
             Read the guide
             <ArrowOutwardIcon className="size-4 shrink-0 fill-current" />
           </Link>
-        </div>
+        </MarketingFeatureColumns>
       </div>
     </MarketingSection>
   );
