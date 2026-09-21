@@ -21,7 +21,10 @@ import {
   PLAN_OFFERS_UNAVAILABLE,
 } from "@/shared/lib/billing/planOfferHelpers";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
-import { CheckIcon } from "@/shared/ui/components/icons";
+import {
+  CheckIcon,
+  CheckBoxOutlineBlankIcon,
+} from "@/shared/ui/components/icons";
 import {
   type BillingPeriod,
   type OnboardingPlanTierConfig,
@@ -150,15 +153,36 @@ function PlanTierCard({
           </p>
         ) : null}
         <ul className="space-y-2 text-sm">
-          {featureLines.map((line) => (
-            <li key={line} className="flex gap-2">
-              <CheckIcon
-                className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
-                aria-hidden
-              />
-              <span>{line}</span>
-            </li>
-          ))}
+          {featureLines.map((line) => {
+            const isComingSoon = line.endsWith("(Coming soon)");
+            const label = isComingSoon
+              ? line.replace(/ \(Coming soon\)$/, "")
+              : line;
+            return (
+              <li key={line} className="flex gap-2">
+                {isComingSoon ? (
+                  <>
+                    <CheckBoxOutlineBlankIcon
+                      className="text-muted-foreground mt-0.5 size-4 shrink-0 fill-current"
+                      aria-hidden
+                    />
+                    <span>{label}</span>
+                    <Badge variant="outline-strong" className="shrink-0">
+                      Coming soon
+                    </Badge>
+                  </>
+                ) : (
+                  <>
+                    <CheckIcon
+                      className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
+                      aria-hidden
+                    />
+                    <span>{line}</span>
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ul>
 
         <Button
