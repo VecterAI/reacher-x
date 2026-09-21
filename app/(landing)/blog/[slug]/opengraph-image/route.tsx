@@ -68,7 +68,7 @@ export async function GET(
           color: "#a3a3a3",
         }}
       >
-        <span>Find the people you need.</span>
+        <span>Find the network you need.</span>
         <span>reacherx.com/blog</span>
       </div>
     </div>,

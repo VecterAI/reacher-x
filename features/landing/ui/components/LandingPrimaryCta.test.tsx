@@ -38,10 +38,10 @@ async function render(props: ComponentProps<typeof LandingPrimaryCta> = {}) {
   await act(() => root.render(<LandingPrimaryCta {...props} />));
 }
 
-test("anonymous Reach preserves the setup auth destination and triangle", async () => {
+test("anonymous Get started preserves the setup auth destination and triangle", async () => {
   await render();
   const link = container.querySelector("a")!;
-  expect(link.textContent).toBe("Reach now");
+  expect(link.textContent).toBe("Get started");
   expect(link.getAttribute("href")).toBe(
     buildLoginHref(NEW_WORKSPACE_SETUP_AUTH_RETURN_TO)
   );

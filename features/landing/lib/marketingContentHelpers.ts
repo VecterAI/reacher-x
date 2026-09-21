@@ -15,7 +15,7 @@ export const MARKETING_COPY = {
       "ReacherX finds people on X/Twitter and LinkedIn, researches their background, and explains every match.",
     outreach:
       "△ Agent writes to each person differently: your voice, their context, the research behind it. Replies, notes, and follow-ups stay in one place, so the relationship keeps moving.",
-    finishHeading: "Who should be in your network?",
+    finishHeading: "Are you ready to start networking?",
   },
   story: {
     connectionsHeading: "Every goal is a network problem.",
