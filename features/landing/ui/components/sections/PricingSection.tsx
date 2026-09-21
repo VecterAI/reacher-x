@@ -245,16 +245,45 @@ function TierCard({
           </p>
         )}
         <ul className="space-y-2 text-sm">
-          {tier.features.map((feature) => (
-            <li key={feature} className="flex gap-2">
-              <CheckIcon
-                className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
-                aria-hidden
-              />
-              <span>{resolvePricingFeatureCopy(feature, useCaseKey)}</span>
-            </li>
-          ))}
+          {tier.features
+            .filter((feature) => !feature.endsWith("(Coming soon)"))
+            .map((feature) => (
+              <li key={feature} className="flex gap-2">
+                <CheckIcon
+                  className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
+                  aria-hidden
+                />
+                <span>{resolvePricingFeatureCopy(feature, useCaseKey)}</span>
+              </li>
+            ))}
         </ul>
+        {tier.features.some((feature) =>
+          feature.endsWith("(Coming soon)")
+        ) ? (
+          <div className="space-y-2 border-t pt-4 text-sm">
+            <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              Coming soon
+            </p>
+            <ul className="space-y-2">
+              {tier.features
+                .filter((feature) => feature.endsWith("(Coming soon)"))
+                .map((feature) => (
+                  <li key={feature} className="flex gap-2">
+                    <CheckIcon
+                      className="text-muted-foreground mt-0.5 size-4 shrink-0 fill-current"
+                      aria-hidden
+                    />
+                    <span className="text-muted-foreground">
+                      {resolvePricingFeatureCopy(
+                        feature,
+                        useCaseKey
+                      ).replace(/ \(Coming soon\)$/, "")}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ) : null}
       </CardContent>
 
       <CardFooter className="p-4 pt-0">{cta}</CardFooter>
