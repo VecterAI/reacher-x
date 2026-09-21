@@ -21,7 +21,6 @@ import {
   AutorenewIcon,
   ArrowBackIcon,
   ArrowForwardIcon,
-  ArrowOutwardIcon,
 } from "@/shared/ui/components/icons";
 import { useDemoVisibility } from "@/features/blog/ui/components/app-demo/useDemoVisibility";
 import { BlogAppDemo } from "@/features/blog/ui/components/app-demo/BlogAppDemo";
@@ -167,12 +166,8 @@ export function CapabilityCard({
         draggable={false}
         className="focus-visible:outline-ring flex flex-1 flex-col p-6 focus-visible:outline-2 focus-visible:outline-offset-[-2px] lg:p-8"
       >
-        <div
-          className="mb-5 flex items-center justify-between"
-          aria-hidden="true"
-        >
+        <div className="mb-5" aria-hidden="true">
           <item.icon className="size-6 fill-current" />
-          <ArrowOutwardIcon className="text-muted-foreground size-4 fill-current" />
         </div>
         <h3 className="text-2xl leading-8 font-normal">{item.title}</h3>
         <p className="text-muted-foreground mt-4 text-base leading-7">

@@ -33,7 +33,7 @@ function MarketingCapabilities() {
     <>
       <MarketingFeature
         id="capabilities"
-        title="Discovery that keeps going."
+        title="Working around the clock."
         demo={
           <MarketingDemo
             scenario="find-candidates"
@@ -69,7 +69,7 @@ function MarketingCapabilities() {
         </CapabilityLink>
       </MarketingFeature>
       <MarketingFeature
-        title="Messages with substance."
+        title="Send more than text."
         demo={
           <MarketingDemo
             scenario="send-voice-notes"

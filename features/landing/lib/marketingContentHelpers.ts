@@ -3,9 +3,9 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
-    headline: "The △ Agent that brings you high-intent customers.",
+    headline: "The △ Agent that brings the right people into your network.",
     description:
-      "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds people who actually fit, and hands you the research behind every match.",
+      "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds high-intent people who fit, and hands you the research behind every match.",
     setupTimeNote: "Set up in under 5 minutes.",
   },
   workflow: {
@@ -23,7 +23,7 @@ export const MARKETING_COPY = {
     finishHeading: "Who will you and your △ Agent reach?",
   },
   story: {
-    connectionsHeading: "Whatever you need people for.",
+    connectionsHeading: "What do you need people for?",
     connections:
       "Selling, hiring, or raising. The problem is always the same: the right people.",
     authenticityHeading: "Your network is your net worth. Start building it.",

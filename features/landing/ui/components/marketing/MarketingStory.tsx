@@ -16,25 +16,6 @@ import {
   MarketingSection,
   marketingSectionTitle,
 } from "./MarketingLayout";
-import { MarketingUseCaseExplorer } from "./MarketingUseCaseExplorer";
-
-export function MarketingConnections() {
-  return (
-    <MarketingSection id="use-cases" labelledBy="connections-heading">
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <h2 id="connections-heading" className={marketingSectionTitle}>
-            {MARKETING_COPY.story.connectionsHeading}
-          </h2>
-          <p className="text-muted-foreground mt-5 max-w-lg text-base leading-7">
-            {MARKETING_COPY.story.connections}
-          </p>
-        </div>
-      </header>
-      <MarketingUseCaseExplorer />
-    </MarketingSection>
-  );
-}
 
 export function MarketingAuthenticity() {
   return (

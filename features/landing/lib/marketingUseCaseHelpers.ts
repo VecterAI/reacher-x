@@ -2,6 +2,8 @@ import { USE_CASES } from "./useCases";
 import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 
 type UseCaseStory = {
+  /** Short tab label for the homepage use-case section. */
+  tabLabel: string;
   heading: string;
   explanation: string;
   exampleHeading: string;
@@ -14,6 +16,7 @@ type UseCaseStory = {
 
 const STORIES: Record<string, UseCaseStory> = {
   customer_prospecting: {
+    tabLabel: "Getting customers",
     heading: "Find the people who need what you’re building.",
     navigationDescription: "People discussing the problem you solve.",
     exampleHeading: "From an interesting post to a potential customer.",
@@ -30,6 +33,7 @@ const STORIES: Record<string, UseCaseStory> = {
     guide: "find-potential-customers",
   },
   recruiting: {
+    tabLabel: "Hiring",
     heading: "Meet your next teammate.",
     navigationDescription: "People with experience your team needs.",
     exampleHeading: "See the work behind the profile.",
@@ -46,6 +50,7 @@ const STORIES: Record<string, UseCaseStory> = {
     guide: "find-candidates",
   },
   investor_outreach: {
+    tabLabel: "Fundraising",
     heading: "Build relationships with relevant investors.",
     navigationDescription: "Backers focused on your sector and stage.",
     exampleHeading: "Research the fit before making the introduction.",
@@ -62,6 +67,7 @@ const STORIES: Record<string, UseCaseStory> = {
     guide: "find-investors",
   },
   partnership_outreach: {
+    tabLabel: "Partnerships",
     heading: "Find people you could build something with.",
     navigationDescription: "People serving the same audience.",
     exampleHeading: "Turn a shared audience into a reason to connect.",
@@ -78,6 +84,7 @@ const STORIES: Record<string, UseCaseStory> = {
     guide: "find-partners",
   },
   community_growth: {
+    tabLabel: "Community building",
     heading: "Bring the right people into your community.",
     navigationDescription: "People already interested in your topic.",
     exampleHeading: "Find shared interests beyond your existing audience.",
@@ -94,6 +101,7 @@ const STORIES: Record<string, UseCaseStory> = {
     guide: "find-community-members",
   },
   creator_outreach: {
+    tabLabel: "Creator outreach",
     heading: "Meet creators who fit your audience.",
     navigationDescription: "Creators whose work fits your audience.",
     exampleHeading: "Understand the creator before making the pitch.",
@@ -110,6 +118,7 @@ const STORIES: Record<string, UseCaseStory> = {
     guide: "find-creators",
   },
   user_research_recruitment: {
+    tabLabel: "User research",
     heading: "Talk to people who have lived the problem.",
     navigationDescription: "People with firsthand experience.",
     exampleHeading: "Find the experience your research needs.",
@@ -126,6 +135,7 @@ const STORIES: Record<string, UseCaseStory> = {
     guide: "find-research-participants",
   },
   podcast_speaker_sourcing: {
+    tabLabel: "Podcast guests",
     heading: "Find the voices your audience should hear.",
     navigationDescription: "People with a story for your listeners.",
     exampleHeading: "Find a guest and a conversation worth having.",
@@ -149,17 +159,6 @@ export const MARKETING_USE_CASES = USE_CASES.map((useCase) => ({
   /** Published guide for the same audience; marketing surfaces link here. */
   blogHref: `/blog/${STORIES[useCase.useCaseKey].guide}`,
 }));
-
-/** The three personas featured on the homepage carousel: sell, hire, raise. */
-const HOME_PERSONA_KEYS: readonly string[] = [
-  "customer_prospecting",
-  "recruiting",
-  "investor_outreach",
-];
-
-export const HOME_PERSONA_USE_CASES = MARKETING_USE_CASES.filter((useCase) =>
-  HOME_PERSONA_KEYS.includes(useCase.useCaseKey)
-);
 
 export function isInvalidMarketingPath(pathname: string) {
   if (pathname === "/about") {

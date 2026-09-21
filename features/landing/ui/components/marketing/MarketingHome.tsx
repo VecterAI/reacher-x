@@ -3,7 +3,6 @@ import { Suspense } from "react";
 import { MarketingFaq } from "./MarketingFaq";
 import { MarketingProof } from "./MarketingProof";
 import {
-  MarketingConnections,
   MarketingAuthenticity,
   MarketingDevelopers,
   MarketingCommunity,
@@ -15,6 +14,7 @@ import {
 import { LandingPromptCta } from "../LandingPromptCta";
 import { MarketingHero } from "./MarketingLayout";
 import { MarketingWorkflow, MarketingFinish } from "./MarketingSections";
+import { MarketingUseCaseTabs } from "./MarketingUseCaseTabs";
 
 export function MarketingHome() {
   return (
@@ -36,10 +36,10 @@ export function MarketingHome() {
       <Suspense fallback={null}>
         <MarketingProof />
       </Suspense>
+      <MarketingUseCaseTabs />
       <MarketingWorkflow />
       <MarketingCapabilities />
       <MarketingCapabilityIndex />
-      <MarketingConnections />
       <MarketingAuthenticity />
       <MarketingDevelopers />
       <MarketingCommunity />

@@ -21,6 +21,7 @@ import {
   MARKETING_COPY,
   MARKETING_CAPABILITY_CONTENT,
 } from "./marketingContentHelpers";
+import { MARKETING_USE_CASES } from "./marketingUseCaseHelpers";
 import { PUBLIC_MARKETING_PAGES } from "./agentReadinessHelpers";
 import { GITHUB_REPO_URL } from "./github";
 import { DISCORD_INVITE_URL, PATREON_URL } from "./communityUrls";
@@ -57,6 +58,11 @@ export function publicPageMarkdown(
           `### ${item.title}\n\n${item.body}\n\n${link("Read the guide", item.href)}`
       ),
       ...Object.values(MARKETING_COPY.story),
+      "## Use cases",
+      ...MARKETING_USE_CASES.map(
+        (item) =>
+          `- ${item.goal}: ${item.explanation} ${link("Read the guide", item.blogHref)}`
+      ),
       faqs(homepageFaqItems),
     ].join("\n\n");
   } else if (pathname === "/pricing") {
