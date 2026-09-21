@@ -260,10 +260,7 @@ function TierCard({
                       aria-hidden
                     />
                     <span>{label}</span>
-                    <Badge
-                      variant="outline-strong"
-                      className="border-muted-foreground text-muted-foreground ml-auto shrink-0"
-                    >
+                    <Badge variant="outline-strong" className="shrink-0">
                       Coming soon
                     </Badge>
                   </>

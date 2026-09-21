@@ -23,7 +23,7 @@ export const MARKETING_COPY = {
     finishHeading: "Who will you and your △ Agent reach?",
   },
   story: {
-    connectionsHeading: "What do you need people for?",
+    connectionsHeading: "Selling, hiring, or raising. Same agent.",
     connections:
       "Selling, hiring, or raising. The problem is always the same: the right people.",
     authenticityHeading: "Your network is your net worth. Start building it.",
