@@ -49,20 +49,19 @@ export function MarketingUseCaseTabs() {
           className={cn(
             "grid gap-8 lg:gap-x-14 lg:gap-y-10",
             demoRight
-              ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
-              : "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+              ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]"
+              : "lg:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]"
           )}
         >
           <div
             className={cn(
-              "min-w-0 self-center",
+              "min-w-0 self-center lg:max-w-xs",
               demoRight
                 ? "lg:col-start-1 lg:row-start-1"
                 : "lg:col-start-2 lg:row-start-1"
             )}
           >
-            <h3 className={marketingSectionTitle}>{active.heading}</h3>
-            <p className="mt-5 text-lg leading-7 text-pretty">
+            <p className="text-lg leading-7 text-pretty">
               {active.explanation}
             </p>
             <p className="text-muted-foreground mt-5 text-sm leading-6">
