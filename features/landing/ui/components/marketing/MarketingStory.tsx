@@ -99,7 +99,7 @@ function CommunityCard({
   linkLabel: string;
 }) {
   return (
-    <div className="blog-card border-border relative flex h-full min-w-0 flex-col border bg-background p-6 transition-colors duration-200 hover:bg-neutral-50 motion-reduce:transition-none dark:bg-neutral-950 dark:hover:bg-neutral-900 lg:p-8">
+    <div className="blog-card relative flex h-full min-w-0 flex-col bg-background p-6 transition-colors duration-200 hover:bg-neutral-50 motion-reduce:transition-none dark:bg-neutral-950 dark:hover:bg-neutral-900 lg:p-8">
       <div className="mb-5" aria-hidden="true">
         {icon}
       </div>
