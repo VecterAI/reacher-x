@@ -5,7 +5,7 @@ export const MARKETING_COPY = {
   home: {
     headline: "The △ Agent that brings the right people into your network.",
     description:
-      "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn introductions into relationships.",
+      "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn strangers into relationships.",
     setupTimeNote: "Set up in under 5 minutes.",
   },
   workflow: {
@@ -37,16 +37,12 @@ export const MARKETING_COPY = {
   product: {
     discovery:
       "ReacherX keeps searching X/Twitter and LinkedIn around the clock, and researches every person it finds before you see them.",
-    discoveryDetail: "It keeps working while you are away.",
     plans:
       "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review.",
-    plansDetail: "Approve in one click, or edit the draft first.",
     messages:
-      "Conversations are not just text: send voice notes, images, and video, and mention several people in one message with @ tags.",
-    messagesDetail: "Rich messages stay inside the conversation.",
+      "Conversations are not just text: send voice notes, images, and video. When you brief △ Agent, mention several people in one message with @ tags.",
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",
-    memoryDetail: "One setup, every future search and draft.",
     moreHeading: "More, built in.",
   },
 } as const;

@@ -52,17 +52,7 @@ export function publicPageMarkdown(
       "## How it works",
       ...Object.values(MARKETING_COPY.workflow),
       "## Capabilities",
-      [
-        ["discovery", "discoveryDetail"],
-        ["plans", "plansDetail"],
-        ["messages", "messagesDetail"],
-        ["memory", "memoryDetail"],
-      ]
-        .map(
-          ([key, detailKey]) =>
-            `${MARKETING_COPY.product[key as keyof typeof MARKETING_COPY.product]}\n\n${MARKETING_COPY.product[detailKey as keyof typeof MARKETING_COPY.product]}`
-        )
-        .join("\n\n"),
+      ...Object.values(MARKETING_COPY.product),
       ...MARKETING_CAPABILITY_CONTENT.map(
         (item) =>
           `### ${item.title}\n\n${item.body}\n\n${link("Read the guide", item.href)}`

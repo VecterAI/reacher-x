@@ -19,7 +19,7 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Getting customers",
     heading: "Find the people who need what you’re building.",
     navigationDescription: "People discussing the problem you solve.",
-    exampleHeading: "From an interesting post to a potential customer.",
+    exampleHeading: "From a public post to a real relationship.",
     explanation:
       "The people who should be in your network are already out there discussing the problem you solve. It finds them and helps you build the relationship.",
     goal: "Find your first customers",
