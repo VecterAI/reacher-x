@@ -3,7 +3,7 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
-    headline: "The △ Agent that brings the right people into your network.",
+    headline: "Agent that brings the right people into your network.",
     description:
       "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn strangers into relationships.",
     setupTimeNote: "Set up in under 5 minutes.",
