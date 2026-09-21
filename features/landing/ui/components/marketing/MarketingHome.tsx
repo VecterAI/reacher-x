@@ -15,6 +15,7 @@ import { LandingPromptCta } from "../LandingPromptCta";
 import { MarketingHero } from "./MarketingLayout";
 import { MarketingWorkflow, MarketingFinish } from "./MarketingSections";
 import { MarketingUseCaseTabs } from "./MarketingUseCaseTabs";
+import { MarketingBlog } from "./MarketingBlog";
 
 export function MarketingHome() {
   return (
@@ -41,6 +42,7 @@ export function MarketingHome() {
       <MarketingCapabilities />
       <MarketingCapabilityIndex />
       <MarketingAuthenticity />
+      <MarketingBlog />
       <MarketingDevelopers />
       <MarketingCommunity />
       <MarketingFaq />
