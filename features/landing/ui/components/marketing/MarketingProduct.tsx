@@ -33,6 +33,7 @@ function MarketingCapabilities() {
     <>
       <MarketingFeature
         id="capabilities"
+        reverse
         title="Working around the clock."
         demo={
           <MarketingDemo
@@ -51,7 +52,6 @@ function MarketingCapabilities() {
         </CapabilityLink>
       </MarketingFeature>
       <MarketingFeature
-        reverse
         title="Plans for every person."
         demo={
           <MarketingDemo
@@ -69,6 +69,7 @@ function MarketingCapabilities() {
         </CapabilityLink>
       </MarketingFeature>
       <MarketingFeature
+        reverse
         title="Send more than text."
         demo={
           <MarketingDemo
@@ -86,7 +87,6 @@ function MarketingCapabilities() {
         </CapabilityLink>
       </MarketingFeature>
       <MarketingFeature
-        reverse
         title="△ Agent, with a memory."
         demo={
           <MarketingDemo
