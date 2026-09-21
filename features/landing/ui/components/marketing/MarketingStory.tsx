@@ -64,9 +64,6 @@ export function MarketingCommunity() {
         <h2 id="community-heading" className={marketingSectionTitle}>
           {MARKETING_COPY.story.communityHeading}
         </h2>
-        <p className="text-muted-foreground mt-5 max-w-lg text-base leading-7">
-          {MARKETING_COPY.story.community}
-        </p>
       </header>
       <div className="grid gap-4 sm:grid-cols-2">
         <CommunityCard
@@ -102,7 +99,7 @@ function CommunityCard({
   linkLabel: string;
 }) {
   return (
-    <div className="border-border flex h-full min-w-0 flex-col border p-6 lg:p-8">
+    <div className="blog-card border-border relative flex h-full min-w-0 flex-col border bg-background p-6 transition-colors duration-200 hover:bg-neutral-50 motion-reduce:transition-none dark:bg-neutral-950 dark:hover:bg-neutral-900 lg:p-8">
       <div className="mb-5" aria-hidden="true">
         {icon}
       </div>

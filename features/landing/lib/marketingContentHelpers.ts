@@ -26,8 +26,6 @@ export const MARKETING_COPY = {
     developers:
       "Use, modify, and self-host ReacherX under AGPL-3.0, as part of the Convex Open Source program. Improvements stay open for everyone.",
     communityHeading: "Join the community.",
-    community:
-      "ReacherX is built in the open, with people using it, not just around it.",
   },
   product: {
     discovery:
