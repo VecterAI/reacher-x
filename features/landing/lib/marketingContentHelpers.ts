@@ -14,11 +14,11 @@ export const MARKETING_COPY = {
     research:
       "ReacherX finds people on X/Twitter and LinkedIn, researches their background, and explains every match.",
     outreach:
-      "△ Agent starts each conversation with a personal introduction, then keeps every reply, note, and follow-up in one place, so the relationship keeps moving.",
+      "△ Agent writes to each person differently: your voice, their context, the research behind it. Replies, notes, and follow-ups stay in one place, so the relationship keeps moving.",
     finishHeading: "Who should be in your network?",
   },
   story: {
-    connectionsHeading: "Selling, hiring, or raising. Same agent.",
+    connectionsHeading: "Every goal is a network problem.",
     connections:
       "Selling, hiring, or raising. The problem is always the same: the right people.",
     authenticityHeading: "Your network is your net worth. Build it with △ Agent.",
