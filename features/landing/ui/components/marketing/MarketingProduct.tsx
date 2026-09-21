@@ -46,6 +46,9 @@ function MarketingCapabilities() {
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.product.discovery}
         </p>
+        <p className="text-muted-foreground mt-5 text-sm leading-6">
+          {MARKETING_COPY.product.discoveryDetail}
+        </p>
         <CapabilityLink href="/blog/how-reacherx-discovery-works">
           How discovery works
         </CapabilityLink>
@@ -64,6 +67,9 @@ function MarketingCapabilities() {
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.product.plans}
         </p>
+        <p className="text-muted-foreground mt-5 text-sm leading-6">
+          {MARKETING_COPY.product.plansDetail}
+        </p>
         <CapabilityLink href="/blog/how-reacherx-planning-works">
           How planning works
         </CapabilityLink>
@@ -80,6 +86,9 @@ function MarketingCapabilities() {
       >
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.product.messages}
+        </p>
+        <p className="text-muted-foreground mt-5 text-sm leading-6">
+          {MARKETING_COPY.product.messagesDetail}
         </p>
         <CapabilityLink href="/blog/send-voice-notes">
           About voice notes
@@ -98,6 +107,9 @@ function MarketingCapabilities() {
       >
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.product.memory}
+        </p>
+        <p className="text-muted-foreground mt-5 text-sm leading-6">
+          {MARKETING_COPY.product.memoryDetail}
         </p>
         <CapabilityLink href="/blog/how-reacherx-memory-works">
           How memory works

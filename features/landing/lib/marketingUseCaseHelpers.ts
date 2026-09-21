@@ -21,7 +21,7 @@ const STORIES: Record<string, UseCaseStory> = {
     navigationDescription: "People discussing the problem you solve.",
     exampleHeading: "From an interesting post to a potential customer.",
     explanation:
-      "Research people discussing the problem you solve, then plan a relevant introduction.",
+      "It finds people discussing the problem you solve and drafts a personal introduction for each one.",
     goal: "Find your first customers",
     prompt:
       "I build an app that keeps client feedback in one place. Find freelance designers who talk about losing feedback across email, chat, and documents.",
@@ -36,9 +36,9 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Hiring",
     heading: "Meet your next teammate.",
     navigationDescription: "People with experience your team needs.",
-    exampleHeading: "See the work behind the profile.",
+    exampleHeading: "Each match comes with the work behind the profile.",
     explanation:
-      "Find candidates through their work and experience, then prepare a personal introduction.",
+      "It finds candidates through their work and experience and writes a personal introduction for each one.",
     goal: "Find your next teammate",
     prompt:
       "We are a team of three hiring a frontend engineer. Find people on X/Twitter and LinkedIn who share work on accessibility and complex web apps, and are open to joining a small team.",
@@ -53,9 +53,9 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Fundraising",
     heading: "Build relationships with relevant investors.",
     navigationDescription: "Backers focused on your sector and stage.",
-    exampleHeading: "Research the fit before making the introduction.",
+    exampleHeading: "Every match comes with the research behind it.",
     explanation:
-      "Find investors whose interests match your company, then prepare your approach.",
+      "It finds investors whose interests match your company and prepares your approach for each one.",
     goal: "Find investors who fit your raise",
     prompt:
       "We're a two-person team building software for independent clinics. Find early-stage investors who discuss health software on X/Twitter and LinkedIn. Help me understand what they back before I contact them.",
@@ -72,7 +72,7 @@ const STORIES: Record<string, UseCaseStory> = {
     navigationDescription: "People serving the same audience.",
     exampleHeading: "Turn a shared audience into a reason to connect.",
     explanation:
-      "Find potential partners serving your audience and research where your work overlaps.",
+      "It finds potential partners serving your audience and maps where your work overlaps.",
     goal: "Find partners",
     prompt:
       "Find people who teach freelance designers or run communities for them. I would like to run a practical workshop about handling client feedback.",
@@ -87,9 +87,9 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Community building",
     heading: "Bring the right people into your community.",
     navigationDescription: "People already interested in your topic.",
-    exampleHeading: "Find shared interests beyond your existing audience.",
+    exampleHeading: "Matches go beyond your existing audience.",
     explanation:
-      "Find people who share your community’s interests and plan a personal invitation.",
+      "It finds people who share your community’s interests and drafts the invitation.",
     goal: "Grow a community",
     prompt:
       "Find solo developers sharing early apps and asking for feedback on X/Twitter and LinkedIn. We run a free weekly session where people try each other’s work.",
@@ -104,9 +104,9 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Creator outreach",
     heading: "Meet creators who fit your audience.",
     navigationDescription: "Creators whose work fits your audience.",
-    exampleHeading: "Understand the creator before making the pitch.",
+    exampleHeading: "The creator’s work, understood before any pitch.",
     explanation:
-      "Find creators whose work fits your audience and prepare a relevant collaboration proposal.",
+      "It finds creators whose work fits your audience and drafts a relevant collaboration proposal.",
     goal: "Find creators",
     prompt:
       "Find creators teaching solo developers how to launch web apps. Look for hands-on tutorials and audience questions about finding the first people to try what you build.",
@@ -121,9 +121,9 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "User research",
     heading: "Talk to people who have lived the problem.",
     navigationDescription: "People with firsthand experience.",
-    exampleHeading: "Find the experience your research needs.",
+    exampleHeading: "Matched on firsthand experience.",
     explanation:
-      "Find people with the experience your research needs and prepare an invitation.",
+      "It finds people with the experience your study needs and drafts the invitation.",
     goal: "Find research participants",
     prompt:
       "I’m researching how independent tutors manage lessons. Find tutors on X/Twitter and LinkedIn who discuss scheduling, cancellations, or parent confirmations. They must manage their own bookings.",
@@ -138,9 +138,9 @@ const STORIES: Record<string, UseCaseStory> = {
     tabLabel: "Podcast guests",
     heading: "Find the voices your audience should hear.",
     navigationDescription: "People with a story for your listeners.",
-    exampleHeading: "Find a guest and a conversation worth having.",
+    exampleHeading: "A guest and a conversation worth having.",
     explanation:
-      "Find guests with relevant experience and plan a personal invitation to your podcast.",
+      "It finds guests with relevant experience and drafts a personal invitation to your podcast.",
     goal: "Find podcast guests",
     prompt:
       "I host a podcast about small software businesses. Find founders on X/Twitter and LinkedIn who openly share what they've learned while building their first product.",

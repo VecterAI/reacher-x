@@ -37,12 +37,16 @@ export const MARKETING_COPY = {
   product: {
     discovery:
       "ReacherX keeps searching X/Twitter and LinkedIn around the clock, and researches every person it finds before you see them.",
+    discoveryDetail: "It keeps working while you are away.",
     plans:
       "△ Agent turns its research into an outreach plan for each person, with a draft message you can edit before anything sends.",
+    plansDetail: "Approve in one click, or edit the draft first.",
     messages:
       "Send voice notes, images, and video. Mention several people in one message with @ tags.",
+    messagesDetail: "Rich messages stay inside the conversation.",
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",
+    memoryDetail: "One setup, every future search and draft.",
     moreHeading: "More, built in.",
   },
 } as const;
