@@ -30,6 +30,7 @@ export const BLOG_DEMO_IDS = [
   "read-your-reacherx-analytics",
   "teach-reacherx-what-you-want",
   "understand-agent-observability",
+  "agent-around-the-clock",
 ] as const;
 export type BlogDemoId = (typeof BLOG_DEMO_IDS)[number];
 

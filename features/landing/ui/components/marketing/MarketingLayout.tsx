@@ -56,7 +56,7 @@ export function MarketingHero({
 }: {
   title: ReactNode;
   children: ReactNode;
-  actions: ReactNode;
+  actions?: ReactNode;
   eyebrow?: ReactNode;
 }) {
   return (
@@ -75,15 +75,72 @@ export function MarketingHero({
           <h1 className="text-4xl leading-[1.05] font-normal tracking-tight text-balance sm:text-6xl lg:text-7xl">
             {title}
           </h1>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            {actions}
-          </div>
+          {actions && (
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              {actions}
+            </div>
+          )}
         </div>
         <div className={cn(marketingTextColumn, "w-full lg:justify-self-end")}>
           {children}
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * The shared two-column feature layout: big title, demo on one side, copy on
+ * the other. MarketingFeature wraps it in a section; tabbed panels reuse the
+ * same columns so every two-column block on the page reads identically.
+ */
+export function MarketingFeatureColumns({
+  title,
+  children,
+  demo,
+  reverse = false,
+  titleAs: Title = "h2",
+}: {
+  title: ReactNode;
+  children: ReactNode;
+  demo: ReactNode;
+  reverse?: boolean;
+  titleAs?: "h2" | "h3";
+}) {
+  return (
+    <div
+      className={cn(
+        "grid gap-8 lg:gap-x-14 lg:gap-y-10",
+        reverse
+          ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]"
+          : "lg:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]"
+      )}
+    >
+      <Title className={cn(marketingSectionTitle, reverse && "lg:col-start-2")}>
+        {title}
+      </Title>
+      <div
+        className={cn(
+          "min-w-0",
+          reverse
+            ? "lg:col-start-2 lg:row-start-2"
+            : "lg:col-start-1 lg:row-start-2"
+        )}
+      >
+        {demo}
+      </div>
+      <div
+        className={cn(
+          marketingTextColumn,
+          "self-center lg:max-w-xs",
+          reverse
+            ? "lg:col-start-1 lg:row-start-2"
+            : "lg:col-start-2 lg:row-start-2"
+        )}
+      >
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -105,39 +162,9 @@ export function MarketingFeature({
       id={id}
       className={cn(marketingPageWidth, marketingSection, "scroll-mt-24")}
     >
-      <div
-        className={cn(
-          "grid gap-8 lg:gap-x-14 lg:gap-y-10",
-          reverse
-            ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]"
-            : "lg:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]"
-        )}
-      >
-        <h2 className={cn(marketingSectionTitle, reverse && "lg:col-start-2")}>
-          {title}
-        </h2>
-        <div
-          className={cn(
-            "min-w-0",
-            reverse
-              ? "lg:col-start-2 lg:row-start-2"
-              : "lg:col-start-1 lg:row-start-2"
-          )}
-        >
-          {demo}
-        </div>
-        <div
-          className={cn(
-            marketingTextColumn,
-            "self-center lg:max-w-xs",
-            reverse
-              ? "lg:col-start-1 lg:row-start-2"
-              : "lg:col-start-2 lg:row-start-2"
-          )}
-        >
-          {children}
-        </div>
-      </div>
+      <MarketingFeatureColumns title={title} demo={demo} reverse={reverse}>
+        {children}
+      </MarketingFeatureColumns>
     </section>
   );
 }

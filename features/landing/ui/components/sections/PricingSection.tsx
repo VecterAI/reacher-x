@@ -43,7 +43,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/components/Select";
-import { CheckIcon } from "@/shared/ui/components/icons";
+import {
+  CheckIcon,
+  CheckBoxOutlineBlankIcon,
+} from "@/shared/ui/components/icons";
 import { BillingPeriodSelector } from "@/features/billing/ui/components/BillingPeriodSelector";
 import { PlanOffersSkeleton } from "@/features/billing/ui/components/PlanOffersSkeleton";
 import { useAvailablePlanOffers } from "@/features/billing/hooks/useAvailablePlanOffers";
@@ -153,14 +156,22 @@ function TierCard({
     PRICING_TIER_RANK[tier.id] < PRICING_TIER_RANK[currentTierId];
   const ctaHref = isLowerThanCurrentPlan ? PLANS_PATH : getPlansUpgradeHref();
 
+  const priceLabel =
+    amount != null ? formatPlanPriceLabel(amount, billing) : null;
+
   const ctaLabel = (() => {
     if (isLowerThanCurrentPlan) {
       return "Manage plan";
     }
 
-    return amount != null
-      ? `Upgrade for ${formatPlanPriceLabel(amount, billing)}`
-      : "Upgrade";
+    if (!priceLabel) {
+      return "Start";
+    }
+
+    // Anonymous visitors are starting out, not upgrading.
+    return isAuthenticated
+      ? `Upgrade for ${priceLabel}`
+      : `Start for ${priceLabel}`;
   })();
 
   const ctaVariant = isLowerThanCurrentPlan ? "outline" : "default";
@@ -239,15 +250,37 @@ function TierCard({
           </p>
         )}
         <ul className="space-y-2 text-sm">
-          {tier.features.map((feature) => (
-            <li key={feature} className="flex gap-2">
-              <CheckIcon
-                className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
-                aria-hidden
-              />
-              <span>{resolvePricingFeatureCopy(feature, useCaseKey)}</span>
-            </li>
-          ))}
+          {tier.features.map((feature) => {
+            const isComingSoon = feature.endsWith("(Coming soon)");
+            const label = resolvePricingFeatureCopy(
+              feature,
+              useCaseKey
+            ).replace(/ \(Coming soon\)$/, "");
+            return (
+              <li key={feature} className="flex gap-2">
+                {isComingSoon ? (
+                  <>
+                    <CheckBoxOutlineBlankIcon
+                      className="text-muted-foreground mt-0.5 size-4 shrink-0 fill-current"
+                      aria-hidden
+                    />
+                    <span>{label}</span>
+                    <Badge variant="outline-strong" className="shrink-0">
+                      Coming soon
+                    </Badge>
+                  </>
+                ) : (
+                  <>
+                    <CheckIcon
+                      className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
+                      aria-hidden
+                    />
+                    <span>{label}</span>
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </CardContent>
 
@@ -438,6 +471,10 @@ export function PricingSection({
           ))}
         </div>
       )}
+
+      <p className="text-foreground mt-6 text-center text-sm">
+        Every plan comes with a 30-day money-back guarantee.
+      </p>
     </section>
   );
 }

@@ -12,6 +12,24 @@ export const homepageFaqItems: FaqItem[] = [
       "ReacherX is an open-source △ Agent that finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
   },
   {
+    id: "why-not-diy",
+    question: "Why not just use X/Twitter search and ChatGPT for free?",
+    answer:
+      "For a one-off search, you can. ReacherX is for the ongoing part: it keeps watching X/Twitter and LinkedIn around the clock, checks every person it finds against your criteria, and prepares a researched outreach plan for each match. The screening work you'd redo every week happens on its own, and you only see the people who fit.",
+  },
+  {
+    id: "hosted-vs-self-host",
+    question: "What does a hosted plan buy me over self-hosting?",
+    answer:
+      "The code is open source under AGPL-3.0, so self-hosting is free. The social data is what costs money: X/Twitter and third-party APIs bill per use, and the pipeline needs upkeep. A hosted plan puts both on us.",
+  },
+  {
+    id: "refund",
+    question: "Can I get a refund?",
+    answer:
+      "Yes. Every plan comes with a 30-day money-back guarantee. If ReacherX isn't working for you, email support within 30 days of your payment and we'll refund it.",
+  },
+  {
     id: "why-agent",
     question: "Do I need sales experience to use it?",
     answer:
@@ -45,7 +63,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "approval",
     question: "Does ReacherX send anything without approval?",
     answer:
-      "Sending approvals are on by default. If you turn them off in workspace settings, supported replies and DMs can send without another approval. You can review the settings and pause △ Agent at any time.",
+      "Nothing sends without your approval by default. If you turn approvals off in workspace settings, supported replies and DMs can send on their own. You can review the settings and pause △ Agent at any time.",
   },
   {
     id: "different-from-other-tools",
@@ -66,12 +84,13 @@ export const pricingFaqItems: FaqItem[] = [
     id: "free-plan",
     question: "Is there a free plan?",
     answer:
-      "No. A paid plan is required to run △ Agent. The available plans are listed above.",
+      "No. A paid plan is required to run △ Agent. If you're technical, you can self-host the open-source code under AGPL-3.0 instead, but you'd take on the social-data API costs and maintenance yourself.",
   },
   {
     id: "credit-card",
     question: "Do I need a credit card to get started?",
-    answer: "Yes. A paid plan is required to start △ Agent during launch.",
+    answer:
+      "Yes. A paid plan is required to start △ Agent during launch. Every plan comes with a 30-day money-back guarantee.",
   },
   {
     id: "plan-limits",

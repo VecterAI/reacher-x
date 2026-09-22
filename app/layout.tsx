@@ -120,13 +120,7 @@ export default function RootLayout({
                 <a href="/markdown/home">Home</a>
               </li>
               <li>
-                <a href="/markdown/product">Product</a>
-              </li>
-              <li>
                 <a href="/markdown/pricing">Pricing</a>
-              </li>
-              <li>
-                <a href="/markdown/use-cases">Use cases</a>
               </li>
               <li>
                 <a href="/markdown/blog">Blog and guides</a>

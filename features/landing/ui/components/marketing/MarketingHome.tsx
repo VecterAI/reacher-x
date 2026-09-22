@@ -3,28 +3,24 @@ import { Suspense } from "react";
 import { MarketingFaq } from "./MarketingFaq";
 import { MarketingProof } from "./MarketingProof";
 import {
-  MarketingConnections,
   MarketingAuthenticity,
   MarketingDevelopers,
   MarketingCommunity,
 } from "./MarketingStory";
+import {
+  MarketingCapabilities,
+  MarketingCapabilityIndex,
+} from "./MarketingProduct";
 import { LandingPromptCta } from "../LandingPromptCta";
-import { marketingButton as buttonVariants } from "./MarketingLayout";
 import { MarketingHero } from "./MarketingLayout";
 import { MarketingWorkflow, MarketingFinish } from "./MarketingSections";
+import { MarketingUseCaseTabs } from "./MarketingUseCaseTabs";
+import { MarketingBlog } from "./MarketingBlog";
 
 export function MarketingHome() {
   return (
     <>
-      <MarketingHero
-        eyebrow="Your network is your net worth."
-        title="Reach the right people."
-        actions={
-          <a href="#how-it-works" className={buttonVariants()}>
-            See how it works
-          </a>
-        }
-      >
+      <MarketingHero title={MARKETING_COPY.home.headline}>
         <p className="text-base leading-7 text-pretty">
           {MARKETING_COPY.home.description}
         </p>
@@ -34,13 +30,19 @@ export function MarketingHome() {
             showLabeledCta={false}
           />
         </div>
+        <p className="text-muted-foreground mt-3 text-sm">
+          {MARKETING_COPY.home.setupTimeNote}
+        </p>
       </MarketingHero>
       <Suspense fallback={null}>
         <MarketingProof />
       </Suspense>
+      <MarketingUseCaseTabs />
       <MarketingWorkflow />
-      <MarketingConnections />
+      <MarketingCapabilities />
+      <MarketingCapabilityIndex />
       <MarketingAuthenticity />
+      <MarketingBlog />
       <MarketingDevelopers />
       <MarketingCommunity />
       <MarketingFaq />

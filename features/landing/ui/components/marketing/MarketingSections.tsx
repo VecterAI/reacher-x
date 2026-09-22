@@ -15,21 +15,18 @@ export function MarketingWorkflow() {
     <>
       <MarketingFeature
         id="how-it-works"
-        title="Describe what you need."
+        title="Say who you're looking for."
         demo={
           <MarketingDemo
-            scenario="find-candidates"
-            sceneRange={[0, 9]}
+            scenario="find-potential-customers"
+            sceneRange={[0, 12]}
             title="Set up a search by talking to ReacherX"
-            caption="The setup conversation, from your goal to a search brief."
+            caption="The setup conversation, from your goal to the people who fit."
           />
         }
       >
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.workflow.setup}
-        </p>
-        <p className="text-muted-foreground mt-5 text-sm leading-6">
-          {MARKETING_COPY.workflow.setupDetail}
         </p>
         <Link
           href="/blog/getting-started-with-reacherx"
@@ -44,18 +41,15 @@ export function MarketingWorkflow() {
         title="See who fits, and why."
         demo={
           <MarketingDemo
-            scenario="find-candidates"
-            sceneRange={[10, 19]}
-            title="Research the frontend candidates"
+            scenario="find-potential-customers"
+            sceneRange={[13, 20]}
+            title="Research the designers who fit"
             caption="Search results with the evidence behind each match."
           />
         }
       >
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.workflow.research}
-        </p>
-        <p className="text-muted-foreground mt-5 text-sm leading-6">
-          {MARKETING_COPY.workflow.researchDetail}
         </p>
         <Link
           href="/blog/how-reacherx-qualification-works"
@@ -69,8 +63,8 @@ export function MarketingWorkflow() {
         title="Reach out like a human."
         demo={
           <MarketingDemo
-            scenario="find-candidates"
-            sceneRange={[20, 34]}
+            scenario="find-potential-customers"
+            sceneRange={[23, 41]}
             title="Review an introduction and follow the reply"
             caption="A personal introduction for each person, ready for your review."
           />
@@ -78,9 +72,6 @@ export function MarketingWorkflow() {
       >
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.workflow.outreach}
-        </p>
-        <p className="text-muted-foreground mt-5 text-sm leading-6">
-          {MARKETING_COPY.workflow.outreachDetail}
         </p>
         <Link
           href="/blog/what-reacherx-does-automatically"

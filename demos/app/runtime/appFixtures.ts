@@ -67,6 +67,8 @@ export function createAppFixtures(
             "reach-out-personal-video",
             "reach-out-message-bubbles",
             "reach-out-unicode-formatting",
+            "teach-reacherx-what-you-want",
+            "agent-around-the-clock",
           ].includes(scenario)
         ? audienceStories["find-potential-customers"]
         : undefined;

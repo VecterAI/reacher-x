@@ -90,7 +90,7 @@ test("all canonical pages have readable HTML, discoverable Markdown, and matchin
     assert.equal(markdown, await direct.text(), path);
     assert.ok(markdown.startsWith("# "), path);
     assert.ok(markdown.includes(`Canonical: ${BLOG_ORIGIN}${path}`), path);
-    if (["/home", "/product", "/pricing"].includes(path)) {
+    if (["/home", "/pricing"].includes(path)) {
       for (const faq of path === "/pricing"
         ? pricingFaqItems
         : homepageFaqItems) {
@@ -115,7 +115,6 @@ test("format switching, HEAD and RSC requests preserve representation boundaries
   for (const path of [
     "/home",
     "/pricing",
-    "/use-cases/investors",
     "/blog",
     "/blog/reach-out-and-get-replies",
   ]) {

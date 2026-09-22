@@ -16,25 +16,6 @@ import {
   MarketingSection,
   marketingSectionTitle,
 } from "./MarketingLayout";
-import { MarketingUseCaseExplorer } from "./MarketingUseCaseExplorer";
-
-export function MarketingConnections() {
-  return (
-    <MarketingSection id="use-cases" labelledBy="connections-heading">
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <h2 id="connections-heading" className={marketingSectionTitle}>
-            {MARKETING_COPY.story.connectionsHeading}
-          </h2>
-          <p className="text-muted-foreground mt-5 max-w-lg text-base leading-7">
-            {MARKETING_COPY.story.connections}
-          </p>
-        </div>
-      </header>
-      <MarketingUseCaseExplorer />
-    </MarketingSection>
-  );
-}
 
 export function MarketingAuthenticity() {
   return (
@@ -83,9 +64,6 @@ export function MarketingCommunity() {
         <h2 id="community-heading" className={marketingSectionTitle}>
           {MARKETING_COPY.story.communityHeading}
         </h2>
-        <p className="text-muted-foreground mt-5 max-w-lg text-base leading-7">
-          {MARKETING_COPY.story.community}
-        </p>
       </header>
       <div className="grid gap-4 sm:grid-cols-2">
         <CommunityCard
@@ -121,7 +99,7 @@ function CommunityCard({
   linkLabel: string;
 }) {
   return (
-    <div className="border-border flex h-full min-w-0 flex-col border p-6 lg:p-8">
+    <div className="blog-card bg-background relative flex h-full min-w-0 flex-col p-6 transition-colors duration-200 hover:bg-neutral-50 motion-reduce:transition-none lg:p-8 dark:bg-neutral-950 dark:hover:bg-neutral-900">
       <div className="mb-5" aria-hidden="true">
         {icon}
       </div>

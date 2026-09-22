@@ -3,57 +3,40 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
+    headline: "Agent that finds the right people for your goals.",
     description:
-      "Tell ReacherX △ Agent who you need to reach. It finds the right people, explains why they fit, and helps you start the conversation.",
+      "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn strangers into relationships.",
+    setupTimeNote: "Set up in under 5 minutes.",
   },
   workflow: {
     setup:
       "No tables or sales jargon. Tell △ Agent what you are working on and who you want to reach, in plain words.",
-    setupDetail: "It asks what it needs to know and starts looking.",
     research:
       "ReacherX finds people on X/Twitter and LinkedIn, researches their background, and explains every match.",
-    researchDetail:
-      "Check the posts and profile details behind each result before you decide.",
     outreach:
-      "△ Agent turns its research into a personal introduction, ready for your review. Sending approvals are on by default; you control them in workspace settings.",
-    outreachDetail:
-      "Conversations, notes, and your writing style stay in one place.",
-    finishHeading: "Who will you and your △ Agent reach?",
+      "△ Agent writes to each person differently: your voice, their context, the research behind it. Replies, notes, and follow-ups stay in one place, so the relationship keeps moving.",
+    finishHeading: "Are you ready to start networking?",
   },
   story: {
-    connectionsHeading: "Find anyone.",
+    connectionsHeading: "Use it for any goal that needs people.",
     connections:
-      "Customers, candidates, investors, partners. The problem is always the same: the right people.",
+      "Selling, hiring, or raising. The problem is always the same: the right people.",
     authenticityHeading:
-      "Get access to the right network. Because your network is your net worth.",
+      "Your network is your net worth. Build it with △ Agent.",
     developersHeading: "Open source.",
     developers:
       "Use, modify, and self-host ReacherX under AGPL-3.0, as part of the Convex Open Source program. Improvements stay open for everyone.",
     communityHeading: "Join the community.",
-    community:
-      "ReacherX is built in the open, with people using it, not just around it.",
   },
   product: {
     discovery:
       "ReacherX keeps searching X/Twitter and LinkedIn around the clock, and researches every person it finds before you see them.",
     plans:
-      "△ Agent turns its research into an outreach plan for each person, with a draft message you can edit before anything sends.",
-    messages:
-      "Send voice notes, images, and video. Mention several people in one message with @ tags.",
+      "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review. Mention several people in one message with @ tags.",
+    messages: "Send voice notes, images, and video inside your conversations.",
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",
     moreHeading: "More, built in.",
-  },
-  productPage: {
-    heading: "Find your people.",
-    description:
-      "ReacherX searches X/Twitter and LinkedIn around the clock, researches every match, and drafts a personal introduction. Sending approvals are on by default; you control them in workspace settings.",
-  },
-  useCases: {
-    description:
-      "Find your first customers, hire someone, or meet people working on the same problem. ReacherX helps you find and reach them on X/Twitter and LinkedIn.",
-    examplesHeading: "See what ReacherX can do.",
-    otherHeading: "Have something else in mind?",
   },
 } as const;
 
@@ -102,7 +85,7 @@ export const MARKETING_CAPABILITY_CONTENT = [
   },
   {
     title: "What runs on its own",
-    body: "Discovery and research keep working when you are away. Sending approvals are on by default and can be changed in settings.",
+    body: "Discovery and research keep working when you are away. Every message waits for your approval unless you change that in settings.",
     href: "/blog/what-reacherx-does-automatically",
     demo: "what-reacherx-does-automatically",
   },

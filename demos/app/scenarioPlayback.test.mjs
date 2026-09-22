@@ -22,6 +22,7 @@ for (const scenario of [
   "reach-out-message-bubbles",
   "reach-out-unicode-formatting",
   ...AUDIENCE_DEMO_IDS,
+  "find-candidates",
   "how-reacherx-enrichment-works",
   "send-voice-notes",
   "create-plans-for-several-people",
@@ -34,6 +35,7 @@ for (const scenario of [
   "teach-reacherx-what-you-want",
   "read-your-reacherx-analytics",
   "understand-agent-observability",
+  "agent-around-the-clock",
 ]) {
   test(
     `${scenario}: real controls complete the story and preserve the sent message`,
@@ -147,7 +149,9 @@ for (const scenario of [
           assert.ok(
             await frame
               .locator("aside")
-              .getByText(/Hi Isabelle, your work on/)
+              .getByText(
+                /Hi Nora, I saw your post about keeping client feedback/
+              )
               .isVisible()
           );
           assert.equal(

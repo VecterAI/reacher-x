@@ -23,19 +23,15 @@ test(
       await browser("open", url);
       await browser("wait", candidate);
       await browser("click", '[role="combobox"]');
-      await roleClick("option", "People to try the app");
-      await browser(
-        "wait",
-        "--fn",
-        'document.querySelector("main h1")?.textContent === "Prospects"'
-      );
+      await roleClick("option", "Customers — freelance designers");
+      await browser("wait", '[data-prospect-id="use_case_demo_customers_1"]');
       assert.equal(await evaluate("location.href"), url);
       assert.equal(
         await evaluate(`document.querySelector('${candidate}') === null`),
         true
       );
       await browser("click", '[role="combobox"]');
-      await roleClick("option", "Hire a designer");
+      await roleClick("option", "Hiring — product designer");
       await browser("wait", candidate);
       await browser("click", `${candidate} button[aria-label="More options"]`);
       await roleClick("menuitem", 'Mark "Interviewing"');
@@ -44,7 +40,7 @@ test(
         "--fn",
         `document.querySelector('${candidate}') === null`
       );
-      await roleClick("tab", "Interviewing");
+      await roleClick("tab", "Interviewing, 1 total");
       await browser("wait", candidate);
       await browser("click", candidate);
       await roleClick("button", "Profile menu");
@@ -75,7 +71,7 @@ test(
       await browser(
         "wait",
         "--fn",
-        'document.querySelector("[role=tabpanel][data-state=active]")?.textContent.toLowerCase().includes("qualified")'
+        'document.querySelector("[role=tabpanel][data-state=active]")?.textContent.toLowerCase().includes("discovered")'
       );
       await roleClick("tab", "Your interactions");
       await browser(

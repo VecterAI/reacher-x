@@ -257,27 +257,28 @@ test("workspace-switching sample plans match the people in that workspace", () =
 
 test("marketing chapters loop within their range and keep absolute scene indices", () => {
   for (const range of [
-    [0, 9],
-    [10, 19],
-    [20, 34],
+    [0, 12],
+    [13, 20],
+    [23, 41],
   ] as const) {
-    const first = getBlogDemoFrame("find-candidates", 0, range);
+    const first = getBlogDemoFrame("find-potential-customers", 0, range);
     assert.equal(first.index, range[0]);
     assert.equal(
-      getBlogDemoFrame("find-candidates", first.duration - 1, range).index,
+      getBlogDemoFrame("find-potential-customers", first.duration - 1, range)
+        .index,
       range[1]
     );
     assert.equal(
-      getBlogDemoFrame("find-candidates", first.duration, range).index,
+      getBlogDemoFrame("find-potential-customers", first.duration, range).index,
       range[0]
     );
   }
   assert.throws(
-    () => getBlogDemoFrame("find-candidates", 0, [-1, 2]),
+    () => getBlogDemoFrame("find-potential-customers", 0, [-1, 2]),
     /Invalid/
   );
   assert.throws(
-    () => getBlogDemoFrame("find-candidates", 0, [4, 3]),
+    () => getBlogDemoFrame("find-potential-customers", 0, [4, 3]),
     /Invalid/
   );
 });

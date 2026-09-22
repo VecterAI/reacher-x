@@ -21,10 +21,7 @@ import {
   MARKETING_COPY,
   MARKETING_CAPABILITY_CONTENT,
 } from "./marketingContentHelpers";
-import {
-  MARKETING_USE_CASES,
-  getMarketingUseCase,
-} from "./marketingUseCaseHelpers";
+import { MARKETING_USE_CASES } from "./marketingUseCaseHelpers";
 import { PUBLIC_MARKETING_PAGES } from "./agentReadinessHelpers";
 import { GITHUB_REPO_URL } from "./github";
 import { DISCORD_INVITE_URL, PATREON_URL } from "./communityUrls";
@@ -33,11 +30,6 @@ const link = (label: string, path: string) =>
   `[${label}](${BLOG_ORIGIN}${path})`;
 const faqs = (items: FaqItem[]) =>
   `## Frequently asked questions\n\n${items.map((item) => `### ${item.question}\n\n${item.answer}`).join("\n\n")}`;
-const useCases = () =>
-  MARKETING_USE_CASES.map(
-    (item) =>
-      `- ${link(item.goal, item.href)}: ${item.explanation}\n  ${link("Read the walkthrough", item.blogHref)}`
-  ).join("\n");
 const footer = `## More information\n\n${PUBLIC_MARKETING_PAGES.slice(0, 4)
   .map((page) => `- ${link(page.title, page.href)}`)
   .join(
@@ -54,25 +46,22 @@ export function publicPageMarkdown(
   let title: string;
   let body: string;
   if (pathname === "/home") {
-    title = "Reach the right people.";
+    title = MARKETING_COPY.home.headline;
     body = [
       MARKETING_COPY.home.description,
       "## How it works",
       ...Object.values(MARKETING_COPY.workflow),
-      ...Object.values(MARKETING_COPY.story),
-      "## Who you can find",
-      useCases(),
-      faqs(homepageFaqItems),
-    ].join("\n\n");
-  } else if (pathname === "/product") {
-    title = MARKETING_COPY.productPage.heading;
-    body = [
-      MARKETING_COPY.productPage.description,
       "## Capabilities",
       ...Object.values(MARKETING_COPY.product),
       ...MARKETING_CAPABILITY_CONTENT.map(
         (item) =>
           `### ${item.title}\n\n${item.body}\n\n${link("Read the guide", item.href)}`
+      ),
+      ...Object.values(MARKETING_COPY.story),
+      "## Use cases",
+      ...MARKETING_USE_CASES.map(
+        (item) =>
+          `- ${item.goal}: ${item.explanation} ${link("Read the guide", item.blogHref)}`
       ),
       faqs(homepageFaqItems),
     ].join("\n\n");
@@ -100,14 +89,6 @@ export function publicPageMarkdown(
         )
         .join("\n\n") || PLAN_OFFERS_UNAVAILABLE
     }\n\n${faqs(pricingFaqItems)}`;
-  } else if (pathname === "/use-cases") {
-    title = "Who are you looking for?";
-    body = `${MARKETING_COPY.useCases.description}\n\n${useCases()}`;
-  } else if (pathname.startsWith("/use-cases/")) {
-    const item = getMarketingUseCase(pathname.slice("/use-cases/".length));
-    if (!item) return null;
-    title = item.heading;
-    body = `${item.explanation}\n\n## ${item.exampleHeading}\n\n${item.checks.map((check) => `- ${check}`).join("\n")}\n\n${link("Read the walkthrough", item.blogHref)}`;
   } else if (pathname === "/blog" || pathname.startsWith("/blog/category/")) {
     const category =
       pathname === "/blog"

@@ -47,6 +47,20 @@ export function createScenarioMessagePlan(
     throw new Error(
       "Finish or cancel the active plan before creating another one"
     );
+  // Strict Mode re-runs auto-prompting; a repeated request for the same person
+  // must re-present the existing draft instead of orphaning its artifact.
+  if (previous && previous.plan.status === "draft") {
+    return {
+      data: previous,
+      artifact: createPlanPreviewArtifact({
+        planId: previous.plan._id,
+        prospectId: person._id,
+        status: previous.plan.status,
+        rationale: previous.plan.strategy.rationale,
+        tasks: previous.tasks,
+      }),
+    };
+  }
   const version =
     (state.planVersions.get(person._id) ?? previous?.plan.version ?? 0) + 1;
   state.planVersions.set(person._id, version);

@@ -91,7 +91,7 @@ test("every public page and populated blog category has a described Markdown rep
 
 test("FAQ answers and monthly/yearly plan amounts remain consistent across formats", async () => {
   const posts = await getBlogPosts();
-  for (const path of ["/home", "/product"]) {
+  for (const path of ["/home"]) {
     const md = publicPageMarkdown(path, posts)!;
     for (const faq of homepageFaqItems)
       assert.ok(md.includes(faq.answer), faq.id);
