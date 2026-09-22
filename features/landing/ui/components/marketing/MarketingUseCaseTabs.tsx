@@ -31,7 +31,11 @@ export function MarketingUseCaseTabs() {
   return (
     <MarketingSection id="use-cases" labelledBy="use-case-tabs-heading">
       <h2 id="use-case-tabs-heading" className={marketingSectionTitle}>
-        {`Use it for ${active.tabLabel.toLowerCase()}.`}
+        {"Use it for "}
+        <span className="font-pixel-square">
+          {active.tabLabel.toLowerCase()}
+        </span>
+        {"."}
       </h2>
       <div className="mt-8">
         <PillSelector
