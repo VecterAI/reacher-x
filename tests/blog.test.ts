@@ -120,6 +120,45 @@ test("each post has unique social metadata and escaped structured data", () => {
     "https://reacherx.com/custom.png"
   );
 });
+test("blog and home metadata use plain titles and generated social images", async () => {
+  const { blogListingMetadata } =
+    await import("../features/blog/lib/blogMetadata");
+  const listing = blogListingMetadata();
+  assert.equal(listing.title, "Blog");
+  assert.equal(listing.openGraph?.title, "Blog");
+  assert.equal(listing.twitter?.title, "Blog");
+  const listingImage = "https://reacherx.com/blog/opengraph-image";
+  const listingOgImages = listing.openGraph?.images;
+  assert.ok(Array.isArray(listingOgImages));
+  assert.deepEqual(listingOgImages[0], {
+    url: listingImage,
+    width: 1200,
+    height: 630,
+  });
+  assert.deepEqual(listing.twitter?.images, [listingImage]);
+  const post = parseBlogPost(source("## Text"), "first");
+  const postMeta = blogPostMetadata(post);
+  assert.equal(postMeta.title, "A useful post");
+  assert.equal(postMeta.openGraph?.title, "A useful post");
+  assert.equal(postMeta.twitter?.title, "A useful post");
+  assert.doesNotMatch(
+    `${postMeta.title}${postMeta.openGraph?.title}${postMeta.twitter?.title}`,
+    /\| ReacherX/
+  );
+  const { marketingMetadata } =
+    await import("../features/landing/lib/agentReadinessHelpers");
+  const home = marketingMetadata("/home");
+  const homeImage = "https://reacherx.com/home/opengraph-image";
+  assert.deepEqual(home.openGraph?.images, [homeImage]);
+  assert.deepEqual(home.twitter?.images, [homeImage]);
+  const pricing = marketingMetadata("/pricing");
+  assert.deepEqual(pricing.openGraph?.images, [
+    "https://reacherx.com/og-default.jpg",
+  ]);
+  assert.deepEqual(pricing.twitter?.images, [
+    "https://reacherx.com/og-default.jpg",
+  ]);
+});
 test("feeds escape XML special characters and publish stable canonical URLs", () => {
   const post = parseBlogPost(
     source("## Text", {
@@ -185,6 +224,8 @@ test("blog route classification and content negotiation fail closed", async () =
   assert.equal(classifyBlogRoute("/blog/a/extra/deep")?.kind, "invalid");
   assert.equal(classifyBlogRoute("/blogger"), null);
   assert.equal(classifyBlogRoute("/blog/a/markdown")?.slug, "a");
+  assert.equal(classifyBlogRoute("/blog/opengraph-image")?.kind, "asset");
+  assert.equal(classifyBlogRoute("/blog/a/opengraph-image")?.kind, "asset");
   assert.equal(prefersBlogMarkdown("text/markdown,text/html"), true);
   assert.equal(prefersBlogMarkdown("text/html,text/markdown"), false);
   assert.equal(prefersBlogMarkdown("text/markdown;q=0,text/html"), false);

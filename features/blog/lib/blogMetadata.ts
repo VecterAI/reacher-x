@@ -13,9 +13,10 @@ export function blogListingMetadata(
   pathname = "/blog",
   description = BLOG_DESCRIPTION
 ): Metadata {
+  const image = `${BLOG_ORIGIN}/blog/opengraph-image`;
   return {
     metadataBase: new URL(BLOG_ORIGIN),
-    title: `${title} | ReacherX`,
+    title,
     description,
     alternates: {
       canonical: `${BLOG_ORIGIN}${pathname}`,
@@ -25,18 +26,18 @@ export function blogListingMetadata(
       },
     },
     openGraph: {
-      title: `${title} | ReacherX`,
+      title,
       description,
       url: `${BLOG_ORIGIN}${pathname}`,
       siteName: "ReacherX",
       type: "website",
-      images: [{ url: `${BLOG_ORIGIN}/og-default.jpg` }],
+      images: [{ url: image, width: 1200, height: 630 }],
     },
     twitter: {
       card: "summary_large_image",
-      title: `${title} | ReacherX`,
+      title,
       description,
-      images: [`${BLOG_ORIGIN}/og-default.jpg`],
+      images: [image],
     },
   };
 }
@@ -45,7 +46,7 @@ export function blogPostMetadata(post: BlogPostSummary): Metadata {
   const url = `${BLOG_ORIGIN}${blogHref(post.slug)}`;
   return {
     metadataBase: new URL(BLOG_ORIGIN),
-    title: `${post.title} | ReacherX`,
+    title: post.title,
     description: post.description,
     authors: [{ name: BLOG_AUTHOR.name, url: BLOG_AUTHOR.url }],
     alternates: {

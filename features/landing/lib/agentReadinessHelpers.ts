@@ -5,7 +5,12 @@ import { X_PROFILE_URL, DISCORD_INVITE_URL } from "./communityUrls";
 import { homepageFaqItems } from "./faqs";
 
 export const PUBLIC_MARKETING_PAGES = [
-  { href: "/home", title: "ReacherX", description: homepageFaqItems[0].answer },
+  {
+    href: "/home",
+    title: "ReacherX",
+    description: homepageFaqItems[0].answer,
+    ogImage: "/home/opengraph-image",
+  },
   {
     href: "/pricing",
     title: "Pricing",
@@ -27,6 +32,10 @@ export function marketingMetadata(pathname: string): Metadata {
   const page = PUBLIC_MARKETING_PAGES.find((item) => item.href === pathname);
   if (!page) return {};
   const url = `${BLOG_ORIGIN}${pathname}`;
+  const ogImage = "ogImage" in page ? page.ogImage : undefined;
+  const ogImages = ogImage
+    ? [`${BLOG_ORIGIN}${ogImage}`]
+    : [`${BLOG_ORIGIN}/og-default.jpg`];
   return {
     metadataBase: new URL(BLOG_ORIGIN),
     title: page.title,
@@ -43,13 +52,13 @@ export function marketingMetadata(pathname: string): Metadata {
       url,
       siteName: "ReacherX",
       type: "website",
-      images: [`${BLOG_ORIGIN}/og-default.jpg`],
+      images: ogImages,
     },
     twitter: {
       card: "summary_large_image",
       title: page.title,
       description: page.description,
-      images: [`${BLOG_ORIGIN}/og-default.jpg`],
+      images: ogImages,
     },
     other: { "is-agentic-site-type": "business" },
   };

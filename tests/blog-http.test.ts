@@ -99,6 +99,17 @@ test("all published articles expose content, metadata, JSON-LD and unique PNG im
   assert.equal(images.size, (await getBlogPosts()).length);
 });
 
+test("blog listing and home pages expose generated social images", async () => {
+  for (const path of ["/blog/opengraph-image", "/home/opengraph-image"]) {
+    const image = await request(path);
+    assert.equal(image.status, 200, path);
+    assert.match(image.headers.get("content-type")!, /image\/png/);
+    const bytes = Buffer.from(await image.arrayBuffer());
+    assert.equal(bytes.readUInt32BE(16), 1200);
+    assert.equal(bytes.readUInt32BE(20), 630);
+  }
+});
+
 test("draft, unknown, malformed and invalid category URLs return actual HTTP 404", async () => {
   for (const path of [
     "/blog/authoring-example",
