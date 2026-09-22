@@ -78,7 +78,7 @@ export function marketingStructuredData(pathname: string) {
         "@type": "SoftwareApplication",
         "@id": `${BLOG_ORIGIN}/#software`,
         name: "ReacherX",
-        url: `${BLOG_ORIGIN}/product`,
+        url: `${BLOG_ORIGIN}/home`,
         description: homepageFaqItems[0].answer,
         applicationCategory: "BusinessApplication",
         operatingSystem: "Web",
