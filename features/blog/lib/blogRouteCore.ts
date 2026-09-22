@@ -9,7 +9,10 @@ export function classifyBlogRoute(pathname: string): {
   if (pathname === "/blog") return { kind: "listing" };
   if (!pathname.startsWith("/blog/")) return null;
   const parts = pathname.slice(6).split("/");
-  if (parts.length === 1 && ["feed.xml", "sitemap.md"].includes(parts[0]))
+  if (
+    parts.length === 1 &&
+    ["feed.xml", "sitemap.md", "opengraph-image"].includes(parts[0])
+  )
     return { kind: "asset" };
   if (parts[0] === "category")
     return parts.length === 2 && getBlogCategory(parts[1])

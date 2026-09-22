@@ -11,11 +11,18 @@ const nextConfig = {
   // rewrite a React navigation/prefetch response into plain text.
   skipProxyUrlNormalize: true,
 
-  // The blog image route reads this package asset at runtime. Explicitly trace
-  // it so Vercel's isolated function includes the font, not only local installs.
+  // The Open Graph image routes read this package asset at runtime. Explicitly
+  // trace it so Vercel's isolated function includes the font, not only local
+  // installs.
   outputFileTracingIncludes: {
+    "/blog/opengraph-image": [
+      "./node_modules/geist/dist/fonts/geist-sans/Geist-Regular.ttf",
+    ],
     "/blog/*/opengraph-image": [
-      "./node_modules/geist/dist/fonts/geist-sans/Geist-SemiBold.ttf",
+      "./node_modules/geist/dist/fonts/geist-sans/Geist-Regular.ttf",
+    ],
+    "/home/opengraph-image": [
+      "./node_modules/geist/dist/fonts/geist-sans/Geist-Regular.ttf",
     ],
   },
 
