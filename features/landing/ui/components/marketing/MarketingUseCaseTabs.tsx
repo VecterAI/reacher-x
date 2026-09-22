@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
 import { PillSelector } from "@/shared/ui/components/pill-navigation/PillSelector";
 import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
@@ -32,7 +31,7 @@ export function MarketingUseCaseTabs() {
   return (
     <MarketingSection id="use-cases" labelledBy="use-case-tabs-heading">
       <h2 id="use-case-tabs-heading" className={marketingSectionTitle}>
-        {MARKETING_COPY.story.connectionsHeading}
+        {`Use it for ${active.tabLabel.toLowerCase()}.`}
       </h2>
       <div className="mt-8">
         <PillSelector

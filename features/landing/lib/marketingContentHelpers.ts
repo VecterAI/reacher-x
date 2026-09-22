@@ -3,7 +3,7 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
-    headline: "Agent that brings the right people into your network.",
+    headline: "Agent that finds the right people for your goals.",
     description:
       "Tell it who you need. It watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn strangers into relationships.",
     setupTimeNote: "Set up in under 5 minutes.",
@@ -18,7 +18,7 @@ export const MARKETING_COPY = {
     finishHeading: "Are you ready to start networking?",
   },
   story: {
-    connectionsHeading: "Every goal is a network problem.",
+    connectionsHeading: "Use it for any goal that needs people.",
     connections:
       "Selling, hiring, or raising. The problem is always the same: the right people.",
     authenticityHeading:
