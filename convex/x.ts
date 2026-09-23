@@ -81,6 +81,7 @@ import {
 import { getTwitterPostRef } from "../shared/lib/twitter/contracts";
 import {
   computeOneToOneDmConversationId,
+  isEncryptedXChatPlaceholder,
   type XDmAttachmentSummary,
   type XDmEligibility,
   type XDmMessage,
@@ -392,98 +393,104 @@ async function loadXDmConversationHistoryPage(args: {
 }
 
 function toStoredConversationMessages(messages: XDmMessage[]) {
-  return messages.map((message) => ({
-    messageId: message.id,
-    direction: message.direction,
-    senderUserId: message.senderUserId,
-    text: message.text,
-    createdAt: message.createdAt,
-    createdAtMs: toCreatedAtMs(message.createdAt),
-    attachments: message.attachments,
-    readAt: message.readAt ? parseIsoToTimestamp(message.readAt) : undefined,
-    deliveredAt: message.deliveredAt
-      ? parseIsoToTimestamp(message.deliveredAt)
-      : undefined,
-    quotedMessageId: message.quotedMessageId,
-    quotedMessage: message.quotedMessage,
-    sharedPost: message.sharedPost,
-    reactions: message.reactions,
-    editedAt: message.editedAt
-      ? parseIsoToTimestamp(message.editedAt)
-      : undefined,
-    deletedAt: message.deletedAt
-      ? parseIsoToTimestamp(message.deletedAt)
-      : undefined,
-    seenBy: message.seenBy?.map((receipt) => ({
-      userId: receipt.userId,
-      attendeeId: receipt.attendeeId,
-      senderName: receipt.senderName,
-      seenAt: receipt.seenAt ? parseIsoToTimestamp(receipt.seenAt) : undefined,
-    })),
-    sourceEventType: message.sourceEventType as
-      | "dm.sent"
-      | "dm.received"
-      | "dm.read"
-      | "chat.sent"
-      | "chat.received"
-      | "chat.conversation_join"
-      | "message_received"
-      | "message_sent"
-      | "message_read"
-      | "message_reaction"
-      | "message_edited"
-      | "message_deleted"
-      | "message_delivered"
-      | "new_relation"
-      | undefined,
-    eventMetadata: message.eventMetadata,
-  }));
+  return messages
+    .filter((message) => !isEncryptedXChatPlaceholder(message))
+    .map((message) => ({
+      messageId: message.id,
+      direction: message.direction,
+      senderUserId: message.senderUserId,
+      text: message.text,
+      createdAt: message.createdAt,
+      createdAtMs: toCreatedAtMs(message.createdAt),
+      attachments: message.attachments,
+      readAt: message.readAt ? parseIsoToTimestamp(message.readAt) : undefined,
+      deliveredAt: message.deliveredAt
+        ? parseIsoToTimestamp(message.deliveredAt)
+        : undefined,
+      quotedMessageId: message.quotedMessageId,
+      quotedMessage: message.quotedMessage,
+      sharedPost: message.sharedPost,
+      reactions: message.reactions,
+      editedAt: message.editedAt
+        ? parseIsoToTimestamp(message.editedAt)
+        : undefined,
+      deletedAt: message.deletedAt
+        ? parseIsoToTimestamp(message.deletedAt)
+        : undefined,
+      seenBy: message.seenBy?.map((receipt) => ({
+        userId: receipt.userId,
+        attendeeId: receipt.attendeeId,
+        senderName: receipt.senderName,
+        seenAt: receipt.seenAt
+          ? parseIsoToTimestamp(receipt.seenAt)
+          : undefined,
+      })),
+      sourceEventType: message.sourceEventType as
+        | "dm.sent"
+        | "dm.received"
+        | "dm.read"
+        | "chat.sent"
+        | "chat.received"
+        | "chat.conversation_join"
+        | "message_received"
+        | "message_sent"
+        | "message_read"
+        | "message_reaction"
+        | "message_edited"
+        | "message_deleted"
+        | "message_delivered"
+        | "new_relation"
+        | undefined,
+      eventMetadata: message.eventMetadata,
+    }));
 }
 
 function toCachedDmMessages(snapshot: any): XDmMessage[] {
   const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
-  return messages.map((message: any) => ({
-    id: message.messageId,
-    conversationId: message.conversationId,
-    senderUserId: message.senderUserId,
-    text: message.text ?? "",
-    createdAt: message.createdAt,
-    direction: message.direction,
-    attachments: message.attachments,
-    readAt:
-      typeof message.readAt === "number"
-        ? new Date(message.readAt).toISOString()
+  return messages
+    .filter((message: any) => !isEncryptedXChatPlaceholder(message))
+    .map((message: any) => ({
+      id: message.messageId,
+      conversationId: message.conversationId,
+      senderUserId: message.senderUserId,
+      text: message.text ?? "",
+      createdAt: message.createdAt,
+      direction: message.direction,
+      attachments: message.attachments,
+      readAt:
+        typeof message.readAt === "number"
+          ? new Date(message.readAt).toISOString()
+          : undefined,
+      deliveredAt:
+        typeof message.deliveredAt === "number"
+          ? new Date(message.deliveredAt).toISOString()
+          : undefined,
+      quotedMessageId: message.quotedMessageId,
+      quotedMessage: message.quotedMessage,
+      sharedPost: message.sharedPost,
+      reactions: message.reactions,
+      editedAt:
+        typeof message.editedAt === "number"
+          ? new Date(message.editedAt).toISOString()
+          : undefined,
+      deletedAt:
+        typeof message.deletedAt === "number"
+          ? new Date(message.deletedAt).toISOString()
+          : undefined,
+      seenBy: Array.isArray(message.seenBy)
+        ? message.seenBy.map((receipt: any) => ({
+            userId: receipt.userId,
+            attendeeId: receipt.attendeeId,
+            senderName: receipt.senderName,
+            seenAt:
+              typeof receipt.seenAt === "number"
+                ? new Date(receipt.seenAt).toISOString()
+                : undefined,
+          }))
         : undefined,
-    deliveredAt:
-      typeof message.deliveredAt === "number"
-        ? new Date(message.deliveredAt).toISOString()
-        : undefined,
-    quotedMessageId: message.quotedMessageId,
-    quotedMessage: message.quotedMessage,
-    sharedPost: message.sharedPost,
-    reactions: message.reactions,
-    editedAt:
-      typeof message.editedAt === "number"
-        ? new Date(message.editedAt).toISOString()
-        : undefined,
-    deletedAt:
-      typeof message.deletedAt === "number"
-        ? new Date(message.deletedAt).toISOString()
-        : undefined,
-    seenBy: Array.isArray(message.seenBy)
-      ? message.seenBy.map((receipt: any) => ({
-          userId: receipt.userId,
-          attendeeId: receipt.attendeeId,
-          senderName: receipt.senderName,
-          seenAt:
-            typeof receipt.seenAt === "number"
-              ? new Date(receipt.seenAt).toISOString()
-              : undefined,
-        }))
-      : undefined,
-    sourceEventType: message.sourceEventType,
-    eventMetadata: message.eventMetadata,
-  }));
+      sourceEventType: message.sourceEventType,
+      eventMetadata: message.eventMetadata,
+    }));
 }
 
 const DM_PANEL_FRESH_MS = 60_000;

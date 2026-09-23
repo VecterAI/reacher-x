@@ -7,6 +7,7 @@ import {
   normalizeXChatPublicKeyRecords,
 } from "./xChatDecryptBundleCore";
 import {
+  getDmEventsByConversationId,
   getXChatBrowserDecryptBundle,
   markXChatConversationRead,
   XChatConfigurationError,
@@ -58,6 +59,40 @@ describe("XChat read receipts", () => {
 
 const viewerUserId = "1743216568451125248";
 const participantUserId = "2035575047868583936";
+
+describe("legacy DM lookup request", () => {
+  it("uses only supported X DM fields and excludes participant events", async () => {
+    const getEventsByConversationId = vi.fn().mockResolvedValue({ data: [] });
+    await getDmEventsByConversationId(
+      {
+        client: {
+          directMessages: { getEventsByConversationId },
+        } as unknown as Client,
+        xUserId: viewerUserId,
+      },
+      `${viewerUserId}-${participantUserId}`
+    );
+
+    expect(getEventsByConversationId).toHaveBeenCalledWith(
+      `${viewerUserId}-${participantUserId}`,
+      expect.objectContaining({
+        eventTypes: ["MessageCreate"],
+        dmEventFields: [
+          "id",
+          "text",
+          "created_at",
+          "dm_conversation_id",
+          "attachments",
+          "event_type",
+        ],
+        expansions: ["sender_id", "attachments.media_keys"],
+      })
+    );
+    expect(getEventsByConversationId.mock.calls[0]?.[1]).not.toHaveProperty(
+      "tweetFields"
+    );
+  });
+});
 
 describe("XChat decrypt bundle normalization", () => {
   it("keeps signing material but strips realm tokens from browser config", () => {
@@ -208,6 +243,13 @@ describe("XChat decrypt bundle normalization", () => {
         )
       ).toHaveLength(1);
       expect(
+        new URL(
+          requests.find((request) =>
+            request.includes(`/2/users/${participantUserId}/public_keys`)
+          )!
+        ).searchParams.get("public_key.fields")
+      ).not.toContain("juicebox_config");
+      expect(
         requests.some((request) => request.includes("/2/users/public_keys"))
       ).toBe(false);
       expect(new URL(eventRequests[0]!).searchParams.get("max_results")).toBe(
@@ -330,6 +372,44 @@ describe("XChat decrypt bundle normalization", () => {
       );
       await expect(request).rejects.toBeInstanceOf(XChatConfigurationError);
       await expect(request).rejects.toMatchObject({
+        code: "keys_unavailable",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("rejects encrypted history when the other participant has no verifiable signing key", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      const payload = url.includes("/events")
+        ? {
+            data: [
+              {
+                id: "encrypted-reply",
+                sender_id: participantUserId,
+                encoded_event: "ciphertext",
+              },
+            ],
+          }
+        : url.includes(`/2/users/${viewerUserId}/public_keys`)
+          ? PUBLIC_KEYS_PAYLOAD
+          : { data: [] };
+      return new Response(JSON.stringify(payload), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      await expect(
+        getXChatBrowserDecryptBundle(
+          {
+            client: new Client({ accessToken: "test-user-access-token" }),
+            xUserId: viewerUserId,
+          },
+          participantUserId
+        )
+      ).rejects.toMatchObject({
+        name: "XChatConfigurationError",
         code: "keys_unavailable",
       });
     } finally {

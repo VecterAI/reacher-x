@@ -8,6 +8,98 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 
 describe("XChat realtime ciphertext delivery", () => {
+  test("encrypted replies reach browser-only storage without creating blank DMs or agent responses", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, prospectId, conversationId } = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "workos-owner",
+        email: "owner@example.com",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Realtime workspace",
+        description: "XChat test",
+        isDefault: true,
+        updatedAt: 1,
+      });
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "participant-1",
+        data: {},
+        status: "in_progress",
+        updatedAt: 1,
+      });
+      const conversationId = "viewer-1-participant-1";
+      await ctx.db.insert("platformConversations", {
+        userId,
+        workspaceId,
+        prospectId,
+        platform: "twitter",
+        conversationId,
+        participantUserId: "participant-1",
+        updatedAt: 1,
+      });
+      await ctx.db.insert("xActivitySubscriptions", {
+        userId,
+        xUserId: "viewer-1",
+        eventType: "chat.received",
+        subscriptionId: "subscription-1",
+        updatedAt: 1,
+      });
+      return { userId, prospectId, conversationId };
+    });
+
+    const result = await t.action(
+      internal.xActivity.handleWebhookPayloadInternal,
+      {
+        payload: {
+          data: {
+            event_type: "chat.received",
+            subscription_id: "subscription-1",
+            payload: {
+              conversation_id: conversationId,
+              id: "encrypted-reply-1",
+              sender_id: "participant-1",
+              encoded_event: "ciphertext",
+            },
+          },
+        },
+      }
+    );
+
+    expect(result.results).toMatchObject([
+      { ignored: false, eventType: "chat.received", conversationId },
+    ]);
+    await t.run(async (ctx) => {
+      const messages = await ctx.db
+        .query("platformConversationMessages")
+        .withIndex("by_user_conversation_created_at", (q) =>
+          q.eq("userId", userId).eq("conversationId", conversationId)
+        )
+        .collect();
+      const realtime = await ctx.db
+        .query("xChatRealtimeEvents")
+        .withIndex("by_user_prospect_received_at", (q) =>
+          q.eq("userId", userId).eq("prospectId", prospectId)
+        )
+        .collect();
+      const responseEvents = await ctx.db
+        .query("outreachInteractionEvents")
+        .withIndex("by_prospect_and_created_at", (q) =>
+          q.eq("prospectId", prospectId)
+        )
+        .collect();
+      expect(messages).toHaveLength(0);
+      expect(realtime).toMatchObject([
+        { eventId: "encrypted-reply-1", encodedEvent: "ciphertext" },
+      ]);
+      expect(responseEvents).toHaveLength(0);
+    });
+  });
+
   test("deduplicates webhook retries and exposes events only to the owner", async () => {
     const t = convexTest(schema, modules);
     const seeded = await t.run(async (ctx) => {

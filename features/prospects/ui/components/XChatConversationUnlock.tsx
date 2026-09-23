@@ -9,6 +9,7 @@ import {
   decryptXChatWithRememberedPin,
   getXChatRateLimitState,
   getXChatUnlockErrorMessage,
+  getXChatUnlockFailure,
   getXChatUnlockFailureState,
   hasUnlockedXChatSession,
   rememberSuccessfulXChatPin,
@@ -215,7 +216,7 @@ export function XChatConversationUnlock({
       setXChatBrowserSessionState(prospectId, { status: "locked" });
     } catch (error) {
       if (!isCurrentRequest()) return;
-      const message = "We couldn't check X/Twitter Chat messages. Try again.";
+      const message = getXChatUnlockErrorMessage(error);
       setLocalError(message);
       setXChatBrowserSessionState(
         prospectId,
@@ -321,7 +322,10 @@ export function XChatConversationUnlock({
         setLocalError(message);
         setXChatBrowserSessionState(
           prospectId,
-          getXChatRateLimitState(error) ?? getXChatUnlockFailureState(error)
+          getXChatRateLimitState(error) ??
+            (getXChatUnlockFailure(error).kind === "invalid_pin"
+              ? getXChatUnlockFailureState(error)
+              : { status: "error", message })
         );
       } finally {
         if (isCurrentRequest()) {

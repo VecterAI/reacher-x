@@ -100,6 +100,32 @@ describe("conversation message presentation", () => {
     expect(shouldRenderConversationMessage(reactedMessage)).toBe(true);
   });
 
+  it("hides encrypted XChat webhook placeholders but preserves readable and legacy DMs", () => {
+    for (const direction of ["sent", "received"] as const) {
+      expect(
+        shouldRenderConversationMessage({
+          ...message("ciphertext-only", "2026-08-13T10:00:00.000Z", direction),
+          text: "",
+          attachments: [],
+          sourceEventType: direction === "sent" ? "chat.sent" : "chat.received",
+        })
+      ).toBe(false);
+    }
+    expect(
+      shouldRenderConversationMessage({
+        ...message("legacy", "2026-08-13T10:00:00.000Z"),
+        text: "Legacy message",
+      })
+    ).toBe(true);
+    expect(
+      shouldRenderConversationMessage({
+        ...message("verified", "2026-08-13T10:00:00.000Z"),
+        text: "Verified encrypted message",
+        sourceEventType: "chat.received",
+      })
+    ).toBe(true);
+  });
+
   it("formats relative day labels and file sizes", () => {
     const now = new Date("2026-08-13T12:00:00.000Z").getTime();
     expect(formatConversationDayLabel("2026-08-13T10:00:00.000Z", now)).toBe(
