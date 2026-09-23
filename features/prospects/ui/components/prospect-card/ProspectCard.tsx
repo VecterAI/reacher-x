@@ -8,6 +8,7 @@
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
 import { normalizeTwitterUrlEntities } from "@/shared/lib/twitter/profileLinks";
+import { getProspectMatchReasoning } from "@/shared/lib/prospectMatchReasoningHelpers";
 import {
   getProspectDisplayData,
   type ProspectCardRecord,
@@ -112,6 +113,13 @@ export function ProspectCard({
     ? getProspectDisplayTimestamp(storedProspect)
     : undefined;
 
+  // Qualification reasoning with a bio fallback: prospects qualified before
+  // reasoning was stored would otherwise render an empty card body.
+  const qualificationReasoning =
+    storedProspect && (mode !== "ui_preview" || actions)
+      ? getProspectMatchReasoning(storedProspect)
+      : undefined;
+
   // If optimistic status is set and differs from current, hide the card
   if (optimisticStatus !== null && optimisticStatus !== prospect.status) {
     return null;
@@ -175,13 +183,9 @@ export function ProspectCard({
       </ProspectCardHeader>
 
       <ProspectCardBody
-        text={
-          storedProspect && (mode !== "ui_preview" || actions)
-            ? storedProspect.qualificationReasoning
-            : prospect.briefIntro
-        }
+        text={qualificationReasoning ?? prospect.briefIntro}
         urlEntities={
-          storedProspect && (mode !== "ui_preview" || actions)
+          qualificationReasoning
             ? undefined
             : normalizeTwitterUrlEntities(prospect.bioUrlEntities)
         }
