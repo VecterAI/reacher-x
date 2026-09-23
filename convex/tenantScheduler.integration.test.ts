@@ -548,6 +548,95 @@ describe("tenant scheduler integration", () => {
     ).toEqual({ enforced: true });
   });
 
+  test("does not stop tenant execution with a manual plan still queued", async () => {
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const workspace = await seedWorkspace(t, "manual-plan-mode-switch");
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+    const itemId = await t.run(async (ctx) => {
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId: workspace.workspaceId,
+        userId: workspace.userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "manual-plan-mode-switch",
+        data: {},
+        status: "new",
+        qualificationStatus: "qualified",
+        updatedAt: 1,
+      });
+      const runId = await ctx.db.insert("planBatchRuns", {
+        workspaceId: workspace.workspaceId,
+        userId: workspace.userId,
+        sourceThreadId: "manual-plan-mode-switch",
+        operation: "create",
+        scopeKind: "tagged",
+        instruction: "Create the plan.",
+        attachments: [],
+        confirmationRequired: false,
+        status: "running",
+        targetCount: 1,
+        eligibleCount: 1,
+        queuedCount: 1,
+        runningCount: 0,
+        succeededCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
+        selectionSkippedCount: 0,
+        finishedCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return await ctx.db.insert("planBatchItems", {
+        runId,
+        prospectId,
+        operation: "create",
+        status: "queued",
+        directWorkPool: "tenant_execution",
+        workId: "tenant-work-id",
+        attemptCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    await expect(
+      t.mutation(internal.tenantScheduler.setControlInternal, {
+        mode: "legacy",
+      })
+    ).rejects.toThrow(/manual outreach plans are queued or running/);
+    await t.run(async (ctx) => {
+      await ctx.db.patch("planBatchItems", itemId, { status: "cancelled" });
+    });
+    expect(
+      await t.mutation(internal.tenantScheduler.setControlInternal, {
+        mode: "legacy",
+      })
+    ).toMatchObject({ mode: "legacy" });
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch("planBatchItems", itemId, {
+        status: "queued",
+        directWorkPool: "outreach_plan",
+      });
+    });
+    await expect(
+      t.mutation(internal.tenantScheduler.setControlInternal, {
+        mode: "enforced",
+      })
+    ).rejects.toThrow(/manual outreach plans are queued or running/);
+    await t.run(async (ctx) => {
+      await ctx.db.patch("planBatchItems", itemId, { status: "cancelled" });
+    });
+    expect(
+      await t.mutation(internal.tenantScheduler.setControlInternal, {
+        mode: "enforced",
+      })
+    ).toMatchObject({ mode: "enforced" });
+  });
+
   test("a saturated tenant cannot consume the newcomer slots", async () => {
     vi.useFakeTimers();
     const t = convexTest(schema, modules);
@@ -1407,5 +1496,466 @@ describe("tenant scheduler integration", () => {
       expectedTenantExecutionPoolParallelism: 36,
       legacyPoolsExpectedPaused: true,
     });
+  });
+
+  test("re-routes queued plan-batch items to the workpool when the workspace pauses", async () => {
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const workspace = await seedWorkspace(t, "pause-reroute");
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+    const { runId, itemId } = await t.run(async (ctx) => {
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId: workspace.workspaceId,
+        userId: workspace.userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "external-pause-reroute",
+        data: {},
+        status: "new",
+        qualificationStatus: "qualified",
+        displayName: "Prospect pause-reroute",
+        updatedAt: 1,
+      });
+      const runId = await ctx.db.insert("planBatchRuns", {
+        workspaceId: workspace.workspaceId,
+        userId: workspace.userId,
+        sourceThreadId: "pause-reroute-thread",
+        operation: "update",
+        scopeKind: "tagged",
+        instruction: "Update the plan.",
+        attachments: [],
+        confirmationRequired: false,
+        status: "queued",
+        targetCount: 1,
+        eligibleCount: 1,
+        queuedCount: 0,
+        runningCount: 0,
+        succeededCount: 0,
+        createdCount: 0,
+        updatedCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
+        selectionSkippedCount: 0,
+        finishedCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const itemId = await ctx.db.insert("planBatchItems", {
+        runId,
+        prospectId,
+        prospectName: "Prospect pause-reroute",
+        operation: "update",
+        status: "pending",
+        attemptCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { runId, itemId };
+    });
+
+    const route = await t.mutation(
+      internal.tenantScheduler.enqueueTenantJobInternal,
+      {
+        ...workspace,
+        class: "background",
+        priority: 30,
+        idempotencyKey: "plan-batch-item:pause-reroute",
+        payload: {
+          kind: "plan_batch_item",
+          workspaceId: workspace.workspaceId,
+          runId,
+          itemId,
+        },
+      }
+    );
+    expect(route.route).toBe("enforced");
+    const jobId = route.jobId;
+    if (!jobId) throw new Error("Expected enforced job id");
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch("planBatchItems", itemId, {
+        status: "queued",
+        workId: String(jobId),
+        updatedAt: 2,
+      });
+    });
+
+    await t.mutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+      workspaceId: workspace.workspaceId,
+    });
+
+    const state = await t.run(async (ctx) => ({
+      lane: await ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", workspace.workspaceId)
+        )
+        .unique(),
+      job: await ctx.db.get("tenantJobs", jobId),
+      item: await ctx.db.get("planBatchItems", itemId),
+    }));
+    expect(state.lane).toMatchObject({ state: "paused" });
+    expect(state.job).toMatchObject({ status: "cancelled" });
+    expect(state.item).toMatchObject({
+      status: "queued",
+      directWorkPool: "tenant_execution",
+    });
+    expect(state.item?.workId).toBeDefined();
+    expect(state.item?.workId).not.toBe(String(jobId));
+  });
+
+  test("continues plan-batch reroutes across scheduled pages when pausing", async () => {
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const workspace = await seedWorkspace(t, "pause-reroute-pages");
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+
+    const { runIds, itemIds } = await t.run(async (ctx) => {
+      const runIds: Id<"planBatchRuns">[] = [];
+      const itemIds: Id<"planBatchItems">[] = [];
+      for (let index = 0; index < 9; index += 1) {
+        const prospectId = await ctx.db.insert("prospects", {
+          workspaceId: workspace.workspaceId,
+          userId: workspace.userId,
+          platform: "twitter",
+          origin: "workspace_discovery",
+          externalId: `external-reroute-page-${index}`,
+          data: {},
+          status: "new",
+          qualificationStatus: "qualified",
+          displayName: `Prospect reroute page ${index}`,
+          updatedAt: 1,
+        });
+        const runId = await ctx.db.insert("planBatchRuns", {
+          workspaceId: workspace.workspaceId,
+          userId: workspace.userId,
+          sourceThreadId: `reroute-page-thread-${index}`,
+          operation: "update",
+          scopeKind: "tagged",
+          instruction: "Update the plan.",
+          attachments: [],
+          confirmationRequired: false,
+          status: "queued",
+          targetCount: 1,
+          eligibleCount: 1,
+          queuedCount: 0,
+          runningCount: 0,
+          succeededCount: 0,
+          createdCount: 0,
+          updatedCount: 0,
+          failedCount: 0,
+          skippedCount: 0,
+          selectionSkippedCount: 0,
+          finishedCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        const itemId = await ctx.db.insert("planBatchItems", {
+          runId,
+          prospectId,
+          prospectName: `Prospect reroute page ${index}`,
+          operation: "update",
+          status: "pending",
+          attemptCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        runIds.push(runId);
+        itemIds.push(itemId);
+      }
+      return { runIds, itemIds };
+    });
+
+    const jobIds: Id<"tenantJobs">[] = [];
+    for (const [index, itemId] of itemIds.entries()) {
+      const route = await t.mutation(
+        internal.tenantScheduler.enqueueTenantJobInternal,
+        {
+          ...workspace,
+          class: "background",
+          priority: 30,
+          idempotencyKey: `plan-batch-item:reroute-page-${index}`,
+          payload: {
+            kind: "plan_batch_item",
+            workspaceId: workspace.workspaceId,
+            runId: runIds[index],
+            itemId,
+          },
+        }
+      );
+      if (route.route !== "enforced" || !route.jobId) {
+        throw new Error("Expected enforced job id");
+      }
+      jobIds.push(route.jobId);
+    }
+    const laneId = await t.run(async (ctx) => {
+      const lane = await ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", workspace.workspaceId)
+        )
+        .unique();
+      if (!lane) throw new Error("Expected tenant lane");
+      return lane._id;
+    });
+    await t.run(async (ctx) => {
+      for (const [index, itemId] of itemIds.entries()) {
+        await ctx.db.patch("planBatchItems", itemId, {
+          status: "queued",
+          workId: String(jobIds[index]),
+          updatedAt: 2,
+        });
+      }
+    });
+    const nextCursor = await t.run(async (ctx) => {
+      const firstPage = await ctx.db
+        .query("tenantJobs")
+        .withIndex("by_lane_and_kind_and_status", (q) =>
+          q
+            .eq("laneId", laneId)
+            .eq("kind", "plan_batch_item")
+            .eq("status", "queued")
+        )
+        .paginate({ numItems: 8, maximumRowsRead: 8, cursor: null });
+      expect(firstPage.isDone).toBe(false);
+      return firstPage.continueCursor;
+    });
+
+    await t.mutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+      workspaceId: workspace.workspaceId,
+    });
+
+    const afterPause = await t.run(async (ctx) => {
+      const jobs = await ctx.db
+        .query("tenantJobs")
+        .withIndex("by_lane_and_kind_and_status", (q) =>
+          q.eq("laneId", laneId).eq("kind", "plan_batch_item")
+        )
+        .collect();
+      return {
+        lane: await ctx.db.get("tenantJobLanes", laneId),
+        cancelled: jobs.filter((job) => job.status === "cancelled"),
+        queued: jobs.filter((job) => job.status === "queued"),
+        items: await Promise.all(
+          itemIds.map((itemId) => ctx.db.get("planBatchItems", itemId))
+        ),
+      };
+    });
+    expect(afterPause.lane).toMatchObject({ state: "paused" });
+    expect(afterPause.cancelled).toHaveLength(8);
+    expect(afterPause.queued).toHaveLength(1);
+    const stillQueuedItemIds = afterPause.queued
+      .map((job) =>
+        job.payload.kind === "plan_batch_item" ? job.payload.itemId : null
+      )
+      .filter((itemId): itemId is Id<"planBatchItems"> => itemId !== null);
+    for (const [index, item] of afterPause.items.entries()) {
+      if (!item) throw new Error("Expected plan batch item");
+      if (stillQueuedItemIds.includes(item._id)) {
+        expect(item.workId).toBe(String(jobIds[index]));
+      } else {
+        expect(item.workId).not.toBe(String(jobIds[index]));
+      }
+    }
+
+    await t.mutation(
+      internal.tenantScheduler.rerouteQueuedPlanBatchItemsInternal,
+      { laneId, cursor: nextCursor }
+    );
+
+    const afterFollowUp = await t.run(async (ctx) => {
+      const jobs = await ctx.db
+        .query("tenantJobs")
+        .withIndex("by_lane_and_kind_and_status", (q) =>
+          q.eq("laneId", laneId).eq("kind", "plan_batch_item")
+        )
+        .collect();
+      return {
+        cancelled: jobs.filter((job) => job.status === "cancelled"),
+        queued: jobs.filter((job) => job.status === "queued"),
+        items: await Promise.all(
+          itemIds.map((itemId) => ctx.db.get("planBatchItems", itemId))
+        ),
+      };
+    });
+    expect(afterFollowUp.cancelled).toHaveLength(9);
+    expect(afterFollowUp.queued).toHaveLength(0);
+    for (const item of afterFollowUp.items) {
+      expect(item).toMatchObject({
+        status: "queued",
+        directWorkPool: "tenant_execution",
+      });
+      expect(item?.workId).toBeDefined();
+    }
+  });
+
+  test("cancels orphaned plan-batch jobs and advances the reroute cursor past stale pages", async () => {
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const workspace = await seedWorkspace(t, "pause-reroute-stale");
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+
+    const { runIds, itemIds } = await t.run(async (ctx) => {
+      const runIds: Id<"planBatchRuns">[] = [];
+      const itemIds: Id<"planBatchItems">[] = [];
+      for (let index = 0; index < 9; index += 1) {
+        const prospectId = await ctx.db.insert("prospects", {
+          workspaceId: workspace.workspaceId,
+          userId: workspace.userId,
+          platform: "twitter",
+          origin: "workspace_discovery",
+          externalId: `external-reroute-stale-${index}`,
+          data: {},
+          status: "new",
+          qualificationStatus: "qualified",
+          displayName: `Prospect reroute stale ${index}`,
+          updatedAt: 1,
+        });
+        const runId = await ctx.db.insert("planBatchRuns", {
+          workspaceId: workspace.workspaceId,
+          userId: workspace.userId,
+          sourceThreadId: `reroute-stale-thread-${index}`,
+          operation: "update",
+          scopeKind: "tagged",
+          instruction: "Update the plan.",
+          attachments: [],
+          confirmationRequired: false,
+          status: "queued",
+          targetCount: 1,
+          eligibleCount: 1,
+          queuedCount: 0,
+          runningCount: 0,
+          succeededCount: 0,
+          createdCount: 0,
+          updatedCount: 0,
+          failedCount: 0,
+          skippedCount: 0,
+          selectionSkippedCount: 0,
+          finishedCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        const itemId = await ctx.db.insert("planBatchItems", {
+          runId,
+          prospectId,
+          prospectName: `Prospect reroute stale ${index}`,
+          operation: "update",
+          status: "pending",
+          attemptCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        runIds.push(runId);
+        itemIds.push(itemId);
+      }
+      return { runIds, itemIds };
+    });
+
+    const jobIds: Id<"tenantJobs">[] = [];
+    for (const [index, itemId] of itemIds.entries()) {
+      const route = await t.mutation(
+        internal.tenantScheduler.enqueueTenantJobInternal,
+        {
+          ...workspace,
+          class: "background",
+          priority: 30,
+          idempotencyKey: `plan-batch-item:reroute-stale-${index}`,
+          payload: {
+            kind: "plan_batch_item",
+            workspaceId: workspace.workspaceId,
+            runId: runIds[index],
+            itemId,
+          },
+        }
+      );
+      if (route.route !== "enforced" || !route.jobId) {
+        throw new Error("Expected enforced job id");
+      }
+      jobIds.push(route.jobId);
+    }
+    const laneId = await t.run(async (ctx) => {
+      const lane = await ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", workspace.workspaceId)
+        )
+        .unique();
+      if (!lane) throw new Error("Expected tenant lane");
+      return lane._id;
+    });
+    // The first full page becomes orphaned: its items no longer reference
+    // their scheduler jobs, so re-routing must cancel the jobs instead of
+    // skipping them and stalling on the same page forever.
+    await t.run(async (ctx) => {
+      for (const [index, itemId] of itemIds.entries()) {
+        await ctx.db.patch("planBatchItems", itemId, {
+          status: "queued",
+          workId: String(jobIds[index]),
+          updatedAt: 2,
+        });
+      }
+      for (let index = 0; index < 8; index += 1) {
+        await ctx.db.patch("planBatchItems", itemIds[index], {
+          status: "cancelled",
+          errorMessage: "Batch cancelled",
+          completedAt: 3,
+          updatedAt: 3,
+        });
+      }
+    });
+
+    await t.mutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+      workspaceId: workspace.workspaceId,
+    });
+
+    const afterPause = await t.run(async (ctx) => {
+      const jobs = await ctx.db
+        .query("tenantJobs")
+        .withIndex("by_lane_and_kind_and_status", (q) =>
+          q.eq("laneId", laneId).eq("kind", "plan_batch_item")
+        )
+        .collect();
+      return {
+        cancelled: jobs.filter((job) => job.status === "cancelled"),
+        queued: jobs.filter((job) => job.status === "queued"),
+      };
+    });
+    expect(afterPause.cancelled).toHaveLength(8);
+    expect(afterPause.queued).toHaveLength(1);
+
+    // A follow-up starting from the beginning of the queued range must skip
+    // the cancelled page and re-route the one live item behind it.
+    await t.mutation(
+      internal.tenantScheduler.rerouteQueuedPlanBatchItemsInternal,
+      { laneId, cursor: null }
+    );
+
+    const afterFollowUp = await t.run(async (ctx) => {
+      const jobs = await ctx.db
+        .query("tenantJobs")
+        .withIndex("by_lane_and_kind_and_status", (q) =>
+          q.eq("laneId", laneId).eq("kind", "plan_batch_item")
+        )
+        .collect();
+      return {
+        cancelled: jobs.filter((job) => job.status === "cancelled"),
+        queued: jobs.filter((job) => job.status === "queued"),
+        liveItem: await ctx.db.get("planBatchItems", itemIds[8]),
+      };
+    });
+    expect(afterFollowUp.cancelled).toHaveLength(9);
+    expect(afterFollowUp.queued).toHaveLength(0);
+    expect(afterFollowUp.liveItem).toMatchObject({
+      status: "queued",
+      directWorkPool: "tenant_execution",
+    });
+    expect(afterFollowUp.liveItem?.workId).toBeDefined();
+    expect(afterFollowUp.liveItem?.workId).not.toBe(String(jobIds[8]));
   });
 });

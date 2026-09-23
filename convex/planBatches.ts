@@ -1,4 +1,4 @@
-import { vOnCompleteArgs, type WorkId } from "@convex-dev/workpool";
+import { vOnCompleteArgs } from "@convex-dev/workpool";
 import { vResultValidator } from "@convex-dev/workpool";
 import { vWorkflowId } from "@convex-dev/workflow";
 import { v, type Infer } from "convex/values";
@@ -11,7 +11,10 @@ import {
   internalQuery,
   query,
 } from "./lib/functionBuilders";
-import { getOutreachPlanPool } from "./lib/outreachPlanPool";
+import {
+  cancelDirectPlanBatchItem,
+  enqueuePlanBatchItemDirectly,
+} from "./lib/planBatchWorkPool";
 import {
   TENANT_ENQUEUE_RECOVERY_MAX_ATTEMPTS,
   TENANT_JOB_PRIORITY,
@@ -1190,7 +1193,10 @@ export const cancelQueuedPlanBatchItemsPage = internalMutation({
           { workId: item.workId }
         );
         if (!schedulerCancellation.handled) {
-          await getOutreachPlanPool().cancel(ctx, item.workId as WorkId);
+          await cancelDirectPlanBatchItem(ctx, {
+            workId: item.workId,
+            directWorkPool: item.directWorkPool,
+          });
         }
       }
     }
@@ -1241,41 +1247,38 @@ export const dispatchPlanBatchPage = internalMutation({
       return { done: true, status: run.status };
     }
 
+    const workspace = await ctx.db.get("workspaces", run.workspaceId);
     for (const item of items) {
-      const tenantRoute = await ctx.runMutation(
-        internal.tenantScheduler.enqueueTenantJobInternal,
-        {
-          workspaceId: run.workspaceId,
-          userId: run.userId,
-          class: "background",
-          priority: TENANT_JOB_PRIORITY.background,
-          idempotencyKey: `plan-batch-item:${String(item._id)}`,
-          payload: {
-            kind: "plan_batch_item",
-            workspaceId: run.workspaceId,
-            runId,
-            itemId: item._id,
-          },
-        }
-      );
-      const workId =
-        tenantRoute.route === "enforced"
-          ? String(tenantRoute.jobId)
-          : String(
-              await getOutreachPlanPool().enqueueAction(
-                ctx,
-                internal.planBatchActions.processPlanBatchItem,
-                { itemId: item._id },
-                {
-                  onComplete: internal.planBatches.handlePlanBatchItemComplete,
-                  context: { runId, itemId: item._id },
-                  retry: true,
-                }
-              )
+      const tenantRoute =
+        workspace?.prospectingWorkflowStatus === "paused"
+          ? null
+          : await ctx.runMutation(
+              internal.tenantScheduler.enqueueTenantJobInternal,
+              {
+                workspaceId: run.workspaceId,
+                userId: run.userId,
+                class: "background",
+                priority: TENANT_JOB_PRIORITY.background,
+                idempotencyKey: `plan-batch-item:${String(item._id)}`,
+                payload: {
+                  kind: "plan_batch_item",
+                  workspaceId: run.workspaceId,
+                  runId,
+                  itemId: item._id,
+                },
+              }
             );
+      const directWork =
+        tenantRoute?.route === "enforced"
+          ? null
+          : await enqueuePlanBatchItemDirectly(ctx, {
+              runId,
+              itemId: item._id,
+            });
       await ctx.db.patch("planBatchItems", item._id, {
         status: "queued",
-        workId,
+        workId: directWork?.workId ?? String(tenantRoute?.jobId),
+        directWorkPool: directWork?.directWorkPool,
         updatedAt: getCurrentUTCTimestamp(),
       });
     }
@@ -1335,6 +1338,28 @@ export const dispatchPlanBatchItemInternal = internalMutation({
       return { dispatched: false, status: run.status };
     }
 
+    // Manual plan work must run even when discovery's tenant lane is paused.
+    const workspace = await ctx.db.get("workspaces", run.workspaceId);
+    if (workspace?.prospectingWorkflowStatus === "paused") {
+      const now = getCurrentUTCTimestamp();
+      const directWork = await enqueuePlanBatchItemDirectly(ctx, {
+        runId,
+        itemId: item._id,
+      });
+      await ctx.db.patch("planBatchItems", item._id, {
+        status: "queued",
+        ...directWork,
+        updatedAt: now,
+      });
+      await ctx.db.patch("planBatchRuns", runId, {
+        status: "running",
+        queuedCount: run.queuedCount + 1,
+        startedAt: run.startedAt ?? now,
+        updatedAt: now,
+      });
+      return { dispatched: true, status: "running" as const };
+    }
+
     const tenantRoute = await ctx.runMutation(
       internal.tenantScheduler.enqueueTenantJobInternal,
       {
@@ -1351,25 +1376,15 @@ export const dispatchPlanBatchItemInternal = internalMutation({
         },
       }
     );
-    const workId =
+    const directWork =
       tenantRoute.route === "enforced"
-        ? String(tenantRoute.jobId)
-        : String(
-            await getOutreachPlanPool().enqueueAction(
-              ctx,
-              internal.planBatchActions.processPlanBatchItem,
-              { itemId: item._id },
-              {
-                onComplete: internal.planBatches.handlePlanBatchItemComplete,
-                context: { runId, itemId: item._id },
-                retry: true,
-              }
-            )
-          );
+        ? null
+        : await enqueuePlanBatchItemDirectly(ctx, { runId, itemId: item._id });
     const now = getCurrentUTCTimestamp();
     await ctx.db.patch("planBatchItems", item._id, {
       status: "queued",
-      workId,
+      workId: directWork?.workId ?? String(tenantRoute.jobId),
+      directWorkPool: directWork?.directWorkPool,
       updatedAt: now,
     });
     await ctx.db.patch("planBatchRuns", runId, {
