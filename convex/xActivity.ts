@@ -36,6 +36,7 @@ import { getXProviderContextForUser } from "./lib/xdkAuth";
 import { getDmEventsByConversationId } from "./lib/xdkTwitterProvider";
 import { normalizeXChatConversationId } from "./lib/xChatMediaCore";
 import { normalizeXTypingActivityPayload } from "./lib/xActivityTypingCore";
+import { isEncryptedXChatActivityEventType } from "../shared/lib/twitter/dm";
 import {
   getCurrentUTCTimestamp,
   parseIsoToTimestamp,
@@ -462,11 +463,7 @@ async function syncConversationSnapshot(
   };
 }
 
-/**
- * Chat Activity events are encrypted and cannot be backfilled through the
- * legacy DM lookup endpoint. Persist their normalized payload directly. The
- * same fallback protects a just-delivered dm.* event from a provider read race.
- */
+/** Keep the conversation mapping current; only legacy dm.* events have readable bodies. */
 async function persistNormalizedDmActivityEvent(
   ctx: ActionCtx,
   args: {
@@ -496,45 +493,51 @@ async function persistNormalizedDmActivityEvent(
   const createdAt = args.event.createdAt;
   const createdAtMs =
     (createdAt ? parseIsoToTimestamp(createdAt) : undefined) ?? now;
-  const richMessage = normalizeActivityDmMessage(args.event);
-  const messages = args.event.messageId
-    ? [
-        {
-          messageId: args.event.messageId,
-          direction,
-          senderUserId: args.event.senderUserId ?? richMessage?.senderUserId,
-          text: args.event.text ?? richMessage?.text,
-          createdAt: createdAt ?? richMessage?.createdAt,
-          createdAtMs,
-          attachments: richMessage?.attachments,
-          readAt: richMessage?.readAt
-            ? parseIsoToTimestamp(richMessage.readAt)
-            : undefined,
-          deliveredAt: richMessage?.deliveredAt
-            ? parseIsoToTimestamp(richMessage.deliveredAt)
-            : undefined,
-          quotedMessageId: richMessage?.quotedMessageId,
-          quotedMessage: richMessage?.quotedMessage,
-          sharedPost: richMessage?.sharedPost,
-          reactions: richMessage?.reactions,
-          editedAt: richMessage?.editedAt
-            ? parseIsoToTimestamp(richMessage.editedAt)
-            : undefined,
-          deletedAt: richMessage?.deletedAt
-            ? parseIsoToTimestamp(richMessage.deletedAt)
-            : undefined,
-          seenBy: toStoredSeenBy(richMessage?.seenBy),
-          sourceEventType: args.event.eventType,
-          eventMetadata: {
-            ...richMessage?.eventMetadata,
-            providerEventType: args.event.eventType,
-            targetMessageId:
-              richMessage?.eventMetadata?.targetMessageId ??
-              args.event.messageId,
+  const isEncryptedChatEvent = isEncryptedXChatActivityEventType(
+    args.event.eventType
+  );
+  const richMessage = isEncryptedChatEvent
+    ? undefined
+    : normalizeActivityDmMessage(args.event);
+  const messages =
+    args.event.messageId && !isEncryptedChatEvent
+      ? [
+          {
+            messageId: args.event.messageId,
+            direction,
+            senderUserId: args.event.senderUserId ?? richMessage?.senderUserId,
+            text: args.event.text ?? richMessage?.text,
+            createdAt: createdAt ?? richMessage?.createdAt,
+            createdAtMs,
+            attachments: richMessage?.attachments,
+            readAt: richMessage?.readAt
+              ? parseIsoToTimestamp(richMessage.readAt)
+              : undefined,
+            deliveredAt: richMessage?.deliveredAt
+              ? parseIsoToTimestamp(richMessage.deliveredAt)
+              : undefined,
+            quotedMessageId: richMessage?.quotedMessageId,
+            quotedMessage: richMessage?.quotedMessage,
+            sharedPost: richMessage?.sharedPost,
+            reactions: richMessage?.reactions,
+            editedAt: richMessage?.editedAt
+              ? parseIsoToTimestamp(richMessage.editedAt)
+              : undefined,
+            deletedAt: richMessage?.deletedAt
+              ? parseIsoToTimestamp(richMessage.deletedAt)
+              : undefined,
+            seenBy: toStoredSeenBy(richMessage?.seenBy),
+            sourceEventType: args.event.eventType,
+            eventMetadata: {
+              ...richMessage?.eventMetadata,
+              providerEventType: args.event.eventType,
+              targetMessageId:
+                richMessage?.eventMetadata?.targetMessageId ??
+                args.event.messageId,
+            },
           },
-        },
-      ]
-    : [];
+        ]
+      : [];
 
   await ctx.runMutation(
     internal.platformConversations.upsertConversationSnapshotInternal,
@@ -1278,8 +1281,11 @@ export const handleWebhookPayloadInternal = internalAction({
             }
           );
         }
+        const isEncryptedChatEvent = isEncryptedXChatActivityEventType(
+          event.eventType
+        );
         const existingMessage =
-          event.messageId && isIncomingMessage
+          event.messageId && isIncomingMessage && !isEncryptedChatEvent
             ? await ctx.runQuery(
                 internal.platformConversations.getConversationMessageInternal,
                 {
@@ -1289,8 +1295,6 @@ export const handleWebhookPayloadInternal = internalAction({
                 }
               )
             : null;
-        const isEncryptedChatEvent = event.eventType.startsWith("chat.");
-
         const synced = isEncryptedChatEvent
           ? null
           : await syncConversationSnapshot(ctx, {
@@ -1298,9 +1302,9 @@ export const handleWebhookPayloadInternal = internalAction({
               conversationId: event.conversationId,
               sourceEventType: event.eventType,
             });
-        // Always consume the normalized webhook payload. For chat.* it is the
-        // only readable message source; for dm.* it fills a race where lookup
-        // has not yet indexed the just-delivered event.
+        // Encrypted chat.* updates the conversation mapping, but its ciphertext
+        // must never become a message body or an Agent response. Legacy dm.*
+        // fills a race where lookup has not indexed the just-delivered event.
         const conversation = await persistNormalizedDmActivityEvent(ctx, {
           userId,
           event,
@@ -1327,7 +1331,12 @@ export const handleWebhookPayloadInternal = internalAction({
           });
         }
 
-        if (isIncomingMessage && !existingMessage && conversation?.prospectId) {
+        if (
+          isIncomingMessage &&
+          !isEncryptedChatEvent &&
+          !existingMessage &&
+          conversation?.prospectId
+        ) {
           const inboundMessage = event.messageId
             ? await ctx.runQuery(
                 internal.platformConversations.getConversationMessageInternal,

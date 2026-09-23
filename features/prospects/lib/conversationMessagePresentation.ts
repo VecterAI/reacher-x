@@ -7,6 +7,7 @@ import {
   buildTwitterPostUrl,
   extractTwitterPostIdFromUrl,
 } from "../../../shared/lib/twitter/contracts";
+import { isEncryptedXChatPlaceholder } from "../../../shared/lib/twitter/dm";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 const HTTP_URL_PATTERN = /https?:\/\/[^\s<>]+/i;
@@ -17,6 +18,7 @@ const REACTION_EVENT_LABEL_PATTERN = /\breacted\b/iu;
 export function shouldRenderConversationMessage(
   message: RichConversationMessage
 ): boolean {
+  if (isEncryptedXChatPlaceholder(message)) return false;
   const hasReactionEventType = [
     message.sourceEventType,
     message.eventMetadata?.providerEventType,

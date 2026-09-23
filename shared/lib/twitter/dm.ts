@@ -188,6 +188,36 @@ export interface XDmPanelContext {
   warning?: XDmPanelWarning;
 }
 
+/** X Chat Activity carries ciphertext, never a readable DM body. */
+export function isEncryptedXChatActivityEventType(eventType?: string): boolean {
+  return (
+    eventType === "chat.sent" ||
+    eventType === "chat.received" ||
+    eventType === "chat.conversation_join"
+  );
+}
+
+/** Hide legacy cached webhook rows that were created from ciphertext alone. */
+export function isEncryptedXChatPlaceholder(message: {
+  sourceEventType?: string;
+  text?: string;
+  attachments?: readonly unknown[];
+  quotedMessage?: unknown;
+  sharedPost?: unknown;
+  deletedAt?: unknown;
+  eventMetadata?: { eventLabel?: string };
+}): boolean {
+  return (
+    isEncryptedXChatActivityEventType(message.sourceEventType) &&
+    !message.text?.trim() &&
+    !message.attachments?.length &&
+    !message.quotedMessage &&
+    !message.sharedPost &&
+    !message.deletedAt &&
+    !message.eventMetadata?.eventLabel
+  );
+}
+
 export function computeOneToOneDmConversationId(
   leftUserId: string,
   rightUserId: string

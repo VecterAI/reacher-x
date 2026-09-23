@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DecryptedMessage } from "@xdevplatform/chat-xdk";
 import {
   buildXChatMediaAttachment,
   cacheVerifiedXChatBrowserSession,
@@ -7,11 +8,13 @@ import {
   copyXChatConversationKeyForEncryption,
   getXChatBrowserSession,
   getXChatBrowserSessionState,
+  getVerifiedXChatEventIds,
   getXChatUnlockErrorMessage,
   getXChatUnlockFailureState,
   hydrateXChatAttachments,
   getXChatAttachmentMediaType,
   hydrateXChatVoiceNotes,
+  hasUnverifiedXChatMessageEvents,
   lockXChatInBrowser,
   mergeXChatAttachmentsPreservingPlayablePreview,
   mergeXChatConversationKeys,
@@ -266,6 +269,34 @@ describe("getXChatUnlockErrorMessage", () => {
     ).toBe("We couldn't unlock X/Twitter Chat. Try again.");
   });
 
+  it("explains a missing participant verification key without asking for another PIN", () => {
+    expect(
+      getXChatUnlockErrorMessage({
+        data: { code: "XCHAT_KEYS_UNAVAILABLE", message: "keys_unavailable" },
+      })
+    ).toBe(
+      "X isn't providing the other person's signing keys. This chat can't be verified yet."
+    );
+    expect(
+      getXChatUnlockErrorMessage(
+        new Error(
+          "XChat could not verify or decrypt any messages in this conversation."
+        )
+      )
+    ).toBe(
+      "XChat couldn't verify or decrypt any messages. The conversation is still locked."
+    );
+    expect(
+      getXChatUnlockErrorMessage(
+        new Error(
+          "XChat could not verify or decrypt all messages in this conversation."
+        )
+      )
+    ).toBe(
+      "Some XChat messages couldn't be verified. The conversation is still locked."
+    );
+  });
+
   it("disables PIN entry when X reports no attempts remaining", () => {
     expect(
       getXChatUnlockFailureState(
@@ -281,6 +312,40 @@ describe("getXChatUnlockErrorMessage", () => {
         )
       )
     ).toEqual({ status: "locked", attemptsRemaining: 3 });
+  });
+});
+
+describe("XChat verified history coverage", () => {
+  it("rejects an unverified message but not an unrelated key-change error", () => {
+    const events = [
+      { encodedEvent: "key-change" },
+      { id: "reply-1", senderId: "participant", encodedEvent: "reply" },
+    ];
+    expect(hasUnverifiedXChatMessageEvents(events, { "0": "old key" })).toBe(
+      false
+    );
+    expect(hasUnverifiedXChatMessageEvents(events, { "1": "no signer" })).toBe(
+      true
+    );
+  });
+
+  it("only marks verified event IDs as loaded for realtime revision checks", () => {
+    const events = [
+      { id: "event-1", encodedEvent: "ciphertext-1" },
+      { id: "event-2", encodedEvent: "ciphertext-2" },
+      { id: "event-3", encodedEvent: "ciphertext-3" },
+    ];
+    const decrypted: DecryptedMessage[] = [
+      {
+        originalB64: "ciphertext-1",
+        event: { type: "message", id: "event-1" },
+      },
+      { event: { type: "message", id: "event-3" } },
+    ];
+    expect(getVerifiedXChatEventIds(events, decrypted)).toEqual([
+      "event-1",
+      "event-3",
+    ]);
   });
 });
 

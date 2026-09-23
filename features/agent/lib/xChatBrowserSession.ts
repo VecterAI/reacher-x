@@ -59,6 +59,36 @@ export type XChatDecryptBundle = {
   hasMore: boolean;
 };
 
+/** An X Chat page is incomplete if any signed message envelope failed verification. */
+export function hasUnverifiedXChatMessageEvents(
+  events: XChatDecryptBundle["events"],
+  errors: Record<string, string>
+): boolean {
+  return events.some(
+    (event, index) =>
+      Boolean(event.senderId) && Object.hasOwn(errors, String(index))
+  );
+}
+
+/** Only verified envelopes may satisfy a realtime conversation revision. */
+export function getVerifiedXChatEventIds(
+  events: XChatDecryptBundle["events"],
+  decrypted: DecryptedMessage[]
+): string[] {
+  const verifiedBodies = new Set(
+    decrypted.flatMap(({ originalB64 }) => (originalB64 ? [originalB64] : []))
+  );
+  const verifiedIds = new Set(
+    decrypted.flatMap(({ event }) => (event.id ? [event.id] : []))
+  );
+  return events.flatMap((event) =>
+    event.id &&
+    (verifiedBodies.has(event.encodedEvent) || verifiedIds.has(event.id))
+      ? [event.id]
+      : []
+  );
+}
+
 export type XChatDecryptBundleResponse =
   | {
       availability: "unavailable";
@@ -234,6 +264,26 @@ export function getXChatUnlockFailureState(
 
 /** Converts SDK/provider unlock diagnostics into concise user-facing copy. */
 export function getXChatUnlockErrorMessage(error: unknown): string {
+  const errorRecord = isRecord(error) ? error : undefined;
+  const data = getNestedRecord(errorRecord, "data");
+  if (getStringProperty(data, "code") === "XCHAT_KEYS_UNAVAILABLE") {
+    return "X isn't providing the other person's signing keys. This chat can't be verified yet.";
+  }
+  if (getStringProperty(data, "code") === "XCHAT_BACKUP_UNAVAILABLE") {
+    return "X isn't providing the secure key backup needed to unlock this chat.";
+  }
+  if (
+    getXChatErrorText(error) ===
+    "XChat could not verify or decrypt any messages in this conversation."
+  ) {
+    return "XChat couldn't verify or decrypt any messages. The conversation is still locked.";
+  }
+  if (
+    getXChatErrorText(error) ===
+    "XChat could not verify or decrypt all messages in this conversation."
+  ) {
+    return "Some XChat messages couldn't be verified. The conversation is still locked.";
+  }
   const failure = getXChatUnlockFailure(error);
   if (failure.kind === "invalid_pin") {
     const remaining = failure.attemptsRemaining ?? null;
@@ -693,6 +743,7 @@ export function cacheVerifiedXChatBrowserSession(args: {
   messages: BrowserDecryptedXChatMessage[];
   messageUpdates?: BrowserDecryptedXChatMessageUpdate[];
   decryptionErrorCount: number;
+  verifiedEventIds?: string[];
   /** URLs created from browser-decrypted media; revoke on replacement/lock. */
   objectUrls?: string[];
 }): BrowserXChatSession {
@@ -704,9 +755,11 @@ export function cacheVerifiedXChatBrowserSession(args: {
     signingKeyVersion: args.bundle.signingKeyVersion,
     messages: args.messages,
     messageUpdates: args.messageUpdates,
-    loadedEventIds: args.bundle.events.flatMap((event) =>
-      event.id ? [event.id] : []
-    ),
+    loadedEventIds:
+      args.verifiedEventIds ??
+      (args.decryptionErrorCount === 0
+        ? args.bundle.events.flatMap((event) => (event.id ? [event.id] : []))
+        : []),
     decryptionErrorCount: args.decryptionErrorCount,
     eventPagesFetched: args.bundle.eventPagesFetched,
     nextCursor: args.bundle.nextCursor,
@@ -1570,6 +1623,11 @@ export async function appendXChatEventPageInBrowser(args: {
   const result = current.chat.decryptEvents(
     args.page.events.map((event) => event.encodedEvent)
   );
+  if (hasUnverifiedXChatMessageEvents(args.page.events, result.errors)) {
+    throw new Error(
+      "XChat could not verify or decrypt all messages in this conversation."
+    );
+  }
   indexVerifiedXChatRawEvents(current, result.messages);
   const normalized = normalizeVerifiedXChatConversation({
     events: result.messages.map(({ event }) => event),
@@ -1681,8 +1739,11 @@ export async function appendXChatEventPageInBrowser(args: {
     ...normalized.messageUpdates,
   ];
   const loadedEventIds = new Set(session.loadedEventIds ?? []);
-  for (const event of args.page.events) {
-    if (event.id) loadedEventIds.add(event.id);
+  for (const id of getVerifiedXChatEventIds(
+    args.page.events,
+    result.messages
+  )) {
+    loadedEventIds.add(id);
   }
   decryptedSessions.set(sessionKey, {
     ...session,
@@ -2586,6 +2647,16 @@ async function decryptXChatInBrowserOnce(args: {
     messages: decryptedConversation.messages,
   });
   const decryptionErrorCount = Object.keys(result.errors).length;
+  if (hasUnverifiedXChatMessageEvents(bundle.events, result.errors)) {
+    throw new Error(
+      "XChat could not verify or decrypt all messages in this conversation."
+    );
+  }
+  if (decryptionErrorCount > 0 && decryptedConversation.messages.length === 0) {
+    throw new Error(
+      "XChat could not verify or decrypt any messages in this conversation."
+    );
+  }
   const verifiedMessages = hydrateXChatQuotedMessages(
     decryptedConversation.messages
   );
@@ -2607,6 +2678,7 @@ async function decryptXChatInBrowserOnce(args: {
     messages,
     messageUpdates: decryptedConversation.messageUpdates,
     decryptionErrorCount,
+    verifiedEventIds: getVerifiedXChatEventIds(bundle.events, result.messages),
   });
 
   if (args.getEncryptedMedia) {

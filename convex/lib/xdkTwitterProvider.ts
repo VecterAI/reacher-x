@@ -1653,23 +1653,16 @@ export async function getDmEvents(
   return await context.client.directMessages.getEvents({
     maxResults: options?.maxResults,
     paginationToken: options?.paginationToken,
+    eventTypes: ["MessageCreate"],
     dmEventFields: [
       "id",
       "text",
       "created_at",
-      "sender_id",
       "dm_conversation_id",
       "attachments",
-      "referenced_tweets",
-      "urls",
+      "event_type",
     ],
-    expansions: [
-      "sender_id",
-      "attachments.media_keys",
-      "referenced_tweets.id",
-      "referenced_tweets.id.author_id",
-      "referenced_tweets.id.attachments.media_keys",
-    ],
+    expansions: ["sender_id", "attachments.media_keys"],
     userFields: [
       "id",
       "name",
@@ -1690,15 +1683,6 @@ export async function getDmEvents(
       "duration_ms",
       "variants",
     ],
-    tweetFields: [
-      "id",
-      "text",
-      "author_id",
-      "created_at",
-      "attachments",
-      "entities",
-      "referenced_tweets",
-    ],
   });
 }
 
@@ -1712,23 +1696,16 @@ export async function getDmEventsByConversationId(
     {
       maxResults: options?.maxResults,
       paginationToken: options?.paginationToken,
+      eventTypes: ["MessageCreate"],
       dmEventFields: [
         "id",
         "text",
         "created_at",
-        "sender_id",
         "dm_conversation_id",
         "attachments",
-        "referenced_tweets",
-        "urls",
+        "event_type",
       ],
-      expansions: [
-        "sender_id",
-        "attachments.media_keys",
-        "referenced_tweets.id",
-        "referenced_tweets.id.author_id",
-        "referenced_tweets.id.attachments.media_keys",
-      ],
+      expansions: ["sender_id", "attachments.media_keys"],
       userFields: [
         "id",
         "name",
@@ -1748,15 +1725,6 @@ export async function getDmEventsByConversationId(
         "alt_text",
         "duration_ms",
         "variants",
-      ],
-      tweetFields: [
-        "id",
-        "text",
-        "author_id",
-        "created_at",
-        "attachments",
-        "entities",
-        "referenced_tweets",
       ],
     }
   );
@@ -2006,18 +1974,40 @@ const XCHAT_PUBLIC_KEY_FIELDS = [
   "juicebox_config",
 ] as const;
 
+const XCHAT_PARTICIPANT_KEY_FIELDS = XCHAT_PUBLIC_KEY_FIELDS.filter(
+  (field) => field !== "juicebox_config"
+);
+
 async function getXChatPublicKeyRecords(
   context: XProviderContext,
   userId: string
 ): Promise<XChatPublicKeyRecord[]> {
   const params = new URLSearchParams();
-  params.set("public_key.fields", XCHAT_PUBLIC_KEY_FIELDS.join(","));
+  // Secure backup configuration belongs only to the authenticated owner.
+  // Do not request that owner-only field when looking up another signer.
+  params.set(
+    "public_key.fields",
+    (userId === context.xUserId
+      ? XCHAT_PUBLIC_KEY_FIELDS
+      : XCHAT_PARTICIPANT_KEY_FIELDS
+    ).join(",")
+  );
   const payload = await getXChatJson(
     context,
     `/2/users/${encodeURIComponent(userId)}/public_keys`,
     params
   );
-  return normalizeXChatPublicKeyRecords(payload, userId);
+  const records = normalizeXChatPublicKeyRecords(payload, userId);
+  if (records.length === 0) {
+    const rows = Array.isArray(payload.data) ? payload.data : [];
+    console.warn("[XChat] No usable public signing keys returned", {
+      role: userId === context.xUserId ? "viewer" : "participant",
+      responseCount: rows.length,
+      fieldNames:
+        rows.length > 0 && isRecord(rows[0]) ? Object.keys(rows[0]).sort() : [],
+    });
+  }
+  return records;
 }
 
 function compareXChatKeyVersions(
@@ -2100,6 +2090,12 @@ export async function getXChatBrowserDecryptBundle(
       availability: "unavailable",
       reason: "participant_not_configured",
     };
+  }
+  if (participantKeyRecords.length === 0) {
+    throw new XChatConfigurationError(
+      "keys_unavailable",
+      "X is not providing the participant's signing key for this encrypted conversation."
+    );
   }
   const ownerRecord = getLatestXChatOwnerRecord(viewerKeyRecords);
   if (!ownerRecord) {
