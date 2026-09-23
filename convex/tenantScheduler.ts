@@ -12,6 +12,7 @@ import {
   query,
 } from "./lib/functionBuilders";
 import { getUserByIdentity, requireOwnedWorkspace } from "./lib/accessHelpers";
+import { enqueuePlanBatchItemDirectly } from "./lib/planBatchWorkPool";
 import { getSetupSessionByThreadId } from "./lib/setupSessionCore";
 import { isSetupSessionAccessibleForUser } from "./lib/workspaceEntitlements";
 import { deriveWorkspaceSystemStatus } from "./lib/workspaceSystem";
@@ -54,6 +55,9 @@ import { enqueueTenantJobWithRetry } from "./lib/tenantSchedulerEnqueue";
 const WORKER_NAME = "tenant-fair-dispatcher-v1";
 const DISPATCH_BATCH_SIZE = 8;
 const LANE_SCAN_SIZE = 64;
+// Bounded page for re-routing plan-batch items off a paused lane; overflow is
+// continued by scheduled follow-ups to stay within transaction limits.
+const PLAN_BATCH_REROUTE_PAGE_SIZE = 8;
 
 /** Small, reactive notice query; never downloads the workspace's job backlog. */
 export const getHighLoadNotice = query({
@@ -292,6 +296,24 @@ async function pingDispatcher(ctx: MutationCtx) {
 }
 
 async function configurePoolSplit(ctx: MutationCtx, enforced: boolean) {
+  // Only the selected pool has workers. Never switch it off while manual
+  // outreach work is queued or running in it.
+  const poolToStop = enforced ? "outreach_plan" : "tenant_execution";
+  const activeDirectPlan = await Promise.all(
+    (["queued", "running"] as const).map((status) =>
+      ctx.db
+        .query("planBatchItems")
+        .withIndex("by_direct_work_pool_and_status", (q) =>
+          q.eq("directWorkPool", poolToStop).eq("status", status)
+        )
+        .first()
+    )
+  );
+  if (activeDirectPlan.some(Boolean)) {
+    throw new Error(
+      "Cannot change execution pools while manual outreach plans are queued or running"
+    );
+  }
   await Promise.all([
     ctx.runMutation(components.tenantExecutionPool.config.update, {
       maxParallelism: enforced ? TENANT_EXECUTION_POOL_MAX_PARALLELISM : 0,
@@ -1233,7 +1255,17 @@ export const setControlInternal = internalMutation({
       await ctx.db.insert("tenantSchedulerControls", patch);
     }
 
-    await configurePoolSplit(ctx, args.mode === "enforced");
+    const enforcedOverride =
+      args.mode === "enforced"
+        ? null
+        : await ctx.db
+            .query("tenantSchedulerWorkspaceOverrides")
+            .withIndex("by_mode", (q) => q.eq("mode", "enforced"))
+            .first();
+    await configurePoolSplit(
+      ctx,
+      args.mode === "enforced" || !!enforcedOverride
+    );
 
     for (
       let slotNumber = 0;
@@ -1252,7 +1284,7 @@ export const setControlInternal = internalMutation({
         });
       }
     }
-    if (args.mode === "enforced") await pingDispatcher(ctx);
+    if (args.mode === "enforced" || enforcedOverride) await pingDispatcher(ctx);
     return {
       mode: args.mode,
       slotCount,
@@ -1342,6 +1374,34 @@ export const pauseWorkspaceInternal = internalMutation({
       .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
       .unique();
     if (lane) {
+      // Chat-initiated plan work (plan_batch_item) must not be stranded on the
+      // paused lane: re-route queued items to the workpool and cancel their
+      // scheduler jobs. Pipeline jobs stay paused with the lane. The scan is
+      // paged through the kind-filtered index so a busy lane cannot exceed
+      // transaction read limits; overflow continues in scheduled follow-ups.
+      const page = await ctx.db
+        .query("tenantJobs")
+        .withIndex("by_lane_and_kind_and_status", (q) =>
+          q
+            .eq("laneId", lane._id)
+            .eq("kind", "plan_batch_item")
+            .eq("status", "queued")
+        )
+        .paginate({
+          numItems: PLAN_BATCH_REROUTE_PAGE_SIZE,
+          maximumRowsRead: PLAN_BATCH_REROUTE_PAGE_SIZE,
+          cursor: null,
+        });
+      for (const job of page.page) {
+        await rerouteQueuedPlanBatchJob(ctx, { job });
+      }
+      if (!page.isDone) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.tenantScheduler.rerouteQueuedPlanBatchItemsInternal,
+          { laneId: lane._id, cursor: page.continueCursor }
+        );
+      }
       await ctx.db.patch(lane._id, {
         state: "paused",
         updatedAt: getCurrentUTCTimestamp(),
@@ -1350,6 +1410,83 @@ export const pauseWorkspaceInternal = internalMutation({
     return null;
   },
 });
+
+/**
+ * Continues re-routing queued plan-batch items off a paused lane in bounded
+ * cursor pages. Orphaned jobs are cancelled, and the cursor advances even
+ * when nothing is re-routed, so the chain always makes forward progress and
+ * terminates. After a resume the lane dispatcher owns the queued jobs again,
+ * so the chain stops for lanes that are no longer paused.
+ */
+export const rerouteQueuedPlanBatchItemsInternal = internalMutation({
+  args: {
+    laneId: v.id("tenantJobLanes"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: v.null(),
+  handler: async (ctx, { laneId, cursor }) => {
+    const lane = await ctx.db.get("tenantJobLanes", laneId);
+    if (!lane || lane.state !== "paused") return null;
+    const page = await ctx.db
+      .query("tenantJobs")
+      .withIndex("by_lane_and_kind_and_status", (q) =>
+        q
+          .eq("laneId", laneId)
+          .eq("kind", "plan_batch_item")
+          .eq("status", "queued")
+      )
+      .paginate({
+        numItems: PLAN_BATCH_REROUTE_PAGE_SIZE,
+        maximumRowsRead: PLAN_BATCH_REROUTE_PAGE_SIZE,
+        cursor: cursor ?? null,
+      });
+    for (const job of page.page) {
+      await rerouteQueuedPlanBatchJob(ctx, { job });
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.tenantScheduler.rerouteQueuedPlanBatchItemsInternal,
+        { laneId, cursor: page.continueCursor }
+      );
+    }
+    return null;
+  },
+});
+
+async function rerouteQueuedPlanBatchJob(
+  ctx: MutationCtx,
+  args: { job: Doc<"tenantJobs"> }
+) {
+  const job = args.job;
+  if (job.payload.kind !== "plan_batch_item") return;
+  const item = await ctx.db.get("planBatchItems", job.payload.itemId);
+  const now = getCurrentUTCTimestamp();
+  if (!item || item.status !== "queued" || item.workId !== String(job._id)) {
+    // The item no longer references this job, so the job is an orphan that
+    // would never legitimately run. Cancel it to keep the re-route queue
+    // shrinking and the follow-up chain terminating.
+    await ctx.db.patch("tenantJobs", job._id, {
+      status: "cancelled",
+      completedAt: now,
+      updatedAt: now,
+    });
+    return;
+  }
+  const directWork = await enqueuePlanBatchItemDirectly(ctx, {
+    runId: job.payload.runId,
+    itemId: item._id,
+  });
+  await ctx.db.patch("tenantJobs", job._id, {
+    status: "cancelled",
+    completedAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.patch("planBatchItems", item._id, {
+    ...directWork,
+    updatedAt: now,
+  });
+}
 
 export const resumeWorkspaceInternal = internalMutation({
   args: { workspaceId: v.id("workspaces") },

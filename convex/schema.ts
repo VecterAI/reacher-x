@@ -68,6 +68,7 @@ import {
   planBatchScopeKindValidator,
   planBatchRunStatusValidator,
   planBatchItemStatusValidator,
+  planBatchDirectWorkPoolValidator,
   planBatchAttachmentValidator,
   providerNameValidator,
   providerCircuitStatusValidator,
@@ -1113,6 +1114,7 @@ export default defineSchema({
       "priority",
       "queuedAt",
     ])
+    .index("by_lane_and_kind_and_status", ["laneId", "kind", "status"])
     .index("by_workspace_and_status", ["workspaceId", "status"])
     .index("by_status_and_queued_at", ["status", "queuedAt"])
     .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
@@ -3210,6 +3212,9 @@ export default defineSchema({
     planId: v.optional(v.id("outreachPlans")),
     threadId: v.optional(v.string()),
     workId: v.optional(v.string()),
+    // Directly enqueued items use this to cancel work in the right pool.
+    // Existing items without it use the original outreach-plan pool.
+    directWorkPool: v.optional(planBatchDirectWorkPoolValidator),
     attemptCount: v.number(),
     errorMessage: v.optional(v.string()),
     startedAt: v.optional(v.number()),
@@ -3218,7 +3223,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_run_and_status", ["runId", "status"])
-    .index("by_run_and_prospect", ["runId", "prospectId"]),
+    .index("by_run_and_prospect", ["runId", "prospectId"])
+    .index("by_direct_work_pool_and_status", ["directWorkPool", "status"]),
 
   /** Successful grounding stages reused across workpool and recovery retries. */
   autoPlanGroundingCache: defineTable({

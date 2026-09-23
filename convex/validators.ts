@@ -2805,6 +2805,11 @@ export const planBatchItemStatusValidator = v.union(
   v.literal("cancelled")
 );
 
+export const planBatchDirectWorkPoolValidator = v.union(
+  v.literal("tenant_execution"),
+  v.literal("outreach_plan")
+);
+
 export const planBatchAttachmentValidator = v.object({
   url: v.string(),
   fileName: v.string(),

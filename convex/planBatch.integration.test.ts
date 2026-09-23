@@ -3,7 +3,7 @@
 import { convexTest } from "convex-test";
 import type { WorkId } from "@convex-dev/workpool";
 import { createThread, saveMessage } from "@convex-dev/agent";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -19,6 +19,8 @@ import {
   resolvePlanBatchApplication,
   resolvePlanBatchTargetInstructions,
 } from "./lib/planBatchCore";
+import { tenantExecutionPool } from "./lib/tenantExecutionPool";
+import { getOutreachPlanPool } from "./lib/outreachPlanPool";
 import schema from "./schema";
 
 type TaggedEntity = Doc<"agentMessageContexts">["taggedEntities"][number];
@@ -90,6 +92,59 @@ async function seedQualifiedProspect(
     });
     return { userId, workspaceId, prospectId };
   });
+}
+
+async function seedQueuedPlanBatchItem(
+  t: ReturnType<typeof convexTest>,
+  seeded: Awaited<ReturnType<typeof seedQualifiedProspect>>,
+  suffix: string
+) {
+  return await t.run(async (ctx) => {
+    const runId = await ctx.db.insert("planBatchRuns", {
+      workspaceId: seeded.workspaceId,
+      userId: seeded.userId,
+      sourceThreadId: `paused-plan-${suffix}`,
+      operation: "create",
+      scopeKind: "tagged",
+      instruction: "Create the plan.",
+      attachments: [],
+      confirmationRequired: false,
+      status: "queued",
+      targetCount: 1,
+      eligibleCount: 1,
+      queuedCount: 0,
+      runningCount: 0,
+      succeededCount: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      failedCount: 0,
+      skippedCount: 0,
+      selectionSkippedCount: 0,
+      finishedCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const itemId = await ctx.db.insert("planBatchItems", {
+      runId,
+      prospectId: seeded.prospectId,
+      prospectName: `Prospect ${suffix}`,
+      operation: "create",
+      status: "pending",
+      attemptCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    return { runId, itemId };
+  });
+}
+
+async function registerPlanBatchWorkpools(t: ReturnType<typeof convexTest>) {
+  const workpoolPath = ["@convex-dev/workpool", "test"].join("/");
+  const workpoolTest = (await import(workpoolPath)) as {
+    default: { register: (testInstance: typeof t, name: string) => void };
+  };
+  workpoolTest.default.register(t, "outreachPlanPool");
+  workpoolTest.default.register(t, "tenantExecutionPool");
 }
 
 async function insertRunningBatchItem(
@@ -222,6 +277,287 @@ describe("plan batch durable state", () => {
       status: "queued",
     });
   });
+
+  test("bypasses the paused tenant lane for chat-initiated plan work", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = convexTest(schema, modules);
+      await registerPlanBatchWorkpools(t);
+      const seeded = await seedQualifiedProspect(t, "paused-dispatch");
+      await t.run(async (ctx) => {
+        await ctx.db.patch("workspaces", seeded.workspaceId, {
+          prospectingWorkflowStatus: "paused",
+        });
+      });
+      const { runId, itemId } = await seedQueuedPlanBatchItem(
+        t,
+        seeded,
+        "paused-dispatch"
+      );
+
+      expect(
+        await t.mutation(internal.planBatches.dispatchPlanBatchItemInternal, {
+          runId,
+          itemId,
+        })
+      ).toEqual({ dispatched: true, status: "running" });
+
+      const state = await t.run(async (ctx) => ({
+        run: await ctx.db.get("planBatchRuns", runId),
+        item: await ctx.db.get("planBatchItems", itemId),
+        jobs: await ctx.db.query("tenantJobs").collect(),
+      }));
+      expect(state.run).toMatchObject({ status: "running", queuedCount: 1 });
+      expect(state.item).toMatchObject({
+        status: "queued",
+        directWorkPool: "outreach_plan",
+      });
+      expect(state.item?.workId).toBeTruthy();
+      expect(state.jobs).toHaveLength(0);
+
+      await t.run(async (ctx) => {
+        await ctx.db.patch("planBatchRuns", runId, { status: "cancelled" });
+      });
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect(
+        await t.run(async (ctx) => ctx.db.get("planBatchItems", itemId))
+      ).toMatchObject({ status: "cancelled" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("enforced mode runs manual work with discovery paused and the legacy pool stopped", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = convexTest(schema, modules);
+      await registerPlanBatchWorkpools(t);
+      const seeded = await seedQualifiedProspect(t, "enforced-paused");
+      const { runId, itemId } = await seedQueuedPlanBatchItem(
+        t,
+        seeded,
+        "enforced-paused"
+      );
+      const laneId = await t.run(async (ctx) => {
+        await ctx.db.patch("workspaces", seeded.workspaceId, {
+          prospectingWorkflowStatus: "paused",
+        });
+        await ctx.db.insert("tenantSchedulerControls", {
+          key: "global",
+          mode: "enforced",
+          slotCount: 36,
+          baseSlotsPerTenant: 1,
+          burstSlotsPerTenant: 30,
+          leaseDurationMs: 2 * 60 * 60 * 1000,
+          updatedAt: 1,
+        });
+        await ctx.runMutation(components.tenantExecutionPool.config.update, {
+          maxParallelism: 36,
+        });
+        await ctx.runMutation(components.outreachPlanPool.config.update, {
+          maxParallelism: 0,
+        });
+        const laneId = await ctx.db.insert("tenantJobLanes", {
+          tenantKey: `workspace:${seeded.workspaceId}`,
+          workspaceId: seeded.workspaceId,
+          userId: seeded.userId,
+          state: "paused",
+          pendingCount: 1,
+          runningCount: 0,
+          minPriority: 30,
+          lastDispatchedAt: 0,
+          updatedAt: 1,
+        });
+        await ctx.db.insert("tenantJobs", {
+          tenantKey: `workspace:${seeded.workspaceId}`,
+          laneId,
+          workspaceId: seeded.workspaceId,
+          userId: seeded.userId,
+          class: "background",
+          kind: "memory_evaluation",
+          status: "queued",
+          priority: 30,
+          idempotencyKey: "paused-discovery-work",
+          payload: {
+            kind: "memory_evaluation",
+            workspaceId: seeded.workspaceId,
+          },
+          queuedAt: 1,
+          attemptCount: 0,
+          updatedAt: 1,
+        });
+        return laneId;
+      });
+
+      expect(
+        await t.mutation(internal.planBatches.dispatchPlanBatchItemInternal, {
+          runId,
+          itemId,
+        })
+      ).toEqual({ dispatched: true, status: "running" });
+      const queued = await t.run(async (ctx) =>
+        ctx.db.get("planBatchItems", itemId)
+      );
+      expect(queued).toMatchObject({
+        status: "queued",
+        directWorkPool: "tenant_execution",
+      });
+      expect(queued?.workId).toBeTruthy();
+
+      // A cancelled run causes processPlanBatchItem to return before calling
+      // the LLM. This proves the actual worker and completion callback run.
+      await t.run(async (ctx) => {
+        await ctx.db.patch("planBatchRuns", runId, { status: "cancelled" });
+      });
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+      const outcome = await t.run(async (ctx) => ({
+        item: await ctx.db.get("planBatchItems", itemId),
+        lane: await ctx.db.get("tenantJobLanes", laneId),
+        backgroundJob: await ctx.db
+          .query("tenantJobs")
+          .withIndex("by_idempotency_key", (q) =>
+            q.eq("idempotencyKey", "paused-discovery-work")
+          )
+          .unique(),
+      }));
+      expect(outcome.item).toMatchObject({ status: "cancelled" });
+      expect(outcome.lane).toMatchObject({ state: "paused" });
+      expect(outcome.backgroundJob).toMatchObject({ status: "queued" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("uses tenant execution when an enforced workspace override controls the pool split", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = convexTest(schema, modules);
+      await registerPlanBatchWorkpools(t);
+      const seeded = await seedQualifiedProspect(t, "override-paused");
+      const { runId, itemId } = await seedQueuedPlanBatchItem(
+        t,
+        seeded,
+        "override-paused"
+      );
+      await t.run(async (ctx) => {
+        await ctx.db.patch("workspaces", seeded.workspaceId, {
+          prospectingWorkflowStatus: "paused",
+        });
+        await ctx.db.insert("tenantSchedulerControls", {
+          key: "global",
+          mode: "legacy",
+          slotCount: 36,
+          baseSlotsPerTenant: 1,
+          burstSlotsPerTenant: 30,
+          leaseDurationMs: 2 * 60 * 60 * 1000,
+          updatedAt: 1,
+        });
+        await ctx.db.insert("tenantSchedulerWorkspaceOverrides", {
+          workspaceId: seeded.workspaceId,
+          mode: "enforced",
+          updatedAt: 1,
+        });
+        await ctx.runMutation(components.tenantExecutionPool.config.update, {
+          maxParallelism: 36,
+        });
+        await ctx.runMutation(components.outreachPlanPool.config.update, {
+          maxParallelism: 0,
+        });
+      });
+
+      await t.mutation(internal.planBatches.dispatchPlanBatchItemInternal, {
+        runId,
+        itemId,
+      });
+      const item = await t.run(async (ctx) =>
+        ctx.db.get("planBatchItems", itemId)
+      );
+      expect(item).toMatchObject({
+        status: "queued",
+        directWorkPool: "tenant_execution",
+      });
+      await t.run(async (ctx) => {
+        await ctx.db.patch("planBatchRuns", runId, { status: "cancelled" });
+      });
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect(
+        await t.run(async (ctx) => ctx.db.get("planBatchItems", itemId))
+      ).toMatchObject({ status: "cancelled" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test.each(["enforced", "legacy"] as const)(
+    "cancels queued manual work in the active %s pool",
+    async (mode) => {
+      vi.useFakeTimers();
+      try {
+        const t = convexTest(schema, modules);
+        await registerPlanBatchWorkpools(t);
+        const seeded = await seedQualifiedProspect(t, `cancel-${mode}`);
+        const { runId, itemId } = await seedQueuedPlanBatchItem(
+          t,
+          seeded,
+          `cancel-${mode}`
+        );
+        await t.run(async (ctx) => {
+          await ctx.db.patch("workspaces", seeded.workspaceId, {
+            prospectingWorkflowStatus: "paused",
+          });
+          await ctx.db.insert("tenantSchedulerControls", {
+            key: "global",
+            mode,
+            slotCount: 36,
+            baseSlotsPerTenant: 1,
+            burstSlotsPerTenant: 30,
+            leaseDurationMs: 2 * 60 * 60 * 1000,
+            updatedAt: 1,
+          });
+          await ctx.runMutation(components.tenantExecutionPool.config.update, {
+            maxParallelism: mode === "enforced" ? 36 : 0,
+          });
+          await ctx.runMutation(components.outreachPlanPool.config.update, {
+            maxParallelism: mode === "enforced" ? 0 : 5,
+          });
+        });
+        await t.mutation(internal.planBatches.dispatchPlanBatchItemInternal, {
+          runId,
+          itemId,
+        });
+        const item = await t.run(async (ctx) =>
+          ctx.db.get("planBatchItems", itemId)
+        );
+        expect(item?.directWorkPool).toBe(
+          mode === "enforced" ? "tenant_execution" : "outreach_plan"
+        );
+        await t.run(async (ctx) => {
+          await ctx.db.patch("planBatchRuns", runId, { status: "cancelled" });
+        });
+        await t.mutation(internal.planBatches.cancelQueuedPlanBatchItemsPage, {
+          runId,
+        });
+        await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+        const cancelled = await t.run(async (ctx) =>
+          ctx.db.get("planBatchItems", itemId)
+        );
+        expect(cancelled).toMatchObject({
+          status: "cancelled",
+          attemptCount: 0,
+        });
+        const pool =
+          mode === "enforced" ? tenantExecutionPool : getOutreachPlanPool();
+        const workStatus = await t.query((ctx) =>
+          pool.status(ctx, item!.workId as WorkId)
+        );
+        expect(workStatus).toMatchObject({ state: "finished" });
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
 
   test("exposes terminal results for Agent continuation without appending hard-coded copy", async () => {
     const t = convexTest(schema, modules);
