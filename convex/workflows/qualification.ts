@@ -326,6 +326,24 @@ export const qualificationWorkflow = workflow.define({
       ? prospect.discoveryContext.matchedQueries
       : [];
 
+    // Jev pre-filter shadow measurement: logs what the decision model would
+    // have done before paid qualification. Off by default; never gates
+    // qualification (the action never throws).
+    const prefilterMode = await step.runQuery(
+      internal.jevPrefilterStore.getJevPrefilterModeInternal,
+      {}
+    );
+    if (prefilterMode === "shadow") {
+      await step.runAction(
+        internal.jevPrefilterShadow.runJevPrefilterShadowInternal,
+        {
+          workspaceId: args.workspaceId,
+          userId: workspace.userId,
+          prospectId: args.prospectId,
+        }
+      );
+    }
+
     // Extract profile data for authenticity analysis
     const profileData =
       getNestedRecord(prospectData, "user") ||

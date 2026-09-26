@@ -2553,6 +2553,13 @@ export const qualificationStatusValidator = v.union(
   v.literal("disqualified")
 );
 
+// Jev pre-filter shadow decision (measurement-only; never gates qualification)
+export const jevPrefilterDecisionValidator = v.union(
+  v.literal("would_kill"),
+  v.literal("would_pass"),
+  v.literal("skipped")
+);
+
 // Prospect type (used in prospects.ts enrichment)
 export const prospectTypeValidator = v.union(
   v.literal("individual"),

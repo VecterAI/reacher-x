@@ -103,21 +103,32 @@ export const runJevReplayEval = internalAction({
         profiles: workspace.icps ?? [],
       });
 
-    const { qualifiedIds, disqualifiedIds, incomplete } = await ctx.runQuery(
-      internal.jevEvalQueries.getJevEvalSampleIdsInternal,
-      {
-        workspaceId: workspace.workspaceId,
-        limitPerStatus: Math.max(qualifiedLimit, disqualifiedLimit),
-      }
-    );
-    if (incomplete) {
+    const [qualified, disqualified] = await Promise.all([
+      ctx.runQuery(
+        internal.jevEvalQueries.getJevEvalSampleIdsForStatusInternal,
+        {
+          workspaceId: workspace.workspaceId,
+          status: "qualified" as const,
+          limit: qualifiedLimit,
+        }
+      ),
+      ctx.runQuery(
+        internal.jevEvalQueries.getJevEvalSampleIdsForStatusInternal,
+        {
+          workspaceId: workspace.workspaceId,
+          status: "disqualified" as const,
+          limit: disqualifiedLimit,
+        }
+      ),
+    ]);
+    if (qualified.incomplete || disqualified.incomplete) {
       console.log(
         "[JevEval] Sample incomplete: the bounded scan budget ran out before filling the requested limit."
       );
     }
     const prospectIds = [
-      ...qualifiedIds.slice(0, qualifiedLimit),
-      ...disqualifiedIds.slice(0, disqualifiedLimit),
+      ...qualified.ids.slice(0, qualifiedLimit),
+      ...disqualified.ids.slice(0, disqualifiedLimit),
     ];
     if (prospectIds.length === 0) {
       throw new Error(

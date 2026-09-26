@@ -32,7 +32,8 @@ export const resolveJevEvalWorkspaceInternal = internalQuery({
     if (!user) return null;
 
     // Prefer the default workspace via its dedicated index; fall back to a
-    // bounded scan of the user's workspaces.
+    // bounded cursor-based scan so pages full of deleted workspaces do not
+    // hide a live one.
     const defaultWorkspace = await ctx.db
       .query("workspaces")
       .withIndex("by_user_default", (q) =>
@@ -44,14 +45,33 @@ export const resolveJevEvalWorkspaceInternal = internalQuery({
         ? defaultWorkspace
         : null;
     if (!selectedWorkspace) {
-      const workspaceCandidates = await ctx.db
-        .query("workspaces")
-        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-        .take(25);
-      selectedWorkspace =
-        workspaceCandidates.find(
-          (workspace) => !workspace.deletionWorkflowId
-        ) ?? null;
+      const WORKSPACE_SCAN_BUDGET = 100;
+      const WORKSPACE_PAGE_SIZE = 50;
+      let cursor: string | null = null;
+      let scanned = 0;
+      let exhausted = false;
+      while (
+        !selectedWorkspace &&
+        scanned < WORKSPACE_SCAN_BUDGET &&
+        !exhausted
+      ) {
+        const page = await ctx.db
+          .query("workspaces")
+          .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+          .order("asc")
+          .paginate({
+            numItems: Math.min(
+              WORKSPACE_PAGE_SIZE,
+              WORKSPACE_SCAN_BUDGET - scanned
+            ),
+            cursor,
+          });
+        selectedWorkspace =
+          page.page.find((workspace) => !workspace.deletionWorkflowId) ?? null;
+        scanned += page.page.length;
+        cursor = page.continueCursor;
+        exhausted = page.isDone;
+      }
     }
     if (!selectedWorkspace) return null;
 
@@ -65,18 +85,18 @@ export const resolveJevEvalWorkspaceInternal = internalQuery({
   },
 });
 
-export const getJevEvalSampleIdsInternal = internalQuery({
+export const getJevEvalSampleIdsForStatusInternal = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
-    limitPerStatus: v.number(),
+    status: v.union(v.literal("qualified"), v.literal("disqualified")),
+    limit: v.number(),
   },
   handler: async (ctx, args) => {
-    const limit = Math.min(100, Math.max(1, Math.floor(args.limitPerStatus)));
-    // Bounded in two axes: total scanned documents and per-transaction page
-    // size (each paginate call is its own transaction, so large prospect
-    // documents never exceed the per-transaction read limit).
-    const SCAN_BUDGET = 600;
-    const PAGE_SIZE = 100;
+    const limit = Math.min(100, Math.max(1, Math.floor(args.limit)));
+    // One status per query invocation keeps each transaction's read volume
+    // bounded (prospect documents carry large raw evidence payloads).
+    const SCAN_BUDGET = 250;
+    const PAGE_SIZE = 50;
     const isReplayable = (prospect: {
       qualificationCriterionResults?: unknown;
       evidencePosts?: unknown;
@@ -86,51 +106,37 @@ export const getJevEvalSampleIdsInternal = internalQuery({
       Array.isArray(prospect.evidencePosts) &&
       prospect.evidencePosts.length > 0;
 
-    const fetchIds = async (
-      status: "qualified" | "disqualified"
-    ): Promise<{ ids: Id<"prospects">[]; incomplete: boolean }> => {
-      const ids: Id<"prospects">[] = [];
-      let cursor: string | null = null;
-      let scanned = 0;
-      let exhausted = false;
-      while (ids.length < limit && scanned < SCAN_BUDGET && !exhausted) {
-        const page = await ctx.db
-          .query("prospects")
-          .withIndex("by_workspace_qualification", (q) =>
-            q
-              .eq("workspaceId", args.workspaceId)
-              .eq("qualificationStatus", status)
-          )
-          .order("desc")
-          .paginate({
-            numItems: Math.min(PAGE_SIZE, SCAN_BUDGET - scanned),
-            cursor,
-          });
-        for (const prospect of page.page) {
-          if (isReplayable(prospect)) {
-            ids.push(prospect._id);
-            if (ids.length >= limit) break;
-          }
+    const ids: Id<"prospects">[] = [];
+    let cursor: string | null = null;
+    let scanned = 0;
+    let exhausted = false;
+    while (ids.length < limit && scanned < SCAN_BUDGET && !exhausted) {
+      const page = await ctx.db
+        .query("prospects")
+        .withIndex("by_workspace_qualification", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("qualificationStatus", args.status)
+        )
+        .order("desc")
+        .paginate({
+          numItems: Math.min(PAGE_SIZE, SCAN_BUDGET - scanned),
+          cursor,
+        });
+      for (const prospect of page.page) {
+        if (isReplayable(prospect)) {
+          ids.push(prospect._id);
+          if (ids.length >= limit) break;
         }
-        scanned += page.page.length;
-        cursor = page.continueCursor;
-        exhausted = page.isDone;
       }
-      return {
-        ids: ids.slice(0, limit),
-        incomplete: ids.length < limit && exhausted === false,
-      };
-    };
-
-    const [qualified, disqualified] = await Promise.all([
-      fetchIds("qualified"),
-      fetchIds("disqualified"),
-    ]);
+      scanned += page.page.length;
+      cursor = page.continueCursor;
+      exhausted = page.isDone;
+    }
 
     return {
-      qualifiedIds: qualified.ids,
-      disqualifiedIds: disqualified.ids,
-      incomplete: qualified.incomplete || disqualified.incomplete,
+      ids: ids.slice(0, limit),
+      incomplete: ids.length < limit && !exhausted,
     };
   },
 });

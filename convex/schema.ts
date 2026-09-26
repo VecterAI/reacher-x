@@ -21,6 +21,7 @@ import {
   qualificationFailureValidator,
   qualificationCriterionResultValidator,
   prospectStatusValidator,
+  jevPrefilterDecisionValidator,
   outreachPlanStatusValidator,
   outreachInteractionChannelValidator,
   outreachInteractionEventStatusValidator,
@@ -978,6 +979,26 @@ export default defineSchema({
     .index("by_run", ["runId"])
     .index("by_run_and_outcome", ["runId", "outcome"])
     .index("by_run_and_prospect", ["runId", "prospectId"]),
+
+  /**
+   * Measurement-only records for the Jev qualification pre-filter while it
+   * runs in shadow mode. Never consulted by the qualification pipeline.
+   */
+  jevPrefilterShadowEvents: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    decision: jevPrefilterDecisionValidator,
+    reasons: v.array(v.string()),
+    botProbability: v.optional(v.number()),
+    model: v.string(),
+    costUsd: v.number(),
+    latencyMs: v.number(),
+    storedQualificationStatus: v.optional(qualificationStatusValidator),
+    createdAt: v.number(),
+  })
+    .index("by_workspace_decision", ["workspaceId", "decision"])
+    .index("by_prospect", ["prospectId"]),
 
   // ============================================================================
   // User Plans & Limits

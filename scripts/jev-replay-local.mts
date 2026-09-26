@@ -189,6 +189,7 @@ if (stabilityInputs.length > 0) {
       answers: repeatCall.response.answers,
       now: getCurrentUTCTimestamp(),
       threshold: QUALIFICATION_THRESHOLD,
+      supportThreshold: SUPPORT_THRESHOLD_OVERRIDE || undefined,
     });
     const stabilityResult = summarizeJevStability({
       first: input.first,
