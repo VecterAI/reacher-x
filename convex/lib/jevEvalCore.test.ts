@@ -187,6 +187,45 @@ describe("buildJevQualificationState", () => {
     );
   });
 
+  test("carries the shared verdict rubric, icp context, and contrastive criteria", () => {
+    const bundle = buildJevQualificationState({
+      icpDescription: "Find people who already use our product.",
+      targetingSpec: spec,
+      profileData: { name: "Example User" },
+      candidates: twoCandidates,
+      currentUtcDate: CURRENT_DATE,
+      painPoints: ["switching from competitor"],
+      syntheticExamplesText: "Fictional targeting illustrations...",
+      discoveryQueries: ["I use"],
+    });
+    expect(bundle.state.verdict_rules).toContain(
+      "Missing fields, absent data, or inconclusive signals are NEVER not_matched"
+    );
+    const icpContext = bundle.state.icp_context as Record<string, unknown>;
+    expect(icpContext.pain_points).toEqual(["switching from competitor"]);
+    expect(icpContext.discovery_queries).toEqual(["I use"]);
+
+    const questions = buildJevQualificationQuestions({
+      targetingSpec: spec,
+      candidates: twoCandidates,
+    });
+    const question = questions.criterion_current_user;
+    if (question.type !== "choice" || typeof question.criteria === "string") {
+      throw new Error("Expected structured choice criteria");
+    }
+    const matchedCriteria = question.criteria.matched as Record<
+      string,
+      unknown
+    >;
+    expect(matchedCriteria.what).toContain("directly satisfies");
+    expect(matchedCriteria.not_for).toContain("job title alone");
+    const notMatchedCriteria = question.criteria.not_matched as Record<
+      string,
+      unknown
+    >;
+    expect(notMatchedCriteria.not_for).toContain("inconclusive signals");
+  });
+
   test("shrinks candidate text until the serialized state fits the budget", () => {
     const manyCandidates = Array.from({ length: 80 }, (_, index) =>
       candidate(index, { text: "y".repeat(1200) })
@@ -238,12 +277,19 @@ describe("buildJevQualificationQuestions", () => {
     });
     const exclusion = questions.criterion_competitor_employee;
     const required = questions.criterion_current_user;
-    if (exclusion.type !== "choice" || required.type !== "choice") {
-      throw new Error("Expected choice questions");
+    if (
+      exclusion.type !== "choice" ||
+      required.type !== "choice" ||
+      typeof exclusion.instructions === "string" ||
+      typeof required.instructions === "string"
+    ) {
+      throw new Error("Expected structured choice instructions");
     }
-    expect(exclusion.instructions).toContain("exclusion criterion");
-    expect(required.instructions).not.toContain("exclusion criterion");
-    expect(required.instructions).toContain("activity criterion");
+    const exclusionContext = exclusion.instructions.criterion_context as string;
+    const requiredContext = required.instructions.criterion_context as string;
+    expect(exclusionContext).toContain("exclusion criterion");
+    expect(requiredContext).not.toContain("exclusion criterion");
+    expect(requiredContext).toContain("activity criterion");
   });
 });
 

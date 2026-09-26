@@ -30,6 +30,7 @@ import {
 } from "./lib/qualificationEvidenceCore";
 import type { QualificationCriterionResult } from "./lib/qualificationScoringCore";
 import { buildLegacyWorkspaceTargetingSpec } from "./lib/targetingSpecCore";
+import { formatSyntheticTargetingExamples } from "./lib/syntheticProfileCore";
 import { getNestedRecord, isRecord } from "./lib/typeGuards";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
@@ -194,6 +195,13 @@ export const runJevReplayEval = internalAction({
         profileData,
         candidates,
         currentUtcDate: new Date(now).toISOString().slice(0, 10),
+        painPoints: (workspace.icps ?? []).flatMap(
+          (icp) => icp.painPoints ?? []
+        ),
+        syntheticExamplesText: formatSyntheticTargetingExamples(
+          workspace.icps ?? []
+        ),
+        discoveryQueries: prospect.qualificationKeywords,
       });
       const questions = buildJevQualificationQuestions({
         targetingSpec,

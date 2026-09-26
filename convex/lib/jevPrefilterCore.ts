@@ -22,18 +22,10 @@ export type JevPrefilterDecision = {
   botProbability: number;
 };
 
-function getChoiceProbability(
-  answer: JevAnswer,
-  fallbackLabel: string
-): number | undefined {
+function getChoiceProbability(answer: JevAnswer): number | undefined {
   if (answer.type !== "choice") return undefined;
   if (typeof answer.confidence === "number") return answer.confidence;
-  const probability = answer.probabilities?.[answer.choice];
-  if (typeof probability === "number") return probability;
-  const fallbackProbability = answer.probabilities?.[fallbackLabel];
-  return typeof fallbackProbability === "number"
-    ? fallbackProbability
-    : undefined;
+  return answer.probabilities?.[answer.choice];
 }
 
 export function evaluateJevHardFailSignals(args: {
@@ -53,31 +45,22 @@ export function evaluateJevHardFailSignals(args: {
 
   for (const criterion of args.targetingSpec.criteria) {
     const answer = args.answers[`criterion_${criterion.id}`];
-    const probability = answer
-      ? getChoiceProbability(answer, "unknown")
-      : undefined;
+    if (!answer || answer.type !== "choice") continue;
+    const probability = getChoiceProbability(answer);
     if (
       probability === undefined ||
       probability < JEV_PREFILTER_HARD_FAIL_CONFIDENCE
     ) {
       continue;
     }
-    if (
-      criterion.kind === "exclusion" &&
-      answer.type === "choice" &&
-      answer.choice === "matched"
-    ) {
+    if (criterion.kind === "exclusion" && answer.choice === "matched") {
       reasons.push({
         kind: "exclusion_match",
         criterionId: criterion.id,
         probability,
       });
     }
-    if (
-      criterion.kind === "required" &&
-      answer.type === "choice" &&
-      answer.choice === "not_matched"
-    ) {
+    if (criterion.kind === "required" && answer.choice === "not_matched") {
       reasons.push({
         kind: "required_miss",
         criterionId: criterion.id,

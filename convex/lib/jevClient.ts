@@ -41,8 +41,9 @@ export type JevNoulQuestion = {
 
 export type JevChoiceQuestion = {
   type: "choice";
-  instructions: string;
-  criteria: Record<string, string>;
+  instructions: string | Record<string, unknown>;
+  /** Option descriptions may be plain strings or structured objects (what/not_for/examples). */
+  criteria: Record<string, unknown>;
 };
 
 export type JevScoreQuestion = {

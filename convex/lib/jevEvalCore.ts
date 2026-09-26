@@ -137,7 +137,7 @@ function buildCriterionContext(criterion: TargetingCriterion): string {
   }
   if (criterion.kind === "exclusion") {
     parts.push(
-      "This is an exclusion criterion: matched means the prospect exhibits the excluded trait and must be rejected; not_matched means the prospect does not exhibit that trait."
+      "This is an exclusion criterion: matched means the prospect exhibits the excluded trait and must be rejected; not_matched means the prospect affirmatively does not exhibit that trait."
     );
   }
   if (criterion.evidence === "activity") {
@@ -145,7 +145,78 @@ function buildCriterionContext(criterion: TargetingCriterion): string {
       "Profile data alone describes responsibilities, not dated activity, and cannot satisfy an activity criterion by itself."
     );
   }
+  parts.push(
+    "Apply the shared decision rules in `verdict_rules` from the state, especially the partial and unknown rules."
+  );
   return parts.join(". ");
+}
+
+/**
+ * Shared interpretation rules distilled from the production qualification
+ * rubric. Sent once in the state and referenced by every criterion question;
+ * without these, the model reads absent evidence as affirmative
+ * counterevidence and misses the partial-verdict concept.
+ */
+const VERDICT_RULES = [
+  "matched: the available profile or prospect-authored evidence directly satisfies the criterion. Require evidence of the specific relationship, behavior, or trait the criterion names; a generic topic mention, a job title alone, or third-party references are not proof.",
+  "partial: there is genuine but incomplete support. Participation evidence alone is partial unless it establishes the specific requested relationship. Choose partial rather than guessing between matched and not_matched when support is real but not conclusive.",
+  "not_matched: the evidence affirmatively shows the criterion is false for this prospect. Missing fields, absent data, or inconclusive signals are NEVER not_matched; they are unknown. Do not infer counterevidence from silence.",
+  "unknown: the available data cannot determine the criterion either way. When in doubt between not_matched and unknown, choose unknown.",
+  "Exclusion criteria invert the usual reading: matched means the prospect exhibits the excluded trait and must be rejected. Absence of evidence about an excluded trait is unknown, not not_matched.",
+  "Required versus preferred changes scoring, not facts: the verdict is identical for the same evidence regardless of importance.",
+  "Evaluate the whole text, including stylized Unicode and non-English content; resolve negation, hypothetical and future plans, and quoted third parties. A request to join a future talent pool is not an active opening; a question addressed to product users is not the author's own usage.",
+  "Profile data describes responsibilities, not dated activity, and may support profile or either criteria but never satisfies an activity-only criterion by itself.",
+  "Do not convert preferences into requirements and do not ignore explicit exclusions.",
+].join(" ");
+
+function contrastiveVerdictCriteria(
+  criterion: TargetingCriterion
+): Record<string, { what: string; not_for: string }> {
+  const spec = sanitizeStateText(criterion.description);
+  if (criterion.kind === "exclusion") {
+    return {
+      matched: {
+        what: `The evidence affirmatively shows the prospect exhibits the excluded trait: ${spec}`,
+        not_for:
+          "The prospect merely passing the exclusion or lacking mention of the trait; absence of evidence is unknown, not matched.",
+      },
+      not_matched: {
+        what: `The evidence affirmatively shows the prospect does not exhibit the excluded trait: ${spec}`,
+        not_for:
+          "Missing or inconclusive data about the trait (that is unknown).",
+      },
+      partial: {
+        what: "Weak or ambiguous signs of the excluded trait that fall short of affirmative proof.",
+        not_for: "Complete absence of any sign (that is unknown).",
+      },
+      unknown: {
+        what: "The state cannot determine whether the prospect exhibits the excluded trait.",
+        not_for: "Situations with affirmative evidence either way.",
+      },
+    };
+  }
+  return {
+    matched: {
+      what: `The available profile or prospect-authored evidence directly satisfies the criterion: ${spec}`,
+      not_for:
+        "Generic topic mentions, a job title alone, or participation without the specific relationship or behavior the criterion names.",
+    },
+    partial: {
+      what: `Genuine but incomplete support for the criterion: ${spec}`,
+      not_for:
+        "Missing or inconclusive data with no genuine support (that is unknown); affirmative counterevidence (that is not_matched).",
+    },
+    not_matched: {
+      what: `The available evidence affirmatively shows the criterion is false for this prospect: ${spec} is contradicted or ruled out`,
+      not_for:
+        "Missing fields, absent data, or inconclusive signals (that is unknown). Do not infer counterevidence from silence.",
+    },
+    unknown: {
+      what: "The available data cannot determine the criterion either way.",
+      not_for:
+        "Situations with genuine support (partial or matched) or affirmative counterevidence (not_matched).",
+    },
+  };
 }
 
 export type JevQualificationStateBundle = {
@@ -160,6 +231,9 @@ export function buildJevQualificationState(args: {
   profileData: Record<string, unknown>;
   candidates: QualificationCandidate[];
   currentUtcDate: string;
+  painPoints?: string[];
+  syntheticExamplesText?: string;
+  discoveryQueries?: string[];
 }): JevQualificationStateBundle {
   const buildAtCap = (textCapChars: number) => {
     const state: Record<string, unknown> = {
@@ -177,6 +251,19 @@ export function buildJevQualificationState(args: {
           evidence: criterion.evidence,
           weight: criterion.weight,
         })),
+      },
+      verdict_rules: VERDICT_RULES,
+      icp_context: {
+        pain_points: (args.painPoints ?? [])
+          .map(sanitizeStateText)
+          .slice(0, 10),
+        synthetic_examples: args.syntheticExamplesText
+          ? truncateText(args.syntheticExamplesText, 2000)
+          : undefined,
+        discovery_queries: (args.discoveryQueries ?? [])
+          .map(sanitizeStateText)
+          .slice(0, 10),
+        note: "Discovery queries are routing metadata, never proof of qualification.",
       },
       prospect_profile: projectProfileData(args.profileData),
       candidate_sources: args.candidates.map((candidate) => ({
@@ -214,20 +301,15 @@ export function buildJevQualificationQuestions(args: {
 }): Record<string, JevQuestion> {
   const questions: Record<string, JevQuestion> = {};
 
-  const verdictCriteria: Record<string, string> = {
-    matched:
-      "The available profile or prospect-authored evidence directly satisfies the criterion.",
-    partial: "There is genuine but incomplete support for the criterion.",
-    not_matched:
-      "The available evidence directly contradicts or fails the criterion.",
-    unknown: "The available data cannot determine the criterion.",
-  };
-
   for (const criterion of args.targetingSpec.criteria) {
     questions[`criterion_${criterion.id}`] = {
       type: "choice",
-      instructions: `${buildCriterionContext(criterion)} Decide the verdict for this criterion only.`,
-      criteria: verdictCriteria,
+      instructions: {
+        question: `Which verdict does the evidence support for \`targeting_spec.criteria\` entry "${sanitizeStateText(criterion.label)}"?`,
+        focus: `Judge only this criterion. Apply \`verdict_rules\` and the contrastive option definitions below. Decide from \`prospect_profile\` and \`candidate_sources\` in the state.`,
+        criterion_context: buildCriterionContext(criterion),
+      },
+      criteria: contrastiveVerdictCriteria(criterion),
     };
   }
 

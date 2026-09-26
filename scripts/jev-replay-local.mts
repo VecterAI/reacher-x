@@ -21,6 +21,7 @@ import {
 } from "../convex/lib/qualificationEvidenceCore";
 import type { QualificationCriterionResult } from "../convex/lib/qualificationScoringCore";
 import { buildLegacyWorkspaceTargetingSpec } from "../convex/lib/targetingSpecCore";
+import { formatSyntheticTargetingExamples } from "../convex/lib/syntheticProfileCore";
 import { getNestedRecord, isRecord } from "../convex/lib/typeGuards";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
@@ -105,6 +106,11 @@ for (const [index, prospect] of prospects.entries()) {
       profileData,
       candidates,
       currentUtcDate: new Date(now).toISOString().slice(0, 10),
+      painPoints: (workspace.icps ?? []).flatMap((icp) => icp.painPoints ?? []),
+      syntheticExamplesText: formatSyntheticTargetingExamples(
+        workspace.icps ?? []
+      ),
+      discoveryQueries: prospect.qualificationKeywords ?? [],
     });
     const questions = buildJevQualificationQuestions({
       targetingSpec,
