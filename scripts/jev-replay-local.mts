@@ -2,7 +2,7 @@
 // same pipeline as convex/jevEvalActions.ts against data exported read-only
 // from production, with zero prod writes and zero code pushes. Delete after
 // the eval run.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import {
   aggregateJevComparisons,
   buildJevQualificationQuestions,
@@ -202,6 +202,18 @@ if (stabilityInputs.length > 0) {
 
 const summary = aggregateJevComparisons(comparisons);
 summary.structuralSkipCount = structuralSkips;
+
+writeFileSync(
+  "/tmp/jev-eval-data/comparisons.json",
+  JSON.stringify(
+    {
+      supportThreshold: SUPPORT_THRESHOLD_OVERRIDE || 0.5,
+      comparisons,
+    },
+    null,
+    2
+  )
+);
 
 console.log(
   formatJevEvalReport({
