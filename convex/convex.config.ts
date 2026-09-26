@@ -24,6 +24,10 @@ const app = defineApp({
     AI_MAIN_AGENT_MODEL: v.optional(v.string()),
     AI_VISION_MODEL: v.optional(v.string()),
     AI_TEXT_EMBEDDING_MODEL: v.optional(v.string()),
+    AI_JEV_MODEL: v.optional(v.string()),
+    JEV_PREFILTER_MODE: v.optional(
+      v.union(v.literal("off"), v.literal("shadow"))
+    ),
     OPENROUTER_ROUTING_PRESET: v.optional(
       v.union(v.literal("current"), v.literal("cost_optimized"))
     ),

@@ -32,6 +32,7 @@ type Env = {
   readonly CONVEX_SITE_URL: string;
   readonly AI_AUTOCOMPLETE_MODEL: string | undefined;
   readonly AI_FAST_MODEL: string | undefined;
+  readonly AI_JEV_MODEL: string | undefined;
   readonly AI_MAIN_AGENT_MODEL: string | undefined;
   readonly AI_ONBOARDING_MODEL: string | undefined;
   readonly AI_REASONING_MODEL: string | undefined;
@@ -43,6 +44,7 @@ type Env = {
   readonly ENRICHMENT_RETRY_INITIAL_BACKOFF_MS: string | undefined;
   readonly ENRICHMENT_RETRY_MAX_ATTEMPTS: string | undefined;
   readonly INLINE_AUTOCOMPLETE_ENABLED: string | undefined;
+  readonly JEV_PREFILTER_MODE: "off" | "shadow" | undefined;
   readonly LINKDAPI_BUDGET_RESERVATION_MAX_ATTEMPTS: string | undefined;
   readonly LINKDAPI_OCC_RETRY_BASE_MS: string | undefined;
   readonly LINKDAPI_OCC_RETRY_JITTER_MS: string | undefined;

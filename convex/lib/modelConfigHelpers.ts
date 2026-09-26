@@ -9,6 +9,7 @@ export const MODEL_ENVIRONMENT_KEYS = [
   "AI_MAIN_AGENT_MODEL",
   "AI_VISION_MODEL",
   "AI_TEXT_EMBEDDING_MODEL",
+  "AI_JEV_MODEL",
 ] as const;
 
 export type ModelEnvironmentKey = (typeof MODEL_ENVIRONMENT_KEYS)[number];
