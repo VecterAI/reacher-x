@@ -32,6 +32,7 @@ type Env = {
   readonly CONVEX_SITE_URL: string;
   readonly AI_AUTOCOMPLETE_MODEL: string | undefined;
   readonly AI_FAST_MODEL: string | undefined;
+  readonly AI_JEV_MODEL: string | undefined;
   readonly AI_MAIN_AGENT_MODEL: string | undefined;
   readonly AI_ONBOARDING_MODEL: string | undefined;
   readonly AI_REASONING_MODEL: string | undefined;
