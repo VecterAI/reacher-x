@@ -250,9 +250,8 @@ export async function callJevDecisions(
         body: JSON.stringify(body),
         signal: controller.signal,
       });
-      const latencyMs = Date.now() - startedAt;
-      accumulatedLatencyMs += latencyMs;
       let rawBody: unknown;
+      let bodyReadFailed = false;
       try {
         rawBody = await response.json();
       } catch (parseError) {
@@ -262,9 +261,19 @@ export async function callJevDecisions(
           throw parseError;
         }
         rawBody = undefined;
+        // A 2xx response whose body cannot be read at all (connection reset
+        // mid-stream) is transient; a delivered but malformed payload is not.
+        bodyReadFailed = !(parseError instanceof SyntaxError);
       }
-
-      if (!response.ok) {
+      accumulatedLatencyMs += Date.now() - startedAt;
+      if (bodyReadFailed && response.ok) {
+        lastError = new JevRetryableError(
+          "Jev decisions response body could not be read."
+        );
+        if (attempt < JEV_RETRY_ATTEMPTS - 1) {
+          isRetryable = true;
+        }
+      } else if (!response.ok) {
         const message = getErrorMessage(
           rawBody,
           `HTTP ${response.status} from the Jev decisions API`
