@@ -84,6 +84,31 @@ export function isWorkspaceInactive(
   return now - workspace.lastMeaningfulActivityAt >= INACTIVITY_PAUSE_AFTER_MS;
 }
 
+/**
+ * Autonomous recovery and retry jobs must never spend provider credits on a
+ * workspace whose discovery pipeline is not running. Paused, stopped, and
+ * plan-limited workspaces keep their failed rows untouched until the user
+ * resumes, at which point the regular recovery paths pick the work back up.
+ *
+ * `undefined` means the workspace predates status tracking or is still in
+ * setup, so it is treated as active to keep legacy retries working.
+ */
+export function isWorkspaceAutomationActive(
+  workspace: Pick<
+    WorkspaceDoc,
+    "prospectingWorkflowStatus" | "deletionStartedAt"
+  >
+): boolean {
+  if (workspace.deletionStartedAt !== undefined) {
+    return false;
+  }
+
+  return (
+    workspace.prospectingWorkflowStatus === undefined ||
+    workspace.prospectingWorkflowStatus === "running"
+  );
+}
+
 function getBaseFeatureStatus(
   workspace: WorkspaceDoc
 ): WorkspaceFeatureStatus["status"] {

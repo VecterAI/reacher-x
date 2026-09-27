@@ -89,6 +89,7 @@ import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import type { WorkspaceUseCaseKey } from "../shared/lib/workspaceUseCases";
 import { getStyleMemoryCategory } from "./lib/styleSourceCore";
 import { evaluateWorkspaceMemoryCompliance } from "./lib/workspaceMemoryCompliance";
+import { isWorkspaceAutomationActive } from "./lib/workspaceSystem";
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
@@ -777,9 +778,29 @@ export const retryFailedCanonicalWorkspaceMemoryIndexesCron = internalMutation({
     scheduled: v.number(),
   }),
   handler: async (ctx) => {
+    const activeWorkspaceCache = new Map<Id<"workspaces">, boolean>();
+    const isActiveWorkspace = async (
+      workspaceId: Id<"workspaces">
+    ): Promise<boolean> => {
+      const cached = activeWorkspaceCache.get(workspaceId);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const workspace = await ctx.db.get(workspaceId);
+      const isActive = workspace
+        ? isWorkspaceAutomationActive(workspace)
+        : false;
+      activeWorkspaceCache.set(workspaceId, isActive);
+      return isActive;
+    };
+
     const claims = await claimFailedCanonicalWorkspaceMemoryIndexRetries(
-      ctx.db
+      ctx.db,
+      {
+        shouldClaim: (row) => isActiveWorkspace(row.workspaceId),
+      }
     );
+
     for (const [index, claim] of claims.entries()) {
       await ctx.scheduler.runAfter(
         index * WORKSPACE_MEMORY_INDEX_RETRY_STAGGER_MS,

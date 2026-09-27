@@ -106,6 +106,21 @@ export const AUTO_PLAN_RECOVERY_FAILURE_CODES = [
 export const AUTO_PLAN_MAX_RUNS_PER_RECOVERY_WINDOW = 3;
 export const AUTO_PLAN_RECOVERY_WINDOW_MS = 6 * 60 * 60 * 1_000;
 
+/**
+ * Recovery scans walk a few expanding windows. Runs that stay ineligible (for
+ * example while their workspace is paused) keep their `recoveryRetriedAt`
+ * unset, so they sit at the front of the recovery index and must not hide
+ * eligible runs behind them.
+ */
+export const AUTO_PLAN_RECOVERY_SCAN_WINDOWS = 3;
+
+/**
+ * Upper bound on how many failed runs one recovery batch inspects, regardless
+ * of how many scan windows it walks. Keeps a backlog of ineligible runs from
+ * turning a bounded claim into an unbounded mutation.
+ */
+export const AUTO_PLAN_RECOVERY_MAX_SCAN_ATTEMPTS = 300;
+
 const AUTO_PLAN_RECOVERY_CODE_SET = new Set<AutoPlanFailureCode>(
   AUTO_PLAN_RECOVERY_FAILURE_CODES
 );

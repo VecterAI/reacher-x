@@ -46,6 +46,7 @@ import {
   executeOutreachReaction,
   isSameOutreachReactionTarget,
 } from "./lib/outreachReactionCore";
+import { isWorkspaceAutomationActive } from "./lib/workspaceSystem";
 
 type OutreachFailureClass =
   | "reauth_required"
@@ -1200,6 +1201,17 @@ async function enqueueAutoPlanGeneration(
     userId: Id<"users">;
   }
 ): Promise<string> {
+  // Automatic plan generation is autonomous background work, so it only runs
+  // for workspaces whose discovery pipeline is active. Paused, stopped, and
+  // plan-limited workspaces keep their eligible profiles until resume, and
+  // user-initiated plan work stays on the chat/plan-batch path.
+  const workspace = await ctx.runQuery(internal.workspaces.getById, {
+    workspaceId: args.workspaceId,
+  });
+  if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+    return "";
+  }
+
   const claim = await ctx.runMutation(
     internal.prospects.claimAutoPlanGeneration,
     args
@@ -1283,6 +1295,7 @@ export const enqueueEligibleAutoPlansForWorkspace = internalAction({
 
     if (
       !workspace ||
+      !isWorkspaceAutomationActive(workspace) ||
       workspace.styleProfileStatus !== "ready" ||
       typeof workspace.styleProfileVersion !== "number" ||
       workspace.styleProfileVersion <= 0
