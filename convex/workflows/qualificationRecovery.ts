@@ -6,6 +6,7 @@ import { internalAction } from "../lib/functionBuilders";
 import { workflow } from "../lib/workflow";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { shouldRecoverQualificationWorkflowStatusError } from "../lib/qualificationFailureCore";
+import { areAutonomousJobsPaused } from "../lib/autonomousJobHelpers";
 
 export const QUALIFICATION_STALE_PENDING_MS = 15 * 60 * 1000;
 const QUALIFICATION_RECOVERY_BATCH_SIZE = 25;
@@ -29,6 +30,18 @@ type RecoveryResult = {
   skipped: number;
   statusErrors: number;
 };
+
+function buildEmptyRecoveryResult(): RecoveryResult {
+  return {
+    checked: 0,
+    active: 0,
+    scheduled: 0,
+    leasesCleared: 0,
+    notDue: 0,
+    skipped: 0,
+    statusErrors: 0,
+  };
+}
 
 async function recoverStalePendingQualifications(
   ctx: ActionCtx,
@@ -133,9 +146,17 @@ export const recoverStalePendingQualificationsInternal = internalAction({
 export const recoverStalePendingQualificationsCron = internalAction({
   args: {},
   returns: recoveryResultValidator,
-  handler: async (ctx) =>
-    await recoverStalePendingQualifications(
+  handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[QualificationRecovery] Autonomous jobs paused, skipping recovery cron"
+      );
+      return buildEmptyRecoveryResult();
+    }
+
+    return await recoverStalePendingQualifications(
       ctx,
       QUALIFICATION_RECOVERY_BATCH_SIZE
-    ),
+    );
+  },
 });

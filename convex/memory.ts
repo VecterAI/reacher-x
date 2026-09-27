@@ -90,6 +90,7 @@ import type { WorkspaceUseCaseKey } from "../shared/lib/workspaceUseCases";
 import { getStyleMemoryCategory } from "./lib/styleSourceCore";
 import { evaluateWorkspaceMemoryCompliance } from "./lib/workspaceMemoryCompliance";
 import { isWorkspaceAutomationActive } from "./lib/workspaceSystem";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
@@ -778,6 +779,13 @@ export const retryFailedCanonicalWorkspaceMemoryIndexesCron = internalMutation({
     scheduled: v.number(),
   }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[WorkspaceMemory] Autonomous jobs paused, skipping index retry cron"
+      );
+      return { claimed: 0, scheduled: 0 };
+    }
+
     const activeWorkspaceCache = new Map<Id<"workspaces">, boolean>();
     const isActiveWorkspace = async (
       workspaceId: Id<"workspaces">

@@ -496,3 +496,48 @@ describe("recovery work respects workspace pause status", () => {
     expect(claims[0].memoryId).toBe(eligibleMemoryId);
   });
 });
+
+describe("autonomous jobs emergency brake", () => {
+  const previousFlag = process.env.PAUSE_AUTONOMOUS_JOBS;
+
+  afterEach(() => {
+    if (previousFlag === undefined) {
+      delete process.env.PAUSE_AUTONOMOUS_JOBS;
+    } else {
+      process.env.PAUSE_AUTONOMOUS_JOBS = previousFlag;
+    }
+  });
+
+  test("stops every recovery cron without touching the database", async () => {
+    vi.setSystemTime(new Date("2026-09-27T06:00:00.000Z"));
+    process.env.PAUSE_AUTONOMOUS_JOBS = "true";
+    const t = convexTest(schema, modules);
+    // An active workspace is seeded on purpose: without the brake, every cron
+    // below would find and claim this work.
+    await seedEligibleWorkspace(t, "running", "brake-active");
+
+    const qualification = await t.action(
+      internal.workflows.qualificationRecovery
+        .recoverStalePendingQualificationsCron,
+      {}
+    );
+    const autoPlan = await t.action(
+      internal.workflows.autoPlanRecovery.retryFailedAutoPlansCron,
+      {}
+    );
+    const memory = await t.mutation(
+      internal.memory.retryFailedCanonicalWorkspaceMemoryIndexesCron,
+      {}
+    );
+
+    expect(qualification).toMatchObject({ checked: 0, scheduled: 0 });
+    expect(autoPlan).toMatchObject({
+      skipped: true,
+      claimed: 0,
+      queued: 0,
+      failedToQueue: 0,
+    });
+    expect(memory).toEqual({ claimed: 0, scheduled: 0 });
+    expect(await listScheduledFunctions(t)).toHaveLength(0);
+  });
+});
