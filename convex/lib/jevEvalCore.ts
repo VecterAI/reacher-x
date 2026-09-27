@@ -602,6 +602,8 @@ export type JevReplayComparison = {
   breakdownStored: QualificationScoreBreakdown | null;
   breakdownJev: QualificationScoreBreakdown;
   meanJevConfidence: number;
+  jevConfidenceSum: number;
+  jevConfidenceCount: number;
   goalVerdict: JevGoalVerdict;
   stateChars: number;
   questionCount: number;
@@ -698,6 +700,10 @@ export function compareJevReplayWithStored(args: {
     confidences.length > 0
       ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length
       : 0;
+  // Decisive-verdict-level totals so the aggregate mean covers every decisive
+  // verdict across prospects instead of averaging per-prospect means.
+  const jevConfidenceSum = confidences.reduce((sum, value) => sum + value, 0);
+  const jevConfidenceCount = confidences.length;
 
   const missingAnswerCount = args.sentQuestionIds.filter(
     (questionId) => !args.answers[questionId]
@@ -728,6 +734,8 @@ export function compareJevReplayWithStored(args: {
     breakdownStored: args.stored.breakdown ?? null,
     breakdownJev: args.replay.breakdown,
     meanJevConfidence,
+    jevConfidenceSum,
+    jevConfidenceCount,
     goalVerdict: args.replay.raw.goalAssessment.verdict,
     stateChars: args.stateChars,
     questionCount: args.questionCount,
@@ -850,8 +858,8 @@ export function aggregateJevComparisons(
       summary.scoreDeltaCount += 1;
       if (comparison.scoreDelta <= 5) summary.scoreWithinFive += 1;
     }
-    confidenceSum += comparison.meanJevConfidence;
-    confidenceCount += 1;
+    confidenceSum += comparison.jevConfidenceSum;
+    confidenceCount += comparison.jevConfidenceCount;
     summary.totalCost += comparison.cost;
     summary.totalInputTokens += comparison.usage.inputTokens;
     summary.totalOutputTokens += comparison.usage.outputTokens;
@@ -881,6 +889,7 @@ export function aggregateJevComparisons(
   );
   summary.meanJevConfidence =
     confidenceCount > 0 ? confidenceSum / confidenceCount : 0;
+  summary.confidenceSampleCount = confidenceCount;
 
   const supportRows = comparisons.flatMap(
     (comparison) => comparison.supportRows
@@ -1005,7 +1014,7 @@ export function formatJevEvalReport(args: {
     `Score delta: mean ${summary.scoreDeltaCount > 0 ? (summary.scoreDeltaSum / summary.scoreDeltaCount).toFixed(1) : "n/a"} | within ±5: ${percent(summary.scoreWithinFive, summary.scoreDeltaCount)}`
   );
   lines.push(
-    `Mean Jev confidence (decisive verdicts): ${summary.meanJevConfidence.toFixed(2)}`
+    `Mean Jev confidence (decisive verdicts): ${summary.meanJevConfidence.toFixed(2)} (${summary.confidenceSampleCount} verdicts)`
   );
   lines.push("");
   lines.push(

@@ -2,7 +2,6 @@
 // indexed and bounded; nothing here mutates state.
 
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
 import { internalQuery } from "./lib/functionBuilders";
 
 export const resolveJevEvalWorkspaceInternal = internalQuery({
@@ -32,8 +31,8 @@ export const resolveJevEvalWorkspaceInternal = internalQuery({
     if (!user) return null;
 
     // Prefer the default workspace via its dedicated index; fall back to a
-    // bounded cursor-based scan so pages full of deleted workspaces do not
-    // hide a live one.
+    // bounded indexed scan filtered in memory so workspaces mid-deletion
+    // cannot hide a live one.
     const defaultWorkspace = await ctx.db
       .query("workspaces")
       .withIndex("by_user_default", (q) =>
@@ -46,32 +45,13 @@ export const resolveJevEvalWorkspaceInternal = internalQuery({
         : null;
     if (!selectedWorkspace) {
       const WORKSPACE_SCAN_BUDGET = 100;
-      const WORKSPACE_PAGE_SIZE = 50;
-      let cursor: string | null = null;
-      let scanned = 0;
-      let exhausted = false;
-      while (
-        !selectedWorkspace &&
-        scanned < WORKSPACE_SCAN_BUDGET &&
-        !exhausted
-      ) {
-        const page = await ctx.db
-          .query("workspaces")
-          .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-          .order("asc")
-          .paginate({
-            numItems: Math.min(
-              WORKSPACE_PAGE_SIZE,
-              WORKSPACE_SCAN_BUDGET - scanned
-            ),
-            cursor,
-          });
-        selectedWorkspace =
-          page.page.find((workspace) => !workspace.deletionWorkflowId) ?? null;
-        scanned += page.page.length;
-        cursor = page.continueCursor;
-        exhausted = page.isDone;
-      }
+      const workspaces = await ctx.db
+        .query("workspaces")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .order("asc")
+        .take(WORKSPACE_SCAN_BUDGET);
+      selectedWorkspace =
+        workspaces.find((workspace) => !workspace.deletionWorkflowId) ?? null;
     }
     if (!selectedWorkspace) return null;
 
@@ -85,18 +65,28 @@ export const resolveJevEvalWorkspaceInternal = internalQuery({
   },
 });
 
-export const getJevEvalSampleIdsForStatusInternal = internalQuery({
+export const getJevEvalReplayableProspectIdsPageInternal = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
     status: v.union(v.literal("qualified"), v.literal("disqualified")),
-    limit: v.number(),
+    numItems: v.number(),
+    cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const limit = Math.min(100, Math.max(1, Math.floor(args.limit)));
-    // One status per query invocation keeps each transaction's read volume
-    // bounded (prospect documents carry large raw evidence payloads).
-    const SCAN_BUDGET = 250;
-    const PAGE_SIZE = 50;
+    // Convex allows a single `.paginate()` per function execution, so one call
+    // returns exactly one page; the replay action drives page iteration with
+    // the returned cursor. Page size stays small because prospect documents
+    // carry large raw evidence payloads.
+    const numItems = Math.min(50, Math.max(1, Math.floor(args.numItems)));
+    const page = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace_qualification", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("qualificationStatus", args.status)
+      )
+      .order("desc")
+      .paginate({ numItems, cursor: args.cursor ?? null });
     const isReplayable = (prospect: {
       qualificationCriterionResults?: unknown;
       evidencePosts?: unknown;
@@ -105,38 +95,11 @@ export const getJevEvalSampleIdsForStatusInternal = internalQuery({
       prospect.qualificationCriterionResults.length > 0 &&
       Array.isArray(prospect.evidencePosts) &&
       prospect.evidencePosts.length > 0;
-
-    const ids: Id<"prospects">[] = [];
-    let cursor: string | null = null;
-    let scanned = 0;
-    let exhausted = false;
-    while (ids.length < limit && scanned < SCAN_BUDGET && !exhausted) {
-      const page = await ctx.db
-        .query("prospects")
-        .withIndex("by_workspace_qualification", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .eq("qualificationStatus", args.status)
-        )
-        .order("desc")
-        .paginate({
-          numItems: Math.min(PAGE_SIZE, SCAN_BUDGET - scanned),
-          cursor,
-        });
-      for (const prospect of page.page) {
-        if (isReplayable(prospect)) {
-          ids.push(prospect._id);
-          if (ids.length >= limit) break;
-        }
-      }
-      scanned += page.page.length;
-      cursor = page.continueCursor;
-      exhausted = page.isDone;
-    }
-
     return {
-      ids: ids.slice(0, limit),
-      incomplete: ids.length < limit && !exhausted,
+      ids: page.page.filter(isReplayable).map((prospect) => prospect._id),
+      scanned: page.page.length,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
     };
   },
 });

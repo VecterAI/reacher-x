@@ -8,6 +8,7 @@
 import { v } from "convex/values";
 import { internalAction } from "./lib/functionBuilders";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import {
   callJevDecisions,
   getJevModel,
@@ -104,23 +105,39 @@ export const runJevReplayEval = internalAction({
         profiles: workspace.icps ?? [],
       });
 
+    // Convex allows a single `.paginate()` per function execution, so each
+    // query call returns one page and this loop drives the cursor.
+    const SAMPLE_SCAN_BUDGET = 250;
+    const SAMPLE_PAGE_SIZE = 50;
+    const collectReplayableIds = async (
+      status: "qualified" | "disqualified",
+      limit: number
+    ): Promise<{ ids: Id<"prospects">[]; incomplete: boolean }> => {
+      const ids: Id<"prospects">[] = [];
+      let cursor: string | undefined;
+      let scanned = 0;
+      let exhausted = false;
+      while (ids.length < limit && scanned < SAMPLE_SCAN_BUDGET && !exhausted) {
+        const page = await ctx.runQuery(
+          internal.jevEvalQueries.getJevEvalReplayableProspectIdsPageInternal,
+          {
+            workspaceId: workspace.workspaceId,
+            status,
+            numItems: Math.min(SAMPLE_PAGE_SIZE, SAMPLE_SCAN_BUDGET - scanned),
+            cursor,
+          }
+        );
+        ids.push(...page.ids.slice(0, limit - ids.length));
+        scanned += page.scanned;
+        cursor = page.continueCursor;
+        exhausted = page.isDone;
+      }
+      return { ids, incomplete: ids.length < limit && !exhausted };
+    };
+
     const [qualified, disqualified] = await Promise.all([
-      ctx.runQuery(
-        internal.jevEvalQueries.getJevEvalSampleIdsForStatusInternal,
-        {
-          workspaceId: workspace.workspaceId,
-          status: "qualified" as const,
-          limit: qualifiedLimit,
-        }
-      ),
-      ctx.runQuery(
-        internal.jevEvalQueries.getJevEvalSampleIdsForStatusInternal,
-        {
-          workspaceId: workspace.workspaceId,
-          status: "disqualified" as const,
-          limit: disqualifiedLimit,
-        }
-      ),
+      collectReplayableIds("qualified", qualifiedLimit),
+      collectReplayableIds("disqualified", disqualifiedLimit),
     ]);
     if (qualified.incomplete || disqualified.incomplete) {
       console.log(
@@ -276,30 +293,42 @@ export const runJevReplayEval = internalAction({
     summary.structuralSkipCount = structuralSkips;
 
     let stability: { agree: number; total: number } | undefined;
+    let stabilityFailures = 0;
     if (stabilityInputs.length > 0) {
       let agree = 0;
       let total = 0;
       for (const input of stabilityInputs) {
-        const repeatCall = await callJevDecisions({
-          state: input.state,
-          questions: input.questions,
-          sessionId: `jev-eval-stability-${workspace.workspaceId}`,
-        });
-        const repeatReplay = replayJevQualification({
-          targetingSpec,
-          candidates: input.candidates,
-          answers: repeatCall.response.answers,
-          now: getCurrentUTCTimestamp(),
-          threshold: QUALIFICATION_THRESHOLD,
-        });
-        const stabilityResult = summarizeJevStability({
-          first: input.first,
-          second: repeatReplay.raw.criterionResults,
-        });
-        agree += stabilityResult.agree;
-        total += stabilityResult.total;
+        try {
+          const repeatCall = await callJevDecisions({
+            state: input.state,
+            questions: input.questions,
+            sessionId: `jev-eval-stability-${workspace.workspaceId}`,
+          });
+          const repeatReplay = replayJevQualification({
+            targetingSpec,
+            candidates: input.candidates,
+            answers: repeatCall.response.answers,
+            now: getCurrentUTCTimestamp(),
+            threshold: QUALIFICATION_THRESHOLD,
+          });
+          const stabilityResult = summarizeJevStability({
+            first: input.first,
+            second: repeatReplay.raw.criterionResults,
+          });
+          agree += stabilityResult.agree;
+          total += stabilityResult.total;
+        } catch (error) {
+          stabilityFailures += 1;
+          console.warn(
+            `[JevEval] Stability repeat failed for prospect=${input.prospectId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
       }
-      stability = { agree, total };
+      if (total > 0) {
+        stability = { agree, total };
+      }
     }
 
     const report = formatJevEvalReport({
@@ -318,6 +347,9 @@ export const runJevReplayEval = internalAction({
     }
     if (failedCount > 0) {
       console.log(`[JevEval] Failed replays: ${failedCount}`);
+    }
+    if (stabilityFailures > 0) {
+      console.log(`[JevEval] Failed stability repeats: ${stabilityFailures}`);
     }
 
     return {

@@ -625,6 +625,8 @@ describe("aggregateJevComparisons and report", () => {
         total: 86,
       },
       meanJevConfidence: 0.75,
+      jevConfidenceSum: 1.5,
+      jevConfidenceCount: 2,
       goalVerdict: "compatible",
       stateChars: 11000,
       questionCount: 8,
@@ -649,6 +651,32 @@ describe("aggregateJevComparisons and report", () => {
     expect(summary.totalCost).toBeCloseTo(0.0016);
     expect(summary.disagreementSamples).toHaveLength(2);
     expect(summary.disagreementSamples[0].criterionId).toBe("frustrated");
+  });
+
+  test("averages confidence over decisive verdicts, not per-prospect means", () => {
+    // p1: two decisive verdicts (0.9 + 0.6 = 1.5); p2: one decisive verdict
+    // at 0.4. A per-prospect mean would give (0.75 + 0.4) / 2 = 0.575; the
+    // decisive-verdict mean is (1.5 + 0.4) / 3 ≈ 0.6333.
+    const summary = aggregateJevComparisons([
+      comparisonFixture("p1"),
+      comparisonFixture("p2", {
+        jevConfidenceSum: 0.4,
+        jevConfidenceCount: 1,
+      }),
+    ]);
+    expect(summary.confidenceSampleCount).toBe(3);
+    expect(summary.meanJevConfidence).toBeCloseTo(1.9 / 3, 5);
+  });
+
+  test("falls back to zero confidence when no verdict is decisive", () => {
+    const summary = aggregateJevComparisons([
+      comparisonFixture("p1", {
+        jevConfidenceSum: 0,
+        jevConfidenceCount: 0,
+      }),
+    ]);
+    expect(summary.confidenceSampleCount).toBe(0);
+    expect(summary.meanJevConfidence).toBe(0);
   });
 
   test("formats a readable report", () => {
