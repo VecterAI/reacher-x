@@ -65,6 +65,10 @@ import {
   WORKSPACE_MEMORY_INDEX_RETRY_STAGGER_MS,
 } from "./lib/workspaceMemoryCore";
 import {
+  getCachedSharedMemorySemanticIds,
+  setCachedSharedMemorySemanticIds,
+} from "./lib/sharedMemorySemanticCache";
+import {
   distillEnrichmentLearning,
   distillOutreachLearning,
   distillQualificationLearning,
@@ -1368,54 +1372,97 @@ async function buildWorkspaceMemoryContextFromStore(
     });
   }
 
-  const semanticMemoryIdGroups = await Promise.all(
-    SHARED_MEMORY_SEMANTIC_NAMESPACES.map(async (namespace) => {
-      const searchStartedAt = getCurrentUTCTimestamp();
-      try {
-        const result = await getAgentMemoryRag().search(ctx, {
-          namespace: getWorkspaceNamespace(request.workspaceId, namespace),
-          query: request.query,
-          limit: 4,
-          vectorScoreThreshold: SHARED_MEMORY_SEMANTIC_THRESHOLD,
-        });
-        logRagSearch({
-          caller: "shared_workspace_memory_context",
-          workspaceId: request.workspaceId,
-          namespace,
-          limit: 4,
-          resultCount: result.entries.length,
-          durationMs: getCurrentUTCTimestamp() - searchStartedAt,
-          outcome: "success",
-        });
-        return result.entries
-          .map((entry) => entry.metadata?.memoryItemId)
-          .filter(
-            (memoryId): memoryId is string =>
-              typeof memoryId === "string" && memoryId.length > 0
-          );
-      } catch (error) {
-        logRagSearch({
-          caller: "shared_workspace_memory_context",
-          workspaceId: request.workspaceId,
-          namespace,
-          limit: 4,
-          resultCount: 0,
-          durationMs: getCurrentUTCTimestamp() - searchStartedAt,
-          outcome: "error",
-        });
-        memoryLogger.warn("Shared workspace memory semantic search failed", {
-          workspaceId: request.workspaceId,
-          namespace,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return [];
-      }
-    })
-  );
-  const semanticMemoryIds = [...new Set(semanticMemoryIdGroups.flat())].slice(
-    0,
-    64
-  );
+  // Semantic matches resolve through the canonical store, so a workspace with
+  // no candidates and no legacy operator fallbacks cannot gain anything from
+  // the shared namespace searches. Skipping them keeps qualification and
+  // outreach runs cheap for fresh or empty workspaces.
+  if (rolloutCandidates.length === 0) {
+    return buildCanonicalWorkspaceMemoryContext({
+      request,
+      memories: exactMatches,
+    });
+  }
+
+  const now = getCurrentUTCTimestamp();
+  let semanticMemoryIds = getCachedSharedMemorySemanticIds({
+    workspaceId: request.workspaceId,
+    query: request.query,
+    nowMs: now,
+  });
+
+  if (semanticMemoryIds) {
+    logRagSearch({
+      caller: "shared_workspace_memory_context",
+      workspaceId: request.workspaceId,
+      namespace: "shared",
+      limit: 0,
+      resultCount: semanticMemoryIds.length,
+      durationMs: 0,
+      outcome: "cache_hit",
+    });
+  } else {
+    const namespaceGroups = await Promise.all(
+      SHARED_MEMORY_SEMANTIC_NAMESPACES.map(async (namespace) => {
+        const searchStartedAt = getCurrentUTCTimestamp();
+        try {
+          const result = await getAgentMemoryRag().search(ctx, {
+            namespace: getWorkspaceNamespace(request.workspaceId, namespace),
+            query: request.query,
+            limit: 4,
+            vectorScoreThreshold: SHARED_MEMORY_SEMANTIC_THRESHOLD,
+          });
+          logRagSearch({
+            caller: "shared_workspace_memory_context",
+            workspaceId: request.workspaceId,
+            namespace,
+            limit: 4,
+            resultCount: result.entries.length,
+            durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+            outcome: "success",
+          });
+          return {
+            memoryIds: result.entries
+              .map((entry) => entry.metadata?.memoryItemId)
+              .filter(
+                (memoryId): memoryId is string =>
+                  typeof memoryId === "string" && memoryId.length > 0
+              ),
+            succeeded: true,
+          };
+        } catch (error) {
+          logRagSearch({
+            caller: "shared_workspace_memory_context",
+            workspaceId: request.workspaceId,
+            namespace,
+            limit: 4,
+            resultCount: 0,
+            durationMs: getCurrentUTCTimestamp() - searchStartedAt,
+            outcome: "error",
+          });
+          memoryLogger.warn("Shared workspace memory semantic search failed", {
+            workspaceId: request.workspaceId,
+            namespace,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return { memoryIds: [] as string[], succeeded: false };
+        }
+      })
+    );
+
+    const flattenedIds = [
+      ...new Set(namespaceGroups.flatMap((group) => group.memoryIds)),
+    ].slice(0, 64);
+    if (namespaceGroups.every((group) => group.succeeded)) {
+      setCachedSharedMemorySemanticIds({
+        workspaceId: request.workspaceId,
+        query: request.query,
+        memoryIds: flattenedIds,
+        nowMs: getCurrentUTCTimestamp(),
+      });
+    }
+    semanticMemoryIds = flattenedIds;
+  }
+
   const semanticMemories = semanticMemoryIds.length
     ? await ctx.runQuery(
         internal.memory.getCanonicalWorkspaceMemoriesByIdsInternal,

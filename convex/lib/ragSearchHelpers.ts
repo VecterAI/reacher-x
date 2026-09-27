@@ -12,8 +12,9 @@ export type RagSearchCaller = (typeof ragSearchCallers)[number];
 const ragSearchLogger = logger.withScope("RagSearch");
 
 /**
- * Emits one structured log line per RAG vector search so per-caller usage can
- * be counted from logs and attributed on Convex invoices.
+ * Emits one structured log line per RAG vector search (including cache hits)
+ * so per-caller usage can be counted from logs and attributed on Convex
+ * invoices.
  */
 export function logRagSearch(args: {
   caller: RagSearchCaller;
@@ -22,7 +23,7 @@ export function logRagSearch(args: {
   limit: number;
   resultCount: number;
   durationMs: number;
-  outcome: "success" | "error";
+  outcome: "success" | "error" | "cache_hit";
 }) {
   ragSearchLogger.info("RAG vector search", args);
 }
