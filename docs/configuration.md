@@ -394,6 +394,26 @@ See the bundled [SocialAPI search reference](./socialapi/search.md), [search ope
 | `PROSPECTING_AUXILIARY_RETRY_INITIAL_BACKOFF_MS` |        `1000` | Initial auxiliary retry delay                |
 | `PROSPECTING_RETRY_BACKOFF_BASE`                 |           `2` | Exponential backoff multiplier               |
 
+### Emergency Brake: `PAUSE_AUTONOMOUS_JOBS`
+
+Recovery crons retry failed prospecting work automatically, and each retry can
+spend paid provider credits. `PAUSE_AUTONOMOUS_JOBS=true` (also accepts `1`)
+stops the automatic plan, qualification, and workspace memory retry crons from
+starting new work so a credit or budget leak can be halted without a redeploy.
+
+```bash
+npx convex env set PAUSE_AUTONOMOUS_JOBS true          # dev deployment
+npx convex env set PAUSE_AUTONOMOUS_JOBS true --prod   # production
+npx convex env set PAUSE_AUTONOMOUS_JOBS false         # resume
+```
+
+The flag is read inside each cron before any database read, so a paused
+deployment costs no database operations. It is a Convex-only variable: set it on
+the Convex deployment, not in the hosting project. Jobs that were already queued
+keep running, already-signed-up user-facing flows and manual chat-initiated plan
+work are unaffected, and no data is written or cancelled. Leave the variable
+unset or `false` for normal operation.
+
 ## SocialAPI And LinkdAPI Budgets
 
 Budgets are shared at the provider level across users and workspaces. This prevents aggregate platform traffic from exceeding the configured account limits when multiple workspaces run concurrently.
