@@ -326,6 +326,33 @@ export const qualificationWorkflow = workflow.define({
       ? prospect.discoveryContext.matchedQueries
       : [];
 
+    // Jev pre-filter shadow measurement: logs what the decision model would
+    // have done before paid qualification. Off by default; never gates
+    // qualification (the action never throws).
+    const prefilterMode = await step.runQuery(
+      internal.jevPrefilterStore.getJevPrefilterModeInternal,
+      {}
+    );
+    if (prefilterMode === "shadow") {
+      // Platform-level step rejections must never block paid qualification.
+      try {
+        await step.runAction(
+          internal.jevPrefilterShadow.runJevPrefilterShadowInternal,
+          {
+            workspaceId: args.workspaceId,
+            userId: workspace.userId,
+            prospectId: args.prospectId,
+          }
+        );
+      } catch (error) {
+        console.warn(
+          `[JevPrefilter] Shadow step failed for prospect ${args.prospectId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+
     // Extract profile data for authenticity analysis
     const profileData =
       getNestedRecord(prospectData, "user") ||

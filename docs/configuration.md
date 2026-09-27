@@ -288,6 +288,8 @@ Values are OpenRouter model IDs unless otherwise noted.
 | `AI_MAIN_AGENT_MODEL`         | `openai/gpt-5.6-sol`              | Fixed model for stateful main and prospect-scoped conversations, planning, and outreach                                                               |
 | `AI_VISION_MODEL`             | `moonshotai/kimi-k2.6`            | Image/GIF understanding for multimodal turns                                                                                                          |
 | `AI_TEXT_EMBEDDING_MODEL`     | `openai/text-embedding-3-small`   | Agent-memory and RAG embeddings                                                                                                                       |
+| `AI_JEV_MODEL`                | `typesafe/jev-1.13`               | TypeSafe Jev System One decision model used by the replay evaluation tooling and the qualification pre-filter                                         |
+| `JEV_PREFILTER_MODE`          | `off`                             | Qualification pre-filter mode. `off` skips it entirely; `shadow` records what it would decide without changing qualification behavior                 |
 
 `OPENROUTER_ROUTING_PRESET` is the fallback for `AI_FAST_MODEL` and `AI_REASONING_MODEL` when those role variables are unset:
 
@@ -295,6 +297,12 @@ Values are OpenRouter model IDs unless otherwise noted.
 - `cost_optimized`: uses the cost-optimized fast/reasoning strategy and is the code default.
 
 Role-specific model variables take precedence over the preset. A newly selected model uses generic OpenRouter provider fallback unless the code has a model-specific optimized route.
+
+### Jev Decision Model And Qualification Pre-Filter
+
+`AI_JEV_MODEL` selects the TypeSafe Jev System One decision model, reached through the OpenRouter Decisions API with the shared `OPENROUTER_API_KEY`. Unlike the generative roles above, Jev returns typed answers with probabilities instead of generated text, and output tokens are not billed. It is used by the read-only replay evaluation (`npx convex run jevEvalActions:runJevReplayEval`) and by the qualification pre-filter.
+
+`JEV_PREFILTER_MODE` controls the pre-filter step in the qualification workflow. `off` (the code default) skips the step entirely. `shadow` asks Jev for hard-fail signals — a matched exclusion criterion, a missed required criterion, or a near-certain bot account — before paid qualification runs, and records what it would have decided in `jevPrefilterShadowEvents` without changing qualification behavior. Only high-confidence signals are recorded as would-kill decisions; the shadow step never blocks or alters qualification and cannot fail the workflow.
 
 ### Stateful Agent Model Continuity
 
