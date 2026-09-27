@@ -7,7 +7,7 @@ import type {
   GenericDatabaseReader,
   GenericDatabaseWriter,
 } from "convex/server";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import type {
   WorkspaceMemoryCategory,
@@ -916,6 +916,13 @@ export type WorkspaceMemoryIndexRetryClaim = {
 };
 
 /**
+ * Recovery scans walk a few expanding windows. Rows that stay ineligible (for
+ * example while their workspace is paused) keep their retry timestamp, so they
+ * sit at the front of the index and must not hide eligible rows behind them.
+ */
+export const WORKSPACE_MEMORY_INDEX_RETRY_SCAN_WINDOWS = 3;
+
+/**
  * Atomically claims a small due batch. Moving `indexRetryAt` to the lease
  * boundary makes an abandoned action eligible again without a cleanup job.
  */
@@ -925,6 +932,12 @@ export async function claimFailedCanonicalWorkspaceMemoryIndexRetries(
     now?: number;
     limit?: number;
     leaseMs?: number;
+    /**
+     * Rejects candidate rows before they are leased. Recovery callers use this
+     * to leave failed rows for paused workspaces completely untouched so their
+     * backoff and attempt counters survive a pause/resume cycle.
+     */
+    shouldClaim?: (row: Doc<"workspaceMemories">) => boolean | Promise<boolean>;
   } = {}
 ): Promise<WorkspaceMemoryIndexRetryClaim[]> {
   const now = args.now ?? getCurrentUTCTimestamp();
@@ -940,30 +953,20 @@ export async function claimFailedCanonicalWorkspaceMemoryIndexRetries(
     args.leaseMs ?? WORKSPACE_MEMORY_INDEX_RETRY_LEASE_MS
   );
   const scanLimit = limit * WORKSPACE_MEMORY_INDEX_RETRY_SCAN_MULTIPLIER;
-  const dueRows = await db
-    .query("workspaceMemories")
-    .withIndex("by_status_index_retry", (query: any) =>
-      query
-        .eq("status", "active")
-        .eq("indexStatus", "failed")
-        .eq("indexRetryable", true)
-        .lte("indexRetryAt", now)
-    )
-    .take(scanLimit);
-  const legacyCandidates = await db
-    .query("workspaceMemories")
-    .withIndex("by_status_index_retry", (query: any) =>
-      query.eq("status", "active").eq("indexStatus", "failed")
-    )
-    .take(scanLimit);
-  const legacyRows = legacyCandidates.filter(
-    (row) => row.indexRetryable === undefined && row.indexRetryAt === undefined
-  );
-  const rows = [...dueRows, ...legacyRows];
   const claims: WorkspaceMemoryIndexRetryClaim[] = [];
-  for (const row of rows) {
+  const consideredMemoryIds = new Set<string>();
+
+  const considerRow = async (row: Doc<"workspaceMemories">): Promise<void> => {
     if (claims.length >= limit) {
-      break;
+      return;
+    }
+    const memoryKey = String(row._id);
+    if (consideredMemoryIds.has(memoryKey)) {
+      return;
+    }
+    consideredMemoryIds.add(memoryKey);
+    if (args.shouldClaim && !(await args.shouldClaim(row))) {
+      return;
     }
     const retryCount = row.indexRetryCount ?? 0;
     if (retryCount >= WORKSPACE_MEMORY_INDEX_RETRY_MAX_FAILURES) {
@@ -972,12 +975,12 @@ export async function claimFailedCanonicalWorkspaceMemoryIndexRetries(
         indexRetryAt: undefined,
         indexRetryExhaustedAt: now,
       });
-      continue;
+      return;
     }
     if ((row.indexRetryLeaseUntil ?? 0) > now) {
-      continue;
+      return;
     }
-    const claimToken = `workspace-memory-index:${String(row._id)}:${now}`;
+    const claimToken = `workspace-memory-index:${memoryKey}:${now}`;
     const leaseUntil = now + leaseMs;
     await db.patch("workspaceMemories", row._id, {
       indexRetryable: true,
@@ -988,7 +991,49 @@ export async function claimFailedCanonicalWorkspaceMemoryIndexRetries(
       indexRetryExhaustedAt: undefined,
     });
     claims.push({ memoryId: row._id, claimToken, leaseUntil });
+  };
+
+  // Rows rejected by `shouldClaim` keep their retry timestamp, so they stay at
+  // the front of the index. Walk a few expanding windows to reach the eligible
+  // rows behind them instead of letting a paused workspace block every batch.
+  for (
+    let window = 1;
+    window <= WORKSPACE_MEMORY_INDEX_RETRY_SCAN_WINDOWS;
+    window += 1
+  ) {
+    const dueRows = await db
+      .query("workspaceMemories")
+      .withIndex("by_status_index_retry", (query: any) =>
+        query
+          .eq("status", "active")
+          .eq("indexStatus", "failed")
+          .eq("indexRetryable", true)
+          .lte("indexRetryAt", now)
+      )
+      .take(scanLimit * window);
+
+    for (const row of dueRows) {
+      await considerRow(row);
+    }
+    if (claims.length >= limit || dueRows.length < scanLimit * window) {
+      break;
+    }
   }
+
+  if (claims.length < limit) {
+    const legacyCandidates = await db
+      .query("workspaceMemories")
+      .withIndex("by_status_index_retry", (query: any) =>
+        query.eq("status", "active").eq("indexStatus", "failed")
+      )
+      .take(scanLimit);
+    for (const row of legacyCandidates) {
+      if (row.indexRetryable === undefined && row.indexRetryAt === undefined) {
+        await considerRow(row);
+      }
+    }
+  }
+
   return claims;
 }
 

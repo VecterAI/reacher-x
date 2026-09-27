@@ -4,6 +4,8 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   AUTO_PLAN_MAX_RUNS_PER_RECOVERY_WINDOW,
   AUTO_PLAN_RECOVERY_FAILURE_CODES,
+  AUTO_PLAN_RECOVERY_MAX_SCAN_ATTEMPTS,
+  AUTO_PLAN_RECOVERY_SCAN_WINDOWS,
   buildAutoPlanFailureNotificationTitle,
   classifyAutoPlanFailure,
   hasAutoPlanRecoveryCapacity,
@@ -17,6 +19,7 @@ import {
   upsertNotificationByKey,
 } from "./lib/notificationHelpers";
 import { getProspectDisplayLabel } from "./lib/prospectIdentityCore";
+import { isWorkspaceAutomationActive } from "./lib/workspaceSystem";
 import { getWorkspaceWritingStyleContext } from "./lib/workspaceStyleProfileCore";
 
 type AutoPlanRecoveryCandidate = {
@@ -58,6 +61,11 @@ async function claimAutoPlanRecoveryRun(
     (expectedWorkspaceId && prospect.workspaceId !== expectedWorkspaceId) ||
     prospect.planGenerationStatus !== "failed"
   ) {
+    return null;
+  }
+
+  const workspace = await ctx.db.get(prospect.workspaceId);
+  if (!workspace || !isWorkspaceAutomationActive(workspace)) {
     return null;
   }
 
@@ -239,8 +247,17 @@ export const claimFailedAutoPlanRecoveryBatchGlobal = internalMutation({
   args: { limit: v.number() },
   handler: async (ctx, args) => {
     const limit = Math.max(1, Math.min(args.limit, 100));
-    const failedRuns = (
-      await Promise.all(
+    const now = getCurrentUTCTimestamp();
+    const claimed: AutoPlanRecoveryCandidate[] = [];
+    const seenProspects = new Set<string>();
+    const attemptedRunIds = new Set<string>();
+
+    for (
+      let window = 1;
+      window <= AUTO_PLAN_RECOVERY_SCAN_WINDOWS;
+      window += 1
+    ) {
+      const runsPerCode = await Promise.all(
         AUTO_PLAN_RECOVERY_FAILURE_CODES.map((errorCode) =>
           ctx.db
             .query("autoPlanRuns")
@@ -251,39 +268,126 @@ export const claimFailedAutoPlanRecoveryBatchGlobal = internalMutation({
                 .eq("recoveryRetriedAt", undefined)
             )
             .order("desc")
-            .take(limit)
+            .take(limit * window)
         )
-      )
-    )
-      .flat()
-      .sort((left, right) => right.updatedAt - left.updatedAt)
-      .slice(0, Math.min(limit * 3, 300));
-    const now = getCurrentUTCTimestamp();
-    const claimed: AutoPlanRecoveryCandidate[] = [];
-    const seenProspects = new Set<string>();
+      );
+      const failedRuns = runsPerCode
+        .flat()
+        .sort((left, right) => right.updatedAt - left.updatedAt);
 
-    for (const run of failedRuns) {
+      for (const run of failedRuns) {
+        if (
+          claimed.length >= limit ||
+          attemptedRunIds.size >= AUTO_PLAN_RECOVERY_MAX_SCAN_ATTEMPTS
+        ) {
+          break;
+        }
+        const runKey = String(run._id);
+        if (attemptedRunIds.has(runKey)) {
+          continue;
+        }
+        attemptedRunIds.add(runKey);
+        if (
+          !isAutoPlanFailureRecoveryEligible(run.errorCode) ||
+          seenProspects.has(String(run.prospectId))
+        ) {
+          continue;
+        }
+        seenProspects.add(String(run.prospectId));
+        const candidate = await claimAutoPlanRecoveryRun(ctx, { run, now });
+        if (candidate) claimed.push(candidate);
+      }
+
       if (
         claimed.length >= limit ||
-        !isAutoPlanFailureRecoveryEligible(run.errorCode) ||
-        seenProspects.has(String(run.prospectId))
+        attemptedRunIds.size >= AUTO_PLAN_RECOVERY_MAX_SCAN_ATTEMPTS
       ) {
-        continue;
+        break;
       }
-      seenProspects.add(String(run.prospectId));
-      const candidate = await claimAutoPlanRecoveryRun(ctx, { run, now });
-      if (candidate) claimed.push(candidate);
+      const hasUnscannedRuns = runsPerCode.some(
+        (runs) => runs.length >= limit * window
+      );
+      if (!hasUnscannedRuns) {
+        break;
+      }
     }
 
     return claimed;
   },
 });
 
+const AUTO_PLAN_RECOVERY_PROBE_SCAN_LIMIT = 25;
+
+type AutoPlanRecoveryProbeTarget = {
+  prospectId: Id<"prospects">;
+  workspaceId: Id<"workspaces">;
+  userId: Id<"users">;
+};
+
+async function findAutoPlanRecoveryProbeTarget(
+  ctx: Pick<QueryCtx, "db">,
+  runs: Doc<"autoPlanRuns">[],
+  examinedRunIds: Set<string>
+): Promise<AutoPlanRecoveryProbeTarget | null> {
+  const now = getCurrentUTCTimestamp();
+
+  for (const run of runs) {
+    if (examinedRunIds.size >= AUTO_PLAN_RECOVERY_MAX_SCAN_ATTEMPTS) {
+      break;
+    }
+    if (examinedRunIds.has(String(run._id))) {
+      continue;
+    }
+    examinedRunIds.add(String(run._id));
+    const prospect = await ctx.db.get(run.prospectId);
+    if (!prospect || prospect.planGenerationStatus !== "failed") {
+      continue;
+    }
+
+    const workspace = await ctx.db.get(prospect.workspaceId);
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+      continue;
+    }
+    if (!(await hasRecoveryCapacityForProspect(ctx, prospect._id, now))) {
+      continue;
+    }
+    if (run.errorCode === "writing_style_unavailable") {
+      const styleContext = await getWorkspaceWritingStyleContext(ctx.db, {
+        workspaceId: prospect.workspaceId,
+        platform: prospect.platform === "linkedin" ? "linkedin" : "twitter",
+      });
+      if (styleContext.status !== "ready") {
+        continue;
+      }
+    }
+    if (prospect.platform !== "twitter") {
+      continue;
+    }
+    const identity = resolveProspectTwitterIdentity(prospect);
+    if (!identity.username && !identity.userId) {
+      continue;
+    }
+    return {
+      prospectId: prospect._id,
+      workspaceId: prospect.workspaceId,
+      userId: prospect.userId,
+    };
+  }
+
+  return null;
+}
+
 export const getAutoPlanRecoveryProbeTarget = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const runs = (
-      await Promise.all(
+    const examinedRunIds = new Set<string>();
+
+    for (
+      let window = 1;
+      window <= AUTO_PLAN_RECOVERY_SCAN_WINDOWS;
+      window += 1
+    ) {
+      const runsPerCode = await Promise.all(
         AUTO_PLAN_RECOVERY_FAILURE_CODES.map((errorCode) =>
           ctx.db
             .query("autoPlanRuns")
@@ -294,48 +398,33 @@ export const getAutoPlanRecoveryProbeTarget = internalQuery({
                 .eq("recoveryRetriedAt", undefined)
             )
             .order("desc")
-            .take(25)
+            .take(AUTO_PLAN_RECOVERY_PROBE_SCAN_LIMIT * window)
         )
-      )
-    )
-      .flat()
-      .sort((left, right) => right.updatedAt - left.updatedAt);
+      );
+      const runs = runsPerCode
+        .flat()
+        .sort((left, right) => right.updatedAt - left.updatedAt);
 
-    for (const run of runs) {
-      const prospect = await ctx.db.get(run.prospectId);
-      if (!prospect || prospect.planGenerationStatus !== "failed") {
-        continue;
+      const target = await findAutoPlanRecoveryProbeTarget(
+        ctx,
+        runs,
+        examinedRunIds
+      );
+      if (target) {
+        return target;
       }
-      if (
-        !(await hasRecoveryCapacityForProspect(
-          ctx,
-          prospect._id,
-          getCurrentUTCTimestamp()
-        ))
-      ) {
-        continue;
+
+      if (examinedRunIds.size >= AUTO_PLAN_RECOVERY_MAX_SCAN_ATTEMPTS) {
+        break;
       }
-      if (run.errorCode === "writing_style_unavailable") {
-        const styleContext = await getWorkspaceWritingStyleContext(ctx.db, {
-          workspaceId: prospect.workspaceId,
-          platform: prospect.platform === "linkedin" ? "linkedin" : "twitter",
-        });
-        if (styleContext.status !== "ready") {
-          continue;
-        }
+
+      const hasUnscannedRuns = runsPerCode.some(
+        (codeRuns) =>
+          codeRuns.length >= AUTO_PLAN_RECOVERY_PROBE_SCAN_LIMIT * window
+      );
+      if (!hasUnscannedRuns) {
+        break;
       }
-      if (prospect.platform !== "twitter") {
-        continue;
-      }
-      const identity = resolveProspectTwitterIdentity(prospect);
-      if (!identity.username && !identity.userId) {
-        continue;
-      }
-      return {
-        prospectId: prospect._id,
-        workspaceId: prospect.workspaceId,
-        userId: prospect.userId,
-      };
     }
 
     return null;

@@ -34,6 +34,7 @@ import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
 import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
 import { buildLegacyWorkspaceTargetingSpec } from "../lib/targetingSpecCore";
+import { isWorkspaceAutomationActive } from "../lib/workspaceSystem";
 const qualificationWorkflowLogger = logger.withScope("QualificationWorkflow");
 
 async function hasValidatedSetupPreviewContext(
@@ -867,6 +868,16 @@ export const startQualification = internalAction({
       prospect.qualificationStatus === "qualified" ||
       prospect.qualificationStatus === "disqualified"
     ) {
+      return { workId: "" };
+    }
+
+    // Autonomous qualification work only runs while the workspace's discovery
+    // pipeline is active. Paused, stopped, and plan-limited workspaces defer
+    // pending prospects until resume, where the recovery cron picks them up.
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
       return { workId: "" };
     }
 

@@ -3,6 +3,7 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { internalAction } from "../lib/functionBuilders";
+import { areAutonomousJobsPaused } from "../lib/autonomousJobHelpers";
 
 const REQUIRED_AUTO_PLAN_PROVIDERS = ["socialapi", "exa"] as const;
 
@@ -111,6 +112,13 @@ export const retryFailedAutoPlansCron = internalAction({
     queued: number;
     failedToQueue: number;
   }> => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[AutoPlanRecovery] Autonomous jobs paused, skipping recovery cron"
+      );
+      return { skipped: true, claimed: 0, queued: 0, failedToQueue: 0 };
+    }
+
     let circuits = (await ctx.runQuery(
       internal.providerReliability.listProviderCircuitStatesInternal,
       {}

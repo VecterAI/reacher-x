@@ -44,6 +44,7 @@ import {
   deriveWorkspaceSystemStatus,
   getWorkspaceDiscoveryState,
   getWorkspaceFeatureStatuses,
+  isWorkspaceAutomationActive,
 } from "./lib/workspaceSystem";
 import { listWorkspaceProspectSummariesPage } from "./prospectSummaries";
 import { getWorkspaceStatsSnapshot } from "./workspaceStats";
@@ -3581,6 +3582,16 @@ export const claimPendingQualificationRecoveryInternal = internalMutation({
         reason: "ineligible" as const,
       };
     }
+
+    const workspace = await ctx.db.get(prospect.workspaceId);
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+      return {
+        claimed: false,
+        scheduled: false,
+        reason: "ineligible" as const,
+      };
+    }
+
     if (
       prospect.updatedAt !== args.expectedUpdatedAt ||
       prospect.qualificationWorkflowId !== args.expectedWorkflowId ||
