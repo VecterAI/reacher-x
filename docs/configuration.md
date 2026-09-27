@@ -410,8 +410,8 @@ npx convex env set PAUSE_AUTONOMOUS_JOBS false         # resume
 The flag is read inside each cron before any database read, so a paused
 deployment costs no database operations. It is a Convex-only variable: set it on
 the Convex deployment, not in the hosting project. Jobs that were already queued
-keep running, already-signed-up user-facing flows and manual chat-initiated plan
-work are unaffected, and no data is written or cancelled. Leave the variable
+keep running, user-facing flows and manual chat-initiated plan work are
+unaffected, and nothing is queued or cancelled. Leave the variable
 unset or `false` for normal operation.
 
 ## SocialAPI And LinkdAPI Budgets
