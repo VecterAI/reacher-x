@@ -1070,6 +1070,18 @@ export const runEnrichmentWorkflow = internalAction({
       return { workflowId: "" };
     }
 
+    // Rechecked at execution time because tenant-scheduler and recovery
+    // dispatch reach this action directly: a workspace that paused after the
+    // claim must not spend enrichment LLM calls. The claim is released so a
+    // later resume can claim cleanly.
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+      await releaseClaim();
+      return { workflowId: "" };
+    }
+
     let wfId = "";
     try {
       wfId = String(

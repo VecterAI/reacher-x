@@ -421,6 +421,45 @@ describe("prospecting failure recovery is credit-bounded", () => {
     );
     expect(exhausted?.prospectingFailureStreak).toBeUndefined();
   });
+  test("exhausted episodes reach the cap cleanup even while the brake is on", async () => {
+    const previousFlag = process.env.PAUSE_AUTONOMOUS_JOBS;
+    process.env.PAUSE_AUTONOMOUS_JOBS = "true";
+    try {
+      const t = convexTest(schema, modules);
+      await registerSchedulerComponents(t);
+      const seeded = await seedWorkspace(t, {
+        suffix: "recover-brake-exhausted",
+        withAgentData: true,
+        planTier: "base",
+      });
+      await seedFailedRecoveryState(t, seeded, {
+        recoveryAttemptId: MAX_PROSPECTING_RECOVERY_ATTEMPTS + 1,
+        failureStreak: MAX_PROSPECTING_RECOVERY_ATTEMPTS + 1,
+      });
+
+      const result = await t.action(
+        internal.workspaces.attemptProspectingWorkflowRecoveryInternal,
+        {
+          workspaceId: seeded.workspaceId,
+          recoveryAttemptId: MAX_PROSPECTING_RECOVERY_ATTEMPTS + 1,
+        }
+      );
+
+      // The cap is checked before the brake: an exhausted episode must reach
+      // its cleanup instead of re-arming the 15-minute poll forever.
+      expect(result).toEqual({ success: false, outcome: "recovery_exhausted" });
+      const workspace = await t.run((ctx) => ctx.db.get(seeded.workspaceId));
+      expect(workspace?.prospectingFailureStreak).toBeUndefined();
+      expect(workspace?.prospectingNextRecoveryAt).toBeUndefined();
+      expect(await listScheduledFunctions(t)).toHaveLength(0);
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.PAUSE_AUTONOMOUS_JOBS;
+      } else {
+        process.env.PAUSE_AUTONOMOUS_JOBS = previousFlag;
+      }
+    }
+  });
 });
 
 describe("failure completion respects workspace ownership", () => {
@@ -1007,6 +1046,66 @@ describe("enrichment waits for the workspace", () => {
         workspaceId: seeded.workspaceId,
       })
     ).toEqual({ workId: "" });
+    const prospect = await t.run((ctx) => ctx.db.get("prospects", prospectId));
+    expect(prospect?.enrichmentWorkflowId).toBeUndefined();
+  });
+
+  test("refuses the enrichment claim itself for a stopped workspace", async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await seedWorkspace(t, { suffix: "enrich-claim" });
+    await t.run((ctx) =>
+      ctx.db.patch(seeded.workspaceId, { prospectingWorkflowStatus: "stopped" })
+    );
+    const prospectId = await seedQualifiedProspect(t, seeded, "enrich-claim");
+
+    const claim = await t.mutation(
+      internal.prospects.claimEnrichmentWorkflowIdInternal,
+      {
+        prospectId,
+        workflowId: "claim-token-1",
+        allowPartial: true,
+      }
+    );
+    expect(claim).toEqual({ claimed: false, reason: "inactive_workspace" });
+    const prospect = await t.run((ctx) => ctx.db.get("prospects", prospectId));
+    expect(prospect?.enrichmentWorkflowId).toBeUndefined();
+  });
+
+  test("does not run enrichment for a workspace that paused after the claim", async () => {
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const seeded = await seedWorkspace(t, {
+      suffix: "enrich-dispatched",
+      planTier: "base",
+    });
+    const prospectId = await seedQualifiedProspect(
+      t,
+      seeded,
+      "enrich-dispatched"
+    );
+    const claim = await t.mutation(
+      internal.prospects.claimEnrichmentWorkflowIdInternal,
+      {
+        prospectId,
+        workflowId: "claim-token-2",
+        allowPartial: true,
+      }
+    );
+    expect(claim.claimed).toBe(true);
+
+    // Workspace stops after the claim (dispatch race): the dispatched run
+    // must refuse to start and release the claim for the resume path.
+    await t.run((ctx) =>
+      ctx.db.patch(seeded.workspaceId, { prospectingWorkflowStatus: "stopped" })
+    );
+
+    expect(
+      await t.action(internal.workflows.enrichment.runEnrichmentWorkflow, {
+        prospectId,
+        workspaceId: seeded.workspaceId,
+        claimToken: "claim-token-2",
+      })
+    ).toEqual({ workflowId: "" });
     const prospect = await t.run((ctx) => ctx.db.get("prospects", prospectId));
     expect(prospect?.enrichmentWorkflowId).toBeUndefined();
   });

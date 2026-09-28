@@ -2552,32 +2552,16 @@ export const attemptProspectingWorkflowRecoveryInternal = internalAction({
       };
     }
 
-    // Emergency brake: never restart autonomous discovery while
-    // PAUSE_AUTONOMOUS_JOBS is set. Re-arm the same recovery attempt on a
-    // short poll so lifting the brake resumes recovery automatically,
-    // without touching any workspace state.
-    if (areAutonomousJobsPaused()) {
-      await ctx.scheduler.runAfter(
-        PROSPECTING_RECOVERY_KILL_SWITCH_POLL_MS,
-        internal.workspaces.attemptProspectingWorkflowRecoveryInternal,
-        {
-          workspaceId: args.workspaceId,
-          recoveryAttemptId: args.recoveryAttemptId,
-        }
-      );
-      return {
-        success: false,
-        outcome: "autonomous_jobs_paused",
-      };
-    }
-
     // Every automatic restart re-runs discovery and qualification and spends
     // provider credits. A workspace stuck in a fail-recover loop (for example
     // a persistently broken provider) must stop draining credits instead of
     // retrying forever, so cap the attempts per failure episode and leave the
     // workspace in its "needs attention" state for the user to retry. The
     // failure streak persists across automatic restarts and only resets on a
-    // user-initiated start or a successful cycle.
+    // user-initiated start or a successful cycle. The cap is checked before
+    // the emergency brake so an exhausted episode reaches this cleanup even
+    // while PAUSE_AUTONOMOUS_JOBS is set, instead of re-arming the poll
+    // forever.
     if (
       (workspace.prospectingFailureStreak ?? 0) >
       MAX_PROSPECTING_RECOVERY_ATTEMPTS
@@ -2602,6 +2586,25 @@ export const attemptProspectingWorkflowRecoveryInternal = internalAction({
       return {
         success: false,
         outcome: "recovery_exhausted",
+      };
+    }
+
+    // Emergency brake: never restart autonomous discovery while
+    // PAUSE_AUTONOMOUS_JOBS is set. Re-arm the same recovery attempt on a
+    // short poll so lifting the brake resumes recovery automatically,
+    // without touching any workspace state.
+    if (areAutonomousJobsPaused()) {
+      await ctx.scheduler.runAfter(
+        PROSPECTING_RECOVERY_KILL_SWITCH_POLL_MS,
+        internal.workspaces.attemptProspectingWorkflowRecoveryInternal,
+        {
+          workspaceId: args.workspaceId,
+          recoveryAttemptId: args.recoveryAttemptId,
+        }
+      );
+      return {
+        success: false,
+        outcome: "autonomous_jobs_paused",
       };
     }
 

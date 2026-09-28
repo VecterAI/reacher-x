@@ -2781,6 +2781,17 @@ export const claimEnrichmentWorkflowIdInternal = internalMutation({
     if (!prospect) {
       return { claimed: false as const, reason: "missing" as const };
     }
+    // Rechecked here (not only in the calling action) because the workspace
+    // can pause between them: recording a claim for a workspace whose
+    // automation is inactive would let the enrichment workflow start and
+    // spend LLM calls on it.
+    const workspace = await ctx.db.get(prospect.workspaceId);
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+      return {
+        claimed: false as const,
+        reason: "inactive_workspace" as const,
+      };
+    }
     if (!(await isActiveSetupPreviewProspect(ctx, prospect))) {
       return {
         claimed: false as const,
