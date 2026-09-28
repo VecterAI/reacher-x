@@ -244,7 +244,11 @@ describe("prospecting failure recovery is credit-bounded", () => {
     const workspace = await t.run((ctx) => ctx.db.get(seeded.workspaceId));
     expect(workspace?.prospectingWorkflowStatus).toBe("stopped");
     expect(workspace?.onboardingIssueStatusCode).toBe("workflow_failed");
-    expect(workspace?.prospectingRecoveryAttemptId).toBe(0);
+    // The attempt ID is a monotonic token (never reset) so outstanding
+    // timers from earlier episodes always read as stale.
+    expect(workspace?.prospectingRecoveryAttemptId).toBe(
+      MAX_PROSPECTING_RECOVERY_ATTEMPTS + 1
+    );
     expect(workspace?.prospectingFailureStreak).toBeUndefined();
     expect(workspace?.prospectingNextRecoveryAt).toBeUndefined();
     expect(workspace?.prospectingWorkflowId).toBeUndefined();
@@ -285,11 +289,15 @@ describe("prospecting failure recovery is credit-bounded", () => {
       context: { workspaceId: String(seeded.workspaceId) },
     });
     const freshFailure = await t.run((ctx) => ctx.db.get(seeded.workspaceId));
-    expect(freshFailure?.prospectingRecoveryAttemptId).toBe(1);
+    const freshAttemptId = freshFailure?.prospectingRecoveryAttemptId ?? 0;
+    expect(freshAttemptId).toBeGreaterThan(MAX_PROSPECTING_RECOVERY_ATTEMPTS);
 
     const result = await t.action(
       internal.workspaces.attemptProspectingWorkflowRecoveryInternal,
-      { workspaceId: seeded.workspaceId, recoveryAttemptId: 1 }
+      {
+        workspaceId: seeded.workspaceId,
+        recoveryAttemptId: freshAttemptId,
+      }
     );
     expect(result.success).toBe(true);
     expect(result.outcome).toBe("restarted");
@@ -408,7 +416,10 @@ describe("prospecting failure recovery is credit-bounded", () => {
     const exhausted = await t.run((ctx) => ctx.db.get(seeded.workspaceId));
     expect(exhausted?.prospectingWorkflowStatus).toBe("stopped");
     expect(exhausted?.onboardingIssueStatusCode).toBe("workflow_failed");
-    expect(exhausted?.prospectingRecoveryAttemptId).toBe(0);
+    expect(exhausted?.prospectingRecoveryAttemptId).toBe(
+      MAX_PROSPECTING_RECOVERY_ATTEMPTS + 1
+    );
+    expect(exhausted?.prospectingFailureStreak).toBeUndefined();
   });
 });
 
@@ -615,6 +626,49 @@ describe("tenant lanes pause with the workspace", () => {
     expect(lane?.state).not.toBe("paused");
   });
 
+  test("pauses the lane when the inactivity cron pauses a workspace", async () => {
+    vi.setSystemTime(new Date("2026-09-28T06:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const seeded = await seedWorkspace(t, { suffix: "lane-inactive-cron" });
+    await t.run((ctx) =>
+      ctx.db.patch(seeded.workspaceId, {
+        prospectingWorkflowStatus: "running",
+        prospectingWorkflowId: "wf-inactive-cron",
+        lastMeaningfulActivityAt: Date.now() - 8 * 24 * 60 * 60 * 1000,
+      })
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.insert("tenantJobLanes", {
+        tenantKey: `workspace:${String(seeded.workspaceId)}`,
+        workspaceId: seeded.workspaceId,
+        userId: seeded.userId,
+        state: "ready",
+        pendingCount: 1,
+        runningCount: 0,
+        minPriority: TENANT_JOB_PRIORITY.background,
+        lastDispatchedAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    expect(
+      await t.action(internal.workspaces.pauseInactiveWorkspaces, {})
+    ).toEqual({ pausedCount: 1 });
+
+    const lane = await t.run((ctx) =>
+      ctx.db
+        .query("tenantJobLanes")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", seeded.workspaceId)
+        )
+        .unique()
+    );
+    expect(lane?.state).toBe("paused");
+    const workspace = await t.run((ctx) => ctx.db.get(seeded.workspaceId));
+    expect(workspace?.prospectingWorkflowStatus).toBe("paused");
+    expect(workspace?.prospectingWorkflowPauseReason).toBe("inactive");
+  });
+
   test("unpauses the lane when the workspace resumes", async () => {
     const t = convexTest(schema, modules);
     await registerSchedulerComponents(t);
@@ -728,6 +782,77 @@ describe("memory evaluation waits for the workspace", () => {
     expect(await t.run((ctx) => ctx.db.query("tenantJobs").collect())).toEqual(
       []
     );
+  });
+
+  test("cancels the dispatched job before releasing a waiting queue row", async () => {
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+    const seeded = await seedWorkspace(t, { suffix: "memory-release" });
+    await seedPendingEvent(t, seeded, "memory-release-event");
+
+    const first = await t.action(
+      internal.workflows.memory.enqueueWorkspaceMemoryEvaluationInternal,
+      { workspaceId: seeded.workspaceId }
+    );
+    expect(first.enqueued).toBe(true);
+
+    // Workspace stops after the work was dispatched; the next enqueue must
+    // cancel the waiting tenant job before releasing the row.
+    await t.run((ctx) =>
+      ctx.db.patch(seeded.workspaceId, { prospectingWorkflowStatus: "stopped" })
+    );
+
+    expect(
+      await t.action(
+        internal.workflows.memory.enqueueWorkspaceMemoryEvaluationInternal,
+        { workspaceId: seeded.workspaceId }
+      )
+    ).toEqual({ enqueued: false, reason: "workspace_paused" });
+
+    const state = await t.run(async (ctx) => ({
+      job: (await ctx.db.query("tenantJobs").collect())[0],
+      queue: await ctx.db
+        .query("memoryEvaluationWorkspaceQueues")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", seeded.workspaceId)
+        )
+        .unique(),
+    }));
+    expect(state.job?.status).toBe("cancelled");
+    expect(state.queue?.status).toBe("idle");
+    expect(state.queue?.workId).toBeUndefined();
+  });
+
+  test("does not evaluate a dispatched job for a stopped workspace", async () => {
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    await t.mutation(internal.tenantScheduler.setControlInternal, {
+      mode: "enforced",
+    });
+    const seeded = await seedWorkspace(t, { suffix: "memory-dispatched" });
+    const eventId = await seedPendingEvent(
+      t,
+      seeded,
+      "memory-dispatched-event"
+    );
+    await t.run((ctx) =>
+      ctx.db.patch(seeded.workspaceId, { prospectingWorkflowStatus: "stopped" })
+    );
+
+    // Simulate the dispatched run reaching the queue work action after the
+    // workspace stopped (race with the release path).
+    const result = await t.action(
+      internal.workflows.memory.runQueuedWorkspaceMemoryEvaluationInternal,
+      { workspaceId: seeded.workspaceId, enqueueToken: 1 }
+    );
+    expect(result).toEqual({ status: "idle" });
+    const event = await t.run((ctx) =>
+      ctx.db.get("memoryWorkflowEvents", eventId)
+    );
+    expect(event?.status).toBe("pending");
   });
 
   test("leaves an in-flight evaluation queue row untouched while stopped", async () => {

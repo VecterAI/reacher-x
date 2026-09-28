@@ -959,6 +959,11 @@ export const pauseInactiveWorkspaces = internalAction({
           pausedAt: now,
         }
       );
+      // Pause the workspace's tenant lane too, so queued background jobs
+      // wait with the workspace instead of dispatching on a paused lane.
+      await ctx.runMutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+        workspaceId: workspace._id,
+      });
       pausedCount += 1;
     }
 
@@ -1024,6 +1029,13 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
           workspaceId: args.workspaceId,
         }
       );
+
+      // Pause the workspace's tenant lane too, so queued background jobs
+      // wait with the workspace instead of dispatching on a plan-limited
+      // lane. The plan-batch reroute inside keeps manual plan work running.
+      await ctx.runMutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+        workspaceId: args.workspaceId,
+      });
 
       const prospects = await ctx.runQuery(
         internal.prospects.listWorkspaceCapacityCandidatesInternal,
@@ -1625,11 +1637,11 @@ export const clearProspectingRecoveryStateInternal = internalMutation({
       prospectingFailureStreak: undefined,
       prospectingNextRunAt: undefined,
       prospectingNextRecoveryAt: undefined,
-      // Reset the per-episode attempt counter. A successful start (or user
-      // retry) proves the workspace can run again, so the next failure
-      // episode gets a fresh set of automatic recoveries. Old recovery
-      // timers simply become stale via the attempt ID mismatch check.
-      prospectingRecoveryAttemptId: 0,
+      // prospectingRecoveryAttemptId is intentionally NOT reset: it is a
+      // monotonic token used to invalidate outstanding recovery timers. A
+      // reset could make an old episode's timer match a new episode's token
+      // and restart work before its backoff has elapsed. The failure-episode
+      // allowance is tracked by the failure streak instead.
     });
   },
 });
@@ -2564,16 +2576,17 @@ export const attemptProspectingWorkflowRecoveryInternal = internalAction({
     // a persistently broken provider) must stop draining credits instead of
     // retrying forever, so cap the attempts per failure episode and leave the
     // workspace in its "needs attention" state for the user to retry. The
-    // attempt counter and failure streak persist across automatic restarts
-    // and only reset on a user-initiated start.
+    // failure streak persists across automatic restarts and only resets on a
+    // user-initiated start or a successful cycle.
     if (
-      (workspace.prospectingRecoveryAttemptId ?? 0) >
+      (workspace.prospectingFailureStreak ?? 0) >
       MAX_PROSPECTING_RECOVERY_ATTEMPTS
     ) {
       console.warn(
         "[ProspectingRecovery] Recovery attempt cap reached; waiting for user retry",
         {
           workspaceId: String(args.workspaceId),
+          failureStreak: workspace.prospectingFailureStreak,
           recoveryAttemptId: workspace.prospectingRecoveryAttemptId,
           lastFailureAt: workspace.prospectingLastFailureAt
             ? new Date(workspace.prospectingLastFailureAt).toISOString()
