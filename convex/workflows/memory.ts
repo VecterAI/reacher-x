@@ -15,12 +15,14 @@ import {
   isPriorityMemoryEvaluationEvent,
   MEMORY_EVALUATION_PRIORITY_SCAN_LIMIT,
 } from "../lib/memoryEvaluationQueueCore";
+import { isWorkspaceAutomationActive } from "../lib/workspaceSystem";
 
 type MemoryEvaluationEnqueueReason =
   | "missing_event"
   | "no_pending"
   | "queued"
-  | "running";
+  | "running"
+  | "workspace_paused";
 
 type MemoryEvaluationEnqueueResult =
   | { enqueued: true; workId: string }
@@ -180,13 +182,58 @@ async function recoverStaleMemoryEvaluationQueue(
   });
 }
 
+async function cancelMemoryEvaluationQueueWork(
+  ctx: MutationCtx,
+  queue: Doc<"memoryEvaluationWorkspaceQueues">
+): Promise<boolean> {
+  if (!queue.workId) {
+    return true;
+  }
+  const tenantJobId = ctx.db.normalizeId("tenantJobs", queue.workId);
+  if (tenantJobId) {
+    try {
+      await ctx.runMutation(
+        internal.tenantScheduler.cancelJobByExternalIdInternal,
+        {
+          workId: String(tenantJobId),
+        }
+      );
+      return true;
+    } catch (error) {
+      console.warn(
+        "[MemoryEvaluationQueue] Failed to cancel paused tenant job; keeping queue ownership",
+        {
+          workspaceId: String(queue.workspaceId),
+          workId: queue.workId,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+      return false;
+    }
+  }
+  try {
+    await memoryEvaluationPool.cancel(ctx, queue.workId as WorkId);
+    return true;
+  } catch (error) {
+    console.warn(
+      "[MemoryEvaluationQueue] Failed to cancel paused pool work; keeping queue ownership",
+      {
+        workspaceId: String(queue.workspaceId),
+        workId: queue.workId,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
+    return false;
+  }
+}
+
 async function enqueueWorkspaceMemoryEvaluation(
   ctx: ActionCtx,
   workspaceId: Id<"workspaces">
 ): Promise<MemoryEvaluationEnqueueResult> {
   const prepared: {
     shouldEnqueue: boolean;
-    reason: "no_pending" | "queued" | "running";
+    reason: MemoryEvaluationEnqueueReason;
     eventId: Id<"memoryWorkflowEvents"> | null;
     enqueueToken: number | null;
   } = await ctx.runMutation(
@@ -423,14 +470,47 @@ export const prepareMemoryEvaluationQueueEnqueueInternal = internalMutation({
     reason: v.union(
       v.literal("no_pending"),
       v.literal("queued"),
-      v.literal("running")
+      v.literal("running"),
+      v.literal("workspace_paused")
     ),
     eventId: v.union(v.id("memoryWorkflowEvents"), v.null()),
     enqueueToken: v.union(v.number(), v.null()),
   }),
   handler: async (ctx, { workspaceId }) => {
-    const queue = await getWorkspaceQueueRow(ctx, workspaceId);
     const now = getCurrentUTCTimestamp();
+
+    // Memory evaluation distills learning with LLM calls, so it must never
+    // run on a workspace whose discovery pipeline is not running. Pending
+    // events are left untouched and a waiting queue row is released back to
+    // idle; the backlog drains on the next enqueue after the workspace
+    // resumes. A running queue row is left alone: its work is already
+    // dispatched, and releasing it here could let a second evaluation run
+    // concurrently with the in-flight one.
+    const workspace = await ctx.db.get("workspaces", workspaceId);
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+      const queue = await getWorkspaceQueueRow(ctx, workspaceId);
+      if (queue && queue.status === "queued") {
+        const released = await cancelMemoryEvaluationQueueWork(ctx, queue);
+        if (released) {
+          await ctx.db.patch(queue._id, {
+            status: "idle",
+            workId: undefined,
+            activeEventId: undefined,
+            lastError: undefined,
+            updatedAt: now,
+            lastFinishedAt: now,
+          });
+        }
+      }
+      return {
+        shouldEnqueue: false as const,
+        reason: "workspace_paused" as const,
+        eventId: null,
+        enqueueToken: null,
+      };
+    }
+
+    const queue = await getWorkspaceQueueRow(ctx, workspaceId);
     const queueWorkState = queue
       ? await getMemoryEvaluationQueueWorkState(ctx, queue, now)
       : "unattached";
@@ -581,6 +661,19 @@ export const beginMemoryEvaluationQueueWorkInternal = internalMutation({
     ctx,
     { workspaceId, enqueueToken, workId: expectedWorkId }
   ) => {
+    // Rechecked here (not only in the calling action) because the workspace
+    // can pause between the action's query and this mutation: claiming a
+    // pending event for a workspace whose automation is inactive would let
+    // the evaluation spend LLM calls on it. Leave the event pending so the
+    // backlog drains after the workspace resumes.
+    const workspace = await ctx.db.get("workspaces", workspaceId);
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+      return {
+        eventId: null,
+        workId: null,
+      };
+    }
+
     const queue = await getWorkspaceQueueRow(ctx, workspaceId);
     if (
       !queue ||
@@ -798,6 +891,18 @@ export const runQueuedWorkspaceMemoryEvaluationInternal = internalAction({
     ctx,
     { workspaceId, enqueueToken, workId }
   ): Promise<MemoryEvaluationQueueRunResult> => {
+    // The workspace may have paused or stopped after this work was
+    // dispatched. Never spend evaluation LLM calls on it: leave the event
+    // pending so the backlog drains after the workspace resumes.
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId,
+    });
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+      return {
+        status: "idle" as const,
+      };
+    }
+
     const queueWork = await ctx.runMutation(
       internal.workflows.memory.beginMemoryEvaluationQueueWorkInternal,
       {

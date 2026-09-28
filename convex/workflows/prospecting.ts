@@ -2380,6 +2380,22 @@ export const handleWorkflowComplete = internalMutation({
         );
       }
 
+      // A successful cycle proves the pipeline works again, so a failure
+      // episode that started earlier ends here: the next failure gets a
+      // fresh set of automatic recoveries.
+      if (
+        workspace &&
+        (workspace.prospectingFailureStreak !== undefined ||
+          (workspace.prospectingRecoveryAttemptId ?? 0) > 0)
+      ) {
+        await ctx.runMutation(
+          internal.workspaces.clearProspectingRecoveryStateInternal,
+          {
+            workspaceId: workspace._id,
+          }
+        );
+      }
+
       if (returnValue.shouldContinue) {
         const runtimeConfig = getSystemRuntimeConfig().prospecting;
         if (
@@ -2460,6 +2476,23 @@ export const handleWorkflowComplete = internalMutation({
       if (!workspaceDoc) {
         return;
       }
+
+      // A failure completion can race with a manual stop, an inactivity
+      // pause, or a capacity stop that happened while the cycle was failing.
+      // Whoever changed the status owns it: never overwrite their state with
+      // a failure stop, and never schedule automatic recovery for a workspace
+      // that is no longer running.
+      if (workspaceDoc.prospectingWorkflowStatus !== "running") {
+        return;
+      }
+
+      // Queued tenant jobs (memory evaluation, qualification, enrichment)
+      // must not keep dispatching on a workspace whose discovery pipeline
+      // just died. Pausing the lane also re-routes queued manual plan work to
+      // the workpool so user-initiated batches keep running.
+      await ctx.runMutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+        workspaceId: workspaceDoc._id,
+      });
 
       const now = getCurrentUTCTimestamp();
       const failureStreak = Math.max(

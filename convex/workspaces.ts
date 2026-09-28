@@ -21,7 +21,7 @@ import {
 } from "../shared/lib/utils/time/timeUtils";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
   internalAction,
@@ -80,7 +80,12 @@ import {
   shouldPreferWorkspaceContext,
 } from "./lib/preferredShellContext";
 import { logger } from "../shared/lib/logger";
-import { formatQualifiedProspectLimitReachedMessage } from "./lib/prospectingHelpers";
+import {
+  formatQualifiedProspectLimitReachedMessage,
+  MAX_PROSPECTING_RECOVERY_ATTEMPTS,
+  PROSPECTING_RECOVERY_KILL_SWITCH_POLL_MS,
+} from "./lib/prospectingHelpers";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import {
   getDefaultWorkspaceAgentSettings,
   getWorkspaceAgentSettingsRow,
@@ -954,6 +959,11 @@ export const pauseInactiveWorkspaces = internalAction({
           pausedAt: now,
         }
       );
+      // Pause the workspace's tenant lane too, so queued background jobs
+      // wait with the workspace instead of dispatching on a paused lane.
+      await ctx.runMutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+        workspaceId: workspace._id,
+      });
       pausedCount += 1;
     }
 
@@ -1019,6 +1029,13 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
           workspaceId: args.workspaceId,
         }
       );
+
+      // Pause the workspace's tenant lane too, so queued background jobs
+      // wait with the workspace instead of dispatching on a plan-limited
+      // lane. The plan-batch reroute inside keeps manual plan work running.
+      await ctx.runMutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+        workspaceId: args.workspaceId,
+      });
 
       const prospects = await ctx.runQuery(
         internal.prospects.listWorkspaceCapacityCandidatesInternal,
@@ -1620,6 +1637,41 @@ export const clearProspectingRecoveryStateInternal = internalMutation({
       prospectingFailureStreak: undefined,
       prospectingNextRunAt: undefined,
       prospectingNextRecoveryAt: undefined,
+      // prospectingRecoveryAttemptId is intentionally NOT reset: it is a
+      // monotonic token used to invalidate outstanding recovery timers. A
+      // reset could make an old episode's timer match a new episode's token
+      // and restart work before its backoff has elapsed. The failure-episode
+      // allowance is tracked by the failure streak instead.
+    });
+  },
+});
+
+/**
+ * Post-start recovery-state cleanup for startProspectingWorkflowInternal.
+ * User-initiated starts reset the whole failure episode; automatic recovery
+ * restarts only clear the fired timers so the attempt cap and growing
+ * backoff survive the restart.
+ */
+async function clearProspectingRecoveryStateForStart(
+  ctx: ActionCtx,
+  args: { workspaceId: Id<"workspaces">; resetRecoveryAttempts: boolean }
+): Promise<void> {
+  await ctx.runMutation(
+    args.resetRecoveryAttempts
+      ? internal.workspaces.clearProspectingRecoveryStateInternal
+      : internal.workspaces.clearProspectingRecoveryTimersInternal,
+    { workspaceId: args.workspaceId }
+  );
+}
+
+export const clearProspectingRecoveryTimersInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.workspaceId, {
+      prospectingNextRunAt: undefined,
+      prospectingNextRecoveryAt: undefined,
     });
   },
 });
@@ -1921,7 +1973,9 @@ type RecoverProspectingWorkflowOutcome =
   | "inactive_paused"
   | "refreshing_icps"
   | "setup_incomplete"
-  | "limit_reached";
+  | "limit_reached"
+  | "autonomous_jobs_paused"
+  | "recovery_exhausted";
 
 /**
  * Start the continuous prospecting workflow for a workspace.
@@ -2119,6 +2173,10 @@ export const startProspectingWorkflow = action({
 export const startProspectingWorkflowInternal = internalAction({
   args: {
     workspaceId: v.id("workspaces"),
+    // Automatic recovery restarts must keep the recovery attempt counter and
+    // failure streak so the recovery cap and growing backoff hold across a
+    // fail-recover loop. User-initiated starts (the default) reset both.
+    resetRecoveryAttempts: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
@@ -2225,12 +2283,10 @@ export const startProspectingWorkflowInternal = internalAction({
           workspaceId: args.workspaceId,
         }
       );
-      await ctx.runMutation(
-        internal.workspaces.clearProspectingRecoveryStateInternal,
-        {
-          workspaceId: args.workspaceId,
-        }
-      );
+      await clearProspectingRecoveryStateForStart(ctx, {
+        workspaceId: args.workspaceId,
+        resetRecoveryAttempts: args.resetRecoveryAttempts !== false,
+      });
       return {
         success: true,
         outcome: "rearmed_running_workflow",
@@ -2276,12 +2332,10 @@ export const startProspectingWorkflowInternal = internalAction({
         workspaceId: args.workspaceId,
       }
     );
-    await ctx.runMutation(
-      internal.workspaces.clearProspectingRecoveryStateInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
-    );
+    await clearProspectingRecoveryStateForStart(ctx, {
+      workspaceId: args.workspaceId,
+      resetRecoveryAttempts: args.resetRecoveryAttempts !== false,
+    });
 
     return {
       success: true,
@@ -2498,6 +2552,62 @@ export const attemptProspectingWorkflowRecoveryInternal = internalAction({
       };
     }
 
+    // Every automatic restart re-runs discovery and qualification and spends
+    // provider credits. A workspace stuck in a fail-recover loop (for example
+    // a persistently broken provider) must stop draining credits instead of
+    // retrying forever, so cap the attempts per failure episode and leave the
+    // workspace in its "needs attention" state for the user to retry. The
+    // failure streak persists across automatic restarts and only resets on a
+    // user-initiated start or a successful cycle. The cap is checked before
+    // the emergency brake so an exhausted episode reaches this cleanup even
+    // while PAUSE_AUTONOMOUS_JOBS is set, instead of re-arming the poll
+    // forever.
+    if (
+      (workspace.prospectingFailureStreak ?? 0) >
+      MAX_PROSPECTING_RECOVERY_ATTEMPTS
+    ) {
+      console.warn(
+        "[ProspectingRecovery] Recovery attempt cap reached; waiting for user retry",
+        {
+          workspaceId: String(args.workspaceId),
+          failureStreak: workspace.prospectingFailureStreak,
+          recoveryAttemptId: workspace.prospectingRecoveryAttemptId,
+          lastFailureAt: workspace.prospectingLastFailureAt
+            ? new Date(workspace.prospectingLastFailureAt).toISOString()
+            : null,
+        }
+      );
+      await ctx.runMutation(
+        internal.workspaces.clearProspectingRecoveryStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return {
+        success: false,
+        outcome: "recovery_exhausted",
+      };
+    }
+
+    // Emergency brake: never restart autonomous discovery while
+    // PAUSE_AUTONOMOUS_JOBS is set. Re-arm the same recovery attempt on a
+    // short poll so lifting the brake resumes recovery automatically,
+    // without touching any workspace state.
+    if (areAutonomousJobsPaused()) {
+      await ctx.scheduler.runAfter(
+        PROSPECTING_RECOVERY_KILL_SWITCH_POLL_MS,
+        internal.workspaces.attemptProspectingWorkflowRecoveryInternal,
+        {
+          workspaceId: args.workspaceId,
+          recoveryAttemptId: args.recoveryAttemptId,
+        }
+      );
+      return {
+        success: false,
+        outcome: "autonomous_jobs_paused",
+      };
+    }
+
     if (isWorkspaceInactive(workspace)) {
       await ctx.runMutation(
         internal.workflows.prospecting.updateWorkflowStatus,
@@ -2551,6 +2661,7 @@ export const attemptProspectingWorkflowRecoveryInternal = internalAction({
       internal.workspaces.startProspectingWorkflowInternal,
       {
         workspaceId: args.workspaceId,
+        resetRecoveryAttempts: false,
       }
     );
 
