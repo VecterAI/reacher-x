@@ -855,6 +855,47 @@ describe("memory evaluation waits for the workspace", () => {
     expect(event?.status).toBe("pending");
   });
 
+  test("does not claim queue work for a stopped workspace at claim time", async () => {
+    const t = convexTest(schema, modules);
+    await registerSchedulerComponents(t);
+    const seeded = await seedWorkspace(t, { suffix: "memory-claim" });
+    const eventId = await seedPendingEvent(t, seeded, "memory-claim-event");
+    await t.run((ctx) =>
+      ctx.db.patch(seeded.workspaceId, { prospectingWorkflowStatus: "stopped" })
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("memoryEvaluationWorkspaceQueues", {
+        workspaceId: seeded.workspaceId,
+        status: "queued",
+        lastEnqueuedAt: 1,
+        updatedAt: 1,
+      })
+    );
+
+    // The claim mutation itself must recheck the workspace: the calling
+    // action's earlier check cannot survive a pause that lands in between.
+    expect(
+      await t.mutation(
+        internal.workflows.memory.beginMemoryEvaluationQueueWorkInternal,
+        { workspaceId: seeded.workspaceId, enqueueToken: 1 }
+      )
+    ).toEqual({ eventId: null, workId: null });
+
+    const event = await t.run((ctx) =>
+      ctx.db.get("memoryWorkflowEvents", eventId)
+    );
+    expect(event?.status).toBe("pending");
+    const queue = await t.run((ctx) =>
+      ctx.db
+        .query("memoryEvaluationWorkspaceQueues")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", seeded.workspaceId)
+        )
+        .unique()
+    );
+    expect(queue?.status).toBe("queued");
+  });
+
   test("leaves an in-flight evaluation queue row untouched while stopped", async () => {
     const t = convexTest(schema, modules);
     await registerSchedulerComponents(t);

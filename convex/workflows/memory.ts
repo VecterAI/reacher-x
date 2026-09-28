@@ -661,6 +661,19 @@ export const beginMemoryEvaluationQueueWorkInternal = internalMutation({
     ctx,
     { workspaceId, enqueueToken, workId: expectedWorkId }
   ) => {
+    // Rechecked here (not only in the calling action) because the workspace
+    // can pause between the action's query and this mutation: claiming a
+    // pending event for a workspace whose automation is inactive would let
+    // the evaluation spend LLM calls on it. Leave the event pending so the
+    // backlog drains after the workspace resumes.
+    const workspace = await ctx.db.get("workspaces", workspaceId);
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+      return {
+        eventId: null,
+        workId: null,
+      };
+    }
+
     const queue = await getWorkspaceQueueRow(ctx, workspaceId);
     if (
       !queue ||
