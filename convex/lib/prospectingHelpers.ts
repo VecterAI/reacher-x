@@ -79,6 +79,23 @@ export function buildDiscoveryBusinessContext(
   return `Original audience request (source of truth):\n${originalRequest}\n\nCurrent workspace description:\n${currentDescription}`;
 }
 
+/**
+ * Automatic restarts after a failed prospecting cycle are capped per failure
+ * episode. Every restart re-runs discovery and qualification, so an endless
+ * fail-recover loop silently drains provider credits on workspaces nobody is
+ * watching. Once the cap is reached the workspace stays stopped with its
+ * "workflow failed" issue until the user retries, and the counter resets on
+ * the next successful start.
+ */
+export const MAX_PROSPECTING_RECOVERY_ATTEMPTS = 3;
+
+/**
+ * While PAUSE_AUTONOMOUS_JOBS is set, a due prospecting recovery re-arms
+ * itself at this interval instead of restarting, so lifting the brake
+ * resumes recovery automatically within one poll interval.
+ */
+export const PROSPECTING_RECOVERY_KILL_SWITCH_POLL_MS = 15 * 60 * 1000;
+
 function getDeterministicProspectingRecoveryJitterMs(
   workspaceId: string,
   failureStreak: number,

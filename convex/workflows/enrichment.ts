@@ -31,6 +31,7 @@ import {
   prospectPlatformValidator,
 } from "../validators";
 import { getNestedRecord, getStringProperty } from "../lib/typeGuards";
+import { isWorkspaceAutomationActive } from "../lib/workspaceSystem";
 import {
   sanitizeLinkedInCompanyDataForWorkflow,
   sanitizeLinkedInContactInfoForWorkflow,
@@ -1153,6 +1154,18 @@ export const startEnrichment = internalAction({
       }
     );
     if (!prospect) {
+      return { workId: "" };
+    }
+
+    // Enrichment runs LLM extraction, so it must not start on a workspace
+    // whose discovery pipeline is paused, stopped, plan limited, or being
+    // deleted. The qualification, prospecting, and resume callers only fire
+    // while the workspace is running; this guard closes the race where the
+    // workspace stops between triggering and claiming enrichment.
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
       return { workId: "" };
     }
 

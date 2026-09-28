@@ -15,12 +15,14 @@ import {
   isPriorityMemoryEvaluationEvent,
   MEMORY_EVALUATION_PRIORITY_SCAN_LIMIT,
 } from "../lib/memoryEvaluationQueueCore";
+import { isWorkspaceAutomationActive } from "../lib/workspaceSystem";
 
 type MemoryEvaluationEnqueueReason =
   | "missing_event"
   | "no_pending"
   | "queued"
-  | "running";
+  | "running"
+  | "workspace_paused";
 
 type MemoryEvaluationEnqueueResult =
   | { enqueued: true; workId: string }
@@ -186,7 +188,7 @@ async function enqueueWorkspaceMemoryEvaluation(
 ): Promise<MemoryEvaluationEnqueueResult> {
   const prepared: {
     shouldEnqueue: boolean;
-    reason: "no_pending" | "queued" | "running";
+    reason: MemoryEvaluationEnqueueReason;
     eventId: Id<"memoryWorkflowEvents"> | null;
     enqueueToken: number | null;
   } = await ctx.runMutation(
@@ -423,14 +425,44 @@ export const prepareMemoryEvaluationQueueEnqueueInternal = internalMutation({
     reason: v.union(
       v.literal("no_pending"),
       v.literal("queued"),
-      v.literal("running")
+      v.literal("running"),
+      v.literal("workspace_paused")
     ),
     eventId: v.union(v.id("memoryWorkflowEvents"), v.null()),
     enqueueToken: v.union(v.number(), v.null()),
   }),
   handler: async (ctx, { workspaceId }) => {
-    const queue = await getWorkspaceQueueRow(ctx, workspaceId);
     const now = getCurrentUTCTimestamp();
+
+    // Memory evaluation distills learning with LLM calls, so it must never
+    // run on a workspace whose discovery pipeline is not running. Pending
+    // events are left untouched and a waiting queue row is released back to
+    // idle; the backlog drains on the next enqueue after the workspace
+    // resumes. A running queue row is left alone: its work is already
+    // dispatched, and releasing it here could let a second evaluation run
+    // concurrently with the in-flight one.
+    const workspace = await ctx.db.get("workspaces", workspaceId);
+    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+      const queue = await getWorkspaceQueueRow(ctx, workspaceId);
+      if (queue && queue.status === "queued") {
+        await ctx.db.patch(queue._id, {
+          status: "idle",
+          workId: undefined,
+          activeEventId: undefined,
+          lastError: undefined,
+          updatedAt: now,
+          lastFinishedAt: now,
+        });
+      }
+      return {
+        shouldEnqueue: false as const,
+        reason: "workspace_paused" as const,
+        eventId: null,
+        enqueueToken: null,
+      };
+    }
+
+    const queue = await getWorkspaceQueueRow(ctx, workspaceId);
     const queueWorkState = queue
       ? await getMemoryEvaluationQueueWorkState(ctx, queue, now)
       : "unattached";

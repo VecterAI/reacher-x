@@ -15,7 +15,10 @@ import { getUserByIdentity, requireOwnedWorkspace } from "./lib/accessHelpers";
 import { enqueuePlanBatchItemDirectly } from "./lib/planBatchWorkPool";
 import { getSetupSessionByThreadId } from "./lib/setupSessionCore";
 import { isSetupSessionAccessibleForUser } from "./lib/workspaceEntitlements";
-import { deriveWorkspaceSystemStatus } from "./lib/workspaceSystem";
+import {
+  deriveWorkspaceSystemStatus,
+  isWorkspaceAutomationActive,
+} from "./lib/workspaceSystem";
 import { tenantExecutionPool } from "./lib/tenantExecutionPool";
 import { workflow } from "./lib/workflow";
 import { tenantSchedulerRateLimiter } from "./lib/tenantSchedulerRateLimiter";
@@ -499,7 +502,14 @@ export const enqueueTenantJobInternal = internalMutation({
       return route;
     }
 
-    const paused = workspace?.prospectingWorkflowStatus === "paused";
+    // A workspace whose discovery pipeline is not running must not spend
+    // provider credits from queued background work. Paused, stopped, plan
+    // limited, and deleting workspaces all get paused lanes; jobs queue up
+    // and resume with the workspace. Manual plan-batch work is re-routed to
+    // the workpool on pause (see pauseWorkspaceInternal), so user-initiated
+    // batches still run.
+    const paused =
+      workspace !== null && !isWorkspaceAutomationActive(workspace);
     const tenantKey = buildTenantKey(args);
     const laneId = await getOrCreateLaneId(ctx, {
       tenantKey,

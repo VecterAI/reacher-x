@@ -407,7 +407,16 @@ See the bundled [SocialAPI search reference](./socialapi/search.md), [search ope
 Recovery crons retry failed prospecting work automatically, and each retry can
 spend paid provider credits. `PAUSE_AUTONOMOUS_JOBS=true` (also accepts `1`)
 stops the automatic plan, qualification, and workspace memory retry crons from
-starting new work so a credit or budget leak can be halted without a redeploy.
+starting new work, and stops the prospecting workflow auto-recovery from
+restarting a failed workspace (it re-checks the flag on a 15 minute poll and
+resumes automatically after the brake is lifted), so a credit or budget leak
+can be halted without a redeploy.
+
+Two related guards are always on and do not depend on this flag: memory
+evaluation skips paused, stopped, plan-limited, and deleting workspaces, and
+enrichment only starts while the workspace's discovery pipeline is running.
+Automatic prospecting recovery is also capped at three attempts per failure
+episode, after which the workspace waits for a user retry.
 
 ```bash
 npx convex env set PAUSE_AUTONOMOUS_JOBS true          # dev deployment
