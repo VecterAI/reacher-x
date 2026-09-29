@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import { BLOG_ORIGIN, getBlogCategory } from "@/features/blog/lib/blogHelpers";
 import { GITHUB_REPO_URL } from "./github";
 import { X_PROFILE_URL, DISCORD_INVITE_URL } from "./communityUrls";
-import { homepageFaqItems } from "./faqs";
+import { MARKETING_COPY } from "./marketingContentHelpers";
 
 export const PUBLIC_MARKETING_PAGES = [
   {
     href: "/home",
-    title: "ReacherX",
-    description: homepageFaqItems[0].answer,
+    title: MARKETING_COPY.home.headline,
+    description: MARKETING_COPY.home.description,
     ogImage: "/home/opengraph-image",
   },
   {
@@ -88,7 +88,7 @@ export function marketingStructuredData(pathname: string) {
         "@id": `${BLOG_ORIGIN}/#software`,
         name: "ReacherX",
         url: `${BLOG_ORIGIN}/home`,
-        description: homepageFaqItems[0].answer,
+        description: MARKETING_COPY.home.description,
         applicationCategory: "BusinessApplication",
         operatingSystem: "Web",
         publisher: { "@id": organization },

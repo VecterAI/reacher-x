@@ -20,6 +20,7 @@ import {
   pricingFaqItems,
 } from "../features/landing/lib/faqs";
 import { ONBOARDING_PLAN_TIERS } from "../features/agent/ui/components/onboarding/planStepConfig";
+import { MARKETING_COPY } from "../features/landing/lib/marketingContentHelpers";
 import { prefersMarkdown } from "../shared/lib/urls/contentNegotiationCore";
 
 test("content negotiation respects exclusions, wildcard specificity, quality and order", () => {
@@ -139,4 +140,9 @@ test("structured data describes public identity without invented ratings or addr
       /aggregateRating|PostalAddress|apiKey/
     );
   }
+  assert.ok(
+    JSON.stringify(marketingStructuredData("/home")).includes(
+      MARKETING_COPY.home.description
+    )
+  );
 });

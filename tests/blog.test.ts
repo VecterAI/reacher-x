@@ -147,7 +147,15 @@ test("blog and home metadata use plain titles and generated social images", asyn
   );
   const { marketingMetadata } =
     await import("../features/landing/lib/agentReadinessHelpers");
+  const { MARKETING_COPY } =
+    await import("../features/landing/lib/marketingContentHelpers");
   const home = marketingMetadata("/home");
+  assert.equal(home.title, MARKETING_COPY.home.headline);
+  assert.equal(home.description, MARKETING_COPY.home.description);
+  assert.equal(home.openGraph?.title, MARKETING_COPY.home.headline);
+  assert.equal(home.openGraph?.description, MARKETING_COPY.home.description);
+  assert.equal(home.twitter?.title, MARKETING_COPY.home.headline);
+  assert.equal(home.twitter?.description, MARKETING_COPY.home.description);
   const homeImage = "https://reacherx.com/home/opengraph-image";
   assert.deepEqual(home.openGraph?.images, [homeImage]);
   assert.deepEqual(home.twitter?.images, [homeImage]);
