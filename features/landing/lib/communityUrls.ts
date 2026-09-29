@@ -5,3 +5,6 @@ export const LINKEDIN_PROFILE_URL = "https://www.linkedin.com/in/noobships";
 export const BLUESKY_PROFILE_URL =
   "https://bsky.app/profile/reacherxfounder.bsky.social";
 export const THREADS_PROFILE_URL = "https://threads.net/@reacherxfounder";
+/** Convex for Open Source — ReacherX is part of this program. */
+export const CONVEX_OPEN_SOURCE_PROGRAM_URL =
+  "https://www.convex.dev/open-source-program";

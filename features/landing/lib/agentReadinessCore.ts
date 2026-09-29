@@ -47,8 +47,17 @@ export function publicPageMarkdown(
   let body: string;
   if (pathname === "/home") {
     title = MARKETING_COPY.home.headline;
+    const { subscription } = MARKETING_COPY;
     body = [
       MARKETING_COPY.home.description,
+      "## One self-driving platform",
+      `${subscription.lead} ${subscription.names
+        .map((name, index) =>
+          index === subscription.names.length - 1
+            ? `and ~~${name}~~`
+            : `~~${name}~~`
+        )
+        .join(", ")}.`,
       "## How it works",
       ...Object.values(MARKETING_COPY.workflow),
       "## Capabilities",

@@ -25,6 +25,8 @@ import {
   CheckIcon,
   CheckBoxOutlineBlankIcon,
 } from "@/shared/ui/components/icons";
+import { PlanFeatureLabel } from "./PlanFeatureLabel";
+import { TextShimmer } from "@/shared/ui/components/TextShimmer";
 import {
   type BillingPeriod,
   type OnboardingPlanTierConfig,
@@ -133,7 +135,13 @@ function PlanTierCard({
             {tier.title}
           </CardTitle>
           {tier.badge ? (
-            <Badge variant="outline-strong">{tier.badge}</Badge>
+            <Badge variant="outline-strong">
+              {tier.highlight ? (
+                <TextShimmer duration={2.5}>{tier.badge}</TextShimmer>
+              ) : (
+                tier.badge
+              )}
+            </Badge>
           ) : null}
         </div>
         <CardDescription>{tier.subtitle}</CardDescription>
@@ -148,7 +156,7 @@ function PlanTierCard({
         />
 
         {tier.featureLeadIn ? (
-          <p className="text-foreground text-sm font-medium">
+          <p className="text-foreground font-mono text-sm font-medium tracking-tight">
             {tier.featureLeadIn}
           </p>
         ) : null}
@@ -159,7 +167,7 @@ function PlanTierCard({
               ? line.replace(/ \(Coming soon\)$/, "")
               : line;
             return (
-              <li key={line} className="flex gap-2">
+              <li key={line} className="flex items-start gap-2">
                 {isComingSoon ? (
                   <>
                     <CheckBoxOutlineBlankIcon
@@ -167,7 +175,10 @@ function PlanTierCard({
                       aria-hidden
                     />
                     <span>{label}</span>
-                    <Badge variant="outline-strong" className="shrink-0">
+                    <Badge
+                      variant="outline-strong"
+                      className="mt-0.5 shrink-0 self-start"
+                    >
                       Coming soon
                     </Badge>
                   </>
@@ -177,7 +188,9 @@ function PlanTierCard({
                       className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
                       aria-hidden
                     />
-                    <span>{line}</span>
+                    <span>
+                      <PlanFeatureLabel label={line} />
+                    </span>
                   </>
                 )}
               </li>

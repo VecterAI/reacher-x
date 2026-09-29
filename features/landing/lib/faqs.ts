@@ -9,13 +9,19 @@ export const homepageFaqItems: FaqItem[] = [
     id: "what-is-reacherx",
     question: "What is ReacherX?",
     answer:
-      "ReacherX is an open-source △ Agent that finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
+      "ReacherX is an open-source △ Agent that combines real-time prospecting, a light CRM, and outreach in one product. It finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
   },
   {
     id: "why-not-diy",
     question: "Why not just use X/Twitter search and ChatGPT for free?",
     answer:
       "For a one-off search, you can. ReacherX is for the ongoing part: it keeps watching X/Twitter and LinkedIn around the clock, checks every person it finds against your criteria, and prepares a researched outreach plan for each match. The screening work you'd redo every week happens on its own, and you only see the people who fit.",
+  },
+  {
+    id: "not-a-database",
+    question: "Is ReacherX a contact database like Apollo?",
+    answer:
+      "No. Contact databases sell records pulled from a static list, and those lists go stale. ReacherX has no contact database: it searches X/Twitter and LinkedIn in real time, checks every person against your criteria, and shows the research behind each match. You reach people as they are today, not as they were last year.",
   },
   {
     id: "hosted-vs-self-host",
@@ -33,7 +39,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "why-agent",
     question: "Do I need sales experience to use it?",
     answer:
-      "Because it does more than search. It keeps running in the background, checks matches, reads recent posts, drafts messages, and improves from your feedback.",
+      "No. ReacherX is built for founders, recruiters, creators, and community builders — anyone who needs the right people. You describe who you are looking for in plain words. There are no tables or sales jargon.",
   },
   {
     id: "how-does-it-know",
@@ -51,7 +57,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "account-safety",
     question: "How should I use my connected accounts?",
     answer:
-      "Use relevant, personal outreach and follow each platform's rules. Review messages and sending activity, and avoid bulk or repetitive outreach. ReacherX cannot guarantee that a platform will never restrict an account.",
+      "Connected accounts run within safe, human-like limits: actions are paced and capped, and every message waits for your approval by default. Use relevant, personal outreach, follow each platform's rules, and review what sends. ReacherX cannot guarantee that a platform will never restrict an account.",
   },
   {
     id: "runs-24-7",
@@ -75,7 +81,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "open-source",
     question: "Is ReacherX open source?",
     answer:
-      "Yes. The code is public under AGPL-3.0. You can inspect it, self-host it, modify it, and contribute to it. If you modify ReacherX and offer it to users over a network, the license asks you to share those changes under the same terms.",
+      "Yes. The code is public under AGPL-3.0, and ReacherX is part of the Convex Open Source program. You can inspect it, self-host it, modify it, and contribute to it. If you modify ReacherX and offer it to users over a network, the license asks you to share those changes under the same terms.",
   },
 ];
 

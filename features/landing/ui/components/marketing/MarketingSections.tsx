@@ -6,7 +6,12 @@ import Link from "next/link";
 import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 import { LandingPrimaryCta } from "../LandingPrimaryCta";
 import { marketingButton as buttonVariants } from "./MarketingLayout";
-import { MarketingFeature, MarketingSection } from "./MarketingLayout";
+import {
+  highlightTerms,
+  MarketingFeature,
+  MarketingSection,
+  marketingSectionTitle,
+} from "./MarketingLayout";
 import { LandingBookDemoCta } from "../LandingBookDemoCta";
 import { MarketingDemo } from "./MarketingDemo";
 
@@ -73,6 +78,11 @@ export function MarketingWorkflow() {
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.workflow.outreach}
         </p>
+        <p className="text-lg leading-7 text-pretty">
+          {highlightTerms(MARKETING_COPY.workflow.outreachLimits, [
+            "safe, human-like limits",
+          ])}
+        </p>
         <Link
           href="/blog/what-reacherx-does-automatically"
           className={buttonVariants({ variant: "outline", className: "mt-8" })}
@@ -82,6 +92,31 @@ export function MarketingWorkflow() {
         </Link>
       </MarketingFeature>
     </>
+  );
+}
+
+export function MarketingOneSubscription() {
+  const { lead, names } = MARKETING_COPY.subscription;
+  return (
+    <MarketingSection labelledBy="subscription-heading">
+      {/* One headline: the statement and its struck-through alternatives. */}
+      <h2 id="subscription-heading" className={marketingSectionTitle}>
+        One self-driving platform.{" "}
+        <span className="text-muted-foreground">
+          {lead}{" "}
+          {names.map((name, index) => (
+            <span key={name}>
+              <s className="font-pixel-square tracking-normal">{name}</s>
+              {index === names.length - 1
+                ? "."
+                : index === names.length - 2
+                  ? ", and "
+                  : ", "}
+            </span>
+          ))}
+        </span>
+      </h2>
+    </MarketingSection>
   );
 }
 

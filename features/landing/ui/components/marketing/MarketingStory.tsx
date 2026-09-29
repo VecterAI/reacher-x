@@ -4,18 +4,28 @@ import type { ReactNode } from "react";
 import { GITHUB_REPO_URL } from "@/features/landing/lib/github";
 import {
   DISCORD_INVITE_URL,
+  CONVEX_OPEN_SOURCE_PROGRAM_URL,
   PATREON_URL,
 } from "@/features/landing/lib/communityUrls";
 import {
   ArrowOutwardIcon,
+  ConvexLogoIcon,
   DiscordOutlineIcon,
   PatreonIcon,
 } from "@/shared/ui/components/icons";
 import {
   marketingButton,
+  highlightTerms,
   MarketingSection,
   marketingSectionTitle,
 } from "./MarketingLayout";
+
+/** Key phrases emphasized in the open-source paragraph, in text order. */
+const DEVELOPER_HIGHLIGHTS = [
+  "Convex",
+  "Convex Open Source program",
+  "AGPL-3.0",
+] as const;
 
 export function MarketingAuthenticity() {
   return (
@@ -36,8 +46,20 @@ export function MarketingDevelopers() {
             {MARKETING_COPY.story.developersHeading}
           </h2>
           <p className="text-muted-foreground mt-5 max-w-lg text-base leading-7">
-            {MARKETING_COPY.story.developers}
+            {highlightTerms(
+              MARKETING_COPY.story.developers,
+              DEVELOPER_HIGHLIGHTS
+            )}
           </p>
+          <a
+            href={CONVEX_OPEN_SOURCE_PROGRAM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Convex Open Source program"
+            className="text-foreground hover:text-muted-foreground mt-7 inline-flex w-fit transition-colors"
+          >
+            <ConvexLogoIcon className="h-10 w-auto" aria-hidden="true" />
+          </a>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <a href={GITHUB_REPO_URL} className={marketingButton()}>

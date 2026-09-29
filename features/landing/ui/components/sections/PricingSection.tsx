@@ -44,9 +44,12 @@ import {
   SelectValue,
 } from "@/shared/ui/components/Select";
 import {
+  ArrowOutwardIcon,
   CheckIcon,
   CheckBoxOutlineBlankIcon,
 } from "@/shared/ui/components/icons";
+import { GITHUB_REPO_URL } from "@/features/landing/lib/github";
+import { PlanFeatureLabel } from "@/features/billing/ui/components/PlanFeatureLabel";
 import { BillingPeriodSelector } from "@/features/billing/ui/components/BillingPeriodSelector";
 import { PlanOffersSkeleton } from "@/features/billing/ui/components/PlanOffersSkeleton";
 import { useAvailablePlanOffers } from "@/features/billing/hooks/useAvailablePlanOffers";
@@ -67,6 +70,7 @@ import {
 import { resolvePricingFeatureCopy } from "@/features/landing/lib/pricingUseCaseCopy";
 import { LandingAuthLink } from "@/features/landing/ui/components/LandingAuthLink";
 import { SETUP_SIGN_UP_HREF } from "@/shared/lib/urls/authRoutes";
+import { TextShimmer } from "@/shared/ui/components/TextShimmer";
 
 /* -------------------------------------------------------------------------- */
 /*  Price display                                                              */
@@ -236,7 +240,14 @@ function TierCard({
           <CardTitle className="text-base font-semibold">
             {tier.title}
           </CardTitle>
-          {tier.badge && <Badge variant="outline-strong">{tier.badge}</Badge>}
+          {tier.badge &&
+            (tier.highlight ? (
+              <Badge variant="outline-strong">
+                <TextShimmer duration={2.5}>{tier.badge}</TextShimmer>
+              </Badge>
+            ) : (
+              <Badge variant="outline-strong">{tier.badge}</Badge>
+            ))}
         </div>
         <CardDescription>{tier.subtitle}</CardDescription>
       </CardHeader>
@@ -245,7 +256,7 @@ function TierCard({
         <PriceDisplay tier={tier} billing={billing} />
 
         {tier.featureLeadIn && (
-          <p className="text-foreground text-sm font-medium">
+          <p className="text-foreground font-mono text-sm font-medium tracking-tight">
             {tier.featureLeadIn}
           </p>
         )}
@@ -257,7 +268,7 @@ function TierCard({
               useCaseKey
             ).replace(/ \(Coming soon\)$/, "");
             return (
-              <li key={feature} className="flex gap-2">
+              <li key={feature} className="flex items-start gap-2">
                 {isComingSoon ? (
                   <>
                     <CheckBoxOutlineBlankIcon
@@ -265,7 +276,10 @@ function TierCard({
                       aria-hidden
                     />
                     <span>{label}</span>
-                    <Badge variant="outline-strong" className="shrink-0">
+                    <Badge
+                      variant="outline-strong"
+                      className="mt-0.5 shrink-0 self-start"
+                    >
                       Coming soon
                     </Badge>
                   </>
@@ -275,7 +289,9 @@ function TierCard({
                       className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
                       aria-hidden
                     />
-                    <span>{label}</span>
+                    <span>
+                      <PlanFeatureLabel label={label} />
+                    </span>
                   </>
                 )}
               </li>
@@ -315,6 +331,70 @@ function UseCaseSelectItem({
         <CheckIcon className="size-3.5 shrink-0 fill-current" />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Self-host card (open source alternative, not a purchasable plan)           */
+/* -------------------------------------------------------------------------- */
+
+const SELF_HOST_FEATURES = [
+  "Full source code",
+  "AGPL-3.0 license",
+  "Unlimited people and workspaces",
+  "Community support on Discord",
+] as const;
+
+function SelfHostCard() {
+  return (
+    <Card className="flex min-h-[474px] flex-col rounded-xl shadow-none">
+      <CardHeader className="space-y-1 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-base font-semibold">Self-hosted</CardTitle>
+          <Badge variant="outline-strong">Open source</Badge>
+        </div>
+        <CardDescription>Your infrastructure. Full control.</CardDescription>
+      </CardHeader>
+
+      <CardContent className="flex-1 space-y-4 p-4 pt-0">
+        <p className="text-3xl font-semibold tracking-tight">Free</p>
+
+        <ul className="space-y-2 text-sm">
+          {SELF_HOST_FEATURES.map((feature) => (
+            <li key={feature} className="flex gap-2">
+              <CheckIcon
+                className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
+                aria-hidden
+              />
+              <span>
+                <PlanFeatureLabel label={feature} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+
+      <CardFooter className="flex-col items-stretch gap-2 p-4 pt-0">
+        <Link
+          href="/blog/run-reacherx-yourself"
+          className="text-muted-foreground hover:text-foreground block text-center text-sm underline-offset-4 transition-colors hover:underline"
+        >
+          Read the self-hosting guide
+        </Link>
+        <a
+          href={GITHUB_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={buttonVariants({
+            variant: "outline",
+            className: "w-full",
+          })}
+        >
+          View on GitHub
+          <ArrowOutwardIcon className="size-4 shrink-0 fill-current" />
+        </a>
+      </CardFooter>
+    </Card>
   );
 }
 
@@ -361,6 +441,14 @@ export function PricingSection({
   const isCheckingCurrentPlan =
     authLoading || (isAuthenticated && planQuery.isPending);
   const selectedUseCaseKey = persistedUseCaseKey ?? initialUseCaseKey;
+  // The self-host card ships with every offer combination, EverOS-style.
+  const cardCount = visibleTiers.length + 1;
+  const gridClassName =
+    cardCount === 2
+      ? "max-w-3xl md:grid-cols-2"
+      : cardCount === 3
+        ? "md:grid-cols-3"
+        : "md:grid-cols-2 xl:grid-cols-4";
 
   return (
     <section aria-labelledby="pricing-heading" className="px-4 py-16 md:py-24">
@@ -372,6 +460,10 @@ export function PricingSection({
         >
           Pricing.
         </h1>
+        <p className="text-muted-foreground mt-4 font-mono text-sm tracking-wide uppercase">
+          Every plan comes with a{" "}
+          <span className="text-foreground">30-day money-back guarantee</span>.
+        </p>
       </header>
 
       {/* Use-case selector */}
@@ -448,16 +540,8 @@ export function PricingSection({
           {PLAN_OFFERS_UNAVAILABLE}
         </p>
       ) : (
-        <div
-          className={cn(
-            "mx-auto grid grid-cols-1 gap-4",
-            visibleTiers.length === 1
-              ? "max-w-lg"
-              : visibleTiers.length === 2
-                ? "max-w-4xl md:grid-cols-2"
-                : "md:grid-cols-3"
-          )}
-        >
+        <div className={cn("mx-auto grid grid-cols-1 gap-4", gridClassName)}>
+          <SelfHostCard />
           {visibleTiers.map((tier) => (
             <TierCard
               key={tier.id}
@@ -471,10 +555,6 @@ export function PricingSection({
           ))}
         </div>
       )}
-
-      <p className="text-foreground mt-6 text-center text-sm">
-        Every plan comes with a 30-day money-back guarantee.
-      </p>
     </section>
   );
 }

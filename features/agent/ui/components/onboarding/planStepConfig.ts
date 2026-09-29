@@ -15,6 +15,11 @@ export interface OnboardingPlanTierConfig {
   badge?: string;
   /** Shown as a bold lead line before the checklist when set */
   featureLeadIn?: string;
+  /**
+   * Rendered with border emphasis on landing and in-app plan cards.
+   * Marks the anchor tier buyers should notice first.
+   */
+  highlight?: boolean;
   features: string[];
   pricing: {
     monthly: { amount: number | null };
@@ -41,11 +46,14 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
     id: "hobby",
     title: "Hobby",
     subtitle: "Perfect for testing the waters.",
+    featureLeadIn: "100 matches / month · 1 workspace",
     features: [
-      "X/Twitter + LinkedIn integrated",
-      "Find people, check matches, gather details, and reach out, 24/7",
+      "△ Agent included",
       "100 people who match per workspace / month",
       "1 workspace",
+      "Email support",
+      "X/Twitter + LinkedIn integrated",
+      "Find people, check matches, gather details, and reach out, 24/7",
       "Built-in CRM that updates itself",
       "Built-in memory for how you write and who you look for",
       "Send images, video, and voice notes",
@@ -54,7 +62,6 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
       "View full X/Twitter and LinkedIn profiles",
       "Emails and phone numbers shown when found",
       "Analytics for replies, conversations, and results",
-      "Email support",
     ],
     pricing: {
       monthly: { amount: HOBBY_MONTHLY },
@@ -65,11 +72,16 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
     id: "base",
     title: "Base",
     subtitle: "For individuals running outreach regularly.",
+    badge: "Most popular",
+    highlight: true,
+    featureLeadIn: "1,000 matches / month · 2 workspaces",
     features: [
+      "△ Agent included",
+      "1,000 people who match per workspace / month",
+      "2 workspaces",
+      "Priority support",
       "X/Twitter + LinkedIn integrated",
       "Find people, check matches, gather details, and reach out, 24/7",
-      "1000 people who match per workspace / month",
-      "2 workspaces",
       "Built-in CRM that updates itself",
       "Built-in memory for how you write and who you look for",
       "Send images, video, and voice notes",
@@ -78,7 +90,6 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
       "View full X/Twitter and LinkedIn profiles",
       "Emails and phone numbers shown when found",
       "Analytics for replies, conversations, and results",
-      "Priority support",
       "Calendar integration (Coming soon)",
       "Send emails directly (Coming soon)",
       "Unified inbox: X/Twitter, LinkedIn, and email (Coming soon)",
@@ -94,11 +105,14 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
     title: "Pro",
     badge: "50% off · Limited time",
     subtitle: "For power users and growing teams.",
+    featureLeadIn: "Unlimited matches / month · 5 workspaces",
     features: [
-      "X/Twitter + LinkedIn integrated",
-      "Find people, check matches, gather details, and reach out, 24/7",
+      "△ Agent included",
       "Unlimited people who match per workspace / month",
       "5 workspaces",
+      "Priority support",
+      "X/Twitter + LinkedIn integrated",
+      "Find people, check matches, gather details, and reach out, 24/7",
       "Built-in CRM that updates itself",
       "Built-in memory for how you write and who you look for",
       "Send images, video, and voice notes",
@@ -107,7 +121,6 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
       "View full X/Twitter and LinkedIn profiles",
       "Emails and phone numbers shown when found",
       "Analytics for replies, conversations, and results",
-      "Priority support",
       "Calendar integration (Coming soon)",
       "Send emails directly (Coming soon)",
       "Unified inbox: X/Twitter, LinkedIn, and email (Coming soon)",

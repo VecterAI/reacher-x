@@ -2,6 +2,7 @@
 
 import { format } from "date-fns";
 import { resolvePlanFeatureEntityCopy } from "@/features/landing/lib/pricingUseCaseCopy";
+import { PlanFeatureLabel } from "./PlanFeatureLabel";
 import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import { ONBOARDING_PLAN_TIERS } from "@/features/agent/ui/components/onboarding/planStepConfig";
@@ -149,7 +150,11 @@ export function ActivePlanSection({
               className="text-foreground mt-0.5 size-4 shrink-0 fill-current"
               aria-hidden
             />
-            <span>{resolvePlanFeatureEntityCopy(line, entityPlural)}</span>
+            <span>
+              <PlanFeatureLabel
+                label={resolvePlanFeatureEntityCopy(line, entityPlural)}
+              />
+            </span>
           </li>
         ))}
       </ul>

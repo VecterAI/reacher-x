@@ -8,7 +8,32 @@ import {
 } from "./MarketingLayout";
 import { MarketingDemo } from "./MarketingDemo";
 import { MarketingCapabilityCarousel } from "./MarketingCapabilityCarousel";
-import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
+import {
+  ArrowOutwardIcon,
+  FilledLinkedinIcon,
+  FilledTwitterIcon,
+} from "@/shared/ui/components/icons";
+
+function PlatformSearchRow() {
+  return (
+    <div className="text-muted-foreground mt-6 flex items-center gap-5 text-sm">
+      <span className="inline-flex items-center gap-1.5">
+        <FilledTwitterIcon
+          className="text-foreground size-4 shrink-0"
+          aria-hidden="true"
+        />
+        X/Twitter
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <FilledLinkedinIcon
+          className="text-foreground size-4 shrink-0"
+          aria-hidden="true"
+        />
+        LinkedIn
+      </span>
+    </div>
+  );
+}
 
 function CapabilityLink({
   href,
@@ -34,7 +59,7 @@ function MarketingCapabilities() {
       <MarketingFeature
         id="capabilities"
         reverse
-        title="Working around the clock."
+        title="No contact database."
         demo={
           <MarketingDemo
             scenario="agent-around-the-clock"
@@ -46,6 +71,7 @@ function MarketingCapabilities() {
         <p className="text-lg leading-7 text-pretty">
           {MARKETING_COPY.product.discovery}
         </p>
+        <PlatformSearchRow />
         <CapabilityLink href="/blog/how-reacherx-discovery-works">
           How discovery works
         </CapabilityLink>
