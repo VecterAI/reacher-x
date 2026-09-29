@@ -13,14 +13,32 @@ import {
 } from "./MarketingProduct";
 import { LandingPromptCta } from "../LandingPromptCta";
 import { MarketingHero } from "./MarketingLayout";
-import { MarketingWorkflow, MarketingFinish } from "./MarketingSections";
+import {
+  MarketingWorkflow,
+  MarketingFinish,
+  MarketingOneSubscription,
+} from "./MarketingSections";
 import { MarketingUseCaseTabs } from "./MarketingUseCaseTabs";
 import { MarketingBlog } from "./MarketingBlog";
+
+function HeroReveal() {
+  const { reveal, revealLine } = MARKETING_COPY.home;
+  return (
+    <>
+      {reveal.map((line) => (
+        <span key={line} className="text-muted-foreground block">
+          {line}
+        </span>
+      ))}
+      <span className="block font-medium">{revealLine}</span>
+    </>
+  );
+}
 
 export function MarketingHome() {
   return (
     <>
-      <MarketingHero title={MARKETING_COPY.home.headline}>
+      <MarketingHero title={<HeroReveal />}>
         <p className="text-base leading-7 text-pretty">
           {MARKETING_COPY.home.description}
         </p>
@@ -37,6 +55,7 @@ export function MarketingHome() {
       <Suspense fallback={null}>
         <MarketingProof />
       </Suspense>
+      <MarketingOneSubscription />
       <MarketingUseCaseTabs />
       <MarketingWorkflow />
       <MarketingCapabilities />

@@ -849,10 +849,8 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
 
         {/* Mobile right side */}
         <div className="flex shrink-0 items-center gap-2 xl:hidden">
-          <div className="hidden items-center gap-2 sm:flex">
-            <GitHubButton starsCount={githubStarsCount} />
-            <Separator orientation="vertical" className="h-6" />
-          </div>
+          <GitHubButton starsCount={githubStarsCount} />
+          <Separator orientation="vertical" className="h-6" />
           <Button
             variant="ghost"
             onClick={() => setIsDrawerOpen(true)}

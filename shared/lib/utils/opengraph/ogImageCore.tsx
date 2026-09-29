@@ -1,10 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { ImageResponse } from "next/og";
-import {
-  AGENT_TRIANGLE_PATH,
-  REACHERX_ICON_GLYPH_PATH,
-} from "@/shared/ui/components/icons";
+import { REACHERX_ICON_GLYPH_PATH } from "@/shared/ui/components/icons";
 
 const OG_IMAGE_WIDTH = 1200;
 const OG_IMAGE_HEIGHT = 630;
@@ -37,7 +34,8 @@ export async function createBrandOgImage(headline: string): Promise<Response> {
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        padding: "60px 64px 64px",
+        justifyContent: "space-between",
+        padding: "64px",
         backgroundColor: OG_BACKGROUND,
         fontFamily: "Geist",
       }}
@@ -56,34 +54,15 @@ export async function createBrandOgImage(headline: string): Promise<Response> {
       <div
         style={{
           display: "flex",
-          flex: 1,
-          alignItems: "center",
-          gap: 90,
+          maxWidth: 920,
+          fontSize: ogHeadlineFontSize(headline),
+          fontWeight: 400,
+          lineHeight: 1.05,
+          letterSpacing: "-0.04em",
+          color: OG_FOREGROUND,
         }}
       >
-        <svg width={360} height={360} viewBox="0 0 16 16">
-          <path
-            d={AGENT_TRIANGLE_PATH}
-            fill="none"
-            stroke={OG_FOREGROUND}
-            strokeWidth={0.1}
-            strokeLinejoin="miter"
-          />
-        </svg>
-        <div
-          style={{
-            display: "flex",
-            flex: 1,
-            maxWidth: 624,
-            fontSize: ogHeadlineFontSize(headline),
-            fontWeight: 400,
-            lineHeight: 1,
-            letterSpacing: "-0.06em",
-            color: OG_FOREGROUND,
-          }}
-        >
-          {headline}
-        </div>
+        {headline}
       </div>
     </div>,
     {

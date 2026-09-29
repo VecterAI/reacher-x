@@ -88,9 +88,11 @@ test.each([undefined, "People", "Candidates", "Investors"])(
         onManageBilling() {},
       })
     );
-    expect(html).toContain(
+    // PlanFeatureLabel wraps leading counts in a span; compare rendered copy.
+    const text = html.replace(/<[^>]+>/g, "");
+    expect(text).toContain(
       `Unlimited ${(entityPlural ?? "People").toLowerCase()} who match`
     );
-    expect(html).not.toMatch(/qualified|prospects|qualification|enrichment/);
+    expect(text).not.toMatch(/qualified|prospects|qualification|enrichment/);
   }
 );

@@ -2,6 +2,32 @@ import { cn } from "@/shared/lib/utils";
 import type { ReactNode } from "react";
 import { buttonVariants } from "@/shared/ui/components/Button";
 
+/**
+ * Split `text` on `terms` (which appear in order) and render each match in the
+ * primary color. Terms that do not occur are skipped.
+ */
+export function highlightTerms(
+  text: string,
+  terms: readonly string[]
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let rest = text;
+  let key = 0;
+  for (const term of terms) {
+    const index = rest.indexOf(term);
+    if (index === -1) continue;
+    if (index > 0) nodes.push(rest.slice(0, index));
+    nodes.push(
+      <span key={key++} className="text-primary">
+        {term}
+      </span>
+    );
+    rest = rest.slice(index + term.length);
+  }
+  nodes.push(rest);
+  return nodes;
+}
+
 export function marketingButton(
   options: Parameters<typeof buttonVariants>[0] = {}
 ) {
@@ -15,7 +41,7 @@ export function marketingButton(
  * Single source of truth for marketing layout tokens.
  * Every section consumes these; never introduce ad-hoc padding or type scales.
  */
-export const marketingPageWidth = "mx-auto w-full max-w-[1440px] px-6 lg:px-10";
+export const marketingPageWidth = "mx-auto w-full max-w-[1440px] px-4 lg:px-10";
 export const marketingSection = "py-20 lg:py-28";
 export const marketingSectionTitle =
   "max-w-3xl text-4xl leading-[1.1] font-normal tracking-[-0.03em] text-balance sm:text-5xl lg:text-6xl";
