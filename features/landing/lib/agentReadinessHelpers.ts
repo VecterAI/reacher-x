@@ -7,6 +7,8 @@ import { MARKETING_COPY } from "./marketingContentHelpers";
 export const PUBLIC_MARKETING_PAGES = [
   {
     href: "/home",
+    /** Browser tab keeps the brand; link previews carry the headline. */
+    tabTitle: "ReacherX",
     title: MARKETING_COPY.home.headline,
     description: MARKETING_COPY.home.description,
     ogImage: "/home/opengraph-image",
@@ -38,7 +40,7 @@ export function marketingMetadata(pathname: string): Metadata {
     : [`${BLOG_ORIGIN}/og-default.jpg`];
   return {
     metadataBase: new URL(BLOG_ORIGIN),
-    title: page.title,
+    title: "tabTitle" in page ? page.tabTitle : page.title,
     description: page.description,
     alternates: {
       canonical: url,

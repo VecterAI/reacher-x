@@ -22,6 +22,7 @@ import { Button } from "@/shared/ui/components/Button";
 import { LandingWordmark } from "@/features/landing/ui/components/LandingWordmark";
 import { LandingBookDemoLink } from "@/features/landing/ui/components/LandingBookDemoCta";
 import { VecterAILogo } from "@/features/landing/ui/components/VecterAILogo";
+import { marketingPageWidth } from "./marketing/MarketingLayout";
 import {
   Select,
   SelectContent,
@@ -197,7 +198,12 @@ export function FooterClient({
 
   return (
     <footer className={cn("border-border border-t", className)}>
-      <div className="mx-auto flex w-full max-w-[1288px] flex-col gap-8 px-4 pt-8 pb-8 md:gap-12 md:pt-12 md:pb-12">
+      <div
+        className={cn(
+          marketingPageWidth,
+          "flex flex-col gap-8 pt-8 pb-8 md:gap-12 md:pt-12 md:pb-12"
+        )}
+      >
         <div className="flex flex-col gap-1">
           <LandingWordmark className="w-fit" />
           <address className="not-italic">

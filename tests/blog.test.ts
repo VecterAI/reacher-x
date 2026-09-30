@@ -150,7 +150,7 @@ test("blog and home metadata use plain titles and generated social images", asyn
   const { MARKETING_COPY } =
     await import("../features/landing/lib/marketingContentHelpers");
   const home = marketingMetadata("/home");
-  assert.equal(home.title, MARKETING_COPY.home.headline);
+  assert.equal(home.title, "ReacherX");
   assert.equal(home.description, MARKETING_COPY.home.description);
   assert.equal(home.openGraph?.title, MARKETING_COPY.home.headline);
   assert.equal(home.openGraph?.description, MARKETING_COPY.home.description);
