@@ -157,16 +157,32 @@ test.each(["pricing", "plans", "onboarding"] as const)(
   }
 );
 
-test.each(["pricing", "plans", "onboarding"] as const)(
-  "%s does not flash offers while loading or after a query error",
+test("pricing does not flash offers while loading or after a query error", async () => {
+  Object.assign(state, { data: undefined, isPending: true });
+  await render("pricing");
+  expect(text()).toContain("Loading plans");
+  expect(text()).not.toMatch(/Hobby|Base|Pro\b/);
+  Object.assign(state, { isPending: false, isError: true });
+  await render("pricing");
+  expect(text()).toContain("Plans are temporarily unavailable");
+  expect(buttons()).toHaveLength(0);
+});
+
+test.each(["plans", "onboarding"] as const)(
+  "%s renders the launch selection instantly while loading and closes sales after a query error",
   async (surface) => {
     Object.assign(state, { data: undefined, isPending: true });
     await render(surface);
-    expect(text()).toContain("Loading plans");
-    expect(text()).not.toMatch(/Hobby|Base|Pro\b/);
+    expect(text()).not.toContain("Loading plans");
+    expect(text()).toContain(
+      "Pick a plan. Every plan comes with a 30-day money-back guarantee."
+    );
+    expect(text()).toContain("Base");
+    expect(text()).toContain("Pro");
     Object.assign(state, { isPending: false, isError: true });
     await render(surface);
     expect(text()).toContain("Plans are temporarily unavailable");
+    expect(text()).not.toMatch(/Base|Pro\b/);
     expect(buttons()).toHaveLength(0);
   }
 );

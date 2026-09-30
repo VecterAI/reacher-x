@@ -13,11 +13,11 @@ import {
   CardTitle,
 } from "@/shared/ui/components/Card";
 import { BillingPeriodSelector } from "./BillingPeriodSelector";
-import { PlanOffersSkeleton } from "./PlanOffersSkeleton";
 import { useAvailablePlanOffers } from "../../hooks/useAvailablePlanOffers";
 import {
   getPlanOfferSelection,
   getUpgradeOffers,
+  parsePlanOffers,
   PLAN_OFFERS_UNAVAILABLE,
 } from "@/shared/lib/billing/planOfferHelpers";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
@@ -230,7 +230,13 @@ export function PlanSelector({
   const [preferredBilling, setBilling] = useState<BillingPeriod>("monthly");
   const productsQuery = useQueryWithStatus(api.polar.getConfiguredProducts);
   const availability = useAvailablePlanOffers();
-  const offers = getUpgradeOffers(availability.data ?? [], currentTier);
+  /** While the live configuration loads, render the launch selection instead of a skeleton. */
+  const offers = getUpgradeOffers(
+    availability.isPending
+      ? parsePlanOffers(undefined)
+      : (availability.data ?? []),
+    currentTier
+  );
   const { billing, periods, tiers } = getPlanOfferSelection(
     offers,
     preferredBilling
@@ -272,10 +278,12 @@ export function PlanSelector({
     },
   } as const;
 
-  if (availability.isPending) return <PlanOffersSkeleton />;
-  if (availability.isError || !availability.data?.length)
+  if (
+    availability.isError ||
+    (!availability.isPending && !availability.data?.length)
+  )
     return <p role="status">{PLAN_OFFERS_UNAVAILABLE}</p>;
-  if (visibleTiers.length === 0)
+  if (!availability.isPending && visibleTiers.length === 0)
     return (
       <p role="status">
         There are no upgrades available for your plan right now.
@@ -297,7 +305,7 @@ export function PlanSelector({
             id="onboarding-plan-heading"
             className="text-xl font-semibold tracking-tight"
           >
-            Your △ Agent works around the clock — so you don&apos;t have to.
+            Pick a plan. Every plan comes with a 30-day money-back guarantee.
           </h2>
         </header>
       ) : !hideMarketingHeadline ? (
@@ -306,7 +314,7 @@ export function PlanSelector({
             id="plans-upgrade-heading"
             className="text-xl font-semibold tracking-tight"
           >
-            Your △ Agent works around the clock — so you don&apos;t have to.
+            Pick a plan. Every plan comes with a 30-day money-back guarantee.
           </h2>
         </header>
       ) : null}

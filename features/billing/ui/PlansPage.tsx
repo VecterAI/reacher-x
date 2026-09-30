@@ -157,7 +157,7 @@ export function PlansPage() {
           id="plans-upgrade-heading"
           className="text-xl font-semibold tracking-tight"
         >
-          Your △ Agent works around the clock — so you don&apos;t have to.
+          Pick a plan. Every plan comes with a 30-day money-back guarantee.
         </h2>
       </header>
       <PlanSelector
