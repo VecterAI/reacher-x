@@ -78,8 +78,10 @@ export function BlogArticle({
             {post.description}
           </p>
           <div className="mt-6">{author ?? <BlogAuthorDetails />}</div>
-          <div className="text-muted-foreground mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
-            <BlogMetadata post={post} readingTime />
+          <div className="text-muted-foreground mt-4 flex items-start justify-between gap-x-4 text-sm">
+            <div className="min-w-0 flex-1">
+              <BlogMetadata post={post} readingTime truncate />
+            </div>
             <BlogPostMenu
               markdownHref={preview ? undefined : `/blog/${post.slug}/markdown`}
             />

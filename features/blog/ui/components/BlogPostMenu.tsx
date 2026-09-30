@@ -12,6 +12,7 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 import {
   ContentCopyIcon,
+  MarkdownCopyIcon,
   MarkdownIcon,
   MoreHorizIcon,
 } from "@/shared/ui/components/icons";
@@ -23,6 +24,20 @@ export function BlogPostMenu({ markdownHref }: { markdownHref?: string }) {
       toast.success("Link copied");
     } catch {
       toast.error("Couldn't copy the link. Copy it from your address bar.");
+    }
+  }
+
+  async function copyMarkdown() {
+    if (!markdownHref) return;
+    try {
+      const response = await fetch(markdownHref);
+      if (!response.ok) throw new Error(String(response.status));
+      await navigator.clipboard.writeText(await response.text());
+      toast.success("Markdown copied");
+    } catch {
+      toast.error(
+        "Couldn't copy the markdown. Open it from the Markdown link."
+      );
     }
   }
 
@@ -41,10 +56,16 @@ export function BlogPostMenu({ markdownHref }: { markdownHref?: string }) {
           Copy link
         </DropdownMenuItem>
         {markdownHref && (
+          <DropdownMenuItem onSelect={() => void copyMarkdown()}>
+            <MarkdownCopyIcon aria-hidden />
+            Copy markdown
+          </DropdownMenuItem>
+        )}
+        {markdownHref && (
           <DropdownMenuItem asChild>
             <a href={markdownHref}>
               <MarkdownIcon aria-hidden />
-              Markdown
+              View markdown
             </a>
           </DropdownMenuItem>
         )}

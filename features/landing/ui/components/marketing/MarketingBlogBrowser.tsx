@@ -86,9 +86,6 @@ export function MarketingBlogBrowser({
         <h2 id="marketing-blog-heading" className={marketingSectionTitle}>
           {activeLabel ? `${activeLabel}.` : "Blog."}
         </h2>
-        <Link href="/blog" className={marketingButton({ variant: "outline" })}>
-          Read the blog
-        </Link>
       </div>
       {categories.length > 0 ? (
         <div className="mt-8">
@@ -130,27 +127,35 @@ export function MarketingBlogBrowser({
               ))}
             </CarouselContent>
           </Carousel>
-          <div className="mt-8 flex justify-end gap-3">
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Previous posts"
-              disabled={!canPrev}
-              onClick={() => api?.scrollPrev()}
-              className="size-10"
+          <div className="mt-8 flex items-center justify-between gap-3">
+            <Link
+              href="/blog"
+              className={marketingButton({ variant: "outline" })}
             >
-              <ArrowBackIcon className="size-5 fill-current" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="More posts"
-              disabled={!canNext}
-              onClick={() => api?.scrollNext()}
-              className="size-10"
-            >
-              <ArrowForwardIcon className="size-5 fill-current" />
-            </Button>
+              Read the blog
+            </Link>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Previous posts"
+                disabled={!canPrev}
+                onClick={() => api?.scrollPrev()}
+                className="size-10 rounded-full"
+              >
+                <ArrowBackIcon className="size-5 fill-current" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="More posts"
+                disabled={!canNext}
+                onClick={() => api?.scrollNext()}
+                className="size-10 rounded-full"
+              >
+                <ArrowForwardIcon className="size-5 fill-current" />
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}

@@ -66,7 +66,7 @@ export function MarketingProofCarousel({ tweets }: { tweets: Tweet[] }) {
           aria-label="Previous quotes"
           disabled={!canPrev}
           onClick={() => api?.scrollPrev()}
-          className="size-10"
+          className="size-10 rounded-full"
         >
           <ArrowBackIcon className="size-5 fill-current" />
         </Button>
@@ -76,7 +76,7 @@ export function MarketingProofCarousel({ tweets }: { tweets: Tweet[] }) {
           aria-label="More quotes"
           disabled={!canNext}
           onClick={() => api?.scrollNext()}
-          className="size-10"
+          className="size-10 rounded-full"
         >
           <ArrowForwardIcon className="size-5 fill-current" />
         </Button>

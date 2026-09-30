@@ -109,7 +109,7 @@ export function MarketingCapabilityCarousel() {
           aria-label="Previous capabilities"
           disabled={!canPrev}
           onClick={() => api?.scrollPrev()}
-          className="size-10"
+          className="size-10 rounded-full"
         >
           <ArrowBackIcon className="size-5 fill-current" />
         </Button>
@@ -119,7 +119,7 @@ export function MarketingCapabilityCarousel() {
           aria-label="More capabilities"
           disabled={!canNext}
           onClick={() => api?.scrollNext()}
-          className="size-10"
+          className="size-10 rounded-full"
         >
           <ArrowForwardIcon className="size-5 fill-current" />
         </Button>

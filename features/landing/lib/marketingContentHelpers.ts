@@ -57,7 +57,7 @@ export const MARKETING_CAPABILITY_CONTENT = [
     demo: "how-reacherx-enrichment-works",
   },
   {
-    title: "People management",
+    title: "Manage relations",
     body: "Track status, notes, and conversations for everyone you find. A light CRM without the sales jargon.",
     href: "/blog/manage-people-with-reacherx",
     demo: "manage-people-with-reacherx",
