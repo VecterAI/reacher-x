@@ -1904,6 +1904,8 @@ function ChatMessage({
                   args: tp.input as Record<string, unknown> | undefined,
                   result: tp.output as Record<string, unknown> | undefined,
                   toolCallId,
+                  errorText:
+                    typeof tp.errorText === "string" ? tp.errorText : undefined,
                 };
 
                 return (
