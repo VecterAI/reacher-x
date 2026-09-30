@@ -1,9 +1,14 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { components, internal } from "../_generated/api";
 import type { Doc, TableNames } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { ActionCtx, MutationCtx } from "../_generated/server";
 import { polar } from "../polar";
-import { internalMutation, internalQuery } from "./functionBuilders";
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+} from "./functionBuilders";
 import { reconcilePlanUsageForUser } from "./planUsageCore";
 import { deleteWorkspaceAgentMemoryBatch } from "./agentMemoryCore";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
@@ -11,6 +16,17 @@ import { clearWorkspaceReportingAggregate } from "./workspaceReportingAggregate"
 
 export const WORKSPACE_DELETE_BATCH_SIZE = 25;
 const SWEEP_BATCH_SIZE = 25;
+const THREAD_DELETE_BATCH_SIZE = 25;
+const PROSPECT_DELETE_BATCH_SIZE = 10;
+const OUTREACH_PLAN_DELETE_BATCH_SIZE = 10;
+/**
+ * Wall-clock budget for one batched deletion action step. The action always
+ * fully finishes the item it starts, then stops between items once past this
+ * budget, so every step makes progress and the durable workflow journal stays
+ * small enough to reload (the workflow component fails a workflow whose
+ * journal exceeds 8 MiB with "Failed to load journal").
+ */
+const DELETE_ACTION_BUDGET_MS = 45_000;
 
 async function deleteDocuments<TableName extends TableNames>(
   ctx: MutationCtx,
@@ -427,25 +443,25 @@ export const deleteWorkspaceMemoryBatchInternal = internalMutation({
   }),
 });
 
-export const getNextWorkspaceThreadInternal = internalQuery({
+export const getNextWorkspaceThreadBatchInternal = internalQuery({
   args: { workspaceId: v.id("workspaces") },
-  returns: v.union(v.string(), v.null()),
-  handler: async (ctx, args) =>
-    (
-      await ctx.db
-        .query("workspaceAgentThreads")
-        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-        .first()
-    )?.threadId ?? null,
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("workspaceAgentThreads")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .take(THREAD_DELETE_BATCH_SIZE);
+    return rows.map((row) => row.threadId);
+  },
 });
 
-export const getNextProspectThreadInternal = internalQuery({
+export const getNextProspectThreadBatchInternal = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
     paginationOpts: paginationOptsValidator,
   },
   returns: v.object({
-    threadId: v.union(v.string(), v.null()),
+    threadIds: v.array(v.string()),
     continueCursor: v.string(),
     isDone: v.boolean(),
   }),
@@ -454,46 +470,123 @@ export const getNextProspectThreadInternal = internalQuery({
       .query("prospects")
       .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
       .paginate(args.paginationOpts);
-    const prospect = page.page[0];
-    if (!prospect) {
-      return {
-        threadId: null,
-        continueCursor: page.continueCursor,
-        isDone: true,
-      };
+    const threadIds: string[] = [];
+    for (const prospect of page.page) {
+      // A prospect can hold several thread links (chat history), so collect
+      // every link row before the cursor moves past it; the cursor is never
+      // revisited, so truncating here would orphan the extra threads.
+      for await (const link of ctx.db
+        .query("prospectThreads")
+        .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))) {
+        threadIds.push(link.threadId);
+      }
     }
-    const link = await ctx.db
-      .query("prospectThreads")
-      .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
-      .first();
     return {
-      threadId: link?.threadId ?? null,
-      continueCursor: page.continueCursor,
-      isDone: !link && page.isDone,
-    };
-  },
-});
-
-export const getNextWorkspaceProspectInternal = internalQuery({
-  args: {
-    workspaceId: v.id("workspaces"),
-    paginationOpts: paginationOptsValidator,
-  },
-  returns: v.object({
-    prospectId: v.union(v.id("prospects"), v.null()),
-    continueCursor: v.string(),
-    isDone: v.boolean(),
-  }),
-  handler: async (ctx, args) => {
-    const page = await ctx.db
-      .query("prospects")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-      .paginate(args.paginationOpts);
-    return {
-      prospectId: page.page[0]?._id ?? null,
+      threadIds,
       continueCursor: page.continueCursor,
       isDone: page.isDone,
     };
+  },
+});
+
+export const getNextWorkspaceProspectBatchInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: v.object({
+    prospectIds: v.array(v.id("prospects")),
+    continueCursor: v.string(),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .paginate(args.paginationOpts);
+    return {
+      prospectIds: page.page.map((prospect) => prospect._id),
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/**
+ * Fully deletes one agent thread (component messages, then app-owned rows).
+ * Idempotent: already-deleted rows are no-ops, so retried steps converge.
+ */
+async function deleteThreadFully(
+  ctx: ActionCtx,
+  threadId: string
+): Promise<void> {
+  await ctx.runAction(components.agent.threads.deleteAllForThreadIdSync, {
+    threadId,
+    limit: 25,
+  });
+  let local = { deleted: 1 };
+  while (local.deleted > 0) {
+    local = await ctx.runMutation(
+      internal.lib.deleteWorkspaceCore.deleteThreadLocalRowsInternal,
+      { threadId }
+    );
+  }
+  let links = { deleted: 1 };
+  while (links.deleted > 0) {
+    links = await ctx.runMutation(
+      internal.lib.deleteWorkspaceCore.deleteThreadLinksInternal,
+      { threadId }
+    );
+  }
+}
+
+/**
+ * Deletes agent threads in one durable step. Always fully deletes the first
+ * thread, then stops between threads once past the time budget, so every
+ * invocation makes progress and retried steps stay idempotent.
+ */
+export const deleteThreadsBatchInternal = internalAction({
+  args: { threadIds: v.array(v.string()) },
+  returns: v.object({ deletedThreadIds: v.array(v.string()) }),
+  handler: async (ctx, args) => {
+    const deadline = Date.now() + DELETE_ACTION_BUDGET_MS;
+    const deletedThreadIds: string[] = [];
+    for (const [index, threadId] of args.threadIds.entries()) {
+      if (index > 0 && Date.now() >= deadline) break;
+      await deleteThreadFully(ctx, threadId);
+      deletedThreadIds.push(threadId);
+    }
+    return { deletedThreadIds };
+  },
+});
+
+/**
+ * Deletes RAG namespaces in one durable step. Always fully deletes the first
+ * namespace (all versions), then stops between namespaces once past the time
+ * budget, so every invocation makes progress and retried steps stay idempotent.
+ */
+export const deleteRagNamespacesBatchInternal = internalAction({
+  args: { namespaces: v.array(v.string()) },
+  returns: v.object({ deletedNamespaces: v.array(v.string()) }),
+  handler: async (ctx, args) => {
+    const deadline = Date.now() + DELETE_ACTION_BUDGET_MS;
+    const deletedNamespaces: string[] = [];
+    for (const [index, namespace] of args.namespaces.entries()) {
+      if (index > 0 && Date.now() >= deadline) break;
+      while (true) {
+        const page = await ctx.runQuery(
+          components.rag.namespaces.listNamespaceVersions,
+          { namespace, paginationOpts: { cursor: null, numItems: 1 } }
+        );
+        const namespaceId = page.page[0]?.namespaceId;
+        if (!namespaceId) break;
+        await ctx.runAction(components.rag.namespaces.deleteNamespaceSync, {
+          namespaceId,
+        });
+      }
+      deletedNamespaces.push(namespace);
+    }
+    return { deletedNamespaces };
   },
 });
 
@@ -616,142 +709,156 @@ export const deleteOutreachPlanBatchInternal = internalMutation({
   args: { workspaceId: v.id("workspaces") },
   returns: v.object({ deleted: v.number(), done: v.boolean() }),
   handler: async (ctx, args) => {
-    const plan = await ctx.db
-      .query("outreachPlans")
-      .withIndex("by_workspace_status", (q) =>
-        q.eq("workspaceId", args.workspaceId)
-      )
-      .first();
-    if (!plan) return { deleted: 0, done: true };
-    const tasks = await ctx.db
-      .query("outreachTasks")
-      .withIndex("by_plan", (q) => q.eq("planId", plan._id))
-      .take(WORKSPACE_DELETE_BATCH_SIZE);
-    if (tasks.length > 0) {
-      return { deleted: await deleteDocuments(ctx, tasks), done: false };
+    let deleted = 0;
+    for (let index = 0; index < OUTREACH_PLAN_DELETE_BATCH_SIZE; index += 1) {
+      const plan = await ctx.db
+        .query("outreachPlans")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId)
+        )
+        .first();
+      if (!plan) return { deleted, done: true };
+      const tasks = await ctx.db
+        .query("outreachTasks")
+        .withIndex("by_plan", (q) => q.eq("planId", plan._id))
+        .take(WORKSPACE_DELETE_BATCH_SIZE);
+      if (tasks.length > 0) {
+        deleted += await deleteDocuments(ctx, tasks);
+        return { deleted, done: false };
+      }
+      const revisions = await ctx.db
+        .query("outreachPlanRevisions")
+        .withIndex("by_plan_and_version", (q) => q.eq("planId", plan._id))
+        .take(WORKSPACE_DELETE_BATCH_SIZE);
+      if (revisions.length > 0) {
+        deleted += await deleteDocuments(ctx, revisions);
+        return { deleted, done: false };
+      }
+      await ctx.db.delete(plan._id);
+      deleted += 1;
     }
-    const revisions = await ctx.db
-      .query("outreachPlanRevisions")
-      .withIndex("by_plan_and_version", (q) => q.eq("planId", plan._id))
-      .take(WORKSPACE_DELETE_BATCH_SIZE);
-    if (revisions.length > 0) {
-      return { deleted: await deleteDocuments(ctx, revisions), done: false };
-    }
-    await ctx.db.delete(plan._id);
-    return { deleted: 1, done: false };
+    return { deleted, done: false };
   },
 });
+
+/**
+ * Deletes one prospect plus every child row that references it. Idempotent:
+ * callers re-invoke it while the prospect still exists.
+ */
+async function deleteProspectWithChildren(
+  ctx: MutationCtx,
+  prospect: Doc<"prospects">
+): Promise<number> {
+  const n = WORKSPACE_DELETE_BATCH_SIZE;
+  const [
+    threads,
+    interactions,
+    syncStates,
+    messages,
+    conversations,
+    outboundOperations,
+    voiceNoteUploadIntents,
+    contexts,
+    requests,
+    providerEvents,
+    linkedInEngagements,
+  ] = await Promise.all([
+    ctx.db
+      .query("prospectThreads")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
+      .take(n),
+    ctx.db
+      .query("prospectInteractions")
+      .withIndex("by_prospect_replied", (q) => q.eq("prospectId", prospect._id))
+      .take(n),
+    ctx.db
+      .query("prospectInteractionSyncStates")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
+      .take(n),
+    ctx.db
+      .query("platformConversationMessages")
+      .withIndex("by_prospect_created_at", (q) =>
+        q.eq("prospectId", prospect._id)
+      )
+      .take(n),
+    ctx.db
+      .query("platformConversations")
+      .withIndex("by_prospect_platform", (q) =>
+        q.eq("prospectId", prospect._id)
+      )
+      .take(n),
+    ctx.db
+      .query("outboundMessageOperations")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
+      .take(n),
+    ctx.db
+      .query("outboundVoiceNoteUploadIntents")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
+      .take(n),
+    ctx.db
+      .query("agentMessageContexts")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
+      .take(n),
+    ctx.db
+      .query("agentActionRequests")
+      .withIndex("by_prospect_status", (q) => q.eq("prospectId", prospect._id))
+      .take(n),
+    ctx.db
+      .query("providerRequestEvents")
+      .withIndex("by_prospect_recorded_at", (q) =>
+        q.eq("prospectId", prospect._id)
+      )
+      .take(n),
+    ctx.db
+      .query("linkedinUserPostEngagements")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
+      .take(n),
+  ]);
+  const childRows =
+    threads.length +
+    interactions.length +
+    syncStates.length +
+    messages.length +
+    conversations.length +
+    outboundOperations.length +
+    voiceNoteUploadIntents.length +
+    contexts.length +
+    requests.length +
+    providerEvents.length +
+    linkedInEngagements.length;
+  if (childRows > 0) {
+    let deleted = 0;
+    deleted += await deleteDocuments(ctx, threads);
+    deleted += await deleteDocuments(ctx, interactions);
+    deleted += await deleteDocuments(ctx, syncStates);
+    deleted += await deleteDocuments(ctx, messages);
+    deleted += await deleteDocuments(ctx, conversations);
+    deleted += await deleteDocuments(ctx, outboundOperations);
+    deleted += await deleteVoiceNoteUploadIntents(ctx, voiceNoteUploadIntents);
+    deleted += await deleteDocuments(ctx, contexts);
+    deleted += await deleteDocuments(ctx, requests);
+    deleted += await deleteDocuments(ctx, providerEvents);
+    deleted += await deleteDocuments(ctx, linkedInEngagements);
+    return deleted;
+  }
+  await ctx.db.delete(prospect._id);
+  return 1;
+}
 
 export const deleteProspectBatchInternal = internalMutation({
   args: { workspaceId: v.id("workspaces") },
   returns: v.object({ deleted: v.number(), done: v.boolean() }),
   handler: async (ctx, args) => {
-    const prospect = await ctx.db
-      .query("prospects")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-      .first();
-    if (!prospect) return { deleted: 0, done: true };
-    const n = WORKSPACE_DELETE_BATCH_SIZE;
-    const [
-      threads,
-      interactions,
-      syncStates,
-      messages,
-      conversations,
-      outboundOperations,
-      voiceNoteUploadIntents,
-      contexts,
-      requests,
-      providerEvents,
-      linkedInEngagements,
-    ] = await Promise.all([
-      ctx.db
-        .query("prospectThreads")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
-        .take(n),
-      ctx.db
-        .query("prospectInteractions")
-        .withIndex("by_prospect_replied", (q) =>
-          q.eq("prospectId", prospect._id)
-        )
-        .take(n),
-      ctx.db
-        .query("prospectInteractionSyncStates")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
-        .take(n),
-      ctx.db
-        .query("platformConversationMessages")
-        .withIndex("by_prospect_created_at", (q) =>
-          q.eq("prospectId", prospect._id)
-        )
-        .take(n),
-      ctx.db
-        .query("platformConversations")
-        .withIndex("by_prospect_platform", (q) =>
-          q.eq("prospectId", prospect._id)
-        )
-        .take(n),
-      ctx.db
-        .query("outboundMessageOperations")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
-        .take(n),
-      ctx.db
-        .query("outboundVoiceNoteUploadIntents")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
-        .take(n),
-      ctx.db
-        .query("agentMessageContexts")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
-        .take(n),
-      ctx.db
-        .query("agentActionRequests")
-        .withIndex("by_prospect_status", (q) =>
-          q.eq("prospectId", prospect._id)
-        )
-        .take(n),
-      ctx.db
-        .query("providerRequestEvents")
-        .withIndex("by_prospect_recorded_at", (q) =>
-          q.eq("prospectId", prospect._id)
-        )
-        .take(n),
-      ctx.db
-        .query("linkedinUserPostEngagements")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
-        .take(n),
-    ]);
-    const childRows =
-      threads.length +
-      interactions.length +
-      syncStates.length +
-      messages.length +
-      conversations.length +
-      outboundOperations.length +
-      voiceNoteUploadIntents.length +
-      contexts.length +
-      requests.length +
-      providerEvents.length +
-      linkedInEngagements.length;
-    if (childRows > 0) {
-      let deleted = 0;
-      deleted += await deleteDocuments(ctx, threads);
-      deleted += await deleteDocuments(ctx, interactions);
-      deleted += await deleteDocuments(ctx, syncStates);
-      deleted += await deleteDocuments(ctx, messages);
-      deleted += await deleteDocuments(ctx, conversations);
-      deleted += await deleteDocuments(ctx, outboundOperations);
-      deleted += await deleteVoiceNoteUploadIntents(
-        ctx,
-        voiceNoteUploadIntents
-      );
-      deleted += await deleteDocuments(ctx, contexts);
-      deleted += await deleteDocuments(ctx, requests);
-      deleted += await deleteDocuments(ctx, providerEvents);
-      deleted += await deleteDocuments(ctx, linkedInEngagements);
-      return { deleted, done: false };
+    let deleted = 0;
+    for (let index = 0; index < PROSPECT_DELETE_BATCH_SIZE; index += 1) {
+      const prospect = await ctx.db
+        .query("prospects")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+        .first();
+      if (!prospect) return { deleted, done: true };
+      deleted += await deleteProspectWithChildren(ctx, prospect);
     }
-    await ctx.db.delete(prospect._id);
-    return { deleted: 1, done: false };
+    return { deleted, done: false };
   },
 });
 
