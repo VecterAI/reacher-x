@@ -41,6 +41,7 @@ import {
 } from "@/features/landing/lib/landingPromptStorage";
 import { buildLandingSetupHandoffRequest } from "@/features/agent/lib/landingSetupHandoff";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Types
@@ -147,6 +148,14 @@ const AGENT_TIMEOUT_TOAST_MESSAGE =
   "That response took too long and stopped before it finished. Please try again.";
 const agentChatLogger = logger.withScope("useAgentChat");
 
+/**
+ * A turn whose generation state is "idle" with no assistant response has died
+ * before the server could mark it failed (for example, the background action
+ * never ran). Wait past normal action-start latency, then surface the failure
+ * client-side instead of showing "Thinking" forever.
+ */
+const PRE_GENERATION_FAILURE_GRACE_MS = 20_000;
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -180,6 +189,7 @@ export function useAgentChat(
     null
   );
   const [pendingTurn, setPendingTurn] = useState<PendingTurnState | null>(null);
+  const [graceTick, setGraceTick] = useState(0);
 
   // Track previous prospectId to detect changes for isolation
   const prevProspectIdRef = useRef<string | null | undefined>(undefined);
@@ -252,6 +262,9 @@ export function useAgentChat(
 
   // Track if we've already triggered auto-generation to prevent duplicate calls
   const hasTriggeredAutoGenRef = useRef(false);
+  const graceStartRef = useRef<{ turnId: string; observedAt: number } | null>(
+    null
+  );
   const stopRequestedRef = useRef(false);
   const stopTargetThreadIdRef = useRef<string | null>(null);
   const abortInFlightRef = useRef(false);
@@ -997,6 +1010,100 @@ export function useAgentChat(
     pendingTurn,
     planBatchTurnStateQuery.data,
     planBatchTurnStateQuery.isPending,
+  ]);
+
+  // Recovery layer for turns that died before any assistant message was saved.
+  // Server-side failure finalization covers the common case; this grace window
+  // only fires when no assistant row will ever exist for the turn's order.
+  useEffect(() => {
+    if (!pendingTurn || pendingTurn.order === null || !threadId) {
+      return;
+    }
+    if (pendingTurn.phase === "failed" || pendingTurn.phase === "finished") {
+      return;
+    }
+    if (pendingTurn.messageId && planBatchTurnStateQuery.isPending) {
+      return;
+    }
+    if (isPlanBatchTurnWaiting(planBatchTurnStateQuery.data)) {
+      return;
+    }
+    if (!threadGenerationStateQuery.isSuccess) {
+      return;
+    }
+    if (threadGenerationStateQuery.data?.status !== "idle") {
+      return;
+    }
+    if (
+      messages.some(
+        (message) =>
+          message.role === "assistant" && message.order === pendingTurn.order
+      )
+    ) {
+      return;
+    }
+
+    // Measure the grace window from when this client first observed the
+    // persisted prompt, so neither queue latency nor client/server clock skew
+    // can end the window early.
+    const persistedPrompt = messages.find(
+      (message) =>
+        message.role === "user" &&
+        message.order === pendingTurn.order &&
+        getUIMessageDisplayText(message) === pendingTurn.prompt
+    );
+    if (!persistedPrompt) {
+      return;
+    }
+
+    const now = getCurrentUTCTimestamp();
+    const observedAt =
+      graceStartRef.current?.turnId === pendingTurn.id
+        ? graceStartRef.current.observedAt
+        : now;
+    if (graceStartRef.current?.turnId !== pendingTurn.id) {
+      graceStartRef.current = { turnId: pendingTurn.id, observedAt };
+    }
+
+    const remainingMs = PRE_GENERATION_FAILURE_GRACE_MS - (now - observedAt);
+    if (remainingMs > 0) {
+      // The effect would otherwise never re-run once the grace period ends
+      // with no query changes; re-check when it elapses.
+      const timeoutId = window.setTimeout(
+        () => setGraceTick((tick) => tick + 1),
+        remainingMs
+      );
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    setPendingTurn((current) =>
+      current?.id !== pendingTurn.id
+        ? current
+        : {
+            ...current,
+            phase: "failed",
+            errorMessage: AGENT_FAILURE_TOAST_MESSAGE,
+          }
+    );
+    // Respect the Stop button's toast suppression, like the failed-message
+    // toast path does.
+    if (suppressNextFailureToastThreadIdsRef.current.has(threadId)) {
+      suppressNextFailureToastThreadIdsRef.current.delete(threadId);
+      return;
+    }
+    toast.error(AGENT_FAILURE_TOAST_TITLE, {
+      id: `agent-failure-${threadId}:${pendingTurn.order}`,
+      description: AGENT_FAILURE_TOAST_MESSAGE,
+    });
+  }, [
+    graceTick,
+    messages,
+    pendingTurn,
+    planBatchTurnStateQuery.data,
+    planBatchTurnStateQuery.isPending,
+    threadGenerationStateQuery.data,
+    threadGenerationStateQuery.isSuccess,
+    threadId,
   ]);
 
   useEffect(() => {

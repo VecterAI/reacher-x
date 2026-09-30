@@ -1100,6 +1100,25 @@ function isEmptyEmbeddingInputError(error: unknown): boolean {
   return error.message.includes("Input is empty");
 }
 
+/**
+ * Detects embedding provider failures (quota exhaustion, outages, rate limits)
+ * surfacing out of the Agent component's vector history search. AI SDK call
+ * errors carry the request URL, which is the strongest signal that the embed
+ * call itself failed.
+ */
+function isEmbeddingProviderFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const url = (error as { url?: unknown }).url;
+  if (typeof url === "string" && url.includes("/embeddings")) {
+    return true;
+  }
+
+  return error.message.includes("/embeddings");
+}
+
 async function canRetryAgentTurnWithoutDuplicatingTools(
   ctx: ActionCtx,
   args: {
@@ -1256,6 +1275,23 @@ async function runOutreachStreamText(
   );
 }
 
+/**
+ * Thrown after the outreach turn already retried once with history search
+ * disabled and still failed. Tells the outer retry loop not to spend another
+ * full model attempt on the same failure.
+ */
+class OutreachDegradedSearchExhaustedError extends Error {
+  constructor(cause: unknown) {
+    super(
+      cause instanceof Error
+        ? cause.message
+        : "Outreach degraded search retry failed",
+      { cause }
+    );
+    this.name = "OutreachDegradedSearchExhaustedError";
+  }
+}
+
 async function runOutreachStreamTextWithHistoryFallback(
   ctx: ActionCtx,
   args: {
@@ -1281,20 +1317,24 @@ async function runOutreachStreamTextWithHistoryFallback(
   } catch (error) {
     if (
       initialContextOptions !== undefined ||
-      !isEmptyEmbeddingInputError(error)
+      !(isEmptyEmbeddingInputError(error) || isEmbeddingProviderFailure(error))
     ) {
       throw error;
     }
 
     chatLogger.warn(
-      "Empty embedding batch; retrying outreach stream with history search disabled",
+      "Embedding search unavailable; retrying outreach stream with history search disabled",
       { threadId: args.threadId }
     );
 
-    return runOutreachStreamText(ctx, {
-      ...args,
-      contextOptions: buildDisabledHistorySearchContextOptions(),
-    });
+    try {
+      return await runOutreachStreamText(ctx, {
+        ...args,
+        contextOptions: buildDisabledHistorySearchContextOptions(),
+      });
+    } catch (degradedError) {
+      throw new OutreachDegradedSearchExhaustedError(degradedError);
+    }
   }
 }
 
@@ -1398,6 +1438,12 @@ async function streamOutreachTextWithFallback(
   try {
     return await executeAttempt();
   } catch (error) {
+    if (error instanceof OutreachDegradedSearchExhaustedError) {
+      // The history-search fallback already retried the turn with search
+      // disabled; another full attempt would only repeat the same failure.
+      throw normalizeUnknownError(error.cause ?? error);
+    }
+
     const shouldRetry = await canRetryAgentTurnWithoutDuplicatingTools(ctx, {
       threadId: args.threadId,
       promptMessageId: args.promptMessageId,
@@ -1536,7 +1582,7 @@ async function finalizePendingAssistantMessageForOrder(
       threadId: args.threadId,
       order: args.order,
     });
-    return false;
+    return await saveFailedAssistantMessageForFailedTurn(ctx, args);
   }
 
   const visibleMessage = args.userVisibleMessage?.trim();
@@ -1616,6 +1662,78 @@ async function finalizePendingAssistantMessageForOrder(
     });
 
     return true;
+  }
+}
+
+/**
+ * Writes a failed assistant message for a turn that died before the Agent
+ * component saved any assistant row (for example, an embedding provider
+ * failure during history search). Without this, the UI has no assistant
+ * message to reconcile and the turn shows "Thinking" forever.
+ */
+async function saveFailedAssistantMessageForFailedTurn(
+  ctx: MutationCtx,
+  args: {
+    threadId: string;
+    order: number;
+    errorMessage: string;
+    userVisibleMessage?: string;
+  }
+): Promise<boolean> {
+  const visibleMessage = args.userVisibleMessage?.trim();
+  if (!visibleMessage) {
+    return false;
+  }
+
+  // Never fabricate a failure over an in-flight run or an existing response.
+  const [turnPage, activeStreams] = await Promise.all([
+    ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
+      threadId: args.threadId,
+      order: "desc",
+      paginationOpts: { numItems: 20, cursor: null },
+    }),
+    ctx.runQuery(components.agent.streams.list, {
+      threadId: args.threadId,
+      statuses: ["streaming"],
+    }),
+  ]);
+  if (activeStreams.some((stream) => stream.order === args.order)) {
+    return false;
+  }
+
+  const turnMessages = turnPage.page.filter(
+    (message) => message.order === args.order
+  );
+  if (turnMessages.some((message) => message.message?.role === "assistant")) {
+    return false;
+  }
+
+  const promptMessage = turnMessages.find(
+    (message) => message.message?.role === "user"
+  );
+  if (!promptMessage) {
+    return false;
+  }
+
+  try {
+    await saveMessage(ctx, components.agent, {
+      threadId: args.threadId,
+      promptMessageId: promptMessage._id,
+      message: { role: "assistant", content: visibleMessage },
+      metadata: {
+        status: "failed",
+        error: args.errorMessage,
+        finishReason: "error",
+      },
+    });
+    return true;
+  } catch (error) {
+    chatLogger.warn("Could not save failed assistant message for dead turn", {
+      threadId: args.threadId,
+      order: args.order,
+      errorMessage: stringifyUnknownError(error),
+    });
+    return false;
   }
 }
 
@@ -2734,6 +2852,11 @@ async function runStreamOutreachResponse(
       },
     });
     const normalizedError = normalizeUnknownError(error);
+    await finalizeAgentTurnFailureBestEffort(ctx, {
+      threadId: args.threadId,
+      promptMessageId: args.promptMessageId,
+      error,
+    });
     chatLogger.error(
       "Outreach stream error",
       {
@@ -2743,6 +2866,55 @@ async function runStreamOutreachResponse(
       normalizedError
     );
     throw normalizedError;
+  }
+}
+
+/**
+ * Best-effort failure finalization for a dead agent turn. Marks any pending
+ * assistant message failed, or saves a failed assistant row when the turn died
+ * before the Agent component saved anything, so the UI never waits on a
+ * response that will never arrive.
+ */
+async function finalizeAgentTurnFailureBestEffort(
+  ctx: ActionCtx,
+  args: {
+    threadId: string;
+    promptMessageId: string;
+    error: unknown;
+  }
+): Promise<void> {
+  try {
+    const promptMessage = await getThreadMessageById(ctx, args.promptMessageId);
+    if (!promptMessage) {
+      return;
+    }
+
+    const finalized = await ctx.runMutation(
+      internal.chat.finalizeWorkspaceAgentGenerationFailureInternal,
+      {
+        threadId: args.threadId,
+        order: promptMessage.order,
+        errorMessage: stringifyUnknownError(normalizeUnknownError(args.error)),
+      }
+    );
+    if (!finalized) {
+      chatLogger.warn(
+        "Agent turn failure had no finalizable assistant message",
+        {
+          threadId: args.threadId,
+          promptMessageId: args.promptMessageId,
+        }
+      );
+    }
+  } catch (finalizationError) {
+    chatLogger.error(
+      "Agent turn failure could not be finalized",
+      {
+        threadId: args.threadId,
+        promptMessageId: args.promptMessageId,
+      },
+      normalizeUnknownError(finalizationError)
+    );
   }
 }
 
@@ -3630,40 +3802,11 @@ async function runStreamAgentResponse(
     };
   } catch (error) {
     const normalizedError = normalizeUnknownError(error);
-    try {
-      const promptMessage = await getThreadMessageById(
-        ctx,
-        args.promptMessageId
-      );
-      if (promptMessage) {
-        const finalized: boolean = await ctx.runMutation(
-          internal.chat.finalizeWorkspaceAgentGenerationFailureInternal,
-          {
-            threadId: args.threadId,
-            order: promptMessage.order,
-            errorMessage: stringifyUnknownError(normalizedError),
-          }
-        );
-        if (!finalized) {
-          chatLogger.warn(
-            "Workspace agent stream failed without a pending assistant message",
-            {
-              threadId: args.threadId,
-              promptMessageId: args.promptMessageId,
-            }
-          );
-        }
-      }
-    } catch (finalizationError) {
-      chatLogger.error(
-        "Workspace agent stream failure could not be finalized",
-        {
-          threadId: args.threadId,
-          promptMessageId: args.promptMessageId,
-        },
-        normalizeUnknownError(finalizationError)
-      );
-    }
+    await finalizeAgentTurnFailureBestEffort(ctx, {
+      threadId: args.threadId,
+      promptMessageId: args.promptMessageId,
+      error,
+    });
     chatLogger.error(
       "Workspace agent stream error",
       {
@@ -3855,8 +3998,7 @@ export const resumePlanBatchAgentResponse = internalAction({
         runId: String(runId),
         result: responseContext.result,
       });
-      const { mainAgent, workspaceLanguageModel } =
-        await loadWorkspaceAgents();
+      const { mainAgent, workspaceLanguageModel } = await loadWorkspaceAgents();
       const attempts = [
         {
           model: undefined,
