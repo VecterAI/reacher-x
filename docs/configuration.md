@@ -261,6 +261,16 @@ While availability is loading, pricing shows a loading state. If the query fails
 
 This controls what is for sale. Existing subscriptions, grants, limits, billing history, and plan labels remain intact, including Hobby customers. Keep the `POLAR_PRODUCT_*` mappings for hidden plans so existing subscriptions can still be recognized.
 
+### Usage cycles
+
+Paid subscriptions run their qualified-prospect quota on the Polar billing
+period, so usage resets on renewal. Complimentary plan grants run one quota
+window for the whole grant term (grant creation to expiry); the window resets
+only when the grant is replaced with a new term, never on calendar month
+boundaries. When a workspace reaches its qualified-prospect limit, discovery
+pauses until a new cycle window begins (renewal or grant replacement) or the
+user resumes manually from the agent status dialog.
+
 ### Keep Polar in sync
 
 Convex availability and the Polar catalog are separate controls. The application does not archive or unarchive Polar products automatically.
@@ -404,13 +414,25 @@ See the bundled [SocialAPI search reference](./socialapi/search.md), [search ope
 
 ### Emergency Brake: `PAUSE_AUTONOMOUS_JOBS`
 
-Recovery crons retry failed prospecting work automatically, and each retry can
-spend paid provider credits. `PAUSE_AUTONOMOUS_JOBS=true` (also accepts `1`)
-stops the automatic plan, qualification, and workspace memory retry crons from
-starting new work, and stops the prospecting workflow auto-recovery from
-restarting a failed workspace (it re-checks the flag on a 15 minute poll and
-resumes automatically after the brake is lifted), so a credit or budget leak
-can be halted without a redeploy.
+Background automation spends paid provider credits around the clock: recovery
+crons retry failed work, the tenant scheduler dispatches queued jobs, and
+scheduled retries re-run failed qualifications. `PAUSE_AUTONOMOUS_JOBS=true`
+(also accepts `1`) turns the brake into a complete stop for background work:
+
+- Recovery and retry crons claim nothing (automatic plans, qualifications,
+  workspace memory embeddings, stale setup workflows, X DM subscriptions).
+- The tenant scheduler dispatches nothing, and scheduled qualification
+  retries start nothing. The prospecting workflow auto-recovery also re-checks
+  the flag on a 15 minute poll and resumes automatically after the brake is
+  lifted.
+- Maintenance crons skip their runs: usage cycle rollover, tenant lane and
+  pool reconciliation, expired lease reaping, job history cleanup, discovery
+  monitor retirement, SocialAPI receipt cleanup, legacy prospect RAG cleanup,
+  and complimentary grant recovery.
+
+This halts a credit or budget leak without a redeploy. Unset the variable or
+set it to `false` to resume; gated crons pick work back up within one cron
+interval.
 
 Two related guards are always on and do not depend on this flag: memory
 evaluation skips paused, stopped, plan-limited, and deleting workspaces, and
@@ -424,12 +446,28 @@ npx convex env set PAUSE_AUTONOMOUS_JOBS true --prod   # production
 npx convex env set PAUSE_AUTONOMOUS_JOBS false         # resume
 ```
 
-The flag is read inside each cron before any database read, so a paused
-deployment costs no database operations. It is a Convex-only variable: set it on
-the Convex deployment, not in the hosting project. Jobs that were already queued
-keep running, user-facing flows and manual chat-initiated plan work are
-unaffected, and nothing is queued or cancelled. Leave the variable
-unset or `false` for normal operation.
+The flag is read inside each gated function before any database read, so a
+paused deployment costs no database operations. It is a Convex-only variable:
+set it on the Convex deployment, not in the hosting project. Jobs that were
+already running finish, user-facing flows and manual chat-initiated plan work
+are unaffected, and nothing is queued or cancelled. Leave the variable unset
+or `false` for normal operation.
+
+### Qualification failure fail-safes
+
+Two guards bound qualification spend without any configuration:
+
+- Automatic qualification retries stop after five failed workflow runs per
+  prospect. The prospect keeps its failure state, and a manual resume from the
+  agent status dialog starts a fresh bounded retry budget.
+- When the AI provider reports an out-of-credit error (HTTP 402), the
+  workspace's automation pauses with an "AI credits ran out" status instead of
+  retrying billable failures. Resuming from the agent status dialog works once
+  credits are added.
+
+Every structured-generation model attempt — including failed ones — is
+recorded in `agentUsageEvents` with workspace attribution and cost, so
+per-workspace spend is visible in the database.
 
 ## SocialAPI And LinkdAPI Budgets
 
