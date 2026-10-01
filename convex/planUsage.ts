@@ -8,6 +8,7 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { requireUser } from "./lib/accessHelpers";
 import { internalMutation, mutation } from "./lib/functionBuilders";
 import { reconcilePlanUsageForUser } from "./lib/planUsageCore";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import { scheduleWorkspaceCapacityReconciliationForUser } from "./lib/workspaceCapacityCore";
 
 async function reconcileUsageCyclesForUser(
@@ -24,6 +25,12 @@ async function reconcileUsageCyclesForUser(
 export const rolloverStaleUsageCycles = internalMutation({
   args: {},
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[PlanUsage] Autonomous jobs paused, skipping usage cycle rollover"
+      );
+      return;
+    }
     const now = getCurrentUTCTimestamp();
     const stale = await ctx.db
       .query("planUsageCycles")

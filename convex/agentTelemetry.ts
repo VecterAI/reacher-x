@@ -14,16 +14,19 @@ const LEGACY_OUTREACH_ROUTER_AGENT_NAME = "Outreach Turn Router";
 export const insertUsageEvent = internalMutation({
   args: {
     userId: v.optional(v.string()),
+    workspaceId: v.optional(v.id("workspaces")),
     threadId: v.optional(v.string()),
     agentName: v.optional(v.string()),
     model: v.optional(v.string()),
     provider: v.optional(v.string()),
     usage: v.any(),
     providerMetadata: v.optional(v.any()),
+    errorMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("agentUsageEvents", {
       userId: args.userId,
+      workspaceId: args.workspaceId,
       threadId: args.threadId,
       agentName: args.agentName,
       model: args.model,
@@ -32,6 +35,7 @@ export const insertUsageEvent = internalMutation({
       providerMetadata: sanitizeProviderMetadataForConvex(
         args.providerMetadata
       ),
+      errorMessage: args.errorMessage,
       recordedAt: getCurrentUTCTimestamp(),
     });
   },

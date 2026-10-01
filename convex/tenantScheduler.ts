@@ -39,6 +39,7 @@ import {
   getSetupGenerationJobKey,
   deriveHighLoadNotice,
 } from "./lib/tenantSchedulerCore";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import {
   completeTenantJob,
   markTenantJobNestedWorkflow,
@@ -681,6 +682,12 @@ export const reconcileQueuedLanesInternal = internalMutation({
   args: {},
   returns: v.object({ reconciled: v.number(), hasMore: v.boolean() }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[TenantScheduler] Autonomous jobs paused, skipping queued lane reconcile"
+      );
+      return { reconciled: 0, hasMore: false };
+    }
     const [queuedJobs, readyLanes] = await Promise.all([
       ctx.db
         .query("tenantJobs")
@@ -722,6 +729,11 @@ export const getDispatchBatchInternal = internalQuery({
   args: dispatchQueryArgs,
   returns: dispatchQueryReturns,
   handler: async (ctx) => {
+    // The emergency brake outranks the pool mode: no queued job may start
+    // while autonomous work is paused, even on ready lanes.
+    if (areAutonomousJobsPaused()) {
+      return { kind: "idle" as const, timeoutMs: 30_000 };
+    }
     const [control, enforcedOverride] = await Promise.all([
       ctx.db
         .query("tenantSchedulerControls")
@@ -1205,6 +1217,60 @@ export const cancelJobByExternalIdInternal = internalMutation({
   },
 });
 
+/**
+ * Operational cleanup: cancel every queued tenant job for one workspace in
+ * bounded pages. Used to retire stale backlogs (e.g. a deprecated workspace)
+ * without dispatching them. Running jobs are untouched; call repeatedly while
+ * `hasMore` is true.
+ */
+export const cancelQueuedTenantJobsForWorkspaceInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    cancelled: v.number(),
+    hasMore: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(1, Math.min(args.batchSize ?? 200, 500));
+    const jobs = await ctx.db
+      .query("tenantJobs")
+      .withIndex("by_workspace_and_status", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("status", "queued")
+      )
+      .take(batchSize);
+    if (jobs.length === 0) {
+      return { cancelled: 0, hasMore: false };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    for (const job of jobs) {
+      await ctx.db.patch(job._id, {
+        status: "cancelled",
+        completedAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Refresh each affected lane's dispatch marker exactly once per page.
+    const laneIds: Array<Id<"tenantJobLanes">> = [];
+    const seenLanes = new Set<string>();
+    for (const job of jobs) {
+      const key = String(job.laneId);
+      if (!seenLanes.has(key)) {
+        seenLanes.add(key);
+        laneIds.push(job.laneId);
+      }
+    }
+    for (const laneId of laneIds) {
+      await reconcileTenantLaneQueueState(ctx, { laneId });
+    }
+
+    return { cancelled: jobs.length, hasMore: jobs.length === batchSize };
+  },
+});
+
 export const setControlInternal = internalMutation({
   args: {
     mode: tenantSchedulerModeValidator,
@@ -1308,6 +1374,12 @@ export const reconcilePoolConfigurationInternal = internalMutation({
   args: {},
   returns: v.object({ enforced: v.boolean() }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[TenantScheduler] Autonomous jobs paused, skipping pool configuration reconcile"
+      );
+      return { enforced: false };
+    }
     const [control, enforcedOverride] = await Promise.all([
       getGlobalControl(ctx),
       ctx.db
@@ -1540,6 +1612,12 @@ export const reapExpiredJobsInternal = internalMutation({
   args: {},
   returns: v.object({ reaped: v.number(), hasMore: v.boolean() }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[TenantScheduler] Autonomous jobs paused, skipping expired lease reaping"
+      );
+      return { reaped: 0, hasMore: false };
+    }
     const now = getCurrentUTCTimestamp();
     const jobs = await ctx.db
       .query("tenantJobs")
@@ -1573,6 +1651,12 @@ export const cleanupCompletedJobsInternal = internalMutation({
   args: {},
   returns: v.object({ deleted: v.number(), hasMore: v.boolean() }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[TenantScheduler] Autonomous jobs paused, skipping job history cleanup"
+      );
+      return { deleted: 0, hasMore: false };
+    }
     const cutoff = getCurrentUTCTimestamp() - TENANT_JOB_RETENTION_MS;
     const terminalStatuses = [
       "shadow",

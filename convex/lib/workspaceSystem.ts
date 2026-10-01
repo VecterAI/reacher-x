@@ -18,6 +18,7 @@ type WorkspaceIssueReason =
   | "icp_refresh_required"
   | "workflow_failed"
   | "limit_reached"
+  | "ai_credits_exhausted"
   | null;
 
 export type WorkspaceSystemStatus = {
@@ -45,6 +46,13 @@ function deriveWorkspaceIssueReason(
 ): WorkspaceIssueReason {
   if (workspace.prospectingWorkflowStatus === "limit_reached") {
     return "limit_reached";
+  }
+
+  if (
+    workspace.prospectingWorkflowStatus === "paused" &&
+    workspace.prospectingWorkflowPauseReason === "ai_credits_exhausted"
+  ) {
+    return "ai_credits_exhausted";
   }
 
   if (!hasRequiredWorkspaceAgentData(workspace)) {
@@ -402,6 +410,26 @@ export function deriveWorkspaceSystemStatus(
       dialogDescription:
         "A recoverable issue was detected. The workflow is still running and retrying automatically.",
       actionLabel: "Retry now",
+      actionKind: "retry",
+      features,
+    };
+  }
+
+  if (issueReason === "ai_credits_exhausted") {
+    return {
+      workspaceId: String(workspace._id),
+      mode: "attention",
+      workflowStatus,
+      discoveryState,
+      pauseReason,
+      issueReason,
+      canResume: false,
+      label: "Attention",
+      tooltip: "AI credits ran out",
+      dialogTitle: "AI credits ran out",
+      dialogDescription:
+        "Discovery and qualification are paused because the AI budget ran out. Add credits, then try again to resume.",
+      actionLabel: "Try again",
       actionKind: "retry",
       features,
     };

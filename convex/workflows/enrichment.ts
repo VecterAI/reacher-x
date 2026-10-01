@@ -8,6 +8,7 @@ import { workflow } from "../lib/workflow";
 import { vWorkflowId, type WorkflowCtx } from "@convex-dev/workflow";
 import { vResultValidator } from "@convex-dev/workpool";
 import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { internalAction, internalMutation } from "../lib/functionBuilders";
 import { getEnrichmentPool } from "../lib/enrichmentPool";
 import { isSetupPreviewFastPathEnabled } from "../lib/previewBatchLimits";
@@ -154,6 +155,9 @@ export const runTwitterEnrichmentCore = internalAction({
         painPoints: v.array(v.string()),
       })
     ),
+    // Optional so in-flight workflow steps recorded before this arg can still
+    // replay; telemetry degrades gracefully without it.
+    workspaceId: v.optional(v.id("workspaces")),
     workspaceName: v.string(),
     routing: v.optional(
       v.union(
@@ -163,7 +167,7 @@ export const runTwitterEnrichmentCore = internalAction({
       )
     ),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
     const result = await enrichTwitterProfile({
       profile: args.profile as Record<string, unknown>,
       extendedBio: args.extendedBio,
@@ -171,6 +175,11 @@ export const runTwitterEnrichmentCore = internalAction({
       icps: args.icps,
       workspaceName: args.workspaceName,
       routing: args.routing,
+      telemetry: {
+        ctx,
+        agentName: "Enrichment Evaluator",
+        workspaceId: args.workspaceId,
+      },
     });
 
     // Return serializable result (EnrichmentResult)
@@ -203,6 +212,9 @@ export const runLinkedInEnrichmentCore = internalAction({
         painPoints: v.array(v.string()),
       })
     ),
+    // Optional so in-flight workflow steps recorded before this arg can still
+    // replay; telemetry degrades gracefully without it.
+    workspaceId: v.optional(v.id("workspaces")),
     workspaceName: v.string(),
     routing: v.optional(
       v.union(
@@ -212,7 +224,7 @@ export const runLinkedInEnrichmentCore = internalAction({
       )
     ),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
     const result = await enrichLinkedInProfile({
       profile: args.profile as Record<string, unknown>,
       contactInfo: args.contactInfo as Record<string, unknown> | undefined,
@@ -221,6 +233,11 @@ export const runLinkedInEnrichmentCore = internalAction({
       icps: args.icps,
       workspaceName: args.workspaceName,
       routing: args.routing,
+      telemetry: {
+        ctx,
+        agentName: "Enrichment Evaluator",
+        workspaceId: args.workspaceId,
+      },
     });
 
     // Return serializable result (EnrichmentResult)
@@ -404,6 +421,7 @@ export const enrichmentWorkflow = workflow.define({
         prospectData,
         qualificationEvidence,
         icps,
+        workspaceId: args.workspaceId,
         workspaceName,
         includeExtendedBio: !useFastPreviewPath,
         includeFinanceSearch: !useFastPreviewPath,
@@ -416,6 +434,7 @@ export const enrichmentWorkflow = workflow.define({
         prospectData,
         qualificationEvidence,
         icps,
+        workspaceId: args.workspaceId,
         workspaceName,
         routing: isSetupPreview ? "onboarding" : "reasoning",
       });
@@ -666,6 +685,7 @@ async function enrichTwitterProspect(
     prospectData: Record<string, unknown>;
     qualificationEvidence: EvidencePost[];
     icps: ICP[];
+    workspaceId: Id<"workspaces">;
     workspaceName: string;
     includeExtendedBio?: boolean;
     includeFinanceSearch?: boolean;
@@ -677,6 +697,7 @@ async function enrichTwitterProspect(
     prospectData,
     qualificationEvidence,
     icps,
+    workspaceId,
     workspaceName,
     includeExtendedBio = true,
     includeFinanceSearch = true,
@@ -703,6 +724,7 @@ async function enrichTwitterProspect(
         profile: (user || author || prospectData) as Record<string, unknown>,
         evidencePosts: workflowSafeEvidence,
         icps,
+        workspaceId,
         workspaceName,
         routing,
       }
@@ -792,6 +814,7 @@ async function enrichTwitterProspect(
       extendedBio: profileResult.extendedBio,
       evidencePosts: workflowSafeEvidence,
       icps,
+      workspaceId,
       workspaceName,
       routing,
     }
@@ -824,6 +847,7 @@ async function enrichLinkedInProspect(
     prospectData: Record<string, unknown>;
     qualificationEvidence: EvidencePost[];
     icps: ICP[];
+    workspaceId: Id<"workspaces">;
     workspaceName: string;
     routing?: ModelRouting;
   }
@@ -833,6 +857,7 @@ async function enrichLinkedInProspect(
     prospectData,
     qualificationEvidence,
     icps,
+    workspaceId,
     workspaceName,
     routing,
   } = params;
@@ -851,6 +876,7 @@ async function enrichLinkedInProspect(
         profile: prospectData,
         evidencePosts: workflowSafeEvidence,
         icps,
+        workspaceId,
         workspaceName,
         routing,
       }
@@ -1003,6 +1029,7 @@ async function enrichLinkedInProspect(
       companyData,
       evidencePosts: workflowSafeEvidence,
       icps,
+      workspaceId,
       workspaceName,
       routing,
     }

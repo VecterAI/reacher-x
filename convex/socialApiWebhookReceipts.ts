@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./lib/functionBuilders";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 const WEBHOOK_RECEIPT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -66,6 +67,12 @@ export const cleanupExpiredCron = internalMutation({
   handler: async (
     ctx
   ): Promise<{ deleted: number; continuationScheduled: boolean }> => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[SocialApiReceipts] Autonomous jobs paused, skipping expired receipt cleanup"
+      );
+      return { deleted: 0, continuationScheduled: false };
+    }
     const now = getCurrentUTCTimestamp();
     const expired = await ctx.db
       .query("socialApiWebhookReceipts")

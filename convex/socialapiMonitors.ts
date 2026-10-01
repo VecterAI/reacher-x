@@ -8,6 +8,7 @@ import {
   internalQuery,
   internalMutation,
 } from "./lib/functionBuilders";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { getUserFromIdentity } from "./lib/userUtils";
@@ -847,6 +848,17 @@ export const retireDiscoveryMonitorsCron = internalAction({
     failed: number;
     continuationScheduled: boolean;
   }> => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[SocialApiMonitors] Autonomous jobs paused, skipping monitor retirement"
+      );
+      return {
+        attempted: 0,
+        retired: 0,
+        failed: 0,
+        continuationScheduled: false,
+      };
+    }
     const monitors = await ctx.runQuery(
       internal.socialapiMonitors.listDiscoveryMonitorsForRetirementInternal,
       { limit: DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE }

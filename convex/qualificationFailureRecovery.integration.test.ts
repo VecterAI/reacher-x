@@ -511,4 +511,224 @@ describe("qualification model failure recovery", () => {
       reason: "not_due",
     });
   });
+
+  test("stops automatic retries once the qualification retry cap is reached", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-02T12:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const seeded = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "qualification-retry-cap-user",
+        email: "qualification-retry-cap@example.test",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Qualification retry cap",
+        description: "Qualification retry cap test workspace",
+        isDefault: true,
+        prospectingWorkflowStatus: "running",
+        updatedAt: 1,
+      });
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "qualification-retry-cap-prospect",
+        data: {},
+        status: "new",
+        qualificationStatus: "pending",
+        updatedAt: 1,
+      });
+      return { prospectId };
+    });
+    const modelError = formatQualificationModelFailure({
+      provider: "openai/azure",
+      model: "openai/gpt-5.6-sol",
+      attemptCount: 2,
+      message: "AI_NoObjectGeneratedError: JSONParseError",
+    });
+
+    let scheduledRetries = 0;
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      await t.mutation(
+        internal.workflows.qualification.handleQualificationComplete,
+        {
+          workflowId: `qualification-cap-workflow-${attempt}` as WorkflowId,
+          result: { kind: "failed", error: modelError },
+          context: { prospectId: seeded.prospectId },
+        }
+      );
+      const state = await t.run(async (ctx) => ({
+        prospect: await ctx.db.get("prospects", seeded.prospectId),
+        scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+      }));
+      scheduledRetries = state.scheduled.filter((job) =>
+        job.name.includes("startQualification")
+      ).length;
+      // Attempts 1-4 schedule one retry each; attempt 5 hits the cap, so
+      // attempts 5 and 6 must not add more scheduled retries.
+      const expectedScheduled = Math.min(attempt, 4);
+      expect(scheduledRetries).toBe(expectedScheduled);
+      expect(state.prospect?.qualificationStatus).toBe("pending");
+    }
+
+    const finalState = await t.run(async (ctx) => ({
+      prospect: await ctx.db.get("prospects", seeded.prospectId),
+      scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+    expect(
+      finalState.prospect?.qualificationLastFailure?.workflowAttemptCount
+    ).toBe(6);
+    expect(finalState.scheduled).toHaveLength(4);
+  });
+
+  test("pauses workspace automation instead of retrying when AI credits are exhausted", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const seeded = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "qualification-credit-exhaustion-user",
+        email: "qualification-credit-exhaustion@example.test",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Qualification credit exhaustion",
+        description: "Qualification credit exhaustion test workspace",
+        isDefault: true,
+        prospectingWorkflowStatus: "running",
+        updatedAt: 1,
+      });
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "qualification-credit-exhaustion-prospect",
+        data: {},
+        status: "new",
+        qualificationStatus: "pending",
+        updatedAt: 1,
+      });
+      return { prospectId, workspaceId };
+    });
+    const creditError =
+      'Error: Uncaught QualificationEvaluationError: [QUALIFICATION_MODEL_EVALUATION_FAILED] provider="openai/azure" model="openai/gpt-5.6-sol" attempts=2 message="This request requires more credits, or fewer max_tokens. You requested up to 16384 tokens, but can only afford 1056."';
+
+    await t.mutation(
+      internal.workflows.qualification.handleQualificationComplete,
+      {
+        workflowId: "qualification-credit-workflow-1" as WorkflowId,
+        result: { kind: "failed", error: creditError },
+        context: { prospectId: seeded.prospectId },
+      }
+    );
+
+    // The pause runs as a scheduled action; advancing simulated time runs it.
+    vi.advanceTimersByTime(60_000);
+    await t.finishInProgressScheduledFunctions();
+    const state = await t.run(async (ctx) => {
+      const workspace = await ctx.db.get("workspaces", seeded.workspaceId);
+      const prospect = await ctx.db.get("prospects", seeded.prospectId);
+      const scheduled = await ctx.db.system
+        .query("_scheduled_functions")
+        .collect();
+      return { workspace, prospect, scheduled };
+    });
+
+    expect(state.workspace?.prospectingWorkflowStatus).toBe("paused");
+    expect(state.workspace?.prospectingWorkflowPauseReason).toBe(
+      "ai_credits_exhausted"
+    );
+    expect(state.prospect?.qualificationStatus).toBe("pending");
+    expect(state.prospect?.qualificationLastFailure?.workflowAttemptCount).toBe(
+      1
+    );
+    // No qualification retry may be scheduled for an out-of-credits failure.
+    expect(
+      state.scheduled.filter((job) => job.name.includes("startQualification"))
+    ).toHaveLength(0);
+  });
+
+  test("manual resume resets the retry cap and recovery can claim again", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-04T12:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const failedAt = Date.now() - 60 * 60 * 1000;
+    const seeded = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "qualification-manual-reset-user",
+        email: "qualification-manual-reset@example.test",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Qualification manual reset",
+        description: "Qualification manual reset test workspace",
+        isDefault: true,
+        prospectingWorkflowStatus: "running",
+        updatedAt: 1,
+      });
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "qualification-manual-reset-prospect",
+        data: {},
+        status: "new",
+        qualificationStatus: "pending",
+        qualificationLastFailure: {
+          stage: "model_evaluation",
+          provider: "openai/azure",
+          model: "openai/gpt-5.6-sol",
+          code: "qualification_model_evaluation_failed",
+          message: "model evaluation failed",
+          attemptCount: 2,
+          workflowAttemptCount: 5,
+          failedAt,
+        },
+        updatedAt: 1,
+      });
+      return { prospectId, workspaceId, failedAt };
+    });
+
+    // The recovery cron must not resurrect a capped prospect.
+    const cappedClaim = await t.mutation(
+      internal.prospects.claimPendingQualificationRecoveryInternal,
+      {
+        prospectId: seeded.prospectId,
+        expectedUpdatedAt: 1,
+        expectedWorkflowId: undefined,
+        expectedFailureAt: seeded.failedAt,
+        now: Date.now(),
+      }
+    );
+    expect(cappedClaim).toEqual({
+      claimed: false,
+      scheduled: false,
+      reason: "ineligible",
+    });
+
+    const reset = await t.mutation(
+      internal.prospects.resetQualificationFailureForWorkspaceInternal,
+      { workspaceId: seeded.workspaceId }
+    );
+    expect(reset).toMatchObject({ cleared: 1, scanned: 1, hasMore: false });
+
+    // The reset patches the prospect, so claim against the fresh snapshot.
+    const resetState = await t.run(async (ctx) => ({
+      prospect: await ctx.db.get("prospects", seeded.prospectId),
+    }));
+    const resumedClaim = await t.mutation(
+      internal.prospects.claimPendingQualificationRecoveryInternal,
+      {
+        prospectId: seeded.prospectId,
+        expectedUpdatedAt: resetState.prospect?.updatedAt ?? 1,
+        expectedWorkflowId: undefined,
+        now: Date.now(),
+      }
+    );
+    expect(resumedClaim).toMatchObject({ claimed: true, scheduled: true });
+  });
 });

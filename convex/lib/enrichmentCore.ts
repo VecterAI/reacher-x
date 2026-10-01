@@ -7,7 +7,11 @@
 
 import { USER_FACING_LANGUAGE_RULES } from "../../shared/lib/agentLanguageHelpers";
 import { z } from "zod";
-import { robustGenerateObject, type ModelRouting } from "./ai";
+import {
+  robustGenerateObject,
+  type ModelRouting,
+  type StructuredGenerationTelemetry,
+} from "./ai";
 import { logger } from "../../shared/lib/logger";
 import { formatLargeNumber } from "../../shared/lib/utils/encoding/format";
 import { extractLinkedInUsername } from "../../shared/lib/utils/url/socialProfiles";
@@ -269,6 +273,7 @@ async function extractAllEnrichmentData(params: {
   icpPainPoints: string[];
   workspaceName: string;
   routing?: ModelRouting;
+  telemetry?: StructuredGenerationTelemetry;
 }): Promise<{
   prospectType: ProspectType;
   title: string;
@@ -291,6 +296,7 @@ async function extractAllEnrichmentData(params: {
     icpPainPoints,
     workspaceName,
     routing = "reasoning",
+    telemetry,
   } = params;
 
   // Build profile summary for the LLM
@@ -328,6 +334,7 @@ Analyze and extract all enrichment data.`;
       temperature: 0.3,
       maxRetries: 2,
       routing,
+      telemetry,
     });
 
     return {
@@ -404,9 +411,17 @@ export async function enrichTwitterProfile(params: {
   icps: ICP[];
   workspaceName: string;
   routing?: ModelRouting;
+  telemetry?: StructuredGenerationTelemetry;
 }): Promise<EnrichmentResult> {
-  const { profile, extendedBio, evidencePosts, icps, workspaceName, routing } =
-    params;
+  const {
+    profile,
+    extendedBio,
+    evidencePosts,
+    icps,
+    workspaceName,
+    routing,
+    telemetry,
+  } = params;
 
   try {
     const hydratedLinks = await hydrateTwitterProfileLinkMetadata(profile);
@@ -428,6 +443,7 @@ export async function enrichTwitterProfile(params: {
       icpPainPoints,
       workspaceName,
       routing,
+      telemetry,
     });
     const extractedWebsiteHref = (() => {
       const normalizedUrl = normalizeHttpUrl(extracted.websiteUrl ?? "");
@@ -549,6 +565,7 @@ export async function enrichLinkedInProfile(params: {
   icps: ICP[];
   workspaceName: string;
   routing?: ModelRouting;
+  telemetry?: StructuredGenerationTelemetry;
 }): Promise<EnrichmentResult> {
   const {
     profile,
@@ -558,6 +575,7 @@ export async function enrichLinkedInProfile(params: {
     icps,
     workspaceName,
     routing,
+    telemetry,
   } = params;
 
   try {
@@ -609,6 +627,7 @@ export async function enrichLinkedInProfile(params: {
       icpPainPoints,
       workspaceName,
       routing,
+      telemetry,
     });
 
     // Map results to EnrichmentResult

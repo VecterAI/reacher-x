@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation } from "./lib/functionBuilders";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import { getProspectNamespace, getProspectRag } from "./agents/outreach/rag";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
@@ -167,6 +168,12 @@ export const cleanupLegacyProspectRagCron = internalAction({
   handler: async (
     ctx
   ): Promise<{ claimed: number; continuationScheduled: boolean }> => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[RagMaintenance] Autonomous jobs paused, skipping legacy prospect cleanup"
+      );
+      return { claimed: 0, continuationScheduled: false };
+    }
     const prospectIds = await ctx.runMutation(
       internal.ragMaintenance.claimProspectsForLegacyCleanupInternal,
       {}

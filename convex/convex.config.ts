@@ -28,6 +28,9 @@ const app = defineApp({
     JEV_PREFILTER_MODE: v.optional(
       v.union(v.literal("off"), v.literal("shadow"))
     ),
+    // Emergency brake: stops recovery/retry crons and the tenant dispatcher
+    // from starting autonomous background work without a redeploy.
+    PAUSE_AUTONOMOUS_JOBS: v.optional(v.string()),
     OPENROUTER_ROUTING_PRESET: v.optional(
       v.union(v.literal("current"), v.literal("cost_optimized"))
     ),

@@ -2663,7 +2663,8 @@ export const workspacePlanStartStatusValidator = v.union(
 
 export const prospectingWorkflowPauseReasonValidator = v.union(
   v.literal("manual"),
-  v.literal("inactive")
+  v.literal("inactive"),
+  v.literal("ai_credits_exhausted")
 );
 
 export const prospectingBootstrapCompletionReasonValidator = v.union(

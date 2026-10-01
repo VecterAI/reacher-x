@@ -54,6 +54,7 @@ type Env = {
   readonly OUTREACH_PLAN_MAX_PARALLELISM: string | undefined;
   readonly OUTREACH_PLAN_RETRY_INITIAL_BACKOFF_MS: string | undefined;
   readonly OUTREACH_PLAN_RETRY_MAX_ATTEMPTS: string | undefined;
+  readonly PAUSE_AUTONOMOUS_JOBS: string | undefined;
   readonly PROSPECTING_AI_RETRY_INITIAL_BACKOFF_MS: string | undefined;
   readonly PROSPECTING_AI_RETRY_MAX_ATTEMPTS: string | undefined;
   readonly PROSPECTING_AUTO_RESCHEDULE: string | undefined;

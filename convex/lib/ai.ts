@@ -13,6 +13,9 @@ import { z } from "zod";
 import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { env } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import { getConfiguredModel } from "./modelConfigHelpers";
 import {
   combineStructuredGenerationErrors,
@@ -587,6 +590,71 @@ export function extractJsonPayload(text: string) {
 // Robust Structured Output Generation
 // ============================================================================
 
+/**
+ * Optional per-attempt usage telemetry for structured generation. Actions that
+ * own an execution context pass this in so every billed model attempt (including
+ * failures) lands in agentUsageEvents instead of staying invisible spend.
+ */
+export interface StructuredGenerationTelemetry {
+  ctx: ActionCtx;
+  /** Stable surface label, e.g. "Qualification Evaluator" or "Enrichment Evaluator". */
+  agentName: string;
+  workspaceId?: Id<"workspaces">;
+  userId?: string;
+}
+
+const TELEMETRY_ERROR_MESSAGE_MAX_LENGTH = 300;
+
+function toUsageSnapshot(usage: ReturnType<typeof extractUsage> | undefined) {
+  if (!usage) return {};
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    cachedInputTokens: usage.cacheReadTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheWriteTokens: usage.cacheWriteTokens,
+    noCacheTokens: usage.noCacheTokens,
+    cost: usage.cost,
+    modelSelected: usage.modelSelected,
+    providerSelected: usage.providerSelected,
+  };
+}
+
+async function recordStructuredGenerationUsage(
+  telemetry: StructuredGenerationTelemetry,
+  args: {
+    model: string;
+    usage?: ReturnType<typeof extractUsage>;
+    errorMessage?: string;
+  }
+): Promise<void> {
+  try {
+    const usage = toUsageSnapshot(args.usage);
+    const providerMetadata = args.usage?.cost
+      ? { openrouter: { usage: { cost: args.usage.cost } } }
+      : undefined;
+    await telemetry.ctx.runMutation(internal.agentTelemetry.insertUsageEvent, {
+      agentName: telemetry.agentName,
+      workspaceId: telemetry.workspaceId,
+      userId: telemetry.userId,
+      model: args.usage?.modelSelected ?? args.model,
+      provider: args.usage?.providerSelected,
+      usage,
+      providerMetadata,
+      errorMessage: args.errorMessage?.slice(
+        0,
+        TELEMETRY_ERROR_MESSAGE_MAX_LENGTH
+      ),
+    });
+  } catch (error) {
+    aiLogger.warn("Failed to record structured generation usage", {
+      agentName: telemetry.agentName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 interface RobustGenerateObjectOptions<T> {
   /** Operation name for logging */
   operation: string;
@@ -617,6 +685,8 @@ interface RobustGenerateObjectOptions<T> {
    * intentionally recover with deterministic fallback data.
    */
   failureLogLevel?: JsonFailureLogLevel;
+  /** Optional per-attempt usage telemetry into agentUsageEvents. */
+  telemetry?: StructuredGenerationTelemetry;
 }
 
 /**
@@ -638,6 +708,7 @@ export async function robustGenerateObject<T>({
   nativeStructuredOutput = false,
   normalizeParsed,
   failureLogLevel = "error",
+  telemetry,
 }: RobustGenerateObjectOptions<T>): Promise<{
   object: T;
   model: string;
@@ -659,6 +730,7 @@ export async function robustGenerateObject<T>({
         nativeStructuredOutput,
         normalizeParsed,
         failureLogLevel,
+        telemetry,
       });
     } catch (error) {
       const errorMessage =
@@ -684,6 +756,7 @@ export async function robustGenerateObject<T>({
           nativeStructuredOutput,
           normalizeParsed,
           failureLogLevel,
+          telemetry,
         });
       } catch (fallbackError) {
         throw combineStructuredGenerationErrors({
@@ -708,6 +781,7 @@ export async function robustGenerateObject<T>({
       nativeStructuredOutput,
       normalizeParsed,
       failureLogLevel,
+      telemetry,
     });
   } catch (error) {
     if (!fallbackRouting || fallbackRouting === routing) {
@@ -732,6 +806,7 @@ export async function robustGenerateObject<T>({
         nativeStructuredOutput,
         normalizeParsed,
         failureLogLevel,
+        telemetry,
       });
     } catch (fallbackError) {
       throw combineStructuredGenerationErrors({
@@ -759,6 +834,7 @@ export async function generateTextWithJsonParse<T>({
   nativeStructuredOutput = false,
   normalizeParsed,
   failureLogLevel = "error",
+  telemetry,
 }: RobustGenerateObjectOptions<T>): Promise<{
   object: T;
   model: string;
@@ -784,6 +860,8 @@ export async function generateTextWithJsonParse<T>({
     let completedStepDiagnostics:
       | Omit<StructuredGenerationAttempt, "errorMessage" | "durationMs">
       | undefined;
+    // Full per-step usage snapshot so failed attempts still land in telemetry.
+    let stepUsage: ReturnType<typeof extractUsage> | undefined;
 
     try {
       const result = await generateText({
@@ -803,6 +881,7 @@ export async function generateTextWithJsonParse<T>({
         providerOptions: attemptRouting.providerOptions,
         onStepFinish: (stepResult) => {
           const usage = extractUsage(stepResult);
+          stepUsage = usage;
           completedStepDiagnostics = {
             attemptNumber: attempt + 1,
             routing,
@@ -839,6 +918,13 @@ export async function generateTextWithJsonParse<T>({
         normalizeParsed ? normalizeParsed(parsed) : parsed
       );
 
+      if (telemetry) {
+        await recordStructuredGenerationUsage(telemetry, {
+          model: modelConfig.model,
+          usage,
+        });
+      }
+
       return {
         object: validated,
         model: usage.modelSelected ?? modelConfig.model,
@@ -869,6 +955,21 @@ export async function generateTextWithJsonParse<T>({
         ...noObjectDiagnostics,
       };
       attempts.push(attemptFailure);
+
+      if (telemetry) {
+        // onStepFinish may not fire for every failure mode; recover usage
+        // from NoObjectGeneratedError so billed failed attempts stay visible.
+        const failureUsage =
+          stepUsage ??
+          (NoObjectGeneratedError.isInstance(error) && error.usage
+            ? extractUsage({ usage: error.usage })
+            : undefined);
+        await recordStructuredGenerationUsage(telemetry, {
+          model: modelConfig.model,
+          usage: failureUsage,
+          errorMessage,
+        });
+      }
 
       if (attemptFailure.providerSelected) {
         const providerRouting = modelConfig.providerOptions.openrouter.provider;

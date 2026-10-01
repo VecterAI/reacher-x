@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { internalAction } from "./lib/functionBuilders";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import {
   X_DM_ACTIVITY_EVENT_TYPES,
   X_DM_MESSAGE_ACTIVITY_EVENT_TYPES,
@@ -997,6 +998,12 @@ export const retryDmActivitySubscriptionsCron = internalAction({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[XActivity] Autonomous jobs paused, skipping DM activity subscription retry"
+      );
+      return { checked: 0, ensured: 0, hasMore: false };
+    }
     const accounts: ConnectedXAccountUserIdPage = await ctx.runQuery(
       internal.xStore.listConnectedXAccountUserIdsInternal,
       {

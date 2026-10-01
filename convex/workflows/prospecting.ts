@@ -885,6 +885,8 @@ export const checkProspectLimitInternal = internalQuery({
         currentCount: 0,
         limit: 0,
         tier: "free" as const,
+        cycleStart: 0,
+        cycleEnd: 0,
       };
     }
 
@@ -897,7 +899,14 @@ export const checkProspectLimitInternal = internalQuery({
 
     // If unlimited, never reached
     if (limit === -1) {
-      return { limitReached: false, currentCount, limit: -1, tier };
+      return {
+        limitReached: false,
+        currentCount,
+        limit: -1,
+        tier,
+        cycleStart: usage.cycleStart,
+        cycleEnd: usage.cycleEnd,
+      };
     }
 
     return {
@@ -905,6 +914,8 @@ export const checkProspectLimitInternal = internalQuery({
       currentCount,
       limit,
       tier,
+      cycleStart: usage.cycleStart,
+      cycleEnd: usage.cycleEnd,
     };
   },
 });
@@ -920,6 +931,7 @@ export const updateWorkflowStatus = internalMutation({
     pauseReason: v.optional(prospectingWorkflowPauseReasonValidator),
     pausedAt: v.optional(v.number()),
     lastMeaningfulActivityAt: v.optional(v.number()),
+    limitCycleStart: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const now = getCurrentUTCTimestamp();
@@ -930,6 +942,12 @@ export const updateWorkflowStatus = internalMutation({
       prospectingWorkflowStatus: args.status,
       ...(args.workflowId !== undefined && {
         prospectingWorkflowId: args.workflowId,
+      }),
+      ...(args.status === "limit_reached" && {
+        prospectingLimitCycleStart: args.limitCycleStart,
+      }),
+      ...(args.status !== "limit_reached" && {
+        prospectingLimitCycleStart: undefined,
       }),
       ...(args.status === "running" && {
         prospectingWorkflowStartedAt: now,

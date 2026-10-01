@@ -32,13 +32,14 @@ export type WorkspaceSystemStatus = {
   mode: "running" | "degraded" | "paused" | "attention";
   workflowStatus: "running" | "paused" | "stopped" | "limit_reached";
   discoveryState: WorkspaceSystemDiscoveryState;
-  pauseReason: "manual" | "inactive" | null;
+  pauseReason: "manual" | "inactive" | "ai_credits_exhausted" | null;
   issueReason:
     | "search_configuration_missing"
     | "setup_incomplete"
     | "icp_refresh_required"
     | "workflow_failed"
     | "limit_reached"
+    | "ai_credits_exhausted"
     | null;
   canResume: boolean;
   label: string;
@@ -135,6 +136,14 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
       return {
         tooltip: "△ Agent is still active, but needs attention",
         title: `△ Agent needs attention. New ${entityPluralLower} may still appear while one part needs a retry.`,
+        meta: "Action required",
+      };
+    }
+
+    if (status.issueReason === "ai_credits_exhausted") {
+      return {
+        tooltip: "AI credits ran out",
+        title: `△ Agent is paused because the AI budget ran out. Add credits, then try again to resume ${discoveryVerb} ${entityPluralLower}.`,
         meta: "Action required",
       };
     }
