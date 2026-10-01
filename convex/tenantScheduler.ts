@@ -682,6 +682,12 @@ export const reconcileQueuedLanesInternal = internalMutation({
   args: {},
   returns: v.object({ reconciled: v.number(), hasMore: v.boolean() }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[TenantScheduler] Autonomous jobs paused, skipping queued lane reconcile"
+      );
+      return { reconciled: 0, hasMore: false };
+    }
     const [queuedJobs, readyLanes] = await Promise.all([
       ctx.db
         .query("tenantJobs")
@@ -1368,6 +1374,12 @@ export const reconcilePoolConfigurationInternal = internalMutation({
   args: {},
   returns: v.object({ enforced: v.boolean() }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[TenantScheduler] Autonomous jobs paused, skipping pool configuration reconcile"
+      );
+      return { enforced: false };
+    }
     const [control, enforcedOverride] = await Promise.all([
       getGlobalControl(ctx),
       ctx.db
@@ -1600,6 +1612,12 @@ export const reapExpiredJobsInternal = internalMutation({
   args: {},
   returns: v.object({ reaped: v.number(), hasMore: v.boolean() }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[TenantScheduler] Autonomous jobs paused, skipping expired lease reaping"
+      );
+      return { reaped: 0, hasMore: false };
+    }
     const now = getCurrentUTCTimestamp();
     const jobs = await ctx.db
       .query("tenantJobs")
@@ -1633,6 +1651,12 @@ export const cleanupCompletedJobsInternal = internalMutation({
   args: {},
   returns: v.object({ deleted: v.number(), hasMore: v.boolean() }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[TenantScheduler] Autonomous jobs paused, skipping job history cleanup"
+      );
+      return { deleted: 0, hasMore: false };
+    }
     const cutoff = getCurrentUTCTimestamp() - TENANT_JOB_RETENTION_MS;
     const terminalStatuses = [
       "shadow",

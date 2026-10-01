@@ -9,6 +9,7 @@ import {
   mutation,
   query,
 } from "./lib/functionBuilders";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import { workflow as workflowManager } from "./lib/workflow";
 import type { WorkflowId, WorkflowStatus } from "@convex-dev/workflow";
 import { createThread, saveMessage, listStreams } from "@convex-dev/agent";
@@ -1002,6 +1003,12 @@ export const recoverStaleSetupWorkflowsInternal = internalMutation({
     failed: v.number(),
   }),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[SetupSessions] Autonomous jobs paused, skipping stale workflow recovery"
+      );
+      return { checked: 0, recovered: 0, failed: 0 };
+    }
     const now = getCurrentUTCTimestamp();
     const cutoff = now - SETUP_WORKFLOW_STALE_AFTER_MS;
     const candidateGroups = await Promise.all(

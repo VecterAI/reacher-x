@@ -7,6 +7,7 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { normalizeEmailAddress } from "../shared/lib/utils/contact/contactUtils";
 import { PLAN_LIMITS } from "./lib/planConstants";
 import { refreshUserPlanFromBilling } from "./lib/planTransitionCore";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import {
   getComplimentaryGrant,
   replaceComplimentaryGrant,
@@ -142,6 +143,12 @@ export const recoverExpiredGrantsInternal = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[TesterPlans] Autonomous jobs paused, skipping expired grant recovery"
+      );
+      return null;
+    }
     const grants = await ctx.db
       .query("complimentaryPlanGrants")
       .withIndex("by_expiresAt", (q) =>
