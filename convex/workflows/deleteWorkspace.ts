@@ -1,11 +1,12 @@
 import type { WorkflowId } from "@convex-dev/workflow";
 import { v } from "convex/values";
-import { components, internal } from "../_generated/api";
+import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { workflow } from "../lib/workflow";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { getProspectNamespace } from "../agents/outreach/rag";
+import { WORKSPACE_DELETE_BATCH_SIZE } from "../lib/deleteWorkspaceCore";
 import {
   getWorkspaceMemoryNamespace,
   WORKSPACE_MEMORY_NAMESPACE_KINDS,
@@ -68,10 +69,12 @@ export async function requestWorkspaceDeletion(
     const workflowId = workspace.deletionWorkflowId as WorkflowId;
     const status = await workflow.status(ctx, workflowId);
     if (status.type === "failed") {
-      await workflow.restart(ctx, workflowId, {
-        from: 0,
-        startAsync: true,
-      });
+      // A failed run's journal may exceed the workflow component's 8 MiB load
+      // limit, which makes restart permanently unable to progress ("Failed to
+      // load journal"). Clean up the dead run and start a fresh workflow;
+      // deletion steps are idempotent, so starting over is safe.
+      await workflow.cleanup(ctx, workflowId);
+      await startNewWorkspaceDeletionWorkflow(ctx, workspace, result);
     } else if (status.type === "canceled" || status.type === "completed") {
       await startNewWorkspaceDeletionWorkflow(ctx, workspace, result);
     }
@@ -104,99 +107,103 @@ export const deleteWorkspaceWorkflow = workflow.define({
   },
   returns: v.object({ deleted: v.boolean() }),
   handler: async (step, args): Promise<{ deleted: boolean }> => {
-    const deleteThread = async (threadId: string) => {
-      // The installed Agent API synchronously walks bounded component pages.
-      // Workflow retries make the action durable if it times out mid-thread.
-      await step.runAction(
-        components.agent.threads.deleteAllForThreadIdSync,
-        { threadId, limit: 25 },
-        { retry: true }
-      );
-      while (true) {
-        const local = await step.runMutation(
-          internal.lib.deleteWorkspaceCore.deleteThreadLocalRowsInternal,
-          { threadId }
-        );
-        if (local.deleted === 0) break;
-      }
-      while (true) {
-        const links = await step.runMutation(
-          internal.lib.deleteWorkspaceCore.deleteThreadLinksInternal,
-          { threadId }
-        );
-        if (links.deleted === 0) break;
-      }
-    };
-
-    const deleteRagNamespace = async (namespace: string) => {
-      while (true) {
-        const page = await step.runQuery(
-          components.rag.namespaces.listNamespaceVersions,
-          { namespace, paginationOpts: { cursor: null, numItems: 1 } }
-        );
-        const namespaceId = page.page[0]?.namespaceId;
-        if (!namespaceId) break;
-        await step.runAction(
-          components.rag.namespaces.deleteNamespaceSync,
-          { namespaceId },
-          { retry: true }
-        );
-      }
-    };
-
+    // Workspace-level agent threads (setup/onboarding chats). Unprocessed
+    // threads keep their links, so each indexed re-query returns whatever a
+    // partial action step left behind and progress is guaranteed.
     while (true) {
-      const threadId = await step.runQuery(
-        internal.lib.deleteWorkspaceCore.getNextWorkspaceThreadInternal,
+      const threadIds = await step.runQuery(
+        internal.lib.deleteWorkspaceCore.getNextWorkspaceThreadBatchInternal,
         { workspaceId: args.workspaceId }
       );
-      if (!threadId) break;
-      await deleteThread(threadId);
+      if (threadIds.length === 0) break;
+      await step.runAction(
+        internal.lib.deleteWorkspaceCore.deleteThreadsBatchInternal,
+        { threadIds },
+        { retry: true }
+      );
     }
 
+    // Per-prospect agent threads, batched per paginated prospect page.
     let prospectCursor: string | null = null;
     while (true) {
       const page: {
-        threadId: string | null;
+        threadIds: string[];
         continueCursor: string;
         isDone: boolean;
       } = await step.runQuery(
-        internal.lib.deleteWorkspaceCore.getNextProspectThreadInternal,
+        internal.lib.deleteWorkspaceCore.getNextProspectThreadBatchInternal,
         {
           workspaceId: args.workspaceId,
-          paginationOpts: { cursor: prospectCursor, numItems: 1 },
+          paginationOpts: {
+            cursor: prospectCursor,
+            numItems: WORKSPACE_DELETE_BATCH_SIZE,
+          },
         }
       );
-      if (page.threadId) {
-        await deleteThread(page.threadId);
-        continue;
+      let pending = page.threadIds;
+      while (pending.length > 0) {
+        const result = await step.runAction(
+          internal.lib.deleteWorkspaceCore.deleteThreadsBatchInternal,
+          { threadIds: pending },
+          { retry: true }
+        );
+        pending = pending.filter(
+          (threadId) => !result.deletedThreadIds.includes(threadId)
+        );
       }
       if (page.isDone) break;
       prospectCursor = page.continueCursor;
     }
 
-    for (const kind of WORKSPACE_MEMORY_NAMESPACE_KINDS) {
-      await deleteRagNamespace(
-        getWorkspaceMemoryNamespace(String(args.workspaceId), kind)
+    // Workspace-level semantic memory namespaces (bounded kinds). The batch
+    // action stops between namespaces once past its time budget, so retry
+    // whatever it has not yet reported as fully deleted.
+    let pendingMemoryNamespaces = WORKSPACE_MEMORY_NAMESPACE_KINDS.map((kind) =>
+      getWorkspaceMemoryNamespace(String(args.workspaceId), kind)
+    );
+    while (pendingMemoryNamespaces.length > 0) {
+      const result = await step.runAction(
+        internal.lib.deleteWorkspaceCore.deleteRagNamespacesBatchInternal,
+        { namespaces: pendingMemoryNamespaces },
+        { retry: true }
+      );
+      pendingMemoryNamespaces = pendingMemoryNamespaces.filter(
+        (namespace) => !result.deletedNamespaces.includes(namespace)
       );
     }
-    let ragProspectCursor: string | null = null;
+
+    // Per-prospect RAG namespaces, batched per paginated prospect page.
+    let ragCursor: string | null = null;
     while (true) {
       const page: {
-        prospectId: Id<"prospects"> | null;
+        prospectIds: Id<"prospects">[];
         continueCursor: string;
         isDone: boolean;
       } = await step.runQuery(
-        internal.lib.deleteWorkspaceCore.getNextWorkspaceProspectInternal,
+        internal.lib.deleteWorkspaceCore.getNextWorkspaceProspectBatchInternal,
         {
           workspaceId: args.workspaceId,
-          paginationOpts: { cursor: ragProspectCursor, numItems: 1 },
+          paginationOpts: {
+            cursor: ragCursor,
+            numItems: WORKSPACE_DELETE_BATCH_SIZE,
+          },
         }
       );
-      if (page.prospectId) {
-        await deleteRagNamespace(getProspectNamespace(String(page.prospectId)));
+      let pending = page.prospectIds.map((prospectId) =>
+        getProspectNamespace(String(prospectId))
+      );
+      while (pending.length > 0) {
+        const result = await step.runAction(
+          internal.lib.deleteWorkspaceCore.deleteRagNamespacesBatchInternal,
+          { namespaces: pending },
+          { retry: true }
+        );
+        pending = pending.filter(
+          (namespace) => !result.deletedNamespaces.includes(namespace)
+        );
       }
       if (page.isDone) break;
-      ragProspectCursor = page.continueCursor;
+      ragCursor = page.continueCursor;
     }
 
     while (true) {
