@@ -7,6 +7,7 @@ import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { PLAN_LIMITS, type PlanTier } from "./planConstants";
 import { polar } from "../polar";
 import { computeUsageCycleWindow } from "./planCycleUtils";
+import { getComplimentaryGrant } from "./planGrantCore";
 import { getOrCreateUserPlan } from "./planCore";
 import { computeQualifiedProspectUsageForWorkspaceWindow } from "./planQualifiedUsageCore";
 import { createStableHash } from "./memoryHelpers";
@@ -181,11 +182,15 @@ export async function checkProspectLimit(
   const userPlan = await getOrCreateUserPlan(ctx, userId);
   const tier: Tier = userPlan.tier;
   const limit = getProspectLimit(tier);
-  const subscription = await polar.getCurrentSubscription(ctx, { userId });
+  const [subscription, complimentaryGrant] = await Promise.all([
+    polar.getCurrentSubscription(ctx, { userId }),
+    getComplimentaryGrant(ctx, userId),
+  ]);
   const window = computeUsageCycleWindow({
     now,
     tier,
     subscription,
+    complimentaryGrantTerm: complimentaryGrant,
   });
   const currentCount = await computeQualifiedProspectUsageForWorkspaceWindow(
     ctx,

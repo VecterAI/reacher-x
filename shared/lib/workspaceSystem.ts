@@ -4,7 +4,10 @@ export const ACTIVITY_HEARTBEAT_THROTTLE_MS = 15 * 60 * 1000;
 
 export const SERVER_ACTIVITY_WRITE_DEBOUNCE_MS = 5 * 60 * 1000;
 
-export type ProspectingWorkflowPauseReason = "manual" | "inactive";
+export type ProspectingWorkflowPauseReason =
+  | "manual"
+  | "inactive"
+  | "ai_credits_exhausted";
 
 export type WorkspaceSystemDiscoveryState = "active" | "paused";
 

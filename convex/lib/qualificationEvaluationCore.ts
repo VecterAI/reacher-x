@@ -106,5 +106,10 @@ export async function evaluateQualificationWithExternalArticles(
     profileData,
     profileEvidence,
     externalArticles,
+    telemetry: {
+      ctx,
+      agentName: "Qualification Evaluator",
+      workspaceId: args.workspaceId,
+    },
   });
 }

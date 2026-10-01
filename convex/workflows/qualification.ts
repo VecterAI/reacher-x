@@ -27,12 +27,15 @@ import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import {
   parseQualificationModelFailure,
   getQualificationFailureRetryDelayMs,
+  hasReachedQualificationRetryCap,
+  isAiCreditExhaustionError,
   shouldRecoverQualificationWorkflowStatusError,
   QUALIFICATION_MODEL_FAILURE_CODE,
 } from "../lib/qualificationFailureCore";
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
 import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
+import { areAutonomousJobsPaused } from "../lib/autonomousJobHelpers";
 import { buildLegacyWorkspaceTargetingSpec } from "../lib/targetingSpecCore";
 import { isWorkspaceAutomationActive } from "../lib/workspaceSystem";
 const qualificationWorkflowLogger = logger.withScope("QualificationWorkflow");
@@ -821,6 +824,39 @@ export const handleQualificationComplete = internalMutation({
           errorMessage: args.result.error,
         });
       }
+
+      // Out of AI credits: retrying cannot succeed until the account is
+      // topped up. Pause the workspace's autonomous work instead of spinning.
+      if (isAiCreditExhaustionError(args.result.error)) {
+        qualificationWorkflowLogger.warn(
+          "Qualification stopped: AI provider credits exhausted",
+          {
+            prospectId: String(prospect._id),
+            workspaceId: String(prospect.workspaceId),
+          }
+        );
+        await ctx.scheduler.runAfter(
+          0,
+          internal.workspaces.pauseWorkspaceForAiCreditExhaustionInternal,
+          { workspaceId: prospect.workspaceId }
+        );
+        return null;
+      }
+
+      // Bounded automatic retries: after the cap the prospect keeps its
+      // failure state until a manual resume resets it for a fresh run.
+      if (hasReachedQualificationRetryCap(workflowAttemptCount)) {
+        qualificationWorkflowLogger.warn(
+          "Qualification retry cap reached; awaiting manual retry",
+          {
+            prospectId: String(prospect._id),
+            workspaceId: String(prospect.workspaceId),
+            workflowAttemptCount,
+          }
+        );
+        return null;
+      }
+
       await ctx.scheduler.runAt(
         nextRetryAt,
         internal.workflows.qualification.startQualification,
@@ -859,6 +895,10 @@ export const startQualification = internalAction({
     expectedFailureAt: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
+    // The emergency brake stops scheduled retries from starting new work.
+    if (areAutonomousJobsPaused()) {
+      return { workId: "" };
+    }
     let prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
       prospectId: args.prospectId,
     });

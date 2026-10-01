@@ -7,6 +7,37 @@ export const QUALIFICATION_MODEL_MAX_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
 export const QUALIFICATION_WORKFLOW_STATUS_ERROR_HARD_STALE_MS = 60 * 60 * 1000;
 
 /**
+ * Automatic qualification retries stop after this many failed workflow runs.
+ * The prospect keeps its failure state (surfaced by the agent status dialog's
+ * retry action), and a manual resume clears the counter for a fresh run.
+ */
+export const QUALIFICATION_MAX_WORKFLOW_ATTEMPTS = 5;
+
+export function hasReachedQualificationRetryCap(
+  workflowAttemptCount: number
+): boolean {
+  return (
+    Math.max(0, Math.floor(workflowAttemptCount)) >=
+    QUALIFICATION_MAX_WORKFLOW_ATTEMPTS
+  );
+}
+
+/**
+ * OpenRouter answers 402 with this phrasing when the account balance is spent.
+ * Retrying cannot succeed until credits are added, so the workspace automation
+ * pauses instead of spinning on billable failures.
+ */
+export function isAiCreditExhaustionError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("insufficient credits") ||
+    normalized.includes("requires more credits") ||
+    normalized.includes("can only afford") ||
+    normalized.includes("payment required")
+  );
+}
+
+/**
  * A missing or invalid component workflow cannot become healthy on its own.
  * Unknown status errors may be transient, so preserve the lease until it is
  * far older than the maximum expected qualification runtime.

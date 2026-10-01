@@ -921,6 +921,56 @@ export const listInactiveRunningWorkspacesInternal = internalQuery({
   },
 });
 
+/**
+ * Emergency stop for a workspace whose AI provider budget ran out. Retrying
+ * cannot succeed until credits are added, so autonomous discovery pauses with
+ * an explicit reason instead of burning failed requests. The agent status
+ * dialog surfaces the reason and its retry action resumes the workspace.
+ */
+export const pauseWorkspaceForAiCreditExhaustionInternal = internalAction({
+  args: { workspaceId: v.id("workspaces") },
+  returns: v.object({ paused: v.boolean() }),
+  handler: async (ctx, args) => {
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+    if (!workspace) return { paused: false };
+    if (
+      workspace.prospectingWorkflowStatus !== "running" &&
+      workspace.prospectingWorkflowStatus !== "stopped"
+    ) {
+      return { paused: false };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    if (workspace.prospectingWorkflowId) {
+      try {
+        await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
+      } catch (error) {
+        workspaceLogger.warn(
+          "Failed to cancel prospecting workflow for AI credit exhaustion",
+          { workspaceId: String(args.workspaceId) },
+          error
+        );
+      }
+    }
+
+    await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
+      workspaceId: args.workspaceId,
+      status: "paused",
+      pauseReason: "ai_credits_exhausted",
+      pausedAt: now,
+    });
+    await ctx.runMutation(internal.tenantScheduler.pauseWorkspaceInternal, {
+      workspaceId: args.workspaceId,
+    });
+    workspaceLogger.warn("Workspace paused: AI credits exhausted", {
+      workspaceId: String(args.workspaceId),
+    });
+    return { paused: true };
+  },
+});
+
 export const pauseInactiveWorkspaces = internalAction({
   args: {},
   handler: async (ctx) => {
@@ -1011,14 +1061,22 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
           {
             workspaceId: args.workspaceId,
             status: "limit_reached",
+            limitCycleStart: limitState.cycleStart,
           }
         );
-      } else if (workspace.prospectingWorkflowStatus !== "limit_reached") {
+      } else if (
+        workspace.prospectingWorkflowStatus !== "limit_reached" ||
+        workspace.prospectingLimitCycleStart === undefined
+      ) {
+        // Re-writing the status also backfills the cycle window for
+        // workspaces that hit the limit before cycle tracking existed, so
+        // they can auto-resume on their next genuine renewal.
         await ctx.runMutation(
           internal.workflows.prospecting.updateWorkflowStatus,
           {
             workspaceId: args.workspaceId,
             status: "limit_reached",
+            limitCycleStart: limitState.cycleStart,
           }
         );
       }
@@ -1123,12 +1181,22 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
 
     if (
       workspace.prospectingWorkflowStatus === "limit_reached" &&
-      hasRequiredWorkspaceAgentData(workspace)
+      hasRequiredWorkspaceAgentData(workspace) &&
+      // Capacity freed by mid-cycle disqualifications must not restart
+      // discovery. Resume only when a NEW usage cycle window began (plan
+      // renewal or complimentary grant replacement). Workspaces limited
+      // before cycle tracking exist stay paused until a new limit event
+      // records their cycle or a user resumes manually.
+      typeof workspace.prospectingLimitCycleStart === "number" &&
+      workspace.prospectingLimitCycleStart !== limitState.cycleStart
     ) {
       await ctx.runAction(
         internal.workspaces.startProspectingWorkflowInternal,
         {
           workspaceId: args.workspaceId,
+          // An automatic capacity restart is not a user-initiated retry: it
+          // must not clear qualification retry budgets.
+          resetRecoveryAttempts: false,
         }
       );
     }
@@ -1662,6 +1730,27 @@ async function clearProspectingRecoveryStateForStart(
       : internal.workspaces.clearProspectingRecoveryTimersInternal,
     { workspaceId: args.workspaceId }
   );
+  // Only a user-initiated start resets qualification retry budgets; automatic
+  // recovery restarts must leave retry caps and backoffs intact.
+  if (!args.resetRecoveryAttempts) return;
+  let cursor: string | undefined;
+  let guard = 0;
+  let hasMore = true;
+  while (hasMore && guard < 50) {
+    const page = await ctx.runMutation(
+      internal.prospects.resetQualificationFailureForWorkspaceInternal,
+      { workspaceId: args.workspaceId, cursor }
+    );
+    hasMore = page.hasMore;
+    cursor = page.continueCursor;
+    guard += 1;
+  }
+  if (hasMore) {
+    workspaceLogger.warn(
+      "Qualification failure reset stopped at page guard; rerun the start to continue",
+      { workspaceId: String(args.workspaceId) }
+    );
+  }
 }
 
 export const clearProspectingRecoveryTimersInternal = internalMutation({

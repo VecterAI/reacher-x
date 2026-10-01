@@ -3,6 +3,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { polar } from "../polar";
 import { computeUsageCycleWindow } from "./planCycleUtils";
+import { getComplimentaryGrant } from "./planGrantCore";
 import { getOrCreateUserPlan } from "./planCore";
 import { getWorkspaceCount } from "./planHelpers";
 import type { QualifiedUsageWindow } from "./planQualifiedUsageCore";
@@ -35,11 +36,15 @@ export async function readStoredQualifiedProspectUsageSnapshot(
   userId: Id<"users">
 ) {
   const plan = await getOrCreateUserPlan(ctx, userId);
-  const subscription = await polar.getCurrentSubscription(ctx, { userId });
+  const [subscription, complimentaryGrant] = await Promise.all([
+    polar.getCurrentSubscription(ctx, { userId }),
+    getComplimentaryGrant(ctx, userId),
+  ]);
   const window = computeUsageCycleWindow({
     now: getCurrentUTCTimestamp(),
     tier: plan.tier,
     subscription,
+    complimentaryGrantTerm: complimentaryGrant,
   });
 
   const currentRows = await ctx.db

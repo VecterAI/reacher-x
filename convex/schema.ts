@@ -430,6 +430,10 @@ export default defineSchema({
       prospectingWorkflowPauseReasonValidator
     ),
     prospectingWorkflowPausedAt: v.optional(v.number()),
+    // Usage-cycle window start captured when the workspace hit its qualified
+    // prospect limit. Capacity reconciliation only auto-resumes the workflow
+    // once a NEW cycle window begins (plan renewal or grant term replacement).
+    prospectingLimitCycleStart: v.optional(v.number()),
     prospectingBootstrapStartedAt: v.optional(v.number()),
     prospectingBootstrapCycleCount: v.optional(v.number()),
     prospectingBootstrapLastProgressAt: v.optional(v.number()),
@@ -2987,16 +2991,19 @@ export default defineSchema({
    */
   agentUsageEvents: defineTable({
     userId: v.optional(v.string()),
+    workspaceId: v.optional(v.id("workspaces")),
     threadId: v.optional(v.string()),
     agentName: v.optional(v.string()),
     model: v.optional(v.string()),
     provider: v.optional(v.string()),
     usage: agentUsageSnapshotValidator,
     providerMetadata: v.optional(v.any()),
+    errorMessage: v.optional(v.string()),
     recordedAt: v.number(),
   })
     .index("by_thread_recorded_at", ["threadId", "recordedAt"])
-    .index("by_user_recorded_at", ["userId", "recordedAt"]),
+    .index("by_user_recorded_at", ["userId", "recordedAt"])
+    .index("by_workspace_recorded_at", ["workspaceId", "recordedAt"]),
 
   /**
    * Sanitized raw request/response payloads from agent model calls.

@@ -10,6 +10,7 @@ import {
 } from "../shared/lib/utils/time/timeUtils";
 import { polar } from "./polar";
 import { getOrCreateUserPlan } from "./lib/planCore";
+import { getComplimentaryGrant } from "./lib/planGrantCore";
 import { computeUsageCycleWindow } from "./lib/planCycleUtils";
 import {
   createUsageCycleKey,
@@ -33,6 +34,9 @@ import { isWorkspaceReportingAggregateReady } from "./lib/workspaceReportingRoll
 type UsageSnapshotContext = {
   plan: UserPlan;
   subscription: Parameters<typeof computeUsageCycleWindow>[0]["subscription"];
+  complimentaryGrantTerm: Parameters<
+    typeof computeUsageCycleWindow
+  >[0]["complimentaryGrantTerm"];
   workspaces: Doc<"workspaces">[];
   cycleRows: Doc<"planUsageCycles">[];
 };
@@ -51,20 +55,28 @@ export const getUsageSnapshotContextInternal = internalQuery({
     if (!identity) return null;
     const user = await getUserFromIdentity(ctx, identity, false);
     if (!user) return null;
-    const [plan, subscription, workspaces, cycleRows] = await Promise.all([
-      getOrCreateUserPlan(ctx, user._id),
-      polar.getCurrentSubscription(ctx, { userId: user._id }),
-      ctx.db
-        .query("workspaces")
-        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-        .take(100),
-      ctx.db
-        .query("planUsageCycles")
-        .withIndex("by_user_cycle_start", (q) => q.eq("userId", user._id))
-        .order("desc")
-        .take(120),
-    ]);
-    return { plan, subscription, workspaces, cycleRows };
+    const [plan, subscription, complimentaryGrant, workspaces, cycleRows] =
+      await Promise.all([
+        getOrCreateUserPlan(ctx, user._id),
+        polar.getCurrentSubscription(ctx, { userId: user._id }),
+        getComplimentaryGrant(ctx, user._id),
+        ctx.db
+          .query("workspaces")
+          .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+          .take(100),
+        ctx.db
+          .query("planUsageCycles")
+          .withIndex("by_user_cycle_start", (q) => q.eq("userId", user._id))
+          .order("desc")
+          .take(120),
+      ]);
+    return {
+      plan,
+      subscription,
+      complimentaryGrantTerm: complimentaryGrant,
+      workspaces,
+      cycleRows,
+    };
   },
 });
 
@@ -128,6 +140,7 @@ export const getUsageDashboardSnapshot = action({
       now,
       tier: context.plan.tier,
       subscription: context.subscription,
+      complimentaryGrantTerm: context.complimentaryGrantTerm,
     });
     const completedWorkspaces = filterReportableWorkspaces(context.workspaces);
     const cycleOptions = dedupeUsageCycleWindows([
@@ -265,24 +278,27 @@ export const getUsageDashboard = query({
     }
 
     const now = args.nowMs;
-    const [plan, subscription, workspaces, cycleRows] = await Promise.all([
-      getOrCreateUserPlan(ctx, user._id),
-      polar.getCurrentSubscription(ctx, { userId: user._id }),
-      ctx.db
-        .query("workspaces")
-        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-        .take(100),
-      ctx.db
-        .query("planUsageCycles")
-        .withIndex("by_user_cycle_start", (q) => q.eq("userId", user._id))
-        .order("desc")
-        .take(120),
-    ]);
+    const [plan, subscription, complimentaryGrant, workspaces, cycleRows] =
+      await Promise.all([
+        getOrCreateUserPlan(ctx, user._id),
+        polar.getCurrentSubscription(ctx, { userId: user._id }),
+        getComplimentaryGrant(ctx, user._id),
+        ctx.db
+          .query("workspaces")
+          .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+          .take(100),
+        ctx.db
+          .query("planUsageCycles")
+          .withIndex("by_user_cycle_start", (q) => q.eq("userId", user._id))
+          .order("desc")
+          .take(120),
+      ]);
 
     const currentWindow = computeUsageCycleWindow({
       now,
       tier: plan.tier,
       subscription,
+      complimentaryGrantTerm: complimentaryGrant,
     });
     const completedWorkspaces = filterReportableWorkspaces(workspaces);
     const reportingReady = await Promise.all(

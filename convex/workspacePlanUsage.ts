@@ -4,6 +4,7 @@ import { workspacePlanUsageValidator } from "./validators";
 import { getOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import { getUserFromIdentity } from "./lib/userUtils";
 import { getOrCreateUserPlan } from "./lib/planCore";
+import { getComplimentaryGrant } from "./lib/planGrantCore";
 import { polar } from "./polar";
 import { computeUsageCycleWindow } from "./lib/planCycleUtils";
 import { createUsageCycleKey } from "./lib/usageDashboardCore";
@@ -35,9 +36,10 @@ export const getCurrent = query({
     const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
     if (!isWorkspaceSetupCompleted(workspace) || workspace.deletionWorkflowId)
       return null;
-    const [plan, subscription, ready] = await Promise.all([
+    const [plan, subscription, complimentaryGrant, ready] = await Promise.all([
       getOrCreateUserPlan(ctx, user._id),
       polar.getCurrentSubscription(ctx, { userId: user._id }),
+      getComplimentaryGrant(ctx, user._id),
       isWorkspaceReportingAggregateReady(ctx.db, workspace._id),
     ]);
     // The provider obtains nowMs from getServerTime; it is not the device clock.
@@ -46,6 +48,7 @@ export const getCurrent = query({
       now: args.nowMs,
       tier: plan.tier,
       subscription,
+      complimentaryGrantTerm: complimentaryGrant,
     });
     // The same aggregate, metric, and inclusive cycle bounds as /usage.
     const used = ready
@@ -96,14 +99,16 @@ export const dismissNotice = mutation({
     const user = await requireUser(ctx);
     const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
     if (!workspace) throw new Error("Workspace not found");
-    const [plan, subscription] = await Promise.all([
+    const [plan, subscription, complimentaryGrant] = await Promise.all([
       getOrCreateUserPlan(ctx, user._id),
       polar.getCurrentSubscription(ctx, { userId: user._id }),
+      getComplimentaryGrant(ctx, user._id),
     ]);
     const window = computeUsageCycleWindow({
       now: getCurrentUTCTimestamp(),
       tier: plan.tier,
       subscription,
+      complimentaryGrantTerm: complimentaryGrant,
     });
     const key = getPlanUsageNoticeKey(
       createUsageCycleKey(window),

@@ -70,6 +70,7 @@ import { getProspectingRecoveryDelayMs } from "./lib/prospectingHelpers";
 import {
   getQualificationFailureRetryAt,
   getQualificationFailureRetryDelayMs,
+  hasReachedQualificationRetryCap,
 } from "./lib/qualificationFailureCore";
 import { PROSPECT_WRITE_TRANSACTION_BATCH_SIZE } from "./lib/prospectPersistenceHelpers";
 import { PREVIEW_BATCH_LIMITS } from "./lib/previewBatchLimits";
@@ -3537,6 +3538,8 @@ export const claimQualificationFailureRetryInternal = internalMutation({
       prospect.qualificationStatus !== "pending" ||
       prospect.qualificationWorkflowId !== undefined ||
       !failure ||
+      // Capped prospects wait for a manual resume, which clears the counter.
+      hasReachedQualificationRetryCap(failure.workflowAttemptCount ?? 1) ||
       failure.failedAt !== args.expectedFailureAt ||
       getQualificationFailureRetryAt(failure) > args.now
     ) {
@@ -3557,6 +3560,63 @@ export const claimQualificationFailureRetryInternal = internalMutation({
       updatedAt: args.now,
     });
     return true;
+  },
+});
+
+/**
+ * Manual resume: give capped prospects a fresh automatic retry budget.
+ * Only prospects at the retry cap are cleared, so sub-cap prospects keep
+ * their backoff schedule. Cursor-paginated so every page advances even when
+ * most rows do not match; the caller loops while hasMore to keep writes per
+ * transaction small.
+ */
+export const resetQualificationFailureForWorkspaceInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    batchSize: v.optional(v.number()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: v.object({
+    cleared: v.number(),
+    scanned: v.number(),
+    hasMore: v.boolean(),
+    continueCursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(1, Math.min(args.batchSize ?? 100, 200));
+    // Prospect documents are large; byte and row caps keep every page well
+    // inside transaction read limits and spread the scan across calls.
+    const page = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .paginate({
+        numItems: batchSize,
+        cursor: args.cursor ?? null,
+        maximumRowsRead: batchSize,
+        maximumBytesRead: 2_000_000,
+      });
+    let cleared = 0;
+    for (const prospect of page.page) {
+      if (
+        prospect.qualificationStatus === "pending" &&
+        prospect.qualificationLastFailure &&
+        hasReachedQualificationRetryCap(
+          prospect.qualificationLastFailure.workflowAttemptCount ?? 0
+        )
+      ) {
+        await ctx.db.patch(prospect._id, {
+          qualificationLastFailure: undefined,
+          updatedAt: getCurrentUTCTimestamp(),
+        });
+        cleared += 1;
+      }
+    }
+    return {
+      cleared,
+      scanned: page.page.length,
+      hasMore: !page.isDone,
+      continueCursor: page.continueCursor,
+    };
   },
 });
 
@@ -3586,6 +3646,20 @@ export const claimPendingQualificationRecoveryInternal = internalMutation({
       prospect.status === "archived" ||
       prospect.origin === "setup_preview" ||
       prospect.qualificationStatus !== "pending"
+    ) {
+      return {
+        claimed: false,
+        scheduled: false,
+        reason: "ineligible" as const,
+      };
+    }
+
+    // Capped prospects keep their failure state until a manual resume clears
+    // the counter; the recovery cron must not resurrect them on its own.
+    if (
+      hasReachedQualificationRetryCap(
+        prospect.qualificationLastFailure?.workflowAttemptCount ?? 0
+      )
     ) {
       return {
         claimed: false,

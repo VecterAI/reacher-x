@@ -70,7 +70,7 @@ async function seedBaseTester(t: ReturnType<typeof convexTest>) {
     return userId;
   });
 
-  return { currentWindow, email, previousWindow, userId };
+  return { currentWindow, email, previousWindow, seededAt: now, userId };
 }
 
 describe("trusted plan transitions", () => {
@@ -116,10 +116,13 @@ describe("trusted plan transitions", () => {
       workspacesLimit: PLAN_LIMITS.pro.workspacesLimit,
       subscriptionTier: "free",
     });
+    // A complimentary Pro grant (no Polar subscription) now runs one quota
+    // window for the whole grant term instead of resetting on calendar months.
+    const proGrantTermEnd = seeded.seededAt + 30 * 24 * 60 * 60 * 1000;
     expect(state.currentCycle).toMatchObject({
       tier: "pro",
-      cycleStart: seeded.currentWindow.cycleStart,
-      cycleEnd: seeded.currentWindow.cycleEnd,
+      cycleStart: seeded.seededAt,
+      cycleEnd: proGrantTermEnd,
       prospectsLimit: PLAN_LIMITS.pro.prospectsLimit,
       workspacesLimit: PLAN_LIMITS.pro.workspacesLimit,
       isCurrent: true,

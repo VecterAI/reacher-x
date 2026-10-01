@@ -9,6 +9,7 @@ import {
   robustGenerateObject,
   StructuredGenerationError,
   type ModelRouting,
+  type StructuredGenerationTelemetry,
 } from "./ai";
 import { runWithWorkspaceMemoryCompliance } from "./workspaceMemoryCompliance";
 import { logger } from "../../shared/lib/logger";
@@ -266,6 +267,8 @@ export interface QualificationCoreParams {
   similarQualifiedCases?: string[];
   similarDisqualifiedCases?: string[];
   routing?: ModelRouting;
+  /** Per-attempt usage telemetry so billed model work stays visible. */
+  telemetry?: StructuredGenerationTelemetry;
 }
 
 export async function qualifyProspectCore(
@@ -289,6 +292,7 @@ export async function qualifyProspectCore(
     similarQualifiedCases,
     similarDisqualifiedCases,
     routing = "onboarding",
+    telemetry,
   } = params;
   const now = getCurrentUTCTimestamp();
   const candidates = prepareQualificationCandidates({
@@ -465,6 +469,7 @@ Evaluate this prospect against the ICP.`;
         // The onboarding route uses the established JSON + schema validation
         // path: its configured endpoints do not accept native structured output.
         nativeStructuredOutput: routing !== "onboarding",
+        telemetry,
       });
     const generation = await runWithWorkspaceMemoryCompliance<
       Awaited<ReturnType<typeof generateQualificationCandidate>>

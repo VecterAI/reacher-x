@@ -3,6 +3,7 @@ import type { MutationCtx } from "../_generated/server";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { computeUsageCycleWindow } from "./planCycleUtils";
 import type { PolarSubscriptionLike } from "./planCycleUtils";
+import { getComplimentaryGrant } from "./planGrantCore";
 import { getOrCreateUserPlan } from "./planCore";
 import { getWorkspaceCount } from "./planHelpers";
 import { computeQualifiedProspectUsageForWindow } from "./planQualifiedUsageCore";
@@ -29,10 +30,12 @@ export async function reconcilePlanUsageForUser(
 ) {
   const now = getCurrentUTCTimestamp();
   const plan = await getOrCreateUserPlan(ctx, args.userId);
+  const complimentaryGrant = await getComplimentaryGrant(ctx, args.userId);
   const window = computeUsageCycleWindow({
     now,
     tier: plan.tier,
     subscription: args.subscription,
+    complimentaryGrantTerm: complimentaryGrant,
   });
   const workspacesUsed = await getWorkspaceCount(ctx, args.userId);
 
