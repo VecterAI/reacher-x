@@ -1,7 +1,6 @@
 "use client";
 
 import { useApproveOutreachPlan } from "@/shared/hooks/useApproveOutreachPlan";
-import { TextShimmer } from "@/shared/ui/components/TextShimmer";
 
 /**
  * AgentChat - Main agent chat interface with streaming support
@@ -635,15 +634,36 @@ function LivePlanPreviewCard({
   );
 }
 
+const MAX_TOOL_ERROR_CHARS = 120;
+
+/**
+ * Single-line, length-capped error copy for failed tool rows. The full error
+ * stays available via the row's native title tooltip.
+ */
+function getShortToolError(errorText: string | undefined): string | null {
+  const text = errorText?.trim();
+  if (!text) {
+    return null;
+  }
+
+  const firstLine = (text.split("\n")[0] ?? text).trim();
+  if (firstLine.length <= MAX_TOOL_ERROR_CHARS) {
+    return firstLine;
+  }
+
+  return `${firstLine.slice(0, MAX_TOOL_ERROR_CHARS - 1)}…`;
+}
+
 function ToolCallMarker({
   toolCall,
 }: {
-  toolCall: Pick<ToolCallInfo, "toolName" | "state" | "args">;
+  toolCall: Pick<ToolCallInfo, "toolName" | "state" | "args" | "errorText">;
 }) {
   const isComplete =
     toolCall.state === "result" || toolCall.state === "output-available";
   const isError = toolCall.state === "output-error";
   const label = getToolLabel(toolCall.toolName, toolCall.args);
+  const shortError = isError ? getShortToolError(toolCall.errorText) : null;
   const ToolIcon =
     TOOL_ICON_COMPONENTS[getToolIconKey(toolCall.toolName, toolCall.args)];
   const showsPendingState = !isComplete && !isError;
@@ -656,28 +676,42 @@ function ToolCallMarker({
       </MarkerIcon>
       <MarkerContent
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2",
+          "flex min-w-0 flex-1 flex-col items-start gap-0.5",
           showsTrailingState && "justify-between"
         )}
       >
         <span
           className={cn(
-            "truncate text-xs leading-none font-medium",
-            isComplete && !isError ? "text-muted-foreground" : "text-foreground"
+            "flex w-full min-w-0 items-center gap-2",
+            showsTrailingState && "justify-between"
           )}
         >
-          {label}
+          <span
+            className={cn(
+              "truncate text-xs leading-none font-medium",
+              isComplete && !isError
+                ? "text-muted-foreground"
+                : "text-foreground"
+            )}
+          >
+            {label}
+          </span>
+          {showsTrailingState ? (
+            <span className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
+              {isError ? (
+                <ErrorIcon className="text-destructive size-4 fill-current" />
+              ) : (
+                <ProgressActivityIcon className="size-4 animate-spin" />
+              )}
+            </span>
+          ) : null}
         </span>
-        {showsTrailingState ? (
-          <span className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
-            {showsPendingState ? (
-              <span className="shimmer font-mono">Running</span>
-            ) : null}
-            {isError ? (
-              <ErrorIcon className="text-destructive size-4 fill-current" />
-            ) : showsPendingState ? (
-              <ProgressActivityIcon className="size-4 animate-spin" />
-            ) : null}
+        {shortError ? (
+          <span
+            className="text-destructive/90 max-w-[48ch] truncate text-xs leading-none"
+            title={toolCall.errorText}
+          >
+            {shortError}
           </span>
         ) : null}
       </MarkerContent>
@@ -688,7 +722,7 @@ function ToolCallMarker({
 function ToolCallGroup({
   toolCalls,
 }: {
-  toolCalls: Pick<ToolCallInfo, "toolName" | "state" | "args">[];
+  toolCalls: Pick<ToolCallInfo, "toolName" | "state" | "args" | "errorText">[];
 }) {
   const totalCalls = toolCalls.length;
   const hasError = toolCalls.some(
@@ -753,7 +787,7 @@ function ToolCallVisualization({
   const renderedToolCallNodes: React.ReactNode[] = [];
   const pendingMarkerToolCalls: Pick<
     ToolCallInfo,
-    "toolName" | "state" | "args"
+    "toolName" | "state" | "args" | "errorText"
   >[] = [];
 
   for (const [idx, tc] of toolCalls.entries()) {
@@ -1018,10 +1052,8 @@ function getPendingTurnLabel(pendingTurn: PendingTurnState): string {
 
 function PendingAssistantMessage({
   pendingTurn,
-  onStop,
 }: {
   pendingTurn: PendingTurnState;
-  onStop: () => void;
 }) {
   return (
     <Message align="start" className="items-start">
@@ -1033,11 +1065,7 @@ function PendingAssistantMessage({
         slotClassName={AGENT_MESSAGE_AVATAR_SLOT_CLASSNAME}
       />
       <div className="flex max-w-[85%] flex-col gap-2 pt-1">
-        <ThinkingBar
-          text={getPendingTurnLabel(pendingTurn)}
-          onStop={pendingTurn.phase === "stopping" ? undefined : onStop}
-          stopLabel="Skip thinking"
-        />
+        <ThinkingBar text={getPendingTurnLabel(pendingTurn)} />
       </div>
     </Message>
   );
@@ -1136,18 +1164,12 @@ function ReasoningSection({
                 <Steps key={`${index}-${step}`}>
                   <StepsTrigger
                     leftIcon={
-                      isStreaming ? (
-                        <ProgressActivityIcon className="size-3.5 animate-spin" />
-                      ) : (
+                      isStreaming ? undefined : (
                         <CheckCircleIcon className="text-muted-foreground size-3.5 fill-current" />
                       )
                     }
                   >
-                    {isStreaming ? (
-                      <TextShimmer>Thinking</TextShimmer>
-                    ) : (
-                      "Thinking"
-                    )}
+                    Thinking
                   </StepsTrigger>
                   <StepsContent>
                     <StepsItem>{step}</StepsItem>
@@ -1882,6 +1904,8 @@ function ChatMessage({
                   args: tp.input as Record<string, unknown> | undefined,
                   result: tp.output as Record<string, unknown> | undefined,
                   toolCallId,
+                  errorText:
+                    typeof tp.errorText === "string" ? tp.errorText : undefined,
                 };
 
                 return (
@@ -3792,10 +3816,7 @@ export function AgentChat({
                             ease: [0.25, 0.1, 0.25, 1],
                           }}
                         >
-                          <PendingAssistantMessage
-                            pendingTurn={pendingTurn}
-                            onStop={stop}
-                          />
+                          <PendingAssistantMessage pendingTurn={pendingTurn} />
                         </motion.div>
                       </MessageScrollerItem>
                     ) : null}
