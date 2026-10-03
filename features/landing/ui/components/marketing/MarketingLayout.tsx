@@ -1,6 +1,10 @@
 import { cn } from "@/shared/lib/utils";
 import type { ReactNode } from "react";
 import { buttonVariants } from "@/shared/ui/components/Button";
+import {
+  FilledLinkedinIcon,
+  FilledTwitterIcon,
+} from "@/shared/ui/components/icons";
 
 /**
  * Split `text` on `terms` (which appear in order) and render each match in the
@@ -25,6 +29,61 @@ export function highlightTerms(
     rest = rest.slice(index + term.length);
   }
   nodes.push(rest);
+  return nodes;
+}
+
+// Badge tiles mirror ProspectPlatformAvatar's platform badge styling.
+const PLATFORM_TERMS = [
+  {
+    term: "X/Twitter",
+    Icon: FilledTwitterIcon,
+    bg: "bg-platform-twitter-badge",
+    fg: "text-platform-twitter-badge-foreground",
+  },
+  {
+    term: "LinkedIn",
+    Icon: FilledLinkedinIcon,
+    bg: "bg-platform-linkedin-badge",
+    fg: "text-platform-linkedin-badge-foreground",
+  },
+] as const;
+
+/**
+ * Render `text` with each platform term prefixed by its inline brand icon.
+ * Companion to highlightTerms for icon emphasis; unmatched terms are skipped.
+ */
+export function inlinePlatformIcons(text: string): ReactNode {
+  const nodes: ReactNode[] = [];
+  let rest = text;
+  let key = 0;
+  for (;;) {
+    // Earliest match wins so term order never depends on PLATFORM_TERMS order.
+    let match: ((typeof PLATFORM_TERMS)[number] & { index: number }) | null =
+      null;
+    for (const candidate of PLATFORM_TERMS) {
+      const index = rest.indexOf(candidate.term);
+      if (index === -1) continue;
+      if (!match || index < match.index) match = { ...candidate, index };
+    }
+    if (!match) break;
+    if (match.index > 0) nodes.push(rest.slice(0, match.index));
+    nodes.push(
+      <span key={key++} className="whitespace-nowrap">
+        <span
+          className={cn(
+            "mr-1 inline-flex size-4 items-center justify-center rounded-[4px] align-[-2px]",
+            match.bg,
+            match.fg
+          )}
+        >
+          <match.Icon className="size-3.5 shrink-0" aria-hidden="true" />
+        </span>
+        {match.term}
+      </span>
+    );
+    rest = rest.slice(match.index + match.term.length);
+  }
+  if (rest) nodes.push(rest);
   return nodes;
 }
 
@@ -79,22 +138,25 @@ export function MarketingHero({
   children,
   actions,
   eyebrow,
+  className,
 }: {
   title: ReactNode;
   children: ReactNode;
   actions?: ReactNode;
   eyebrow?: ReactNode;
+  className?: string;
 }) {
   return (
     <section
       id="get-started"
       className={cn(
         marketingPageWidth,
-        "flex scroll-mt-24 flex-col justify-center py-20 lg:py-28"
+        "flex scroll-mt-24 flex-col justify-center py-20 lg:py-28",
+        className
       )}
     >
       {eyebrow && (
-        <div className="text-muted-foreground mb-6 text-sm">{eyebrow}</div>
+        <div className="text-muted-foreground mb-12 text-sm">{eyebrow}</div>
       )}
       <div className="grid items-center gap-14 lg:grid-cols-2 lg:gap-32">
         <div>

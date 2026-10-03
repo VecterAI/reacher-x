@@ -9,6 +9,7 @@ export const MARKETING_COPY = {
     headline: "Prospecting. CRM. Outreach. In one platform.",
     description:
       "Say who you need. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn strangers into relationships.",
+    guaranteeNote: "30-day money-back guarantee.",
     setupTimeNote: "Set up in under 5 minutes.",
   },
   subscription: {
@@ -24,7 +25,7 @@ export const MARKETING_COPY = {
     outreach:
       "△ Agent writes to each person differently: your voice, their context, the research behind it. Replies, notes, and follow-ups stay in one place, so the relationship keeps moving.",
     outreachLimits: "Outreach runs within safe, human-like limits.",
-    finishHeading: "Are you ready to start networking?",
+    finishHeading: "Not for you? Full refund in 30 days.",
   },
   story: {
     connectionsHeading: "Use it for any goal that needs people.",

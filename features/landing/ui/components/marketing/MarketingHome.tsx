@@ -1,4 +1,6 @@
 import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
+import { ArrowForwardIcon } from "@/shared/ui/components/icons";
+import Link from "next/link";
 import { Suspense } from "react";
 import { MarketingFaq } from "./MarketingFaq";
 import { MarketingProof } from "./MarketingProof";
@@ -12,7 +14,11 @@ import {
   MarketingCapabilityIndex,
 } from "./MarketingProduct";
 import { LandingPromptCta } from "../LandingPromptCta";
-import { MarketingHero } from "./MarketingLayout";
+import {
+  MarketingHero,
+  highlightTerms,
+  inlinePlatformIcons,
+} from "./MarketingLayout";
 import {
   MarketingWorkflow,
   MarketingFinish,
@@ -38,9 +44,31 @@ function HeroReveal() {
 export function MarketingHome() {
   return (
     <>
-      <MarketingHero title={<HeroReveal />}>
+      <MarketingHero
+        className="pt-8 lg:pt-12"
+        eyebrow={
+          <p className="flex flex-wrap items-center justify-center gap-2 text-center font-mono text-xs tracking-wide uppercase">
+            <span>
+              {highlightTerms(MARKETING_COPY.home.guaranteeNote, [
+                "30-day money-back guarantee",
+              ])}
+            </span>
+            <Link
+              href="/pricing"
+              className="text-foreground inline-flex items-center gap-1 hover:underline"
+            >
+              See pricing
+              <ArrowForwardIcon
+                className="size-4 shrink-0 fill-current"
+                aria-hidden="true"
+              />
+            </Link>
+          </p>
+        }
+        title={<HeroReveal />}
+      >
         <p className="text-base leading-7 text-pretty">
-          {MARKETING_COPY.home.description}
+          {inlinePlatformIcons(MARKETING_COPY.home.description)}
         </p>
         <div className="mt-7">
           <LandingPromptCta
