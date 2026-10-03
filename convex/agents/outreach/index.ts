@@ -51,7 +51,6 @@ import {
 } from "./tools";
 import { getStoredXPostLimitContextForAgentUser } from "./tools/xPostLimitHelpers";
 import { logger } from "../../../shared/lib/logger";
-import { getStyleMemoryCategory } from "../../lib/styleSourceCore";
 import { loadAgentProspectProfileContext } from "../../lib/prospectProfileContextHelpers";
 import { formatLinkedInRelationshipPlanGuidance } from "../../lib/linkedinOutreachPlanCore";
 import type { LinkedInRelationshipStatus } from "../../lib/linkedinOutreachPlanCore";
@@ -64,6 +63,7 @@ import {
   OUTREACH_RECENT_MESSAGE_LIMIT,
 } from "../../lib/agentContextHelpers";
 import { filterLegacySharedBatchTurns } from "../../lib/planBatchCore";
+import { getOutreachPlaybookMessage } from "../../../shared/lib/outreachPlaybook";
 import type { OutreachAgentCustomContext } from "./context";
 import {
   approveWorkspaceProfiles,
@@ -196,8 +196,25 @@ const OUTREACH_AGENT_MAX_RETRIES = 0;
  */
 const prospectContextHandler: ContextHandler = async (ctx, args) => {
   const safeMessages = buildSafeOutreachContext(args);
+  const fallbackWithPlaybook = async () => {
+    try {
+      return [
+        {
+          role: "system" as const,
+          content: await getOutreachPlaybookMessage(),
+        },
+        ...safeMessages,
+      ];
+    } catch (playbookError) {
+      outreachAgentLogger.warn(
+        "Failed to load outreach playbook",
+        playbookError
+      );
+      return safeMessages;
+    }
+  };
   if (!args.threadId) {
-    return safeMessages;
+    return fallbackWithPlaybook();
   }
   const threadId = args.threadId;
 
@@ -240,7 +257,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       logEvent.emitSuccess(undefined, {
         context: { outcome: "no_prospect_context" },
       });
-      return safeMessages;
+      return fallbackWithPlaybook();
     }
 
     const prospect = threadContext.prospect;
@@ -250,7 +267,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       outreachLearningContext,
       profileContext,
       xPostLimitContext,
-      styleMemories,
+      writingStyleContext,
       linkedinRelationshipContext,
     ] = await Promise.all([
       measureStage(
@@ -304,13 +321,12 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       measureStage("writing_style", async () => {
         try {
           return await ctx.runQuery(
-            internal.memory.listPinnedWorkspaceMemoriesInternal,
+            internal.workspaceStyleProfiles
+              .getWorkspaceWritingStyleContextInternal,
             {
-              workspaceId: String(prospect.workspaceId),
-              category: getStyleMemoryCategory(
-                prospect.platform === "linkedin" ? "linkedin" : "twitter"
-              ),
-              limit: 1,
+              workspaceId: prospect.workspaceId,
+              platform:
+                prospect.platform === "linkedin" ? "linkedin" : "twitter",
             }
           );
         } catch (styleError) {
@@ -318,7 +334,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
             "Failed to fetch writing style profile",
             styleError
           );
-          return [];
+          return null;
         }
       }),
       measureStage("linkedin_relationship", async () => {
@@ -443,9 +459,8 @@ Still prefer concise writing unless the user clearly wants a longer post.`,
 
     // 4th block: Writing Style Profile (deterministic retrieval by category)
     let writingStyleMessage: { role: "system"; content: string } | null = null;
-    if (styleMemories.length > 0) {
-      const profile = styleMemories[0];
-      const styleText = profile.parsed?.narrative || profile.promptLine || "";
+    if (writingStyleContext?.status === "ready") {
+      const styleText = writingStyleContext.writingStyle;
       if (styleText) {
         writingStyleMessage = {
           role: "system" as const,
@@ -467,10 +482,21 @@ RULES:
     }
 
     const isolatedMessages = filterLegacySharedBatchTurns(safeMessages);
+    const outreachPlaybookMessage = await measureStage(
+      "outreach_playbook",
+      async () => ({
+        role: "system" as const,
+        content: await getOutreachPlaybookMessage(),
+      })
+    );
 
-    // Prepend context to all messages
+    // Prepend context to all messages. The playbook is the second system
+    // message because outreachPromptCacheMiddleware sets the cache breakpoint
+    // there; it is stable across prospects, so repeat turns and other
+    // prospect threads in the workspace hit the cache.
     const messages = [
       useCaseMessage,
+      outreachPlaybookMessage,
       contextMessage,
       workspaceMemoryMessage,
       xLimitMessage,
@@ -497,8 +523,8 @@ RULES:
     outreachAgentLogger.warn("Failed to fetch prospect context", error);
   }
 
-  // No prospect context - return messages as-is
-  return safeMessages;
+  // Prospect context unavailable - still deliver the copy rules with history
+  return fallbackWithPlaybook();
 };
 
 // ============================================================================

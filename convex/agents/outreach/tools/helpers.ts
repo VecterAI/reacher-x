@@ -124,13 +124,22 @@ export async function extractProspectThreadContext(
   };
 }
 
+/**
+ * Verifies the workspace style profile without hard-blocking outreach copy.
+ *
+ * Only a missing workspace link still blocks, because there is no context to
+ * write for. A learning, syncing, or errored style profile proceeds with the
+ * default voice (the agent prompt instructs the model to say so naturally and
+ * to follow the outreach playbook), and the readiness outcome is returned so
+ * callers can log or react to it.
+ */
 export async function ensureWorkspaceStyleReady(
   ctx: ToolContext,
   moduleName: string,
   workspaceId: Id<"workspaces"> | null,
   logEvent?: ConvexWideEventLogger | null
 ): Promise<
-  | { ready: true }
+  | { ready: true; styleProfileReady: boolean }
   | {
       ready: false;
       message: string;
@@ -150,22 +159,33 @@ export async function ensureWorkspaceStyleReady(
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
       workspaceId,
     });
-    const isReady =
-      !!workspace &&
+    if (!workspace) {
+      // The thread points at a workspace that no longer resolves. There is no
+      // context to write for, so this still blocks.
+      return {
+        ready: false,
+        message:
+          "Writing style is unavailable because this conversation is not linked to a valid workspace.",
+        error: "Missing workspace record",
+      };
+    }
+    const styleProfileReady =
       workspace.styleProfileStatus === "ready" &&
       typeof workspace.styleProfileVersion === "number" &&
       workspace.styleProfileVersion > 0;
 
-    if (isReady) {
-      return { ready: true };
+    if (!styleProfileReady) {
+      logEvent?.info("Workspace style profile not ready; using default voice", {
+        agent_tool: {
+          module: moduleName,
+        },
+        workspace: {
+          id: workspaceId,
+        },
+      });
     }
 
-    return {
-      ready: false,
-      message:
-        "Writing style is still learning. Wait until style learning is ready before generating outreach copy, replies, or DMs.",
-      error: `Workspace style profile not ready in ${moduleName}`,
-    };
+    return { ready: true, styleProfileReady };
   } catch {
     logEvent?.warn("Failed to verify workspace style status", {
       agent_tool: {
@@ -175,12 +195,9 @@ export async function ensureWorkspaceStyleReady(
         id: workspaceId ?? undefined,
       },
     });
-    return {
-      ready: false,
-      message:
-        "Writing style could not be verified right now. Try again after style learning finishes.",
-      error: "Failed to verify workspace style status",
-    };
+    // Never block copy generation on a verification failure; the agent
+    // proceeds with the default voice and the outreach playbook.
+    return { ready: true, styleProfileReady: false };
   }
 }
 

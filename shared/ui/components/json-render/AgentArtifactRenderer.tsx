@@ -29,6 +29,7 @@ import {
 import { InlineDmPreviewCard } from "@/features/agent/ui/components/InlineDmPreviewCard";
 import { InlineAttachmentPreview } from "@/features/agent/ui/components/InlineAttachmentPreview";
 import { BlogCard } from "@/features/blog/ui/components/BlogCard";
+import { BlogCardSkeleton } from "@/features/blog/ui/components/BlogCardSkeleton";
 import { BlogAuthorDetails } from "@/features/blog/ui/components/BlogAuthorDetails";
 import { BlogAppDemo } from "@/features/blog/ui/components/app-demo/BlogAppDemo";
 import {
@@ -936,12 +937,7 @@ function BlogCardArtifactCard({
   }, [props.slug]);
 
   if (!loaded) {
-    return (
-      <div
-        className="bg-muted/30 h-28 animate-pulse rounded-lg border"
-        aria-label="Loading ReacherX guide"
-      />
-    );
+    return <BlogCardSkeleton />;
   }
 
   if (!resource) {
