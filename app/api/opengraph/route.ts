@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchOpenGraphServer } from "@/shared/lib/utils/opengraph";
 import { useLogger, withEvlog } from "@/shared/lib/logging/next";
+import {
+  getClientIp,
+  rateLimit,
+} from "@/shared/lib/utils/core/publicApiGuardCore";
+
+// The metadata branch fetches and parses third-party HTML per unique URL, so
+// per-client traffic is bounded while CDN caching absorbs repeat lookups.
+const OPENGRAPH_RATE_LIMIT = { limit: 30, windowMs: 60_000 };
 
 function isHttpUrl(u: string): boolean {
   try {
@@ -13,6 +21,26 @@ function isHttpUrl(u: string): boolean {
 
 export const GET = withEvlog(async (request: NextRequest) => {
   const log = useLogger();
+  const limit = rateLimit(
+    `opengraph:${getClientIp(request)}`,
+    OPENGRAPH_RATE_LIMIT
+  );
+  if (!limit.allowed) {
+    log.warn("opengraph rate limited", {
+      opengraph: { retry_after_seconds: limit.retryAfterSeconds },
+    });
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Too many requests. Please try again shortly.",
+      },
+      {
+        status: 429,
+        headers: { "Retry-After": String(limit.retryAfterSeconds) },
+      }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const url = searchParams.get("url");
@@ -150,7 +178,6 @@ export const GET = withEvlog(async (request: NextRequest) => {
         "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400"
       );
       headers.set("Access-Control-Allow-Origin", "*");
-      headers.set("Vary", "Accept");
 
       return new Response(upstream.body, {
         status: 200,

@@ -24,5 +24,3 @@ export function classifyBlogRoute(pathname: string): {
     return { kind: "asset", slug: parts[0] };
   return { kind: "invalid" };
 }
-
-export { prefersMarkdown as prefersBlogMarkdown } from "@/shared/lib/urls/contentNegotiationCore";

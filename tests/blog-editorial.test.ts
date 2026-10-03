@@ -13,7 +13,6 @@ import {
 } from "../features/blog/lib/blogHelpers";
 
 const historical = new Map([
-  ["reacherx-v3-public-beta", "2025-10-13"],
   ["why-finding-customers-is-hard", "2025-03-22"],
   ["finding-customers-should-be-easier", "2025-03-18"],
 ]);
@@ -40,7 +39,7 @@ test("launch collection preserves history, removes samples, and has unique dates
   ])
     assert.ok(!files.includes(file), file);
   const real = all;
-  assert.equal(real.length, 62);
+  assert.equal(real.length, 61);
   assert.equal(new Set(real.map((post) => post.date)).size, real.length);
   assert.ok(real.every((post) => !post.draft));
   for (const [slug, date] of historical)
