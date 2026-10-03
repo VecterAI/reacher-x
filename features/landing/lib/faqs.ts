@@ -33,7 +33,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "refund",
     question: "Can I get a refund?",
     answer:
-      "Yes. Every plan comes with a 30-day money-back guarantee. If ReacherX isn't working for you, email support within 30 days of your payment and we'll refund it.",
+      "Yes. Treat it as a 30-day trial. If ReacherX isn't for you, email support within 30 days of your payment and you get a full refund.",
   },
   {
     id: "why-agent",
