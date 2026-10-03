@@ -1,4 +1,9 @@
-import { authkit, handleAuthkitProxy } from "@workos-inc/authkit-nextjs";
+import {
+  applyResponseHeaders,
+  authkit,
+  handleAuthkitProxy,
+  partitionAuthkitHeaders,
+} from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextRequest } from "next/server";
 import { classifyBlogRoute } from "@/features/blog/lib/blogRouteCore";
 import { publicMarkdownHref } from "@/features/landing/lib/agentReadinessHelpers";
@@ -89,14 +94,20 @@ export async function proxy(request: NextRequest) {
     ) {
       // Set the status before React streams the shared authenticated shell.
       // notFound() alone otherwise produces a soft 404 under root Suspense.
-      return new NextResponse(BLOG_NOT_FOUND_HTML, {
-        status: 404,
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "X-Robots-Tag": "noindex",
-          "Cache-Control": "no-store",
-        },
-      });
+      // AuthKit may have refreshed the session during authkit(); keep those
+      // Set-Cookie headers on the 404 response.
+      const { responseHeaders } = partitionAuthkitHeaders(request, headers);
+      return applyResponseHeaders(
+        new NextResponse(BLOG_NOT_FOUND_HTML, {
+          status: 404,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "X-Robots-Tag": "noindex",
+            "Cache-Control": "no-store",
+          },
+        }),
+        responseHeaders
+      );
     }
   }
 
