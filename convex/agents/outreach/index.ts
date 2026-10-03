@@ -64,6 +64,7 @@ import {
   OUTREACH_RECENT_MESSAGE_LIMIT,
 } from "../../lib/agentContextHelpers";
 import { filterLegacySharedBatchTurns } from "../../lib/planBatchCore";
+import { getOutreachPlaybookMessage } from "../../../shared/lib/outreachPlaybook";
 import type { OutreachAgentCustomContext } from "./context";
 import {
   approveWorkspaceProfiles,
@@ -196,8 +197,25 @@ const OUTREACH_AGENT_MAX_RETRIES = 0;
  */
 const prospectContextHandler: ContextHandler = async (ctx, args) => {
   const safeMessages = buildSafeOutreachContext(args);
+  const fallbackWithPlaybook = async () => {
+    try {
+      return [
+        {
+          role: "system" as const,
+          content: await getOutreachPlaybookMessage(),
+        },
+        ...safeMessages,
+      ];
+    } catch (playbookError) {
+      outreachAgentLogger.warn(
+        "Failed to load outreach playbook",
+        playbookError
+      );
+      return safeMessages;
+    }
+  };
   if (!args.threadId) {
-    return safeMessages;
+    return fallbackWithPlaybook();
   }
   const threadId = args.threadId;
 
@@ -240,7 +258,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       logEvent.emitSuccess(undefined, {
         context: { outcome: "no_prospect_context" },
       });
-      return safeMessages;
+      return fallbackWithPlaybook();
     }
 
     const prospect = threadContext.prospect;
@@ -467,10 +485,21 @@ RULES:
     }
 
     const isolatedMessages = filterLegacySharedBatchTurns(safeMessages);
+    const outreachPlaybookMessage = await measureStage(
+      "outreach_playbook",
+      async () => ({
+        role: "system" as const,
+        content: await getOutreachPlaybookMessage(),
+      })
+    );
 
-    // Prepend context to all messages
+    // Prepend context to all messages. The playbook is the second system
+    // message because outreachPromptCacheMiddleware sets the cache breakpoint
+    // there; it is stable across prospects, so repeat turns and other
+    // prospect threads in the workspace hit the cache.
     const messages = [
       useCaseMessage,
+      outreachPlaybookMessage,
       contextMessage,
       workspaceMemoryMessage,
       xLimitMessage,
@@ -497,8 +526,8 @@ RULES:
     outreachAgentLogger.warn("Failed to fetch prospect context", error);
   }
 
-  // No prospect context - return messages as-is
-  return safeMessages;
+  // Prospect context unavailable - still deliver the copy rules with history
+  return fallbackWithPlaybook();
 };
 
 // ============================================================================

@@ -709,7 +709,7 @@ When generating a plan:
 2. Find the right angle based on the workspace's outreach goal: ${useCase.promptContext.outreachGoal}
 3. Choose the most relevant post to engage with only when the plan actually needs a reply target
 4. Craft authentic response copy that feels like a peer-to-peer interaction
-5. Match the user's writing style from the "Your Writing Voice" context when present. Your reply must sound like the user wrote it, not like an AI assistant.
+5. Match the user's writing style from the "Your Writing Voice" context when present. Your reply must sound like the user wrote it, not like an AI assistant. When that context is absent, follow the Outreach Playbook in your injected context as the default voice and mention naturally that this draft used your default voice.
 6. Keep the strategy rationale concise by default. Prefer 1-2 short paragraphs.
 7. If the rationale needs more detail, format it with clean paragraph breaks. Use bullets only when they genuinely improve scanning.
 8. Never return the rationale as one oversized paragraph or a dense wall of text.
