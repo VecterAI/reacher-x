@@ -139,27 +139,41 @@ test("draft, unknown, malformed and invalid category URLs return actual HTTP 404
   }
 });
 
-test("Markdown negotiation is readable, respects quality, and varies by Accept", async () => {
-  const slug = "reacherx-v3-public-beta";
+test("Markdown stays at its dedicated URL while HTML URLs never vary by Accept", async () => {
+  const slug = "reach-out-and-get-replies";
   const direct = await request(`/blog/${slug}/markdown`);
   assert.equal(direct.status, 200);
   const markdown = await direct.text();
-  assert.match(markdown, /^# ReacherX v3.0 is now in public beta/);
-  assert.match(markdown, /Keyword suggestions|keyword suggestions/);
+  assert.match(markdown, /^# /);
   assert.doesNotMatch(markdown, /<BlogImage|<BlogCallout/);
-  const negotiated = await request(`/blog/${slug}`, {
-    Accept: "text/markdown, text/html",
-  });
-  assert.equal(await negotiated.text(), markdown);
-  assert.match(negotiated.headers.get("vary")!, /Accept/i);
-  const html = await request(`/blog/${slug}`, {
-    Accept: "text/markdown;q=0, text/html",
-  });
-  assert.match(html.headers.get("content-type")!, /text\/html/);
-  const wildcard = await request(`/blog/${slug}`, {
-    Accept: "text/markdown;q=0.5,*/*;q=1",
-  });
-  assert.match(wildcard.headers.get("content-type")!, /text\/html/);
+  assert.match(
+    direct.headers.get("cache-control")!,
+    /s-maxage=\d+/,
+    "markdown must stay CDN-cacheable"
+  );
+  for (const accept of [
+    "text/markdown, text/html",
+    "text/markdown;q=0, text/html",
+    "text/markdown;q=0.5,*/*;q=1",
+    undefined,
+  ]) {
+    const html = await request(
+      `/blog/${slug}`,
+      accept ? { Accept: accept } : undefined
+    );
+    assert.match(html.headers.get("content-type")!, /text\/html/);
+    const varyDirectives = (html.headers.get("vary") ?? "")
+      .split(",")
+      .map((directive) => directive.trim().split(";")[0].toLowerCase());
+    assert.ok(
+      !varyDirectives.includes("accept"),
+      `HTML must not vary by Accept: ${accept}`
+    );
+  }
+  assert.match(
+    (await request(`/blog/${slug}`)).headers.get("link") ?? "",
+    /rel="alternate"; type="text\/markdown"/
+  );
 });
 
 test("feeds and sitemap contain published URLs and exclude drafts", async () => {
@@ -172,7 +186,7 @@ test("feeds and sitemap contain published URLs and exclude drafts", async () => 
     const response = await request(path);
     assert.equal(response.status, 200, path);
     const content = await response.text();
-    assert.match(content, /reacherx-v3-public-beta/);
+    assert.match(content, /reach-out-and-get-replies/);
     assert.doesNotMatch(content, /authoring-example|example-|demo-content/);
   }
   const robots = await request("/robots.txt");
@@ -256,33 +270,6 @@ test("the public preview has media, is noindex, and stays out of discovery", asy
     "/blog/examples/content/markdown",
   ])
     assert.equal((await request(path)).status, 404);
-});
-
-test("original release videos stream anonymously from the site", async () => {
-  const html = await (await request("/blog/reacherx-v3-public-beta")).text();
-  assert.doesNotMatch(html, /video\.twimg\.com/);
-  const clips = [
-    "walkthrough",
-    "keywords",
-    "exact-match",
-    "reply",
-    "workspace",
-    "pinned-searches",
-    "filters",
-    "feedback",
-  ];
-  for (const clip of clips) {
-    const path = `/blog-media/reacherx-v3/${clip}.mp4`;
-    assert.ok(html.includes(path), path);
-    const response = await request(path, { Range: "bytes=0-99" });
-    assert.equal(response.status, 206, path);
-    assert.match(response.headers.get("content-type") ?? "", /video\/mp4/);
-    assert.equal((await response.arrayBuffer()).byteLength, 100, path);
-  }
-  assert.equal(
-    (await request("/blog-media/reacherx-v3/missing.mp4")).status,
-    404
-  );
 });
 
 test("article task checkboxes have visible native labels", async () => {

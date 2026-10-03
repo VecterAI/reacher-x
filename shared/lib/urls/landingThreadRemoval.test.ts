@@ -70,20 +70,63 @@ describe("routing after public thread removal", () => {
     });
   });
 
+  test.each(["/login", "/signup", "/callback"])(
+    "preserves public access to %s through the AuthKit proxy",
+    async (path) => {
+      const request = new NextRequest(`https://reacherx.com${path}`);
+      await proxy(request);
+      expect(mocks.handleAuthkitProxy).toHaveBeenCalledWith(
+        request,
+        expect.any(Headers)
+      );
+    }
+  );
+
+  test.each(["/home", "/pricing", "/login", "/signup", "/callback"])(
+    "preserves public access to %s through the AuthKit proxy",
+    async (path) => {
+      const request = new NextRequest(`https://reacherx.com${path}`);
+      await proxy(request);
+      expect(mocks.handleAuthkitProxy).toHaveBeenCalledWith(
+        request,
+        expect.any(Headers)
+      );
+    }
+  );
+
   test.each([
-    "/home",
-    "/pricing",
-    "/login",
-    "/signup",
-    "/callback",
-    "/post/x/123",
-  ])("preserves public access to %s", async (path) => {
+    "/markdown/blog",
+    "/blog/feed.xml",
+    "/blog/some-post/markdown",
+    "/api/describe-url",
+  ])("serves %s without AuthKit session work", async (path) => {
     const request = new NextRequest(`https://reacherx.com${path}`);
-    await proxy(request);
+    const response = await proxy(request);
+    expect(mocks.handleAuthkitProxy).not.toHaveBeenCalled();
+    expect(mocks.authkit).not.toHaveBeenCalled();
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.has("x-middleware-rewrite")).toBe(false);
+  });
+
+  test("blog pages advertise Markdown without Vary", async () => {
+    const request = new NextRequest("https://reacherx.com/blog", {
+      headers: { Accept: "text/markdown" },
+    });
+    const response = await proxy(request);
     expect(mocks.handleAuthkitProxy).toHaveBeenCalledWith(
       request,
       expect.any(Headers)
     );
+    expect(response.headers.get("vary")).toBeNull();
+    expect(response.headers.get("link")).toContain('type="text/markdown"');
+  });
+
+  test("unknown blog slugs return the blog 404", async () => {
+    const response = await proxy(
+      new NextRequest("https://reacherx.com/blog/not-a-post")
+    );
+    expect(response.status).toBe(404);
+    expect(await response.text()).toContain("Back to blog");
   });
 
   test.each([
@@ -186,20 +229,20 @@ test("retired homepage variants also return 404 when authenticated", async () =>
   }
 });
 
-describe("agent format negotiation preserves auth and Next.js protocols", () => {
+describe("agent readiness without per-Accept negotiation", () => {
   test.each(["/home", "/pricing", "/blog"])(
-    "negotiates public Markdown at %s",
+    "keeps %s on HTML with a Markdown alternate link",
     async (path) => {
       const response = await proxy(
         new NextRequest(`https://reacherx.com${path}?utm_source=qa`, {
           headers: { Accept: "text/markdown" },
         })
       );
-      expect(response.headers.get("x-middleware-rewrite")).toBe(
-        `https://reacherx.com/markdown${path}?utm_source=qa`
+      expect(response.headers.has("x-middleware-rewrite")).toBe(false);
+      expect(response.headers.get("vary")).toBeNull();
+      expect(response.headers.get("link")).toContain(
+        `</markdown${path}>; rel="alternate"; type="text/markdown"`
       );
-      expect(response.headers.get("vary")).toMatch(/Accept/);
-      expect(response.headers.get("link")).toContain('type="text/markdown"');
     }
   );
   test.each<{ method: string; headers: Record<string, string> }>([

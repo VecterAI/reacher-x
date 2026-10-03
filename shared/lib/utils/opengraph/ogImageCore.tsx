@@ -7,6 +7,8 @@ const OG_IMAGE_WIDTH = 1200;
 const OG_IMAGE_HEIGHT = 630;
 const OG_BACKGROUND = "#000000";
 const OG_FOREGROUND = "#ffffff";
+const OG_CACHE_CONTROL =
+  "public, max-age=0, s-maxage=86400, stale-while-revalidate=3600";
 
 let fontData: Promise<Buffer> | undefined;
 
@@ -25,9 +27,18 @@ function ogHeadlineFontSize(headline: string) {
   return 44;
 }
 
-export async function createBrandOgImage(headline: string): Promise<Response> {
+/**
+ * Render the brand social image to raw PNG bytes. The bytes are returned as a
+ * plain object so "use cache" boundaries can persist them; callers wrap them
+ * in a fresh Response per request.
+ */
+export async function createBrandOgImageBytes(headline: string): Promise<{
+  bytes: ArrayBuffer;
+  contentType: string;
+  cacheControl: string;
+}> {
   const font = await loadGeistRegular();
-  return new ImageResponse(
+  const response = new ImageResponse(
     <div
       style={{
         width: "100%",
@@ -69,10 +80,11 @@ export async function createBrandOgImage(headline: string): Promise<Response> {
       width: OG_IMAGE_WIDTH,
       height: OG_IMAGE_HEIGHT,
       fonts: [{ name: "Geist", data: font, weight: 500, style: "normal" }],
-      headers: {
-        "Cache-Control":
-          "public, max-age=0, s-maxage=86400, stale-while-revalidate=3600",
-      },
     }
   );
+  return {
+    bytes: await response.arrayBuffer(),
+    contentType: "image/png",
+    cacheControl: OG_CACHE_CONTROL,
+  };
 }

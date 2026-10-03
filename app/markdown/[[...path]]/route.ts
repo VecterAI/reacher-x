@@ -23,7 +23,6 @@ export async function GET(
           headers: {
             "Content-Type": "text/markdown; charset=utf-8",
             "Cache-Control": "no-store",
-            Vary: "Accept",
           },
         }
       );
@@ -47,7 +46,6 @@ export async function GET(
           body === null || pathname === "/pricing"
             ? "no-store"
             : "public, max-age=0, s-maxage=3600",
-        Vary: "Accept",
         ...(body === null || query
           ? { "X-Robots-Tag": "noindex, follow" }
           : {}),

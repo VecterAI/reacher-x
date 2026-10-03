@@ -56,7 +56,13 @@ test("all canonical pages have readable HTML, discoverable Markdown, and matchin
     const response = await request(path, { "User-Agent": "Claude-User/1.0" });
     assert.equal(response.status, 200, path);
     assert.match(response.headers.get("content-type")!, /text\/html/);
-    assert.match(response.headers.get("vary")!, /accept/i, path);
+    const varyDirectives = (response.headers.get("vary") ?? "")
+      .split(",")
+      .map((directive) => directive.trim().split(";")[0].toLowerCase());
+    assert.ok(
+      !varyDirectives.includes("accept"),
+      "HTML pages must not vary by Accept"
+    );
     const html = await response.text();
     assert.doesNotMatch(
       html,
@@ -81,13 +87,8 @@ test("all canonical pages have readable HTML, discoverable Markdown, and matchin
       /rel="alternate"; type="text\/markdown"/
     );
     const direct = await request(new URL(alternate).pathname);
-    const negotiated = await request(path, { Accept: "text/markdown" });
     assert.equal(direct.status, 200, alternate);
-    assert.equal(negotiated.status, 200, path);
-    assert.match(negotiated.headers.get("content-type")!, /^text\/markdown/);
-    assert.match(negotiated.headers.get("vary")!, /accept/i);
-    const markdown = await negotiated.text();
-    assert.equal(markdown, await direct.text(), path);
+    const markdown = await direct.text();
     assert.ok(markdown.startsWith("# "), path);
     assert.ok(markdown.includes(`Canonical: ${BLOG_ORIGIN}${path}`), path);
     if (["/home", "/pricing"].includes(path)) {
@@ -106,37 +107,34 @@ test("all canonical pages have readable HTML, discoverable Markdown, and matchin
     }
     await window.happyDOM.close();
   }
-  console.log(
-    `Verified ${paths.length} canonical pages in HTML, negotiated Markdown and direct Markdown.`
-  );
 });
 
-test("format switching, HEAD and RSC requests preserve representation boundaries", async () => {
+test("format switching, HEAD and RSC requests keep HTML URLs on HTML", async () => {
   for (const path of [
     "/home",
     "/pricing",
     "/blog",
     "/blog/reach-out-and-get-replies",
   ]) {
-    for (const [accept, type] of [
-      ["text/markdown", "text/markdown"],
-      ["text/html", "text/html"],
-      ["text/markdown;q=0,text/html", "text/html"],
-      ["text/markdown;q=.5,*/*;q=1", "text/html"],
-      ["text/markdown,text/html", "text/markdown"],
-      ["*/*", "text/html"],
+    for (const accept of [
+      "text/markdown",
+      "text/html",
+      "text/markdown;q=0,text/html",
+      "text/markdown;q=.5,*/*;q=1",
+      "text/markdown,text/html",
+      "*/*",
     ]) {
       const response = await request(path, { Accept: accept });
       assert.equal(response.status, 200, path);
       assert.ok(
-        response.headers.get("content-type")!.startsWith(type),
+        response.headers.get("content-type")!.startsWith("text/html"),
         `${path}: ${accept}`
       );
       await response.arrayBuffer();
     }
     const head = await request(path, { Accept: "text/markdown" }, "HEAD");
     assert.equal(head.status, 200);
-    assert.match(head.headers.get("content-type")!, /text\/markdown/);
+    assert.match(head.headers.get("content-type")!, /text\/html/);
     assert.equal(await head.text(), "");
     const rsc = await request(path, { RSC: "1", Accept: "text/markdown" });
     assert.match(rsc.headers.get("content-type")!, /text\/x-component/);
@@ -233,14 +231,15 @@ test("marketing JSON-LD, metadata and crawler policy are present in the raw resp
   assert.match(await robots.text(), /Allow: \//);
 });
 
-test("blog search is preserved through negotiation and never indexed", async () => {
+test("blog search is never indexed and stays readable in HTML", async () => {
   for (const path of [
     "/blog?q=no-such-result-xyz",
     "/blog/category/tutorials?q=no-such-result-xyz",
   ]) {
     const response = await request(path, { Accept: "text/markdown" });
     assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type")!, /text\/html/);
     assert.equal(response.headers.get("x-robots-tag"), "noindex, follow");
-    assert.match(await response.text(), /No posts match your search/);
+    assert.match(await response.text(), /id="blog-content"/);
   }
 });

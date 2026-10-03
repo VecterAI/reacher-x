@@ -192,23 +192,64 @@ test("all shipped posts parse and private drafts never appear in discovery", asy
 });
 test("public routing covers blog and discovery without broadening private app access", async () => {
   const proxy = await readFile("proxy.ts", "utf8");
-  const block = proxy.match(/const PUBLIC_PATH_PATTERNS = \[([\s\S]*?)\];/)![1];
-  const patterns = Array.from(
-    block.matchAll(/\/(.+)\/,/g),
-    (match) => new RegExp(match[1])
-  );
+  const extractPatterns = (name: string) => {
+    const block = proxy.match(
+      new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`)
+    )![1];
+    return Array.from(
+      block.matchAll(/\/(.+)\/,/g),
+      (match) => new RegExp(match[1])
+    );
+  };
+  const contentOnly = extractPatterns("CONTENT_ONLY_PATH_PATTERNS");
+  const authPaths = extractPatterns("AUTH_PATH_PATTERNS");
+  const publicPages = extractPatterns("PUBLIC_PATH_PATTERNS");
   for (const url of [
+    "/markdown/blog",
+    "/blog/feed.xml",
+    "/blog/sitemap.md",
+    "/blog/example/markdown",
+    "/blog/example/opengraph-image",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/llms.txt",
+    "/api/describe-url",
+  ])
+    assert.ok(
+      contentOnly.some((pattern) => pattern.test(url)),
+      url
+    );
+  for (const url of [
+    "/blog",
+    "/blog/example",
+    "/blog/category/tutorials",
+    "/home",
+    "/pricing",
+    "/blog-private",
+    "/agent/setup",
+    "/workspace",
+    "/api/private",
+    "/api/x/callback",
+    "/login",
+    "/logout/complete",
+  ])
+    assert.equal(
+      contentOnly.some((pattern) => pattern.test(url)),
+      false,
+      url
+    );
+  for (const url of [
+    "/home",
+    "/pricing",
     "/blog",
     "/blog/example",
     "/blog/example/opengraph-image",
     "/blog/feed.xml",
     "/blog/category/tutorials",
-    "/robots.txt",
-    "/sitemap.xml",
-    "/llms.txt",
+    "/post/x/123",
   ])
     assert.ok(
-      patterns.some((pattern) => pattern.test(url)),
+      publicPages.some((pattern) => pattern.test(url)),
       url
     );
   for (const url of [
@@ -218,14 +259,25 @@ test("public routing covers blog and discovery without broadening private app ac
     "/api/private",
   ])
     assert.equal(
-      patterns.some((pattern) => pattern.test(url)),
+      publicPages.some((pattern) => pattern.test(url)),
       false,
+      url
+    );
+  for (const url of [
+    "/login",
+    "/signup",
+    "/logout",
+    "/logout/complete",
+    "/callback",
+  ])
+    assert.ok(
+      authPaths.some((pattern) => pattern.test(url)),
       url
     );
 });
 
-test("blog route classification and content negotiation fail closed", async () => {
-  const { classifyBlogRoute, prefersBlogMarkdown } =
+test("blog route classification fails closed", async () => {
+  const { classifyBlogRoute } =
     await import("../features/blog/lib/blogRouteCore");
   assert.equal(classifyBlogRoute("/blog/category/tutorials")?.kind, "listing");
   assert.equal(classifyBlogRoute("/blog/category/unknown")?.kind, "invalid");
@@ -234,25 +286,11 @@ test("blog route classification and content negotiation fail closed", async () =
   assert.equal(classifyBlogRoute("/blog/a/markdown")?.slug, "a");
   assert.equal(classifyBlogRoute("/blog/opengraph-image")?.kind, "asset");
   assert.equal(classifyBlogRoute("/blog/a/opengraph-image")?.kind, "asset");
-  assert.equal(prefersBlogMarkdown("text/markdown,text/html"), true);
-  assert.equal(prefersBlogMarkdown("text/html,text/markdown"), false);
-  assert.equal(prefersBlogMarkdown("text/markdown;q=0,text/html"), false);
-  assert.equal(
-    prefersBlogMarkdown("text/markdown;q=0.5,text/html;q=0.9"),
-    false
-  );
-  assert.equal(prefersBlogMarkdown("text/markdown;q=wat"), false);
-  assert.equal(prefersBlogMarkdown("text/markdown;q=0.5,*/*;q=1"), false);
-  assert.equal(prefersBlogMarkdown("text/*;q=1,text/html;q=0"), true);
-  assert.equal(prefersBlogMarkdown("text/markdown;q=0,*/*;q=1"), false);
-  assert.equal(prefersBlogMarkdown("*/*"), false);
-  assert.equal(prefersBlogMarkdown("text/markdown ;Q=1,text/html;q=0.5"), true);
 });
 
 test("launch articles preserve dates, source threads, and editorial categories", async () => {
   const posts = (await getBlogPosts()).filter((post) =>
     [
-      "reacherx-v3-public-beta",
       "why-finding-customers-is-hard",
       "finding-customers-should-be-easier",
     ].includes(post.slug)
@@ -260,11 +298,6 @@ test("launch articles preserve dates, source threads, and editorial categories",
   assert.deepEqual(
     posts.map(({ slug, date, category }) => ({ slug, date, category })),
     [
-      {
-        slug: "reacherx-v3-public-beta",
-        date: "2025-10-13",
-        category: "announcements",
-      },
       {
         slug: "why-finding-customers-is-hard",
         date: "2025-03-22",

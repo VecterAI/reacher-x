@@ -21,28 +21,6 @@ import {
 } from "../features/landing/lib/faqs";
 import { ONBOARDING_PLAN_TIERS } from "../features/agent/ui/components/onboarding/planStepConfig";
 import { MARKETING_COPY } from "../features/landing/lib/marketingContentHelpers";
-import { prefersMarkdown } from "../shared/lib/urls/contentNegotiationCore";
-
-test("content negotiation respects exclusions, wildcard specificity, quality and order", () => {
-  for (const [accept, expected] of [
-    ["", false],
-    ["*/*", false],
-    ["text/html", false],
-    ["text/markdown", true],
-    ["TEXT/MARKDOWN; Q=1, text/html;q=.5", true],
-    ["text/markdown;q=0,*/*", false],
-    ["text/*;q=1,text/html;q=0", true],
-    ["text/markdown;q=.5,*/*;q=1", false],
-    ["text/html,text/markdown", false],
-    ["text/markdown,text/html", true],
-    ["text/markdown;q=wat", false],
-    ["text/markdown;q=-1", false],
-    ["text/markdown;q=2", false],
-    ["application/json", false],
-    ["text/markdown;q=0,text/html;q=0", false],
-  ] as const)
-    assert.equal(prefersMarkdown(accept), expected, accept);
-});
 
 test("only public editorial routes can resolve to Markdown; private and adversarial paths cannot", async () => {
   const posts = await getBlogPosts();
