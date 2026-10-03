@@ -51,7 +51,6 @@ import {
 } from "./tools";
 import { getStoredXPostLimitContextForAgentUser } from "./tools/xPostLimitHelpers";
 import { logger } from "../../../shared/lib/logger";
-import { getStyleMemoryCategory } from "../../lib/styleSourceCore";
 import { loadAgentProspectProfileContext } from "../../lib/prospectProfileContextHelpers";
 import { formatLinkedInRelationshipPlanGuidance } from "../../lib/linkedinOutreachPlanCore";
 import type { LinkedInRelationshipStatus } from "../../lib/linkedinOutreachPlanCore";
@@ -268,7 +267,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       outreachLearningContext,
       profileContext,
       xPostLimitContext,
-      styleMemories,
+      writingStyleContext,
       linkedinRelationshipContext,
     ] = await Promise.all([
       measureStage(
@@ -322,13 +321,12 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       measureStage("writing_style", async () => {
         try {
           return await ctx.runQuery(
-            internal.memory.listPinnedWorkspaceMemoriesInternal,
+            internal.workspaceStyleProfiles
+              .getWorkspaceWritingStyleContextInternal,
             {
-              workspaceId: String(prospect.workspaceId),
-              category: getStyleMemoryCategory(
-                prospect.platform === "linkedin" ? "linkedin" : "twitter"
-              ),
-              limit: 1,
+              workspaceId: prospect.workspaceId,
+              platform:
+                prospect.platform === "linkedin" ? "linkedin" : "twitter",
             }
           );
         } catch (styleError) {
@@ -336,7 +334,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
             "Failed to fetch writing style profile",
             styleError
           );
-          return [];
+          return null;
         }
       }),
       measureStage("linkedin_relationship", async () => {
@@ -461,9 +459,8 @@ Still prefer concise writing unless the user clearly wants a longer post.`,
 
     // 4th block: Writing Style Profile (deterministic retrieval by category)
     let writingStyleMessage: { role: "system"; content: string } | null = null;
-    if (styleMemories.length > 0) {
-      const profile = styleMemories[0];
-      const styleText = profile.parsed?.narrative || profile.promptLine || "";
+    if (writingStyleContext?.status === "ready") {
+      const styleText = writingStyleContext.writingStyle;
       if (styleText) {
         writingStyleMessage = {
           role: "system" as const,
