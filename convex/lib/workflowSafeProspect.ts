@@ -1,4 +1,7 @@
-import { summarizeTwitterPost } from "../../shared/lib/twitter/contracts";
+import {
+  buildTwitterPostUrl,
+  summarizeTwitterPost,
+} from "../../shared/lib/twitter/contracts";
 import {
   normalizeTwitterUrlEntity,
   type TwitterUrlEntity,
@@ -623,7 +626,31 @@ export function getWorkflowEvidencePostText(
 export function getWorkflowEvidencePostUrl(
   post: Record<string, unknown>
 ): string | undefined {
-  return asString(post.postURL) ?? asString(post.url);
+  const storedUrl = asString(post.postURL) ?? asString(post.url);
+  if (storedUrl) {
+    return storedUrl;
+  }
+  // Tweets stored before the SocialAPI mapper stamped a permalink carry only
+  // their id and embedded author; derive the canonical X status URL from them.
+  // An explicit non-Twitter platform always rejects the derivation. Projected
+  // posts declare `platform`, raw tweets do not — `id_str` is the legacy tweet
+  // identity field and never appears on LinkedIn posts, so it doubles as the
+  // platform discriminator for raw evidence.
+  const isTwitter =
+    post.platform === "twitter" ||
+    (post.platform === undefined && asString(post.id_str) !== undefined);
+  if (!isTwitter) {
+    return undefined;
+  }
+  const postId = getWorkflowEvidencePostId(post);
+  if (!postId) {
+    return undefined;
+  }
+  const user = isRecord(post.user) ? post.user : undefined;
+  return buildTwitterPostUrl({
+    postId,
+    authorHandle: asString(user?.screen_name),
+  });
 }
 
 export function getWorkflowEvidencePostCreatedAt(
