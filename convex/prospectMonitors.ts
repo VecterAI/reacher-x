@@ -9,7 +9,10 @@ import {
 } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { getRetriedActionStatus, runRetriedAction } from "./lib/retrier";
+import {
+  getRetriedActionStatus,
+  runProviderActionRetried,
+} from "./lib/retrier";
 import { fetchSocialApi } from "./lib/socialApiFetch";
 import { monitorStatusValidator } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
@@ -308,7 +311,7 @@ export const createProspectMonitor = internalAction({
 
     try {
       // Use retrier for the API call
-      const runId = await runRetriedAction(
+      const runId = await runProviderActionRetried(
         ctx,
         internal.prospectMonitors.createUserTweetsMonitorApiCall,
         {
@@ -411,7 +414,7 @@ export const deleteProspectMonitor = internalAction({
   handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
     try {
       // Use retrier for the API call
-      const runId = await runRetriedAction(
+      const runId = await runProviderActionRetried(
         ctx,
         internal.prospectMonitors.deleteMonitorApiCall,
         { monitorId: args.monitorId }

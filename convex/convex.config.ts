@@ -80,6 +80,15 @@ const app = defineApp({
     OUTREACH_PLAN_RETRY_MAX_ATTEMPTS: v.optional(v.string()),
     OUTREACH_PLAN_RETRY_INITIAL_BACKOFF_MS: v.optional(v.string()),
     WORKPOOL_RETRY_BACKOFF_BASE: v.optional(v.string()),
+    // Bounds for retried provider actions (LinkedIn/Twitter evidence search,
+    // enrichment, monitors). The retrier retries a failed action up to
+    // PROVIDER_ACTION_RETRY_MAX_FAILURES times with exponential backoff; the
+    // inner search actions stop paginating after PROVIDER_SEARCH_MAX_RUNTIME_MS
+    // so a slow provider can never pin an action (and its GB-hours) open.
+    PROVIDER_ACTION_RETRY_MAX_FAILURES: v.optional(v.string()),
+    PROVIDER_ACTION_RETRY_INITIAL_BACKOFF_MS: v.optional(v.string()),
+    PROVIDER_ACTION_RETRY_BASE: v.optional(v.string()),
+    PROVIDER_SEARCH_MAX_RUNTIME_MS: v.optional(v.string()),
     PROVIDER_CIRCUIT_PROBE_INTERVAL_SECONDS: v.optional(v.string()),
     PROVIDER_CIRCUIT_PROBE_LEASE_SECONDS: v.optional(v.string()),
     PROVIDER_TRANSIENT_FAILURES_BEFORE_OPEN: v.optional(v.string()),

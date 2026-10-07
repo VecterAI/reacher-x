@@ -5,7 +5,10 @@ import type { RunId } from "@convex-dev/action-retrier";
 import type { ActionCtx } from "../../_generated/server";
 import { action, internalAction } from "../../lib/functionBuilders";
 import { internal } from "../../_generated/api";
-import { getRetriedActionStatus, runRetriedAction } from "../../lib/retrier";
+import {
+  getRetriedActionStatus,
+  runProviderActionRetried,
+} from "../../lib/retrier";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import {
   buildLinkedInPeopleSearchAttempts,
@@ -212,7 +215,7 @@ async function collectPaginatedPeopleResults(
     seenStarts.add(nextStart);
 
     try {
-      const runId = await runRetriedAction(
+      const runId = await runProviderActionRetried(
         ctx,
         internal.integrations.linkedin.searchPeople.searchInternal,
         {
@@ -354,7 +357,7 @@ export const searchBatch = action({
       const runIdPromise = new Promise<RunId>((resolve, reject) => {
         void (async () => {
           try {
-            const runId = await runRetriedAction(
+            const runId = await runProviderActionRetried(
               ctx,
               internal.integrations.linkedin.searchPeople.searchInternal,
               {
@@ -491,7 +494,7 @@ export const searchBatch = action({
           }
 
           const nextAttempt = attempts[attemptIndex + 1];
-          activeRunId = await runRetriedAction(
+          activeRunId = await runProviderActionRetried(
             ctx,
             internal.integrations.linkedin.searchPeople.searchInternal,
             {

@@ -6,7 +6,10 @@
 import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
-import { getRetriedActionStatus, runRetriedAction } from "../../lib/retrier";
+import {
+  getRetriedActionStatus,
+  runProviderActionRetried,
+} from "../../lib/retrier";
 import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import type { RunId } from "@convex-dev/action-retrier";
@@ -299,7 +302,7 @@ export const search = action({
 
     try {
       // Use retrier to run the internal action with automatic retry
-      const runId = await runRetriedAction(
+      const runId = await runProviderActionRetried(
         ctx,
         internal.integrations.twitter.searchPosts.searchInternal,
         {
@@ -449,7 +452,7 @@ export const searchRaw = action({
     }
 
     try {
-      const runId = await runRetriedAction(
+      const runId = await runProviderActionRetried(
         ctx,
         internal.integrations.twitter.searchPosts.searchInternal,
         {
@@ -609,7 +612,7 @@ export const searchBatch = action({
         void (async () => {
           try {
             await new Promise((r) => setTimeout(r, delay));
-            const runId = await runRetriedAction(
+            const runId = await runProviderActionRetried(
               ctx,
               internal.integrations.twitter.searchPosts.searchInternal,
               {
@@ -821,7 +824,7 @@ export const searchRawBatch = action({
           try {
             await new Promise((r) => setTimeout(r, delay));
             resolve(
-              await runRetriedAction(
+              await runProviderActionRetried(
                 ctx,
                 internal.integrations.twitter.searchPosts.searchInternal,
                 {
@@ -1017,7 +1020,7 @@ async function runProspectingSearchPage(
     cursor?: string;
   }
 ): Promise<InternalSearchResult> {
-  const runId = await runRetriedAction(
+  const runId = await runProviderActionRetried(
     ctx,
     internal.integrations.twitter.searchPosts.searchInternal,
     args

@@ -13,7 +13,10 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { getUserFromIdentity } from "./lib/userUtils";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
-import { getRetriedActionStatus, runRetriedAction } from "./lib/retrier";
+import {
+  getRetriedActionStatus,
+  runProviderActionRetried,
+} from "./lib/retrier";
 import { fetchSocialApi } from "./lib/socialApiFetch";
 import {
   monitorStatusValidator,
@@ -523,7 +526,7 @@ export const deleteMonitor = action({
 
     try {
       // Use retrier to run the API call with automatic retry
-      const runId = await runRetriedAction(
+      const runId = await runProviderActionRetried(
         ctx,
         internal.socialapiMonitors.deleteMonitorApiCall,
         { monitorId: args.monitorId }
@@ -621,7 +624,7 @@ export const createMonitorInternal = internalAction({
 
     try {
       // Use retrier to run the API call with automatic retry
-      const runId = await runRetriedAction(
+      const runId = await runProviderActionRetried(
         ctx,
         internal.socialapiMonitors.createMonitorApiCall,
         {

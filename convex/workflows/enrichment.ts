@@ -49,6 +49,8 @@ import type { ModelRouting } from "../lib/ai";
 import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
 import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
+import { awaitRetriedActionResult } from "../lib/retrierWorkflow";
+import type { UserPostsSearchResult } from "../integrations/linkedin/searchUserPosts";
 
 // ============================================================================
 // Constants
@@ -915,15 +917,18 @@ async function enrichLinkedInProspect(
 
   const [financePostsResult, recentPostsResult] = resolvedProfileUrn
     ? await Promise.all([
-        step
-          .runAction(
-            api.integrations.linkedin.searchUserPosts.searchUserPosts,
-            {
-              urn: resolvedProfileUrn,
-              keywords: FINANCE_KEYWORDS,
-              maxPosts: MAX_FINANCE_POSTS,
-            }
-          )
+        awaitRetriedActionResult(step, {
+          start:
+            internal.integrations.linkedin.searchUserPostsQueue
+              .startUserPostsSearchForResult,
+          startArgs: {
+            urn: resolvedProfileUrn,
+            keywords: FINANCE_KEYWORDS,
+            maxPosts: MAX_FINANCE_POSTS,
+          },
+          label: "enrichment:linkedin-finance-posts",
+        })
+          .then((result) => result.returnValue as UserPostsSearchResult)
           .catch((error: unknown) => {
             enrichmentWorkflowLogger.warn(
               "LinkedIn finance search failed",
@@ -1088,23 +1093,16 @@ export const runEnrichmentWorkflow = internalAction({
       }
     }
 
-    const capacity = await ctx.runQuery(
-      internal.workflows.prospecting.checkProspectLimitInternal,
-      { workspaceId: args.workspaceId }
-    );
-    if (capacity.limitReached) {
-      await releaseClaim();
-      return { workflowId: "" };
-    }
-
     // Rechecked at execution time because tenant-scheduler and recovery
-    // dispatch reach this action directly: a workspace that paused after the
-    // claim must not spend enrichment LLM calls. The claim is released so a
-    // later resume can claim cleanly.
-    const workspace = await ctx.runQuery(internal.workspaces.getById, {
-      workspaceId: args.workspaceId,
-    });
-    if (!workspace || !isWorkspaceAutomationActive(workspace)) {
+    // dispatch reach this action directly: a workspace that paused, hit its
+    // match limit, or lost its provider after the claim must not spend
+    // enrichment LLM and provider calls. The claim is released so a later
+    // resume can claim cleanly.
+    const gate = await ctx.runQuery(
+      internal.lib.backgroundWorkGuards.checkBackgroundWorkAllowedInternal,
+      { workspaceId: args.workspaceId, prospectId: args.prospectId }
+    );
+    if (!gate.allowed) {
       await releaseClaim();
       return { workflowId: "" };
     }

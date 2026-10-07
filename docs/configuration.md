@@ -412,6 +412,30 @@ See the bundled [SocialAPI search reference](./socialapi/search.md), [search ope
 | `PROSPECTING_AUXILIARY_RETRY_INITIAL_BACKOFF_MS` |        `1000` | Initial auxiliary retry delay                |
 | `PROSPECTING_RETRY_BACKOFF_BASE`                 |           `2` | Exponential backoff multiplier               |
 
+### Provider Action Compute Guards
+
+Provider-backed actions (LinkedIn/Twitter evidence searches, enrichment,
+monitors) are retried by the action retrier and paginate internally. Two
+guards bound how much Convex action compute and provider spend one failing or
+slow provider call can burn:
+
+| Variable                                   | Code fallback | Meaning                                                                                |
+| ------------------------------------------ | ------------: | -------------------------------------------------------------------------------------- |
+| `PROVIDER_ACTION_RETRY_MAX_FAILURES`       |           `3` | Retries per provider-backed action (floor `0`, integers only)                          |
+| `PROVIDER_ACTION_RETRY_INITIAL_BACKOFF_MS` |        `1000` | First retry backoff delay                                                              |
+| `PROVIDER_ACTION_RETRY_BASE`               |           `2` | Exponential backoff multiplier (minimum `1`)                                           |
+| `PROVIDER_SEARCH_MAX_RUNTIME_MS`           |       `75000` | Per-attempt cap on a search action's pagination loop before it returns partial results |
+
+These apply to provider actions only — the shared retrier keeps its library
+defaults for unrelated retried actions, and explicit per-call options always
+win. Unset, the deployment behaves exactly as before. To bound provider spend
+during an outage without a redeploy:
+
+```bash
+npx convex env set PROVIDER_ACTION_RETRY_MAX_FAILURES 1 --prod
+npx convex env set PROVIDER_SEARCH_MAX_RUNTIME_MS 30000 --prod
+```
+
 ### Emergency Brake: `PAUSE_AUTONOMOUS_JOBS`
 
 Background automation spends paid provider credits around the clock: recovery

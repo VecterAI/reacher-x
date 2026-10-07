@@ -3583,4 +3583,28 @@ export default defineSchema({
     .index("by_plan", ["planId"])
     .index("by_task", ["taskId"])
     .index("by_action_request", ["actionRequestId"]),
+
+  /**
+   * Terminal results for retried background actions.
+   *
+   * The action-retrier component stores its own run state, but callers that
+   * must not stay alive polling (durable workflows) need a place to read the
+   * final result after the fact. `recordRetriedActionCompletion` writes rows
+   * via the retrier's `onComplete` hook; workflow steps poll
+   * `getRetriedActionResult` between free sleep steps instead of billing a
+   * live action while the underlying action runs.
+   */
+  retriedActionResults: defineTable({
+    runId: v.string(),
+    outcome: v.union(
+      v.literal("success"),
+      v.literal("failed"),
+      v.literal("canceled")
+    ),
+    returnValue: v.optional(v.any()),
+    error: v.optional(v.string()),
+    completedAt: v.number(),
+  })
+    .index("by_run_id", ["runId"])
+    .index("by_completed_at", ["completedAt"]),
 });

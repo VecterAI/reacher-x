@@ -6,7 +6,10 @@
 import { action, internalAction } from "../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
-import { getRetriedActionStatus, runRetriedAction } from "../lib/retrier";
+import {
+  getRetriedActionStatus,
+  runProviderActionRetried,
+} from "../lib/retrier";
 import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 const bishopiLogger = logger.withScope("Bishopi");
@@ -261,7 +264,7 @@ export const fetchKeywordIdeas = action({
 
     try {
       // Use retrier to run the internal action with automatic retry
-      const runId = await runRetriedAction(
+      const runId = await runProviderActionRetried(
         ctx,
         internal.integrations.bishopi.fetchKeywordIdeasInternal,
         { keywords: uniqueSeedKeywords }

@@ -83,9 +83,13 @@ type Env = {
   readonly PROSPECTING_TWITTER_SEARCH_BATCH: string | undefined;
   readonly PROSPECTING_TWITTER_SEARCH_LOOKBACK_DAYS: string | undefined;
   readonly PROSPECTING_TWITTER_SEARCH_PAGES_PER_QUERY: string | undefined;
+  readonly PROVIDER_ACTION_RETRY_BASE: string | undefined;
+  readonly PROVIDER_ACTION_RETRY_INITIAL_BACKOFF_MS: string | undefined;
+  readonly PROVIDER_ACTION_RETRY_MAX_FAILURES: string | undefined;
   readonly PROVIDER_CIRCUIT_PROBE_INTERVAL_SECONDS: string | undefined;
   readonly PROVIDER_CIRCUIT_PROBE_LEASE_SECONDS: string | undefined;
   readonly PROVIDER_RATE_LIMIT_RETRY_SECONDS: string | undefined;
+  readonly PROVIDER_SEARCH_MAX_RUNTIME_MS: string | undefined;
   readonly PROVIDER_TRANSIENT_FAILURES_BEFORE_OPEN: string | undefined;
   readonly PROVIDER_TRANSIENT_RETRY_SECONDS: string | undefined;
   readonly QUALIFICATION_MAX_PARALLELISM: string | undefined;
