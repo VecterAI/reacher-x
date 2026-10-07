@@ -202,6 +202,17 @@ export const cleanupTerminalRetriedActionInternal = internalMutation({
       return { cleaned: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("hasn't completed")) {
+        // The retrier's onComplete hook runs before it persists the terminal
+        // state; retry shortly so the component row is not held for its full
+        // seven-day retention.
+        await ctx.scheduler.runAfter(
+          1000,
+          internal.lib.retrier.cleanupTerminalRetriedActionInternal,
+          { runId }
+        );
+        return { cleaned: false };
+      }
       if (message.includes("not found")) {
         return { cleaned: false };
       }
@@ -254,6 +265,15 @@ export const recordRetriedActionCompletion = internalMutation({
     } else {
       await ctx.db.insert("retriedActionResults", row);
     }
+    // Callers that poll `getRetriedActionStatus` schedule the component run's
+    // cleanup themselves; this hook serves callers that never do, so schedule
+    // it here. The retrier invokes onComplete before persisting the terminal
+    // state, so cleanup retries briefly when it arrives too early.
+    await ctx.scheduler.runAfter(
+      0,
+      internal.lib.retrier.cleanupTerminalRetriedActionInternal,
+      { runId }
+    );
     return null;
   },
 });
