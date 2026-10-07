@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import polarTest from "@convex-dev/polar/test";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { internal } from "./_generated/api";
@@ -9,6 +10,7 @@ import {
   claimFailedCanonicalWorkspaceMemoryIndexRetries,
   upsertCanonicalWorkspaceMemory,
 } from "./lib/workspaceMemoryCore";
+import { PLAN_LIMITS } from "./lib/planConstants";
 import schema from "./schema";
 import { QUALIFICATION_STALE_PENDING_MS } from "./workflows/qualificationRecovery";
 
@@ -26,6 +28,13 @@ async function seedEligibleWorkspace(
     const userId = await ctx.db.insert("users", {
       workosUserId: `recovery-pause-${suffix}`,
       email: `recovery-pause-${suffix}@example.test`,
+    });
+    await ctx.db.insert("userPlans", {
+      userId,
+      tier: "hobby",
+      ...PLAN_LIMITS.hobby,
+      currentProspectsCount: 0,
+      updatedAt: 1,
     });
     const workspaceId = await ctx.db.insert("workspaces", {
       userId,
@@ -107,6 +116,7 @@ describe("recovery work respects workspace pause status", () => {
   test("holds failed automatic plan recovery until the workspace runs again", async () => {
     vi.setSystemTime(new Date("2026-09-27T06:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await seedEligibleWorkspace(t, "paused", "auto-plan");
     const runId = await t.run((ctx) =>
       ctx.db.insert("autoPlanRuns", {
@@ -166,6 +176,7 @@ describe("recovery work respects workspace pause status", () => {
 
   test("does not enqueue automatic plan generation for a paused workspace", async () => {
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await seedEligibleWorkspace(t, "paused", "auto-plan-start");
 
     expect(
@@ -182,6 +193,7 @@ describe("recovery work respects workspace pause status", () => {
 
   test("does not backfill eligible automatic plans for a paused workspace", async () => {
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await seedEligibleWorkspace(
       t,
       "paused",
@@ -219,6 +231,7 @@ describe("recovery work respects workspace pause status", () => {
   test("holds stale pending qualifications while the workspace is paused", async () => {
     vi.setSystemTime(new Date("2026-09-27T06:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await seedEligibleWorkspace(t, "paused", "qualification");
 
     expect(
@@ -259,6 +272,7 @@ describe("recovery work respects workspace pause status", () => {
 
   test("does not start qualification for a paused workspace", async () => {
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await seedEligibleWorkspace(
       t,
       "limit_reached",
@@ -284,6 +298,7 @@ describe("recovery work respects workspace pause status", () => {
   test("leaves failed workspace memory embeddings untouched while paused", async () => {
     vi.setSystemTime(new Date("2026-09-27T06:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await seedEligibleWorkspace(t, "stopped", "memory-index");
     const memoryId = await t.run(async (ctx) => {
       const result = await upsertCanonicalWorkspaceMemory(ctx.db, {
@@ -363,6 +378,7 @@ describe("recovery work respects workspace pause status", () => {
   test("keeps retries flowing for workspaces that never recorded a status", async () => {
     vi.setSystemTime(new Date("2026-09-27T06:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     await seedEligibleWorkspace(t, undefined, "legacy-status");
 
     const recovery = await t.action(
@@ -376,6 +392,7 @@ describe("recovery work respects workspace pause status", () => {
   test("does not let paused runs hide eligible runs behind them", async () => {
     vi.setSystemTime(new Date("2026-09-27T06:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const running = await seedEligibleWorkspace(t, "running", "scan-running");
     const paused = await seedEligibleWorkspace(t, "paused", "scan-paused");
     await t.run(async (ctx) => {
@@ -428,6 +445,7 @@ describe("recovery work respects workspace pause status", () => {
   test("does not let paused memory rows hide eligible rows behind them", async () => {
     vi.setSystemTime(new Date("2026-09-27T06:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const paused = await seedEligibleWorkspace(
       t,
       "paused",
@@ -512,6 +530,7 @@ describe("autonomous jobs emergency brake", () => {
     vi.setSystemTime(new Date("2026-09-27T06:00:00.000Z"));
     process.env.PAUSE_AUTONOMOUS_JOBS = "true";
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     // An active workspace is seeded on purpose: without the brake, every cron
     // below would find and claim this work.
     await seedEligibleWorkspace(t, "running", "brake-active");

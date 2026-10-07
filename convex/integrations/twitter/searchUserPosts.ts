@@ -10,6 +10,7 @@ import type { ActionCtx } from "../../_generated/server";
 import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { fetchSocialApi } from "../../lib/socialApiFetch";
+import { getProviderSearchMaxRuntimeMs } from "../../lib/retrier";
 import { type TwitterPost, flattenTweetForStorage } from "./searchPosts";
 import {
   getUserPostSearchOutcome,
@@ -260,9 +261,20 @@ export const searchUserPostsInternal = internalAction({
     const allPosts: TwitterPost[] = [];
     let cursor: string | undefined = undefined;
     let page = 0;
+    // Stop paginating after a bounded runtime so a slow provider can never
+    // pin this action (and its GB-hours) open for minutes on end.
+    const startedAt = getCurrentUTCTimestamp();
+    const maxRuntimeMs = getProviderSearchMaxRuntimeMs();
 
     // Pagination loop: fetch pages until we have enough posts or no more pages
     while (allPosts.length < maxPosts && page < SEARCH_USER_POSTS_MAX_PAGES) {
+      if (page > 0 && getCurrentUTCTimestamp() - startedAt > maxRuntimeMs) {
+        twitterSearchUserPostsLogger.warn(
+          "Stopping user posts search pagination after runtime budget",
+          { query: args.query, page }
+        );
+        break;
+      }
       const pageResult = await fetchSearchPage(ctx, {
         apiKey,
         query: args.query,

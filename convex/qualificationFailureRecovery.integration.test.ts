@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { WorkflowId } from "@convex-dev/workflow";
+import polarTest from "@convex-dev/polar/test";
 import { convexTest } from "convex-test";
 import { describe, expect, test, vi } from "vitest";
 import { internal } from "./_generated/api";
@@ -8,6 +9,7 @@ import {
   formatQualificationModelFailure,
   getQualificationFailureRetryDelayMs,
 } from "./lib/qualificationFailureCore";
+import { PLAN_LIMITS } from "./lib/planConstants";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -17,10 +19,18 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-29T12:46:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-recovery-user",
         email: "qualification-recovery@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,
@@ -114,10 +124,18 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-30T12:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-workflow-failure-user",
         email: "qualification-workflow-failure@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,
@@ -174,10 +192,18 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-30T13:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-orphan-user",
         email: "qualification-orphan@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,
@@ -244,10 +270,18 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-30T14:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const prospectId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-reconciler-user",
         email: "qualification-reconciler@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,
@@ -298,10 +332,18 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-30T14:30:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const prospectId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-invalid-lease-user",
         email: "qualification-invalid-lease@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,
@@ -368,11 +410,19 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-30T15:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const failedAt = Date.now() - getQualificationFailureRetryDelayMs(1);
     const prospectId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-retry-claim-user",
         email: "qualification-retry-claim@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,
@@ -429,10 +479,18 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-30T16:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-recovery-capacity-user",
         email: "qualification-recovery-capacity@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,
@@ -516,10 +574,18 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-02T12:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-retry-cap-user",
         email: "qualification-retry-cap@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,
@@ -587,10 +653,18 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const seeded = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-credit-exhaustion-user",
         email: "qualification-credit-exhaustion@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,
@@ -655,11 +729,19 @@ describe("qualification model failure recovery", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-04T12:00:00.000Z"));
     const t = convexTest(schema, modules);
+    polarTest.register(t);
     const failedAt = Date.now() - 60 * 60 * 1000;
     const seeded = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "qualification-manual-reset-user",
         email: "qualification-manual-reset@example.test",
+      });
+      await ctx.db.insert("userPlans", {
+        userId,
+        tier: "hobby",
+        ...PLAN_LIMITS.hobby,
+        currentProspectsCount: 0,
+        updatedAt: 1,
       });
       const workspaceId = await ctx.db.insert("workspaces", {
         userId,

@@ -87,6 +87,7 @@ import type * as integrations_linkedin_profileIdentity from "../integrations/lin
 import type * as integrations_linkedin_searchPeople from "../integrations/linkedin/searchPeople.js";
 import type * as integrations_linkedin_searchPosts from "../integrations/linkedin/searchPosts.js";
 import type * as integrations_linkedin_searchUserPosts from "../integrations/linkedin/searchUserPosts.js";
+import type * as integrations_linkedin_searchUserPostsQueue from "../integrations/linkedin/searchUserPostsQueue.js";
 import type * as integrations_twitter_getProfile from "../integrations/twitter/getProfile.js";
 import type * as integrations_twitter_getThread from "../integrations/twitter/getThread.js";
 import type * as integrations_twitter_searchPosts from "../integrations/twitter/searchPosts.js";
@@ -119,6 +120,7 @@ import type * as lib_analyticsCore from "../lib/analyticsCore.js";
 import type * as lib_autoPlanCore from "../lib/autoPlanCore.js";
 import type * as lib_autoPlanGroundingCacheCore from "../lib/autoPlanGroundingCacheCore.js";
 import type * as lib_autonomousJobHelpers from "../lib/autonomousJobHelpers.js";
+import type * as lib_backgroundWorkGuards from "../lib/backgroundWorkGuards.js";
 import type * as lib_contactDiscoveryCore from "../lib/contactDiscoveryCore.js";
 import type * as lib_conversationHistoryPaginationCore from "../lib/conversationHistoryPaginationCore.js";
 import type * as lib_dashboardReadCore from "../lib/dashboardReadCore.js";
@@ -225,6 +227,7 @@ import type * as lib_relationshipHelpers from "../lib/relationshipHelpers.js";
 import type * as lib_researchCore from "../lib/researchCore.js";
 import type * as lib_resumeOutreachAfterUnarchive from "../lib/resumeOutreachAfterUnarchive.js";
 import type * as lib_retrier from "../lib/retrier.js";
+import type * as lib_retrierWorkflow from "../lib/retrierWorkflow.js";
 import type * as lib_runtimeConfigHelpers from "../lib/runtimeConfigHelpers.js";
 import type * as lib_setupFlowCore from "../lib/setupFlowCore.js";
 import type * as lib_setupGenerationCore from "../lib/setupGenerationCore.js";
@@ -489,6 +492,7 @@ declare const fullApi: ApiFromModules<{
   "integrations/linkedin/searchPeople": typeof integrations_linkedin_searchPeople;
   "integrations/linkedin/searchPosts": typeof integrations_linkedin_searchPosts;
   "integrations/linkedin/searchUserPosts": typeof integrations_linkedin_searchUserPosts;
+  "integrations/linkedin/searchUserPostsQueue": typeof integrations_linkedin_searchUserPostsQueue;
   "integrations/twitter/getProfile": typeof integrations_twitter_getProfile;
   "integrations/twitter/getThread": typeof integrations_twitter_getThread;
   "integrations/twitter/searchPosts": typeof integrations_twitter_searchPosts;
@@ -521,6 +525,7 @@ declare const fullApi: ApiFromModules<{
   "lib/autoPlanCore": typeof lib_autoPlanCore;
   "lib/autoPlanGroundingCacheCore": typeof lib_autoPlanGroundingCacheCore;
   "lib/autonomousJobHelpers": typeof lib_autonomousJobHelpers;
+  "lib/backgroundWorkGuards": typeof lib_backgroundWorkGuards;
   "lib/contactDiscoveryCore": typeof lib_contactDiscoveryCore;
   "lib/conversationHistoryPaginationCore": typeof lib_conversationHistoryPaginationCore;
   "lib/dashboardReadCore": typeof lib_dashboardReadCore;
@@ -627,6 +632,7 @@ declare const fullApi: ApiFromModules<{
   "lib/researchCore": typeof lib_researchCore;
   "lib/resumeOutreachAfterUnarchive": typeof lib_resumeOutreachAfterUnarchive;
   "lib/retrier": typeof lib_retrier;
+  "lib/retrierWorkflow": typeof lib_retrierWorkflow;
   "lib/runtimeConfigHelpers": typeof lib_runtimeConfigHelpers;
   "lib/setupFlowCore": typeof lib_setupFlowCore;
   "lib/setupGenerationCore": typeof lib_setupGenerationCore;

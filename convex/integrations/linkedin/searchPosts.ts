@@ -7,7 +7,10 @@ import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import type { ActionCtx } from "../../_generated/server";
-import { getRetriedActionStatus, runRetriedAction } from "../../lib/retrier";
+import {
+  getRetriedActionStatus,
+  runProviderActionRetried,
+} from "../../lib/retrier";
 import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import type { RunId } from "@convex-dev/action-retrier";
@@ -275,7 +278,7 @@ async function collectPaginatedPostResults(
     seenStarts.add(nextStart);
 
     try {
-      const runId = await runRetriedAction(
+      const runId = await runProviderActionRetried(
         ctx,
         internal.integrations.linkedin.searchPosts.searchInternal,
         {
@@ -436,7 +439,7 @@ export const search = action({
       let finalError = "Unknown error";
 
       for (const attempt of attempts) {
-        const runId = await runRetriedAction(
+        const runId = await runProviderActionRetried(
           ctx,
           internal.integrations.linkedin.searchPosts.searchInternal,
           {
@@ -654,7 +657,7 @@ export const searchBatch = action({
       const runIdPromise = new Promise<RunId>((resolve, reject) => {
         void (async () => {
           try {
-            const runId = await runRetriedAction(
+            const runId = await runProviderActionRetried(
               ctx,
               internal.integrations.linkedin.searchPosts.searchInternal,
               {
@@ -797,7 +800,7 @@ export const searchBatch = action({
           }
 
           const nextAttempt = attempts[attemptIndex + 1];
-          activeRunId = await runRetriedAction(
+          activeRunId = await runProviderActionRetried(
             ctx,
             internal.integrations.linkedin.searchPosts.searchInternal,
             {

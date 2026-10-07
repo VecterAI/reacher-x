@@ -66,7 +66,10 @@ import {
   replaceProspectActivityOfType,
 } from "./lib/outreachCore";
 import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
-import { getProspectingRecoveryDelayMs } from "./lib/prospectingHelpers";
+import {
+  checkProspectLimit,
+  getProspectingRecoveryDelayMs,
+} from "./lib/prospectingHelpers";
 import {
   getQualificationFailureRetryAt,
   getQualificationFailureRetryDelayMs,
@@ -3686,6 +3689,23 @@ export const claimPendingQualificationRecoveryInternal = internalMutation({
         claimed: false,
         scheduled: false,
         reason: "stale_snapshot" as const,
+      };
+    }
+
+    // Plan-limit gate: recovery must not restart qualification work for a
+    // workspace whose match limit is exhausted — the work would be paid for
+    // and then parked by the execution-time gate anyway. When the limit
+    // frees up (upgrade or cycle rollover), recovery re-arms normally.
+    const limitState = await checkProspectLimit(
+      ctx,
+      workspace._id,
+      workspace.userId
+    );
+    if (limitState.limitReached) {
+      return {
+        claimed: false,
+        scheduled: false,
+        reason: "ineligible" as const,
       };
     }
 

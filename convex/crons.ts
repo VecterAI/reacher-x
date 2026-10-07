@@ -89,6 +89,12 @@ crons.interval(
 );
 
 crons.interval(
+  "delete expired retried action results",
+  { hours: 6 },
+  internal.lib.retrier.cleanupExpiredRetriedActionResults
+);
+
+crons.interval(
   "recover expired complimentary plan grants",
   { minutes: 5 },
   internal.testerPlans.recoverExpiredGrantsInternal,

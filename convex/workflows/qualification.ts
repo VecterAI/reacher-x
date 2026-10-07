@@ -311,6 +311,39 @@ export const qualificationWorkflow = workflow.define({
       );
       return { success: true, skipped: true, qualified: false };
     }
+
+    // Execution-time gate: tenant-scheduler dispatch and recovery re-claims
+    // reach this workflow directly, so a workspace that paused, hit its
+    // match limit, or lost its provider after the claim must park here
+    // instead of spending evidence and LLM compute. The prospect stays
+    // pending and recovery re-arms it when the block clears.
+    const gate = await step.runQuery(
+      internal.lib.backgroundWorkGuards.checkBackgroundWorkAllowedInternal,
+      { workspaceId: args.workspaceId, prospectId: args.prospectId }
+    );
+    if (!gate.allowed) {
+      qualificationWorkflowLogger.warn(
+        "Qualification parked by execution-time gate",
+        {
+          prospectId: String(args.prospectId),
+          workspaceId: String(args.workspaceId),
+          reasons: gate.reasons,
+        }
+      );
+      await step.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        {
+          prospectId: args.prospectId,
+          workflowId: String(step.workflowId),
+        }
+      );
+      return {
+        success: true,
+        skipped: true,
+        qualified: false,
+        score: prospect.qualificationScore,
+      };
+    }
     // Build keywords from ICPs
     const allKeywords: string[] = [];
     for (const icp of workspace.icps || []) {
@@ -388,6 +421,38 @@ export const qualificationWorkflow = workflow.define({
         description: workspace.description,
         profiles: workspace.icps ?? [],
       });
+
+    // Re-check the gate right before the paid LLM evaluation: queued
+    // workflows that started while the workspace was active must stop here
+    // if it paused, hit its match limit, or lost its provider in the
+    // meantime, instead of spending the most expensive step.
+    const preEvaluationGate = await step.runQuery(
+      internal.lib.backgroundWorkGuards.checkBackgroundWorkAllowedInternal,
+      { workspaceId: args.workspaceId, prospectId: args.prospectId }
+    );
+    if (!preEvaluationGate.allowed) {
+      qualificationWorkflowLogger.warn(
+        "Qualification parked before paid evaluation",
+        {
+          prospectId: String(args.prospectId),
+          workspaceId: String(args.workspaceId),
+          reasons: preEvaluationGate.reasons,
+        }
+      );
+      await step.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        {
+          prospectId: args.prospectId,
+          workflowId: String(step.workflowId),
+        }
+      );
+      return {
+        success: true,
+        skipped: true,
+        qualified: false,
+        score: prospect.qualificationScore,
+      };
+    }
 
     // Step 4: Run qualification via action (AI calls require Node.js runtime)
     const result = await step.runAction(
@@ -663,19 +728,22 @@ export const runQualificationWorkflow = internalAction({
       args.workspaceId
     );
     if (!isValidatedSetupPreview) {
-      const limitState = await ctx.runQuery(
-        internal.workflows.prospecting.checkProspectLimitInternal,
-        {
-          workspaceId: args.workspaceId,
-        }
+      // Execution-time gate for pool-dispatched work: the workspace may have
+      // paused, hit its match limit, or lost its provider after the job was
+      // enqueued. Limit hits also reconcile the workspace capacity state.
+      const gate = await ctx.runQuery(
+        internal.lib.backgroundWorkGuards.checkBackgroundWorkAllowedInternal,
+        { workspaceId: args.workspaceId, prospectId: args.prospectId }
       );
-      if (limitState.limitReached) {
+      if (gate.reasons.includes("prospect_limit_reached")) {
         await ctx.runAction(
           internal.workspaces.reconcileWorkspaceCapacityStateInternal,
           {
             workspaceId: args.workspaceId,
           }
         );
+      }
+      if (!gate.allowed) {
         return { workflowId: "" };
       }
     }
@@ -702,6 +770,9 @@ export const startQualificationWorkflowAtomically = internalMutation({
       !prospect ||
       !workspace ||
       workspace.deletionStartedAt ||
+      // Claim-time pause check: queued claims must not start workflows for a
+      // workspace that paused after the job was queued.
+      !isWorkspaceAutomationActive(workspace) ||
       prospect.workspaceId !== args.workspaceId ||
       prospect.status === "archived" ||
       (prospect.qualificationStatus !== undefined &&
@@ -1006,19 +1077,22 @@ export const startQualification = internalAction({
       }
     }
 
-    const limitState = await ctx.runQuery(
-      internal.workflows.prospecting.checkProspectLimitInternal,
+    const gate = await ctx.runQuery(
+      internal.lib.backgroundWorkGuards.checkBackgroundWorkAllowedInternal,
       {
         workspaceId: args.workspaceId,
+        prospectId: prospect._id,
       }
     );
-    if (limitState.limitReached) {
+    if (gate.reasons.includes("prospect_limit_reached")) {
       await ctx.runAction(
         internal.workspaces.reconcileWorkspaceCapacityStateInternal,
         {
           workspaceId: args.workspaceId,
         }
       );
+    }
+    if (!gate.allowed) {
       return { workId: "" };
     }
 
