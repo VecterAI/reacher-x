@@ -1,455 +1,117 @@
-# AGENT_CONTEXT.txt - ReacherX v4
+## Introduction
 
-# Last Updated: January 19, 2026 (Added BEFORE YOU CODE section)
+I'm Salman. You're my agent. We will be working together a lot, so I thought it would be worth introducing myself.
 
-================================================================================
-⚠️ BEFORE YOU CODE - READ THIS FIRST ⚠️
-================================================================================
+I'm a designer turned developer. I love building tasteful, high-quality applications.
 
-**STOP. Before writing ANY code, you MUST search the codebase first.**
+I love to build. I focus on building complex things as simply as possible. I love to find ways to reduce complexity when solving problems.
 
-LLMs/Agents have a tendency to use common patterns (like `Date.now()`) without
-checking if the project already has established utilities. This causes:
+I wanted to share some of my preferences here so we can be more aligned as we work together.
 
-- Inconsistency across the codebase
-- Duplicated logic that drifts over time
-- Violations of project-specific standards
+## Coding preferences - general
 
-## The Golden Rule
+- Keep things simple. Channel "yagni" energy unless told otherwise.
+- Type safety is useful; take advantage of it.
+- Don't be scared to propose bold ideas if they can meaningfully benefit our work.
+- Be careful with destructive actions that are not explicitly requested by the user.
+- Tests are good! Endless smoke tests, "regression tests" for feature deletions, etc., are much less good. Tests should be focused, not slop.
+- Comments are a great way to clarify functionality and how code is used. Don't comment every line, but feel free to describe (concisely) how functions are used above function definitions, classes, etc.
+- Keep comments up to date! When making changes, it's important to keep things in sync.
 
-| Step            | Action                                                                              |
-| --------------- | ----------------------------------------------------------------------------------- |
-| 1. SEARCH       | Look for existing utilities, helpers, or patterns in `shared/`, `convex/lib/`, etc. |
-| 2. IF FOUND     | Use the existing implementation. Do NOT create alternatives.                        |
-| 3. IF NOT FOUND | Create it in the appropriate centralized location (see Naming Conventions below).   |
-| 4. NEVER        | Create one-off inline implementations or duplicate existing logic.                  |
+## Coding preferences (TypeScript focused)
 
-## Common Mistakes to Avoid
+- `any` is the enemy. Inferred types are our friend. Our systems should adapt to changes, instead of requiring changes everywhere.
+- If your TS code looks like a Python dev wrote it, it is bad TS code.
+- Avoid one-line functions that are just casting wrappers.
+- Write TypeScript in ways that Matt Pocock and Theo would be proud.
 
-| ❌ DON'T                  | ✅ DO INSTEAD                                                              |
-| ------------------------- | -------------------------------------------------------------------------- |
-| `Date.now()`              | `getCurrentUTCTimestamp()` from `shared/lib/utils/time/timeUtils.ts`       |
-| `new Date(iso).getTime()` | `parseIsoToTimestamp(isoString)` from `shared/lib/utils/time/timeUtils.ts` |
-| Inline validation logic   | Check `convex/validators.ts` for existing validators                       |
-| Custom type guards        | Check `convex/lib/typeGuards.ts` for existing guards                       |
-| Ad-hoc helper functions   | Check `*Helpers.ts` files in the relevant domain                           |
+## Questions are read-only
 
-## Where to Look First
+- A question is a request for an answer, not for changes. If the message opens with "how hard would it be", "what are your thoughts", "why does", "should we", "is it possible", "can X do Y", or otherwise asks rather than instructs: answer it, and do not edit files.
+- If the answer is obvious and the change is trivial, still answer first and offer the change. Ask before making it.
 
-| Need                 | Search Location                                                            |
-| -------------------- | -------------------------------------------------------------------------- |
-| Time/date utilities  | `shared/lib/utils/time/timeUtils.ts`                                       |
-| Formatting utilities | `shared/lib/utils/encoding/format.ts`                                      |
-| Convex validators    | `convex/validators.ts`                                                     |
-| Type guards          | `convex/lib/typeGuards.ts`                                                 |
-| Domain helpers       | `convex/lib/*Helpers.ts` (e.g., `planHelpers.ts`, `prospectingHelpers.ts`) |
-| Core business logic  | `convex/lib/*Core.ts` (e.g., `qualificationCore.ts`, `outreachCore.ts`)    |
-| UI components        | `shared/ui/components/` or `features/*/ui/components/`                     |
+## Match ceremony to the task
 
-**If you're about to write a utility function, STOP and search first!**
+- Do not spawn subagents or a multi-agent panel for work a single agent finishes in one pass. Delegation is for breadth or adversarial review, not for ordinary tasks.
+- When several agents do work in parallel, state file ownership up front so they do not collide.
 
-================================================================================
-ARCHITECTURE PATTERNS & STANDARDS
-================================================================================
+## Project
 
-## Three-Layer Architecture (MANDATORY)
+I am building **ReacherX**, open-source software for finding the right network of people. It's being designed and built for normies like me, who are not sales or marketing professionals. We just want a tool that just works.
 
-All new development MUST follow this layered pattern:
+The pitch deck description:
 
-| Layer          | Location               | Purpose        | Rules                                   |
-| -------------- | ---------------------- | -------------- | --------------------------------------- |
-| 1. Agent Tools | `convex/agents/tools/` | LLM interface  | Thin wrappers ONLY. No business logic.  |
-| 2. Workflows   | `convex/workflows/`    | Orchestration  | Multi-step flows, retries, scheduling.  |
-| 3. Core Logic  | `convex/lib/*Core.ts`  | Business logic | Pure functions, single source of truth. |
+> The first platform to unify prospect discovery, CRM, outreach, and social in one system. No more stitching together Clay, Apollo, and a CRM.
+>
+> Not a sales tool: a networking and relationship platform, for sales and non-sales people alike.
 
-### Layer 1: Agent Tools
+- The primary use case is to find customers easily for products or services. This is not a sales tool, quote-unquote, but a networking and relationship tool. We are making a versatile/dynamic platform that adapts to the user's use case. If a user needs to find creators, our platform adapts to that use case. If a recruiter comes to find candidates, our platform adapts. **Adaptability and versatility are a big thing.**
+- We are building the best tool: powerful yet so simple that anybody can use it easily without having to learn anything or have special knowledge/expertise. **Simplicity that hides all the complexity behind it.**
+- **Performance is a key factor.** Everything must be performant. Fast load times, snappy and buttery-smooth UX.
+- The app design language is **minimal, high-quality, and mostly neutral**.
 
-- Validate arguments from LLM
-- Call Layer 2 (workflows) or Layer 3 (core logic)
-- Format response for LLM consumption
-- NEVER implement business logic inline
+## Communication
 
-### Layer 2: Workflows
+- Always use easy-to-understand language when responding and explaining. No AI slop language. Be short, concise, and straight to the point.
+- **No em dashes, please.**
+- For in-app copy, match our existing language, tone, and style. Ensure user-facing copy is clear.
+- User-facing messages like errors must not include technical terms. We are making our app for normies, so it should be simple and clear.
 
-- Use `@convex-dev/workflow` for durable execution
-- Handle multi-step operations with retries
-- Delegate actual work to Layer 3 core functions
+## Git workflow
 
-### Layer 3: Core Logic
+- Before jumping into implementation, always use git to check the status of the project.
+- If there's WIP in a branch/worktree and you are about to do some work, call it out so I can guide you.
+- I prefer scoping work in an isolated branch/worktree.
+- Keep our local main up to date with origin/main.
 
-- All reusable business logic lives here
-- Implemented as pure functions or internal actions
-- Single source of truth - no duplication allowed
+## Docs and dependencies
 
----
+- Use skills when required; always use and refer to the docs. Search online for docs for up-to-date information.
+- Read `package.json`, `next.config.mjs`, and other config and important files so you know what configuration and dependencies are used at which version.
+- If something is missing in the current version but exists in the latest version of a dependency (a fix for an issue, etc.), tell me about it so I can keep packages up to date. This also helps with better security.
+- Keep dev dependencies and dev utilities up to date for the highest code quality and security (lint rules, etc.).
 
-## UI Component Patterns (MANDATORY)
+## Verification and commits
 
-### Composition Over Flags
+- Always ensure code is properly verified (type-checked, formatted, etc.) before committing and pushing to GitHub. During in-progress turns you don't have to do this each time, but before committing and pushing, you must.
+- Do a CodeRabbit code review using the CLI before you commit and push. Watch out for false positives; don't trust it blindly. Verify first, and fix only if it's legit.
 
-Use separate skeleton components instead of `loading` props:
+## Keep the codebase clean
 
-```tsx
-// ❌ BAD - Loading flag inside component
-<ProspectCard prospect={data} loading={true} />;
+- **Do not create markdown reports** for any work or analysis. I hate those. Whatever you do, mention it in your response. Those markdown files always bloat the codebase.
+- Whenever a cleanup or removal happens, ensure proper cleanup (remove unwanted files, code, folders, dependencies, etc.). The codebase should be clean, minimal, and bloat-free.
 
-// ✅ GOOD - Composition pattern
-{
-  loading ? <ProspectCardSkeleton /> : <ProspectCard prospect={p} />;
-}
-```
+## Frontend
 
-### Component Families
-
-Group related components in directories (like Tweet family):
+- When doing frontend work, test properly for all devices, desktop and mobile. Something can look good on desktop but cause issues on mobile.
 
-```
-features/prospects/ui/components/prospect-card/
-├── ProspectCard.tsx           # Main card
-├── ProspectCardHeader.tsx     # Avatar + Name + Title
-├── ProspectCardBody.tsx       # Summary text
-├── ProspectCardFooter.tsx     # Badge row
-├── ProspectCardMenu.tsx       # Dropdown menu
-├── ProspectCardSkeleton.tsx   # Loading skeleton
-└── index.ts                   # Barrel exports
-```
+## Think big
 
-### Semantic HTML
+- Think outside the box. Don't be afraid to think big. Bold ideas are welcome.
 
-Use semantic elements for accessibility - no unnecessary div/span wrappers:
+## Think ahead
 
-| Element                 | When to Use                    |
-| ----------------------- | ------------------------------ |
-| `<article>`             | Self-contained content (cards) |
-| `<time dateTime="...">` | Dates and timestamps           |
-| `<nav>`                 | Navigation sections            |
-| `<aside>`               | Side panels                    |
-| `<header>` / `<footer>` | Section headers/footers        |
+- Always think ahead like a real engineer. If something we are going to do affects multiple parts of the system and has a risk of breaking or causing regressions, map it out and call it out.
 
-```tsx
-// ❌ BAD - Generic elements
-<div className="card">...</div>
-<span>{formatRelativeTime(new Date(timestamp).toISOString())}</span>
+## Cost optimization
 
-// ✅ GOOD - Semantic elements
-<article className="card">...</article>
-<time dateTime={new Date(timestamp).toISOString()}>
-  {formatRelativeTime(new Date(timestamp).toISOString())}
-</time>
-```
+- Always follow best practices and recommend ways to keep costs as low as possible while maintaining the highest quality bar.
+- Follow the cost optimization practices documented by the providers/tech stack we use, like Convex, Next.js, etc.
+- If anything requires an expensive migration or backfilling, call it out first so I can decide whether it's worth doing based on the budget.
 
-### Skeleton UI Consistency
+## Scalability
 
-Keep chrome (tabs, search, filters) visible during loading. Only replace content with skeletons:
+- This is an infra- and backend-heavy project. Always think about scalability when doing core backend infra work, or anything that could become a bottleneck at scale (database scalability, etc.).
 
-```tsx
-// ❌ BAD - Hides everything during loading
-{isLoading ? <AllSkeletons /> : <TabsAndContent />}
+## Research
 
-// ✅ GOOD - Follows "/" page pattern
-<ProspectsToolbar ... />  {/* Always rendered */}
-{isLoading ? <ProspectCardSkeleton /> : <ProspectList />}
-```
+- Don't be afraid to do proper research with online searches to find tools, packages, or resources (blog articles from well-known teams/orgs like Vercel, React, etc.) so I have a reference, inspiration, and examples that make me feel confident.
 
-### Server-Side Filtering & Pagination (MANDATORY)
+## Open source
 
-Always use server-side filtering when database indexes exist. Never fetch all and filter client-side.
+- This is an open-source project, so keep docs up to date (dev resources/files like env and configuration, etc.).
+- Make it easy for devs and their AI agents to quickly start working on or contributing to this project.
 
-```tsx
-// ❌ BAD - Client-side filtering
-const data = useQuery(api.prospects.getWorkspaceProspects, {
-  workspaceId,
-  limit: 100,
-});
-const filtered = data.filter((p) => p.status === "converted"); // Wasteful!
+## DRY
 
-// ✅ GOOD - Server-side filtering with pagination
-const [limit, setLimit] = useState(PROSPECTS_PER_PAGE); // 10
-const data = useQuery(api.prospects.getWorkspaceProspects, {
-  workspaceId,
-  status: "converted",
-  limit,
-});
-// Use data.hasMore to show "Load More" button
-```
-
-### Parallel Queries for Tabs
-
-When a page has tabs showing different status filters, use parallel queries:
-
-```tsx
-// ✅ GOOD - Parallel queries (Option C from Jan 11 audit)
-const newData = useQuery(..., { status: "new", limit: newLimit });
-const contactedData = useQuery(..., { status: "contacted", limit: contactedLimit });
-const inProgressData = useQuery(..., { status: "in_progress", limit: inProgressLimit });
-```
-
-Benefits: Instant tab switching, independent pagination per tab, Convex caches each query.
-
----
-
-## Use Established Packages (MANDATORY)
-
-Prefer established packages over custom implementations. See package.json for full list.
-
-| Need            | Package                   | Example                                         |
-| --------------- | ------------------------- | ----------------------------------------------- |
-| URL state       | `nuqs`                    | `useQueryStates({ prospectId: parseAsString })` |
-| Date formatting | `@/shared/lib/utils`      | `formatRelativeTime(isoString)`                 |
-| Form validation | `react-hook-form` + `zod` | Already configured                              |
-| Animations      | `tailwindcss-animate`     | Already configured                              |
-
----
-
-## Naming Conventions (MANDATORY)
-
-| Pattern         | Purpose                      | Example                    |
-| --------------- | ---------------------------- | -------------------------- |
-| `*Core.ts`      | Reusable business logic      | `qualificationCore.ts`     |
-| `*Helpers.ts`   | Config, constants, utilities | `prospectingHelpers.ts`    |
-| `*Pool.ts`      | Workpool instances           | `qualificationPool.ts`     |
-| `*Skeleton.tsx` | Loading skeleton components  | `ProspectCardSkeleton.tsx` |
-
----
-
-## Logging Standard (MANDATORY)
-
-Use `console.log`, `console.warn`, `console.error` ONLY.
-No custom logging functions (logAI was removed).
-
-Format: `[ModuleName] Message with context`
-
----
-
-## Type Safety Standards (MANDATORY)
-
-When accessing nested optional properties, use runtime type guards from `convex/lib/typeGuards.ts`:
-
-```typescript
-// ❌ BAD - Unsafe casting
-const screenName = (prospectData.user as Record<string, string>)?.screen_name;
-
-// ✅ GOOD - Use type guard utilities
-import { getNestedRecord, getStringProperty } from "../lib/typeGuards";
-
-const user = getNestedRecord(prospectData, "user");
-const screenName = getStringProperty(user, "screen_name") || null;
-```
-
-**Available Type Guards:**
-
-- `isRecord(value)` - Check if value is a Record
-- `getNestedRecord(obj, key)` - Safely extract nested object
-- `getStringProperty(obj, key)` - Safely extract string property
-- `getNumberProperty(obj, key)` - Safely extract number property
-
----
-
-## Validator Standards (MANDATORY)
-
-**Single Source of Truth:** `convex/validators.ts`
-
-All validators MUST be defined once in `validators.ts` and imported elsewhere:
-
-```typescript
-// ❌ BAD - Local validator in schema.ts
-const prospectStatusValidator = v.union(
-  v.literal("new"),
-  v.literal("contacted")
-  // ...
-);
-
-// ✅ GOOD - Import from validators.ts
-import { prospectStatusValidator } from "./validators";
-```
-
-**TypeScript Types:** Use `Infer<>` instead of duplicating validator values:
-
-```typescript
-// ❌ BAD - Manual type duplicating validator
-interface Task {
-  type: "comment" | "wait" | "ask_human";
-}
-
-// ✅ GOOD - Infer from validator
-import { Infer } from "convex/values";
-interface Task {
-  type: Infer<typeof outreachTaskTypeValidator>;
-}
-```
-
-### Zod Schema Exception (@convex-dev/agent)
-
-Agent tools use `@convex-dev/agent` which requires **Zod** for argument validation,
-while Convex uses its own validator system. This creates intentional duplication.
-
-**Approach:** Keep Zod schemas in agent tools, but align values with validators.ts:
-
-```typescript
-// convex/agents/outreach/tools/refinePlan.ts
-/**
- * NOTE: These Zod schemas duplicate the Convex validators in validators.ts.
- * This is intentional because @convex-dev/agent requires Zod for tool args.
- * Values are aligned with validators.ts - if you add/remove values there,
- * update these schemas too.
- */
-const taskSchema = z.object({
-  type: z.enum(["comment", "wait", "ask_human"]), // Match outreachTaskTypeValidator
-  // ...
-});
-```
-
----
-
-## Agent Tool ID Extraction (MANDATORY)
-
-**NEVER accept Convex document IDs from LLM input.** LLMs hallucinate fake IDs.
-
-```typescript
-// ❌ BAD - LLM provides ID (will be hallucinated)
-args: z.object({
-  taskId: z.string().describe("The task ID to approve"),
-}),
-handler: async (ctx, args) => {
-  await ctx.runMutation(internal.outreach.approveTaskInternal, {
-    taskId: args.taskId as Id<"outreachTasks">,  // UNSAFE CAST!
-  });
-}
-
-// ✅ GOOD - Extract ID from thread context
-args: z.object({}),  // No ID args!
-handler: async (ctx) => {
-  const prospectId = await extractProspectIdFromThread(ctx);
-  const task = await ctx.runQuery(internal.outreach.getPendingTaskForProspect, {
-    prospectId,
-  });
-  await ctx.runMutation(internal.outreach.approveTaskInternal, {
-    taskId: task._id,  // Real ID from database query
-  });
-}
-```
-
-### ID Extraction Helper Pattern
-
-All outreach tools use shared helpers from `convex/agents/outreach/tools/helpers.ts`:
-
-```typescript
-import {
-  extractProspectIdFromThread,
-  extractProspectIdWithFallback,
-} from "./helpers";
-
-// Simple extraction (no fallback)
-const prospectId = await extractProspectIdFromThread(ctx, "approveTask");
-
-// With optional provided ID fallback
-const prospectId = await extractProspectIdWithFallback(
-  ctx,
-  "getProspectPlan",
-  args.prospectId
-);
-```
-
-**Exported Helpers:**
-
-- `extractProspectIdFromThread(ctx, moduleName)` - Extract from thread title
-- `extractProspectIdWithFallback(ctx, moduleName, providedId?)` - With optional fallback
-- `extractPlanIdFromThread(ctx, moduleName, query)` - Extract active plan ID
-- `ToolContext` type - For tool handler context parameter
-
-### Internal Queries for Context-Based ID Lookups
-
-| Query                       | Purpose                                |
-| --------------------------- | -------------------------------------- |
-| `getPendingTaskForProspect` | Find pending task for approveTask tool |
-| `getActivePlanForProspect`  | Find active plan for refinePlan tool   |
-
----
-
-## Workspace-Scoped Validation (Setup Agent Tools)
-
-For setup agent tools that accept `prospectId` and `workspaceId` arguments
-(e.g., `enrichProspect`, `qualifyProspect`), always validate that the prospect
-belongs to the specified workspace:
-
-```typescript
-// ✅ GOOD - Validate workspace ownership
-const prospect = await ctx.runQuery(api.prospects.getProspect, {
-  prospectId: args.prospectId as Id<"prospects">,
-});
-
-if (!prospect) {
-  return { success: false, error: "Prospect not found" };
-}
-
-// Prevent cross-workspace access
-if (prospect.workspaceId !== args.workspaceId) {
-  return {
-    success: false,
-    error: "Prospect does not belong to this workspace",
-  };
-}
-```
-
-This prevents cross-workspace access even if the LLM provides a valid but
-incorrect prospect ID from a different workspace.
-
----
-
-## Authentication and Routing Contracts (MANDATORY)
-
-Authentication redirects and setup-thread routing are one end-to-end contract.
-Before changing any part of this flow, trace and preserve all of these files:
-
-- `proxy.ts` public/protected route behavior
-- `app/login/route.ts`, `app/signup/route.ts`, and `app/callback/route.ts`
-- `app/ConvexClientProvider.tsx` and AuthKit's loading/authenticated state
-- `shared/lib/urls/authRoutes.ts` and `shared/lib/urls/setupHref.ts`
-- `features/landing/ui/components/LandingAuthLink.tsx` for every landing auth link
-- `features/agent/hooks/useAgentChat.ts` setup bootstrap behavior
-- `features/webapp/ui/components/OnboardingLockGuardProvider.tsx`
-
-Rules:
-
-1. Public acquisition CTAs must preserve their post-auth intent. “Reach people”
-   returns to `/agent/setup`; it must never rely on the `/` page to repair the
-   route after client-side queries finish.
-2. Use WorkOS `getSignInUrl()` / `getSignUpUrl()` in route handlers and pass a
-   validated internal `returnTo`. Never hand-build an AuthKit URL or accept an
-   external/protocol-relative return path.
-3. Do not make auth-sensitive links guess that a loading user is anonymous.
-   With Cache Components enabled, do not move `withAuth()` into the root layout
-   outside a Suspense boundary; that breaks static rendering with uncached data.
-4. Every login, signup, logout, pricing, and acquisition auth link rendered on
-   landing pages must use `LandingAuthLink`; raw `Link`/`router.push` navigation
-   to `/login` or `/signup` is forbidden. `LandingAuthLink` must navigate
-   synchronously via `navigateDocumentIntentionally()`—never wait for Convex
-   requests. The custom Convex unload guard bypasses exactly that intentional
-   unload while keeping unsaved-change protection enabled for genuine pending
-   work.
-5. Do not redirect from a loading skeleton as the primary routing mechanism.
-   Resolve the destination at the initiating auth route; client guards are a
-   recovery layer only.
-6. Canonical setup URLs use `/agent/setup?threadId=...` via `buildSetupHref()`.
-   Do not add `sessionId`, raw Convex document IDs, or parallel URL formats.
-7. Any routing/auth change must add or update a regression test and manually
-   verify: anonymous CTA → AuthKit → callback → setup thread with the first agent
-   response visible, with no browser unload warning.
-
-================================================================================
-END OF CONTEXT
-================================================================================
-
-<!-- convex-ai-start -->
-
-This project uses [Convex](https://convex.dev) as its backend.
-
-When working on Convex code, **always read
-`convex/_generated/ai/guidelines.md` first** for important guidelines on
-how to correctly use Convex APIs and patterns. The file contains rules that
-override what you may have learned about Convex from training data.
-
-Convex agent skills for common tasks can be installed by running
-`npx convex ai-files install`.
-
-<!-- convex-ai-end -->
+- Always follow the DRY (Don't Repeat Yourself) principle. Before creating anything, check if it already exists. If not, build it so it's easily reusable.
