@@ -83,6 +83,101 @@ test("accepts a LinkedIn post only when its author URN matches", () => {
   assert.equal(candidates[0]?.authorId, "urn:li:fsd_profile:prospect-1");
 });
 
+test("derives the canonical X status URL for tweets stored without a URL", () => {
+  const candidates = prepareQualificationCandidates({
+    platform: "twitter",
+    evidencePosts: [
+      {
+        id_str: "123",
+        full_text: "Our team is actively replacing manual lead research.",
+        created_at: "Sat Jul 12 12:00:00 +0000 2026",
+        user: { id_str: "prospect-1", screen_name: "prospect" },
+      },
+    ],
+    profileData: { id_str: "prospect-1" },
+    discoveryQueries: ["manual lead research"],
+  });
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.sourceId, "123");
+  assert.equal(candidates[0]?.sourceUrl, "https://x.com/prospect/status/123");
+});
+
+test("derives the canonical /i/ status URL when a stored tweet has no handle", () => {
+  const candidates = prepareQualificationCandidates({
+    platform: "twitter",
+    evidencePosts: [
+      {
+        id_str: "123",
+        full_text: "Our team is actively replacing manual lead research.",
+        user: { id_str: "prospect-1" },
+      },
+    ],
+    profileData: { id_str: "prospect-1" },
+    discoveryQueries: ["manual lead research"],
+  });
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.sourceUrl, "https://x.com/i/status/123");
+});
+
+test("keeps rejecting a LinkedIn post without a stored URL", () => {
+  const candidates = prepareQualificationCandidates({
+    platform: "linkedin",
+    evidencePosts: [
+      {
+        id: "linkedin-post-1",
+        platform: "linkedin",
+        text: "We are evaluating better outbound research workflows.",
+        author: { urn: "urn:li:fsd_profile:prospect-1" },
+      },
+    ],
+    profileData: { urn: "urn:li:fsd_profile:prospect-1" },
+    discoveryQueries: ["outbound research"],
+  });
+
+  assert.deepEqual(candidates, []);
+});
+
+test("keeps rejecting a LinkedIn post even when it carries a stray tweet id_str", () => {
+  const candidates = prepareQualificationCandidates({
+    platform: "linkedin",
+    evidencePosts: [
+      {
+        id: "linkedin-post-1",
+        platform: "linkedin",
+        id_str: "123",
+        full_text: "We are evaluating better outbound research workflows.",
+        user: { screen_name: "prospect" },
+        author: { urn: "urn:li:fsd_profile:prospect-1" },
+      },
+    ],
+    profileData: { urn: "urn:li:fsd_profile:prospect-1" },
+    discoveryQueries: ["outbound research"],
+  });
+
+  assert.deepEqual(candidates, []);
+});
+
+test("prefers a stored post URL over the derived X permalink", () => {
+  const candidates = prepareQualificationCandidates({
+    platform: "twitter",
+    evidencePosts: [
+      {
+        id_str: "123",
+        full_text: "Our team is actively replacing manual lead research.",
+        url: "https://x.com/prospect/status/999",
+        user: { id_str: "prospect-1", screen_name: "prospect" },
+      },
+    ],
+    profileData: { id_str: "prospect-1" },
+    discoveryQueries: ["manual lead research"],
+  });
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.sourceUrl, "https://x.com/prospect/status/999");
+});
+
 test("rejects an invented supporting quote", () => {
   const candidates = prepareQualificationCandidates({
     platform: "twitter",
