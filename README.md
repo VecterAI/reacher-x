@@ -1,6 +1,6 @@
 # 🆁 ReacherX
 
-Open-source △ Agentic platform and infrastructure that works 24/7 across X/Twitter and LinkedIn to find, qualify, enrich, and help you reach the right people. Think Cursor for finding and reaching your target audience/network.
+Open-source `△` Agentic platform and infrastructure that works 24/7 across X/Twitter and LinkedIn to find, qualify, enrich, and help you reach the right people. Apollo and Clay alternative for founders and teams who want to close fast without requiring specific sales tool knowledge and expertise.
 
 <div align="left">
 
@@ -41,7 +41,7 @@ There is also an [interactive demo](https://reacherx-demos.vercel.app/). It is a
 
 ## Who it is for
 
-Anyone who needs to find a specific kind of person on X/Twitter or LinkedIn. Customers, candidates, investors, partners, community members. Those are examples, not categories. Describe the person you need in plain words and ReacherX starts looking.
+Anyone who needs to find a specific kind of person on X/Twitter or LinkedIn. Customers, candidates, investors, partners, community members. Basically any network of people. Describe the people you need in plain words, and ReacherX starts looking.
 
 You do not need a sales background or a GTM playbook. If you can say who you need, you can use it.
 
