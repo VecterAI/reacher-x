@@ -18,8 +18,10 @@ export default function BlogPage() {
 
 async function BlogPageContent({ author }: { author: ReactNode }) {
   "use cache";
-  // The listing is built from local MDX files that only change on deploy.
-  cacheLife("max");
+  // The listing is built from local MDX files that only change on deploy. A
+  // daily refresh keeps draft and future-dated posts discoverable right after
+  // their publish date instead of up to 30 days later.
+  cacheLife("days");
   const posts = (await getBlogPosts()).map(summarizeBlogPost);
   const categories = getPublishedBlogCategories(posts).map(({ slug }) => slug);
   // This boundary handles nuqs/useSearchParams, not content I/O. Resolving the

@@ -37,10 +37,11 @@ async function BlogPostContent({
 }
 
 // Article data comes from local MDX files that only change on deploy, and
-// each deployment gets a fresh ISR cache, so a long lifetime is safe here.
+// each deployment gets a fresh ISR cache. A daily refresh keeps draft and
+// future-dated posts from staying invisible after their publish date.
 async function getBlogArticleData(slug: string) {
   "use cache";
-  cacheLife("max");
+  cacheLife("days");
   cacheTag("blog-posts");
   const post = await getBlogPost(slug);
   if (!post) return null;
