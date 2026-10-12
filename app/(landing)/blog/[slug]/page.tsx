@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { BlogAuthor } from "@/features/blog/ui/components/BlogAuthor";
 import { getRelatedBlogPosts } from "@/features/blog/lib/blogHelpers";
+import { cacheLife, cacheTag } from "next/cache";
 import { notFound } from "next/navigation";
 import { getBlogPost, getBlogPosts } from "@/features/blog/lib/blogPosts";
 import { blogPostMetadata } from "@/features/blog/lib/blogMetadata";
@@ -35,8 +36,12 @@ async function BlogPostContent({
   );
 }
 
+// Article data comes from local MDX files that only change on deploy, and
+// each deployment gets a fresh ISR cache, so a long lifetime is safe here.
 async function getBlogArticleData(slug: string) {
   "use cache";
+  cacheLife("max");
+  cacheTag("blog-posts");
   const post = await getBlogPost(slug);
   if (!post) return null;
   return { post, related: getRelatedBlogPosts(post, await getBlogPosts()) };

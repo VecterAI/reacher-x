@@ -2,6 +2,7 @@ import {
   GITHUB_REPO_NAME,
   GITHUB_REPO_OWNER,
 } from "@/features/landing/lib/github";
+import { cacheLife, cacheTag } from "next/cache";
 import { logger } from "@/shared/lib/logger";
 
 const GITHUB_REPO_API_URL = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`;
@@ -12,8 +13,27 @@ type GitHubRepositoryResponse = {
   stargazers_count?: number;
 };
 
+/**
+ * Public star count for the landing header. At runtime a failed lookup
+ * rethrows so a failed background refresh never replaces the last good cached
+ * count with zero; the uncached wrapper only falls back to zero when nothing
+ * is cached yet (cold start). During build-time prerendering the failure is
+ * tolerated with a short-lived zero entry so deploys still succeed while
+ * GitHub is unreachable.
+ */
 export async function getGitHubStarsCount(): Promise<number> {
+  try {
+    return await getCachedGitHubStarsCount();
+  } catch (error) {
+    githubStarsLogger.warn("Serving fallback star count", { error });
+    return 0;
+  }
+}
+
+async function getCachedGitHubStarsCount(): Promise<number> {
   "use cache";
+  cacheLife("days");
+  cacheTag("github-stars");
 
   try {
     const response = await fetch(GITHUB_REPO_API_URL, {
@@ -36,7 +56,7 @@ export async function getGitHubStarsCount(): Promise<number> {
         status: response.status,
         statusText: response.statusText,
       });
-      return 0;
+      throw new Error(`GitHub stars request failed (${response.status})`);
     }
 
     const data = (await response.json()) as GitHubRepositoryResponse;
@@ -46,14 +66,15 @@ export async function getGitHubStarsCount(): Promise<number> {
       githubStarsLogger.warn(
         "GitHub response did not include a valid star count"
       );
-      return 0;
+      throw new Error("GitHub stars response missing stargazers_count");
     }
 
     return stars;
   } catch (error) {
-    githubStarsLogger.error("Unexpected error fetching stars", {
-      error,
-    });
-    return 0;
+    if (process.env.NEXT_PHASE === "phase-production-build") {
+      cacheLife({ stale: 60, revalidate: 60, expire: 300 });
+      return 0;
+    }
+    throw error;
   }
 }

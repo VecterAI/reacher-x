@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { cacheLife } from "next/cache";
 import { isValidElement, type ComponentProps, type ReactNode } from "react";
 import { codeToHtml, bundledLanguages } from "shiki";
 import { InlineCode } from "@/shared/ui/components/InlineCode";
@@ -40,8 +41,11 @@ export async function BlogPre({ children }: { children?: ReactNode }) {
 
 // Shiki initializes WASM using timing APIs. Cache the HTML string, rather than
 // the component tree, so highlighting stays compatible with prerendering.
+// Highlighting is deterministic per code block, so cache it for as long as
+// possible; fresh deploys repopulate the cache anyway.
 async function highlightBlogCode(code: string, language: string) {
   "use cache";
+  cacheLife("max");
   return codeToHtml(code, {
     lang: language,
     themes: { light: "github-light", dark: "github-dark" },

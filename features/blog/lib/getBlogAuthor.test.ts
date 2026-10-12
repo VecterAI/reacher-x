@@ -24,7 +24,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("NEXT_PUBLIC_CONVEX_URL", "https://example.convex.cloud");
 });
-test("uses the public profile action inside a shared hourly cache", async () => {
+test("uses the public profile action inside a shared daily cache", async () => {
   const profile = {
     name: "First",
     screen_name: "ReacherXfounder",
@@ -40,7 +40,7 @@ test("uses the public profile action inside a shared hourly cache", async () => 
   });
   expect((await getBlogAuthor()).name).toBe("First");
   expect((await getBlogAuthor()).image).toBe("https://pbs.twimg.com/b.jpg");
-  expect(mocks.cacheLife).toHaveBeenCalledWith("hours");
+  expect(mocks.cacheLife).toHaveBeenCalledWith("days");
   expect(mocks.cacheTag).toHaveBeenCalledWith("blog-author");
   expect(mocks.action.mock.calls[0][1]).toEqual({
     username: "ReacherXfounder",
@@ -75,10 +75,6 @@ test.each([
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   expect(await getBlogAuthor()).toEqual(BLOG_AUTHOR_FALLBACK);
   expect(mocks.cacheLife).toHaveBeenCalledTimes(1);
-  expect(mocks.cacheLife).toHaveBeenLastCalledWith({
-    stale: 60,
-    revalidate: 60,
-    expire: 300,
-  });
+  expect(mocks.cacheLife).toHaveBeenLastCalledWith("days");
   warn.mockRestore();
 });
