@@ -451,8 +451,9 @@ scheduled retries re-run failed qualifications. `PAUSE_AUTONOMOUS_JOBS=true`
   lifted.
 - Maintenance crons skip their runs: usage cycle rollover, tenant lane and
   pool reconciliation, expired lease reaping, job history cleanup, discovery
-  monitor retirement, SocialAPI receipt cleanup, legacy prospect RAG cleanup,
-  and complimentary grant recovery.
+  monitor retirement, SocialAPI monitor cost reconciliation, expired outreach
+  response monitor cleanup, SocialAPI receipt cleanup, legacy prospect RAG
+  cleanup, and complimentary grant recovery.
 
 This halts a credit or budget leak without a redeploy. Unset the variable or
 set it to `false` to resume; gated crons pick work back up within one cron
@@ -511,6 +512,28 @@ Budgets are shared at the provider level across users and workspaces. This preve
 | `LINKDAPI_OCC_RETRY_JITTER_MS`              |          `40` | Contention retry jitter                                         |
 
 Set hard limits to the real provider-account allowance. Set target limits at or below the hard limits; lower targets leave headroom for latency, retries, provider enforcement differences, and traffic bursts.
+
+### SocialAPI Monitor Billing Discipline
+
+SocialAPI bills a monitor for as long as it exists on their side, independent
+of app activity. Three mechanisms keep that spend bounded:
+
+- Dormant workspaces: the hourly `reconcile socialapi monitor costs` cron
+  deletes seed monitors of paused, stopped, plan-limited, and deleting
+  workspaces on SocialAPI's side and marks their rows deleted. Resuming a
+  workspace re-creates monitors for its conversation seeds.
+- Deletion: the workspace deletion workflow deletes remote monitors before
+  local rows are swept, so deleting a workspace can no longer leak monitors.
+- Drift and orphans: the same cron lists remote monitors and deletes ones
+  with no tracked row (orphans), and marks tracked rows deleted when their
+  remote monitor is gone. Outreach response monitors additionally expire
+  after 7 days via the hourly `delete expired outreach response monitors`
+  cron.
+
+The cron-driven mechanisms (dormant drain, drift and orphans, expired
+outreach response monitors) run behind the `PAUSE_AUTONOMOUS_JOBS` brake;
+completing a cron cleanup requires lifting the brake temporarily. Workspace
+deletion releases its monitors regardless of the brake.
 
 ## Workpools
 

@@ -14,6 +14,7 @@ import {
   runProviderActionRetried,
 } from "./lib/retrier";
 import { fetchSocialApi } from "./lib/socialApiFetch";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import { monitorStatusValidator } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { logger } from "../shared/lib/logger";
@@ -25,6 +26,10 @@ import { logger } from "../shared/lib/logger";
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
 // Default monitor expiration: 7 days
 const DEFAULT_MONITOR_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Bounded cleanup batch: one hourly run deletes at most this many expired
+// monitors and continues itself when the batch was full.
+const EXPIRED_MONITOR_CLEANUP_BATCH = 25;
+const EXPIRED_MONITOR_CLEANUP_DELAY_MS = 60_000;
 const prospectMonitorLogger = logger.withScope("ProspectMonitors");
 
 // ============================================================================
@@ -143,6 +148,27 @@ export const updateProspectMonitorStatus = internalMutation({
 
     await ctx.db.patch(monitor._id, { status: args.status });
     return { success: true };
+  },
+});
+
+/**
+ * Removes a tracked row entirely. Used when remote deletion failed with a
+ * permanent provider error during workspace deletion: the remote monitor
+ * becomes an orphan that the monitor cost reconciliation cron deletes once
+ * the provider works again.
+ */
+export const deleteProspectMonitorRowInternal = internalMutation({
+  args: { monitorId: v.string() },
+  handler: async (ctx, args) => {
+    const monitor = await ctx.db
+      .query("prospectMonitors")
+      .withIndex("by_monitor_id", (q) => q.eq("monitorId", args.monitorId))
+      .first();
+    if (!monitor) {
+      return { removed: false };
+    }
+    await ctx.db.delete(monitor._id);
+    return { removed: true };
   },
 });
 
@@ -428,15 +454,54 @@ export const deleteProspectMonitor = internalAction({
           continue;
         }
 
-        // Mark as deleted in our database regardless of API result
-        await ctx.runMutation(
-          internal.prospectMonitors.updateProspectMonitorStatus,
-          {
-            monitorId: args.monitorId,
-            status: "deleted",
+        if (status.type === "completed" && status.result.type === "success") {
+          const apiResult = status.result.returnValue as {
+            success: boolean;
+            error?: string;
+          };
+          if (!apiResult.success) {
+            // The action completed without throwing but reported failure
+            // (for example a missing API key). Only mark deleted once
+            // SocialAPI confirmed the deletion; a row marked deleted while
+            // the remote monitor survives would bill forever as an
+            // invisible orphan.
+            prospectMonitorLogger.warn(
+              "Delete returned failure; leaving monitor tracked for the next cleanup run",
+              { monitorId: args.monitorId, error: apiResult.error }
+            );
+            return {
+              success: false,
+              error: apiResult.error ?? "Unknown error",
+            };
           }
-        );
+          await ctx.runMutation(
+            internal.prospectMonitors.updateProspectMonitorStatus,
+            {
+              monitorId: args.monitorId,
+              status: "deleted",
+            }
+          );
+          break;
+        }
 
+        if (status.type === "completed" && status.result.type === "failed") {
+          prospectMonitorLogger.warn(
+            "Delete failed after retries; leaving monitor tracked for the next cleanup run",
+            { monitorId: args.monitorId, error: status.result.error }
+          );
+          return {
+            success: false,
+            error: `Failed after retries: ${status.result.error}`,
+          };
+        }
+        if (status.type === "completed") {
+          // Canceled retrier run.
+          prospectMonitorLogger.warn(
+            "Delete request was canceled; leaving monitor tracked for the next cleanup run",
+            { monitorId: args.monitorId }
+          );
+          return { success: false, error: "Request was canceled" };
+        }
         break;
       }
 
@@ -448,19 +513,6 @@ export const deleteProspectMonitor = internalAction({
         error
       );
 
-      // Still mark as deleted locally
-      try {
-        await ctx.runMutation(
-          internal.prospectMonitors.updateProspectMonitorStatus,
-          {
-            monitorId: args.monitorId,
-            status: "deleted",
-          }
-        );
-      } catch {
-        // Ignore
-      }
-
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -470,12 +522,23 @@ export const deleteProspectMonitor = internalAction({
 });
 
 /**
- * Cleanup expired monitors (run periodically)
+ * Cleanup expired monitors (run periodically). Deleting an expired monitor
+ * stops its per-run billing on SocialAPI's side; the 7-day TTL on each
+ * outreach response monitor bounds how long a paused workspace keeps paying.
+ * Bounded to a small batch per run with self-continuation so a backlog or a
+ * provider outage cannot stretch one action past its time limit.
  */
 export const cleanupExpiredMonitors = internalAction({
   args: {},
-  handler: async (ctx): Promise<{ deleted: number }> => {
-    // Get all active monitors that have expired
+  handler: async (ctx): Promise<{ deleted: number; continuation: boolean }> => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[ProspectMonitors] Autonomous jobs paused, skipping expired monitor cleanup"
+      );
+      return { deleted: 0, continuation: false };
+    }
+
+    // Get a bounded batch of active monitors that have expired
     const allMonitors = await ctx.runQuery(
       internal.prospectMonitors.getExpiredMonitors,
       {}
@@ -483,31 +546,50 @@ export const cleanupExpiredMonitors = internalAction({
 
     let deleted = 0;
     for (const monitor of allMonitors) {
-      await ctx.runAction(internal.prospectMonitors.deleteProspectMonitor, {
-        monitorId: monitor.monitorId,
-      });
-      deleted++;
+      const result = await ctx.runAction(
+        internal.prospectMonitors.deleteProspectMonitor,
+        {
+          monitorId: monitor.monitorId,
+        }
+      );
+      if (result.success) {
+        deleted += 1;
+      }
     }
 
-    return { deleted };
+    // Only continue when the run made progress; otherwise the hourly cron
+    // retries the same batch without stacking 60-second continuations.
+    const continuation =
+      allMonitors.length >= EXPIRED_MONITOR_CLEANUP_BATCH && deleted > 0;
+    if (continuation) {
+      await ctx.scheduler.runAfter(
+        EXPIRED_MONITOR_CLEANUP_DELAY_MS,
+        internal.prospectMonitors.cleanupExpiredMonitors,
+        {}
+      );
+    }
+
+    return { deleted, continuation };
   },
 });
 
 /**
- * Get expired monitors (internal query for cleanup)
+ * Get expired monitors (bounded batch for cleanup). Expiration is filtered
+ * before the take, so a window full of not-yet-expired rows cannot hide
+ * expired ones behind it.
  */
 export const getExpiredMonitors = internalQuery({
   args: {},
   handler: async (ctx) => {
     const now = getCurrentUTCTimestamp();
-    // Get all active monitors and filter by expiration
-    const monitors = await ctx.db
+    return await ctx.db
       .query("prospectMonitors")
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .collect();
-
-    return monitors.filter(
-      (m) => m.expiresAt !== undefined && m.expiresAt < now
-    );
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("status"), "active"),
+          q.lt(q.field("expiresAt"), now)
+        )
+      )
+      .take(EXPIRED_MONITOR_CLEANUP_BATCH);
   },
 });

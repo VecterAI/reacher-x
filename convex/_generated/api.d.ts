@@ -353,6 +353,7 @@ import type * as socialApiBudget from "../socialApiBudget.js";
 import type * as socialApiWebhookReceipts from "../socialApiWebhookReceipts.js";
 import type * as socialapi from "../socialapi.js";
 import type * as socialapiMonitors from "../socialapiMonitors.js";
+import type * as staleWorkMaintenance from "../staleWorkMaintenance.js";
 import type * as styleAnalysis from "../styleAnalysis.js";
 import type * as styleAnalysisActions from "../styleAnalysisActions.js";
 import type * as styleMonitorActions from "../styleMonitorActions.js";
@@ -758,6 +759,7 @@ declare const fullApi: ApiFromModules<{
   socialApiWebhookReceipts: typeof socialApiWebhookReceipts;
   socialapi: typeof socialapi;
   socialapiMonitors: typeof socialapiMonitors;
+  staleWorkMaintenance: typeof staleWorkMaintenance;
   styleAnalysis: typeof styleAnalysis;
   styleAnalysisActions: typeof styleAnalysisActions;
   styleMonitorActions: typeof styleMonitorActions;
