@@ -23,6 +23,7 @@ import {
   monitorStatusValidator,
   socialQueryMonitorPurposeValidator,
 } from "./validators";
+import type { Id } from "./_generated/dataModel";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { logger } from "../shared/lib/logger";
 import { normalizeMemoryText } from "./lib/memoryHelpers";
@@ -972,21 +973,31 @@ export const deleteMonitorRowAndDetachInternal = internalMutation({
 // ============================================================================
 
 /**
- * Workspace scan for the cost reconciliation cron. Workspaces are the scan
- * unit for every reconciliation phase: per-workspace queries are fully
- * indexed and complete within their take bound, so no phase can be starved
- * by rows it filters out. The cap bounds the hourly read; deployments with
- * more live workspaces than the cap should raise it.
+ * One page of the workspace scan for the cost reconciliation cron.
+ * Workspaces are the scan unit for every reconciliation phase: per-workspace
+ * queries are fully indexed and complete within their take bound, so no
+ * phase can be starved by rows it filters out. The cron paginates through
+ * every page, so workspaces beyond any single page are still processed.
  */
 export const listWorkspaceAutomationStatesInternal = internalQuery({
-  args: { limit: v.optional(v.number()) },
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
-    const limit = Math.max(1, Math.min(args.limit ?? 500, 500));
-    const workspaces = await ctx.db.query("workspaces").take(limit);
-    return workspaces.map((workspace) => ({
-      workspaceId: workspace._id,
-      automationActive: isWorkspaceAutomationActive(workspace),
-    }));
+    const limit = Math.max(1, Math.min(args.limit ?? 250, 250));
+    const page = await ctx.db.query("workspaces").paginate({
+      numItems: limit,
+      cursor: args.cursor ?? null,
+    });
+    return {
+      workspaces: page.page.map((workspace) => ({
+        workspaceId: workspace._id,
+        automationActive: isWorkspaceAutomationActive(workspace),
+      })),
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
   },
 });
 
@@ -1289,17 +1300,35 @@ export const reconcileMonitorCostsCron = internalAction({
     let driftMarked = 0;
     let remoteListed = 0;
 
-    const workspaces = await ctx.runQuery(
-      internal.socialapiMonitors.listWorkspaceAutomationStatesInternal,
-      {}
-    );
+    const workspaceStates: Array<{
+      workspaceId: Id<"workspaces">;
+      automationActive: boolean;
+    }> = [];
+    let workspaceScanDone = false;
+    let workspaceCursor: string | null = null;
+    while (!workspaceScanDone) {
+      const page: {
+        workspaces: Array<{
+          workspaceId: Id<"workspaces">;
+          automationActive: boolean;
+        }>;
+        continueCursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(
+        internal.socialapiMonitors.listWorkspaceAutomationStatesInternal,
+        { cursor: workspaceCursor }
+      );
+      workspaceStates.push(...page.workspaces);
+      workspaceScanDone = page.isDone;
+      workspaceCursor = page.continueCursor;
+    }
 
     // Phase A: delete remote seed monitors of dormant workspaces and mark
     // their rows deleted. A failed deletion leaves the row live so the next
     // run retries (with a one-interval backoff); the row is never marked
     // deleted without a confirmed remote deletion. Attempts, not successes,
     // count against the budget so a provider outage cannot stretch the run.
-    for (const workspace of workspaces) {
+    for (const workspace of workspaceStates) {
       if (dormantAttempts >= budget) {
         continuationScheduled = true;
         break;
@@ -1422,7 +1451,7 @@ export const reconcileMonitorCostsCron = internalAction({
     // gone. Only runs against a complete listing, and dormant workspaces are
     // excluded because phase A owns their deletion.
     if (remote.complete) {
-      for (const workspace of workspaces) {
+      for (const workspace of workspaceStates) {
         if (driftMarked >= budget) {
           continuationScheduled = true;
           break;

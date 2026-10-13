@@ -117,12 +117,14 @@ describe("socialapi monitor cost reconciliation", () => {
     const t = convexTest(schema, modules);
     const { workspaceId, pausedWorkspaceId } = await seedReconcileFixture(t);
 
-    const states = await t.query(
+    const page = await t.query(
       internal.socialapiMonitors.listWorkspaceAutomationStatesInternal,
       {}
     );
-    const running = states.find((state) => state.workspaceId === workspaceId);
-    const paused = states.find(
+    const running = page.workspaces.find(
+      (state) => state.workspaceId === workspaceId
+    );
+    const paused = page.workspaces.find(
       (state) => state.workspaceId === pausedWorkspaceId
     );
     expect(running?.automationActive).toBe(true);
