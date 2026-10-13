@@ -30,6 +30,9 @@ const DEFAULT_MONITOR_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // monitors and continues itself when the batch was full.
 const EXPIRED_MONITOR_CLEANUP_BATCH = 25;
 const EXPIRED_MONITOR_CLEANUP_DELAY_MS = 60_000;
+// Monitors whose remote deletion failed sit out this long before the cleanup
+// retries them, so a permanently failing row cannot occupy every batch.
+const EXPIRED_MONITOR_DELETE_BACKOFF_MS = 60 * 60 * 1000;
 const prospectMonitorLogger = logger.withScope("ProspectMonitors");
 
 // ============================================================================
@@ -264,10 +267,16 @@ export const deleteMonitorApiCall = internalAction({
       { estimateUsage: () => ({ billableUnits: 0, estimatedCostUsd: 0 }) }
     );
 
-    // 404 is acceptable (already deleted)
+    // 404 is acceptable (already deleted). The status code must survive into
+    // the error text so transient (5xx/429) failures can be classified by
+    // the deletion workflows; the body message is appended defensively.
     if (!response.ok && response.status !== 404) {
-      const data = await response.json();
-      throw new Error(data.message ?? `HTTP ${response.status}`);
+      const data = await response.json().catch(() => ({}));
+      const message =
+        typeof data.message === "string" ? data.message : undefined;
+      throw new Error(
+        `HTTP ${response.status}${message ? `: ${message}` : ""}`
+      );
     }
 
     return { success: true };
@@ -544,7 +553,9 @@ export const cleanupExpiredMonitors = internalAction({
       {}
     );
 
+    const now = getCurrentUTCTimestamp();
     let deleted = 0;
+    let backoffUpdated = 0;
     for (const monitor of allMonitors) {
       const result = await ctx.runAction(
         internal.prospectMonitors.deleteProspectMonitor,
@@ -554,13 +565,27 @@ export const cleanupExpiredMonitors = internalAction({
       );
       if (result.success) {
         deleted += 1;
+      } else {
+        // Failed deletion: record the failure so the row sits out one
+        // interval and cannot occupy every batch ahead of newer expired
+        // rows. Transient outages retry after the backoff; the row only
+        // leaves the active set through a later successful deletion.
+        await ctx.runMutation(
+          internal.prospectMonitors.recordMonitorDeleteFailureInternal,
+          { monitorId: monitor.monitorId, now }
+        );
+        backoffUpdated += 1;
       }
     }
 
-    // Only continue when the run made progress; otherwise the hourly cron
-    // retries the same batch without stacking 60-second continuations.
+    // Only continue when the run made progress: a full batch of failures
+    // must not stack 60-second continuations on top of the hourly cron.
     const continuation =
-      allMonitors.length >= EXPIRED_MONITOR_CLEANUP_BATCH && deleted > 0;
+      allMonitors.length >= EXPIRED_MONITOR_CLEANUP_BATCH &&
+      deleted > 0 &&
+      // Progress in the backoff sense also counts: rows moved into their
+      // backoff window frees the next batch for newer expired rows.
+      !(deleted === 0 && backoffUpdated === allMonitors.length);
     if (continuation) {
       await ctx.scheduler.runAfter(
         EXPIRED_MONITOR_CLEANUP_DELAY_MS,
@@ -574,22 +599,50 @@ export const cleanupExpiredMonitors = internalAction({
 });
 
 /**
- * Get expired monitors (bounded batch for cleanup). Expiration is filtered
- * before the take, so a window full of not-yet-expired rows cannot hide
- * expired ones behind it.
+ * Marks one monitor's remote-deletion failure time so the expired-monitor
+ * cleanup can back off from rows that keep failing.
+ */
+export const recordMonitorDeleteFailureInternal = internalMutation({
+  args: { monitorId: v.string(), now: v.number() },
+  handler: async (ctx, args) => {
+    const monitor = await ctx.db
+      .query("prospectMonitors")
+      .withIndex("by_monitor_id", (q) => q.eq("monitorId", args.monitorId))
+      .first();
+    if (!monitor) {
+      return { updated: false };
+    }
+    await ctx.db.patch(monitor._id, { lastDeleteAttemptAt: args.now });
+    return { updated: true };
+  },
+});
+
+/**
+ * Get expired monitors (bounded batch for cleanup). The index range filters
+ * expiration before the take; the explicit lower bound matters because
+ * Convex index ordering places rows with an undefined field first, and an
+ * active row without an expiry must never be treated as expired. Rows whose
+ * deletion failed within the backoff window are excluded, so a window full
+ * of failing rows cannot starve newer expired ones.
  */
 export const getExpiredMonitors = internalQuery({
   args: {},
   handler: async (ctx) => {
     const now = getCurrentUTCTimestamp();
-    return await ctx.db
+    const monitors = await ctx.db
       .query("prospectMonitors")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("status"), "active"),
-          q.lt(q.field("expiresAt"), now)
-        )
+      .withIndex("by_status_expires_at", (q) =>
+        q.eq("status", "active").gt("expiresAt", 0).lt("expiresAt", now)
       )
-      .take(EXPIRED_MONITOR_CLEANUP_BATCH);
+      .take(EXPIRED_MONITOR_CLEANUP_BATCH * 2);
+
+    const backoffCutoff = now - EXPIRED_MONITOR_DELETE_BACKOFF_MS;
+    return monitors
+      .filter(
+        (monitor) =>
+          monitor.lastDeleteAttemptAt === undefined ||
+          monitor.lastDeleteAttemptAt <= backoffCutoff
+      )
+      .slice(0, EXPIRED_MONITOR_CLEANUP_BATCH);
   },
 });

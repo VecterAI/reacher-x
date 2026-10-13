@@ -21,6 +21,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import {
   internalAction,
   internalMutation,
@@ -40,14 +41,20 @@ const STALE_QUALIFICATION_CLEANUP_MESSAGE =
 const STALE_WORK_BATCH_SIZE = 50;
 const STALE_WORK_MAX_BYTES_PER_PAGE = 2_000_000;
 const STALE_WORKSPACE_SCAN_LIMIT = 500;
+/** Per-queue page cap per workspace; the driver warns when a cap is hit. */
+const STALE_WORK_MAX_PAGES = 100;
 
 /**
- * Live workspaces with their automation state, bounded for one scan. The
- * workspaces table only holds non-deleted workspaces, so this stays small.
+ * One page of live workspaces with their automation state. The driver
+ * paginates through every page, so workspaces beyond any single page are
+ * still processed.
  */
 export const listWorkspaceAutomationStatesForMaintenanceInternal =
   internalQuery({
-    args: { limit: v.optional(v.number()) },
+    args: {
+      cursor: v.optional(v.union(v.string(), v.null())),
+      limit: v.optional(v.number()),
+    },
     handler: async (ctx, args) => {
       const limit = Math.max(
         1,
@@ -56,11 +63,18 @@ export const listWorkspaceAutomationStatesForMaintenanceInternal =
           STALE_WORKSPACE_SCAN_LIMIT
         )
       );
-      const workspaces = await ctx.db.query("workspaces").take(limit);
-      return workspaces.map((workspace) => ({
-        workspaceId: workspace._id,
-        automationActive: isWorkspaceAutomationActive(workspace),
-      }));
+      const page = await ctx.db.query("workspaces").paginate({
+        numItems: limit,
+        cursor: args.cursor ?? null,
+      });
+      return {
+        workspaces: page.page.map((workspace) => ({
+          workspaceId: workspace._id,
+          automationActive: isWorkspaceAutomationActive(workspace),
+        })),
+        continueCursor: page.continueCursor,
+        isDone: page.isDone,
+      };
     },
   });
 
@@ -219,6 +233,58 @@ type WorkspaceState = {
   automationActive: boolean;
 };
 
+/** Processes one workspace's queues with a per-queue page cap. */
+async function drainWorkspaceQueues(
+  ctx: ActionCtx,
+  args: { workspaceId: Id<"workspaces">; cutoff: number }
+): Promise<{ newlyCapped: number; exhausted: number; hitPageCap: boolean }> {
+  let newlyCapped = 0;
+  let exhausted = 0;
+  let hitPageCap = false;
+
+  let cursor: string | null = null;
+  for (let page = 0; page < STALE_WORK_MAX_PAGES; page += 1) {
+    const capResult: {
+      newlyCapped: number;
+      continueCursor: string | null;
+      isDone: boolean;
+    } = await ctx.runMutation(
+      internal.staleWorkMaintenance.capStalePendingQualificationBatchInternal,
+      { workspaceId: args.workspaceId, cutoff: args.cutoff, cursor }
+    );
+    newlyCapped += capResult.newlyCapped;
+    if (capResult.isDone) {
+      break;
+    }
+    cursor = capResult.continueCursor;
+    if (page === STALE_WORK_MAX_PAGES - 1) {
+      hitPageCap = true;
+    }
+  }
+
+  cursor = null;
+  for (let page = 0; page < STALE_WORK_MAX_PAGES; page += 1) {
+    const exhaustResult: {
+      exhausted: number;
+      continueCursor: string | null;
+      isDone: boolean;
+    } = await ctx.runMutation(
+      internal.staleWorkMaintenance.exhaustStaleAutoPlanRecoveryBatchInternal,
+      { workspaceId: args.workspaceId, cursor }
+    );
+    exhausted += exhaustResult.exhausted;
+    if (exhaustResult.isDone) {
+      break;
+    }
+    cursor = exhaustResult.continueCursor;
+    if (page === STALE_WORK_MAX_PAGES - 1) {
+      hitPageCap = true;
+    }
+  }
+
+  return { newlyCapped, exhausted, hitPageCap };
+}
+
 /**
  * Operator entry point: walks every workspace and drains its stale pending
  * qualifications and failed auto-plan runs. Reads and writes are mutations
@@ -230,64 +296,60 @@ export const runStaleWorkCleanupInternal = internalAction({
     workspacesScanned: v.number(),
     newlyCappedProspects: v.number(),
     exhaustedAutoPlanRuns: v.number(),
+    workspacesHitPageCap: v.number(),
   }),
   handler: async (ctx) => {
     const cutoff = getCurrentUTCTimestamp() - 15 * 60 * 1000;
-    const workspaces = (await ctx.runQuery(
-      internal.staleWorkMaintenance
-        .listWorkspaceAutomationStatesForMaintenanceInternal,
-      {}
-    )) as WorkspaceState[];
 
+    let workspacesScanned = 0;
     let newlyCappedProspects = 0;
     let exhaustedAutoPlanRuns = 0;
+    let workspacesHitPageCap = 0;
 
-    for (const workspace of workspaces) {
-      if (workspace.automationActive) {
-        continue;
-      }
+    let scanCursor: string | null = null;
+    let scanDone = false;
+    while (!scanDone) {
+      const page: {
+        workspaces: WorkspaceState[];
+        continueCursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(
+        internal.staleWorkMaintenance
+          .listWorkspaceAutomationStatesForMaintenanceInternal,
+        { cursor: scanCursor }
+      );
 
-      let cursor: string | null = null;
-      for (let page = 0; page < 100; page += 1) {
-        const capResult: {
-          newlyCapped: number;
-          continueCursor: string | null;
-          isDone: boolean;
-        } = await ctx.runMutation(
-          internal.staleWorkMaintenance
-            .capStalePendingQualificationBatchInternal,
-          { workspaceId: workspace.workspaceId, cutoff, cursor }
-        );
-        newlyCappedProspects += capResult.newlyCapped;
-        if (capResult.isDone) {
-          break;
+      for (const workspace of page.workspaces) {
+        if (workspace.automationActive) {
+          continue;
         }
-        cursor = capResult.continueCursor;
+        workspacesScanned += 1;
+        const drained = await drainWorkspaceQueues(ctx, {
+          workspaceId: workspace.workspaceId,
+          cutoff,
+        });
+        newlyCappedProspects += drained.newlyCapped;
+        exhaustedAutoPlanRuns += drained.exhausted;
+        if (drained.hitPageCap) {
+          workspacesHitPageCap += 1;
+        }
       }
 
-      cursor = null;
-      for (let page = 0; page < 100; page += 1) {
-        const exhaustResult: {
-          exhausted: number;
-          continueCursor: string | null;
-          isDone: boolean;
-        } = await ctx.runMutation(
-          internal.staleWorkMaintenance
-            .exhaustStaleAutoPlanRecoveryBatchInternal,
-          { workspaceId: workspace.workspaceId, cursor }
-        );
-        exhaustedAutoPlanRuns += exhaustResult.exhausted;
-        if (exhaustResult.isDone) {
-          break;
-        }
-        cursor = exhaustResult.continueCursor;
-      }
+      scanDone = page.isDone;
+      scanCursor = page.continueCursor;
+    }
+
+    if (workspacesHitPageCap > 0) {
+      console.warn(
+        `[StaleWorkMaintenance] ${workspacesHitPageCap} workspace(s) hit the ${STALE_WORK_MAX_PAGES}-page cap; re-run to finish them.`
+      );
     }
 
     return {
-      workspacesScanned: workspaces.length,
+      workspacesScanned,
       newlyCappedProspects,
       exhaustedAutoPlanRuns,
+      workspacesHitPageCap,
     };
   },
 });

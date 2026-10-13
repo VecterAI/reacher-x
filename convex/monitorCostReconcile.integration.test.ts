@@ -241,8 +241,7 @@ describe("socialapi monitor cost reconciliation", () => {
     const start = Date.UTC(2026, 10, 1, 12);
     vi.setSystemTime(start);
     const t = convexTest(schema, modules);
-    const { userId, workspaceId, pausedWorkspaceId } =
-      await seedReconcileFixture(t);
+    const { userId, workspaceId } = await seedReconcileFixture(t);
 
     await insertSeedMonitor(t, {
       workspaceId,
@@ -259,10 +258,12 @@ describe("socialapi monitor cost reconciliation", () => {
       purpose: "conversation_seed",
     });
 
-    // Advance past the drift grace window, then create the fresh row.
+    // Advance past the drift grace window, then create the fresh row in the
+    // same workspace so its exclusion is attributable to the grace filter
+    // and not to workspace scoping.
     vi.setSystemTime(start + 20 * 60 * 1000);
     await insertSeedMonitor(t, {
-      workspaceId: pausedWorkspaceId,
+      workspaceId,
       userId,
       monitorId: "fresh-row",
       status: "active",

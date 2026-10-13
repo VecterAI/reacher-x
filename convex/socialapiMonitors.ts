@@ -512,10 +512,16 @@ export const deleteMonitorApiCall = internalAction({
       }
     );
 
-    // 404 is acceptable (already deleted)
+    // 404 is acceptable (already deleted). The status code must survive into
+    // the error text so transient (5xx/429) failures can be classified by
+    // the deletion workflows; the body message is appended defensively.
     if (!response.ok && response.status !== 404) {
-      const data = (await response.json()) as SocialAPIDeleteMonitorResponse;
-      throw new Error(data.message ?? `HTTP ${response.status}`);
+      const data = (await response
+        .json()
+        .catch(() => ({}))) as SocialAPIDeleteMonitorResponse;
+      throw new Error(
+        `HTTP ${response.status}${data.message ? `: ${data.message}` : ""}`
+      );
     }
 
     return { success: true };
