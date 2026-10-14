@@ -272,11 +272,12 @@ export const deleteMonitorApiCall = internalAction({
 
     // 404 is acceptable (already deleted). The status code must survive into
     // the error text so transient (5xx/429) failures can be classified by
-    // the deletion workflows; the body message is appended defensively.
+    // the deletion workflows; the body message is appended defensively (the
+    // body can be a JSON null, so read it with optional chaining).
     if (!response.ok && response.status !== 404) {
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(() => null);
       const message =
-        typeof data.message === "string" ? data.message : undefined;
+        typeof data?.message === "string" ? data.message : undefined;
       throw new Error(
         `HTTP ${response.status}${message ? `: ${message}` : ""}`
       );

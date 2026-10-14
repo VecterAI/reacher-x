@@ -1193,6 +1193,44 @@ export const markMonitorsDeletedWithSeedCleanupInternal = internalMutation({
 });
 
 /**
+ * Point check for one remote monitor. Returns `gone` when SocialAPI
+ * confirms the monitor no longer exists (404) and `present` when it does.
+ * Used to confirm drift candidates before marking their rows deleted, so a
+ * listing that shifted between page reads can never mark a live monitor as
+ * deleted.
+ */
+export const getMonitorApiCall = internalAction({
+  args: { monitorId: v.string() },
+  handler: async (ctx, args): Promise<{ gone: boolean }> => {
+    const apiKey = process.env.SOCIALAPI_API_KEY;
+    if (!apiKey) {
+      return { gone: false };
+    }
+    const response = await fetchSocialApi(
+      ctx,
+      "socialapiMonitors.getMonitor",
+      `${SOCIALAPI_BASE_URL}/monitors/${args.monitorId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+      },
+      { estimateUsage: () => ({ billableUnits: 0, estimatedCostUsd: 0 }) }
+    );
+    if (response.status === 404) {
+      return { gone: true };
+    }
+    if (!response.ok) {
+      throw new Error(
+        `SocialAPI monitor lookup failed with status ${response.status}`
+      );
+    }
+    return { gone: false };
+  },
+});
+
+/**
  * Lists remote monitors owned by the SocialAPI key, page by page, without
  * filtering: the full listing is what drift detection compares against (a
  * tracked row whose monitor exists under any webhook URL is not a ghost),
@@ -1429,6 +1467,9 @@ export const reconcileMonitorCostsCron = internalAction({
       { remoteMonitorIds: remoteIds }
     );
     const ownWebhookUrl = `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
+    const remoteById = new Map(
+      remote.monitors.map((monitor) => [monitor.id, monitor])
+    );
     const orphanBudget = Math.max(0, budget - dormantAttempts);
     let orphansSkippedFresh = 0;
     let foreignSkipped = 0;
@@ -1441,13 +1482,10 @@ export const reconcileMonitorCostsCron = internalAction({
         }
         break;
       }
-      orphanAttempts += 1;
-      const remoteMonitor = remote.monitors.find(
-        (monitor) => monitor.id === monitorId
-      );
+      const remoteMonitor = remoteById.get(monitorId);
       // Never touch monitors created under a different webhook (another
       // deployment sharing this key, or monitors not created by this app):
-      // they are not ours to delete.
+      // they are not ours to delete. Skips do not consume the budget.
       if (remoteMonitor?.webhookUrl !== ownWebhookUrl) {
         foreignSkipped += 1;
         continue;
@@ -1462,6 +1500,7 @@ export const reconcileMonitorCostsCron = internalAction({
         orphansSkippedFresh += 1;
         continue;
       }
+      orphanAttempts += 1;
       try {
         const result = await ctx.runAction(
           internal.socialapiMonitors.deleteMonitorApiCall,
@@ -1504,9 +1543,33 @@ export const reconcileMonitorCostsCron = internalAction({
         if (scan.rows.length === 0) {
           continue;
         }
+        // Point-confirm each candidate before marking: the listing above was
+        // paginated, and a concurrent deletion can shift entries across
+        // pages, so a live monitor could be absent from every page read.
+        const confirmedGone: string[] = [];
+        for (const candidate of scan.rows) {
+          try {
+            const result = await ctx.runAction(
+              internal.socialapiMonitors.getMonitorApiCall,
+              { monitorId: candidate.monitorId }
+            );
+            if (result.gone) {
+              confirmedGone.push(candidate.monitorId);
+            }
+          } catch (error) {
+            socialApiMonitorsLogger.warn(
+              "Drift confirmation lookup failed; skipping candidate this run",
+              { monitorId: candidate.monitorId },
+              error
+            );
+          }
+        }
+        if (confirmedGone.length === 0) {
+          continue;
+        }
         const result = await ctx.runMutation(
           internal.socialapiMonitors.markMonitorsDeletedWithSeedCleanupInternal,
-          { monitorIds: scan.rows.map((candidate) => candidate.monitorId) }
+          { monitorIds: confirmedGone }
         );
         driftMarked += result.marked;
         if (!scan.isDone) {
