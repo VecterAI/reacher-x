@@ -1109,13 +1109,14 @@ export const listWorkspaceDriftCandidatesInternal = internalQuery({
 });
 
 /**
- * Remote monitor IDs that match no live tracked row, found with one indexed
- * point lookup per remote ID. Both monitor kinds (discovery seed monitors
- * and outreach response monitors) live on the same SocialAPI key, so an ID
- * tracked live in either table is not an orphan. A remote monitor whose row
- * is already marked deleted should not exist: older paths marked rows
- * deleted without a confirmed remote deletion, so those IDs are returned
- * and re-deleted (404 counts as success) instead of billing forever.
+ * Remote monitor IDs that match no live tracked row in any of the three
+ * monitor tables, found with one indexed point lookup per remote ID. All
+ * three kinds (discovery seed monitors, outreach response monitors, and
+ * writing-style monitors) live on the same SocialAPI key, so an ID tracked
+ * live in any of them is not an orphan. A remote monitor whose row is
+ * already marked deleted should not exist: older paths marked rows deleted
+ * without a confirmed remote deletion, so those IDs are returned and
+ * re-deleted (404 counts as success) instead of billing forever.
  */
 export const listUnknownRemoteMonitorIdsInternal = internalQuery({
   args: { remoteMonitorIds: v.array(v.string()) },
@@ -1133,9 +1134,17 @@ export const listUnknownRemoteMonitorIdsInternal = internalQuery({
         .query("prospectMonitors")
         .withIndex("by_monitor_id", (q) => q.eq("monitorId", monitorId))
         .first();
-      if (!prospectRow || prospectRow.status === "deleted") {
-        unknown.push(monitorId);
+      if (prospectRow && prospectRow.status !== "deleted") {
+        continue;
       }
+      const styleRow = await ctx.db
+        .query("styleMonitors")
+        .withIndex("by_monitor_id", (q) => q.eq("monitorId", monitorId))
+        .first();
+      if (styleRow && styleRow.status !== "deleted") {
+        continue;
+      }
+      unknown.push(monitorId);
     }
     return unknown;
   },
@@ -1184,30 +1193,38 @@ export const markMonitorsDeletedWithSeedCleanupInternal = internalMutation({
 });
 
 /**
- * Lists remote monitors owned by the SocialAPI key, page by page. Only
- * monitors pointing at this deployment's webhook are returned: if a second
- * deployment ever shares the same key, its monitors must not be deleted as
- * orphans by this deployment's cron. `complete` reports whether every page
- * was read (the meta last_page was present and within the per-run cap);
- * drift marking depends on a complete listing so it never marks rows whose
- * monitor was merely unlisted this run. Creation timestamps let the orphan
- * sweep skip monitors that may still be mid-save.
+ * Lists remote monitors owned by the SocialAPI key, page by page, without
+ * filtering: the full listing is what drift detection compares against (a
+ * tracked row whose monitor exists under any webhook URL is not a ghost),
+ * while orphan deletion separately scopes to this deployment's webhook so a
+ * shared API key can never delete another deployment's monitors. `complete`
+ * reports whether every page was read (the meta last_page was present and
+ * within the per-run cap); drift marking depends on a complete listing so it
+ * never marks rows whose monitor was merely unlisted this run. Creation
+ * timestamps let the orphan sweep skip monitors that may still be mid-save.
  */
 export const listRemoteMonitorsApiCall = internalAction({
   args: {},
   handler: async (
     ctx
   ): Promise<{
-    monitors: Array<{ id: string; createdAtMs?: number }>;
+    monitors: Array<{
+      id: string;
+      createdAtMs?: number;
+      webhookUrl?: string | null;
+    }>;
     complete: boolean;
   }> => {
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) {
       return { monitors: [], complete: false };
     }
-    const ownWebhookUrl = `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
 
-    const monitors: Array<{ id: string; createdAtMs?: number }> = [];
+    const monitors: Array<{
+      id: string;
+      createdAtMs?: number;
+      webhookUrl?: string | null;
+    }> = [];
     let complete = false;
     for (let page = 1; page <= REMOTE_MONITOR_LIST_MAX_PAGES; page += 1) {
       const response = await fetchSocialApi(
@@ -1236,7 +1253,7 @@ export const listRemoteMonitorsApiCall = internalAction({
         meta?: { last_page?: number };
       };
       for (const monitor of payload.data ?? []) {
-        if (!monitor.id || monitor.webhook_url !== ownWebhookUrl) {
+        if (!monitor.id) {
           continue;
         }
         const createdAtMs =
@@ -1246,6 +1263,7 @@ export const listRemoteMonitorsApiCall = internalAction({
         monitors.push({
           id: monitor.id,
           createdAtMs: Number.isNaN(createdAtMs) ? undefined : createdAtMs,
+          webhookUrl: monitor.webhook_url ?? null,
         });
       }
       const lastPage = payload.meta?.last_page;
@@ -1384,7 +1402,11 @@ export const reconcileMonitorCostsCron = internalAction({
     // failure skips phases B and C for this run while preserving any
     // continuation phase A already requested.
     let remote: {
-      monitors: Array<{ id: string; createdAtMs?: number }>;
+      monitors: Array<{
+        id: string;
+        createdAtMs?: number;
+        webhookUrl?: string | null;
+      }>;
       complete: boolean;
     };
     try {
@@ -1406,8 +1428,10 @@ export const reconcileMonitorCostsCron = internalAction({
       internal.socialapiMonitors.listUnknownRemoteMonitorIdsInternal,
       { remoteMonitorIds: remoteIds }
     );
+    const ownWebhookUrl = `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
     const orphanBudget = Math.max(0, budget - dormantAttempts);
     let orphansSkippedFresh = 0;
+    let foreignSkipped = 0;
     for (const monitorId of unknown) {
       if (orphanAttempts >= orphanBudget) {
         // Only continue when this run made progress; otherwise the hourly
@@ -1418,9 +1442,17 @@ export const reconcileMonitorCostsCron = internalAction({
         break;
       }
       orphanAttempts += 1;
-      const createdAtMs = remote.monitors.find(
+      const remoteMonitor = remote.monitors.find(
         (monitor) => monitor.id === monitorId
-      )?.createdAtMs;
+      );
+      // Never touch monitors created under a different webhook (another
+      // deployment sharing this key, or monitors not created by this app):
+      // they are not ours to delete.
+      if (remoteMonitor?.webhookUrl !== ownWebhookUrl) {
+        foreignSkipped += 1;
+        continue;
+      }
+      const createdAtMs = remoteMonitor.createdAtMs;
       if (
         typeof createdAtMs !== "number" ||
         createdAtMs > now - MONITOR_DRIFT_GRACE_MS
@@ -1495,6 +1527,7 @@ export const reconcileMonitorCostsCron = internalAction({
       dormantDrained,
       remoteListed,
       orphansDeleted,
+      foreignSkipped,
       orphansSkippedFresh,
       driftMarked,
       continuationScheduled,

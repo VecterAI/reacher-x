@@ -33,7 +33,9 @@ const EXPIRED_MONITOR_CLEANUP_BATCH = 25;
 const EXPIRED_MONITOR_CLEANUP_DELAY_MS = 60_000;
 // Monitors whose remote deletion failed sit out this long before the cleanup
 // retries them, so a permanently failing row cannot occupy every batch.
-const EXPIRED_MONITOR_DELETE_BACKOFF_MS = 60 * 60 * 1000;
+const EXPIRED_MONITOR_DELETE_BACKOFF_MS = 2 * 60 * 60 * 1000;
+// Async-iteration scan budget for one cleanup run (tiny index rows).
+const EXPIRED_MONITOR_SCAN_BUDGET = 400;
 const prospectMonitorLogger = logger.withScope("ProspectMonitors");
 
 // ============================================================================
@@ -633,36 +635,33 @@ export const getExpiredMonitors = internalQuery({
     const now = getCurrentUTCTimestamp();
     const backoffCutoff = now - EXPIRED_MONITOR_DELETE_BACKOFF_MS;
     const eligible: Array<Doc<"prospectMonitors">> = [];
-    let cursor: string | null = null;
-    let isDone = false;
-
-    // Page budget: 8 pages x 50 rows bounds one scan at 400 tiny index rows,
-    // far inside the per-transaction read limits; continuing rows resurface
-    // on the next hourly run.
-    for (
-      let page = 0;
-      page < 8 && eligible.length < EXPIRED_MONITOR_CLEANUP_BATCH && !isDone;
-      page += 1
-    ) {
-      const result = await ctx.db
-        .query("prospectMonitors")
-        .withIndex("by_status_expires_at", (q) =>
-          q.eq("status", "active").gt("expiresAt", 0).lt("expiresAt", now)
-        )
-        .paginate({ numItems: 50, cursor });
-      for (const monitor of result.page) {
-        if (
-          monitor.lastDeleteAttemptAt === undefined ||
-          monitor.lastDeleteAttemptAt <= backoffCutoff
-        ) {
-          eligible.push(monitor);
-        }
-        if (eligible.length >= EXPIRED_MONITOR_CLEANUP_BATCH) {
-          break;
-        }
+    // Async iteration streams the index past rows sitting out their
+    // deletion-failure backoff until the batch is full, so an ineligible
+    // prefix can never hide newer expired rows behind a fixed take window.
+    // Convex allows only one paginated query per function, so pagination
+    // cursors would throw here; streaming has no such restriction. Scan
+    // budget: 400 tiny index rows per run; remaining rows resurface on the
+    // next hourly run.
+    let scanned = 0;
+    const expired = ctx.db
+      .query("prospectMonitors")
+      .withIndex("by_status_expires_at", (q) =>
+        q.eq("status", "active").gt("expiresAt", 0).lt("expiresAt", now)
+      );
+    for await (const monitor of expired) {
+      scanned += 1;
+      if (
+        monitor.lastDeleteAttemptAt === undefined ||
+        monitor.lastDeleteAttemptAt <= backoffCutoff
+      ) {
+        eligible.push(monitor);
       }
-      isDone = result.isDone;
-      cursor = result.continueCursor;
+      if (
+        eligible.length >= EXPIRED_MONITOR_CLEANUP_BATCH ||
+        scanned >= EXPIRED_MONITOR_SCAN_BUDGET
+      ) {
+        break;
+      }
     }
 
     return eligible;
