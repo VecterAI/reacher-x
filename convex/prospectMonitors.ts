@@ -9,6 +9,7 @@ import {
 } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import {
   getRetriedActionStatus,
   runProviderActionRetried,
@@ -618,35 +619,52 @@ export const recordMonitorDeleteFailureInternal = internalMutation({
 });
 
 /**
- * Get expired monitors (bounded batch for cleanup). The index range filters
- * expiration before the take; the explicit lower bound matters because
+ * Get expired monitors (bounded batch for cleanup). Paginates the
+ * by_status_expires_at index past rows that are sitting out their
+ * deletion-failure backoff until the batch is full or the index is
+ * exhausted, so a prefix of ineligible rows can never hide newer expired
+ * ones behind a fixed take window. The explicit lower bound matters because
  * Convex index ordering places rows with an undefined field first, and an
- * active row without an expiry must never be treated as expired. Rows whose
- * deletion failed within the backoff window are excluded, so a window full
- * of failing rows cannot starve newer expired ones.
+ * active row without an expiry must never be treated as expired.
  */
 export const getExpiredMonitors = internalQuery({
   args: {},
   handler: async (ctx) => {
     const now = getCurrentUTCTimestamp();
-    // Read a window wide enough that rows sitting in their deletion-failure
-    // backoff cannot hide newer expired rows behind the batch limit: the
-    // backoff filter runs after the indexed read, so the window must be
-    // larger than the batch by more than the worst-case backoff share.
-    const monitors = await ctx.db
-      .query("prospectMonitors")
-      .withIndex("by_status_expires_at", (q) =>
-        q.eq("status", "active").gt("expiresAt", 0).lt("expiresAt", now)
-      )
-      .take(EXPIRED_MONITOR_CLEANUP_BATCH * 10);
-
     const backoffCutoff = now - EXPIRED_MONITOR_DELETE_BACKOFF_MS;
-    return monitors
-      .filter(
-        (monitor) =>
+    const eligible: Array<Doc<"prospectMonitors">> = [];
+    let cursor: string | null = null;
+    let isDone = false;
+
+    // Page budget: 8 pages x 50 rows bounds one scan at 400 tiny index rows,
+    // far inside the per-transaction read limits; continuing rows resurface
+    // on the next hourly run.
+    for (
+      let page = 0;
+      page < 8 && eligible.length < EXPIRED_MONITOR_CLEANUP_BATCH && !isDone;
+      page += 1
+    ) {
+      const result = await ctx.db
+        .query("prospectMonitors")
+        .withIndex("by_status_expires_at", (q) =>
+          q.eq("status", "active").gt("expiresAt", 0).lt("expiresAt", now)
+        )
+        .paginate({ numItems: 50, cursor });
+      for (const monitor of result.page) {
+        if (
           monitor.lastDeleteAttemptAt === undefined ||
           monitor.lastDeleteAttemptAt <= backoffCutoff
-      )
-      .slice(0, EXPIRED_MONITOR_CLEANUP_BATCH);
+        ) {
+          eligible.push(monitor);
+        }
+        if (eligible.length >= EXPIRED_MONITOR_CLEANUP_BATCH) {
+          break;
+        }
+      }
+      isDone = result.isDone;
+      cursor = result.continueCursor;
+    }
+
+    return eligible;
   },
 });
