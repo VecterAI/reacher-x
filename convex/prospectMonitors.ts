@@ -629,12 +629,16 @@ export const getExpiredMonitors = internalQuery({
   args: {},
   handler: async (ctx) => {
     const now = getCurrentUTCTimestamp();
+    // Read a window wide enough that rows sitting in their deletion-failure
+    // backoff cannot hide newer expired rows behind the batch limit: the
+    // backoff filter runs after the indexed read, so the window must be
+    // larger than the batch by more than the worst-case backoff share.
     const monitors = await ctx.db
       .query("prospectMonitors")
       .withIndex("by_status_expires_at", (q) =>
         q.eq("status", "active").gt("expiresAt", 0).lt("expiresAt", now)
       )
-      .take(EXPIRED_MONITOR_CLEANUP_BATCH * 2);
+      .take(EXPIRED_MONITOR_CLEANUP_BATCH * 10);
 
     const backoffCutoff = now - EXPIRED_MONITOR_DELETE_BACKOFF_MS;
     return monitors

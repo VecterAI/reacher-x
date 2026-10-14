@@ -519,9 +519,10 @@ export const deleteMonitorApiCall = internalAction({
     if (!response.ok && response.status !== 404) {
       const data = (await response
         .json()
-        .catch(() => ({}))) as SocialAPIDeleteMonitorResponse;
+        .catch(() => ({}))) as SocialAPIDeleteMonitorResponse | null;
+      const message = typeof data?.message === "string" ? data.message : "";
       throw new Error(
-        `HTTP ${response.status}${data.message ? `: ${data.message}` : ""}`
+        `HTTP ${response.status}${message ? `: ${message}` : ""}`
       );
     }
 
