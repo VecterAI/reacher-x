@@ -396,3 +396,56 @@ test("chapters prepare before visibility and keep their checkpoint when scrolled
   expect(host.querySelector("iframe")).toBe(iframe);
   expect(host.querySelector('[data-demo-rebuilding="false"]')).not.toBeNull();
 });
+
+test("a cold mid-story load retries its rebuild twice before pausing with the error", async () => {
+  await act(async () =>
+    root.render(<BlogAppDemo {...props} sceneRange={[10, 19]} />)
+  );
+  const iframe = host.querySelector("iframe")!;
+  const post = vi.fn();
+  Object.defineProperty(iframe, "contentWindow", {
+    value: { postMessage: post },
+    configurable: true,
+  });
+  const error = (revision: number) =>
+    act(async () =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          origin: "null",
+          source: iframe.contentWindow,
+          data: {
+            type: "reacherx:error",
+            revision,
+            message: "This scene could not finish. Replay to try again.",
+          },
+        })
+      )
+    );
+  await act(async () =>
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "null",
+        source: iframe.contentWindow,
+        data: { type: "reacherx:ready", bridgeId: "cold" },
+      })
+    )
+  );
+  const prepares = () =>
+    post.mock.calls.filter(([m]) => m.type === "reacherx:prepare");
+  expect(prepares()).toHaveLength(1);
+  const revisions = () => prepares().map(([m]) => m.revision);
+  // First two failures rebuild again automatically; every retry is a reset.
+  await error(revisions()[0]);
+  await error(revisions()[1]);
+  expect(prepares()).toHaveLength(3);
+  expect(prepares().every(([m]) => m.reset === true && m.index === 10)).toBe(
+    true
+  );
+  expect(state()).toBe("playing");
+  // The third failure is a real outage: pause with the honest banner.
+  await error(revisions()[2]);
+  expect(host.querySelector('[role="status"]')?.textContent).toContain(
+    "This scene could not finish."
+  );
+  expect(state()).toBe("paused");
+});

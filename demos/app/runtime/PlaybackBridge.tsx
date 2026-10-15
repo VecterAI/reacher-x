@@ -56,11 +56,17 @@ export function PlaybackBridge({
     document.body.inert = true;
     const initialAmbient = document.documentElement.dataset.demoAmbient;
     document.documentElement.dataset.demoAmbient = "paused";
+    // Restoring replays prior scenes invisibly behind the host's preparing
+    // spinner, often on a cold load whose chunks are still arriving. Its
+    // waits get a generous budget; visible playback keeps the tight budget
+    // the viewer experiences.
+    const RESTORE_CONTROL_TIMEOUT_MS = 15000;
     const send = (type: string, extra = {}) =>
       window.parent.postMessage({ type, ...extra }, parentOrigin);
     const waitFor = async <T,>(
       read: () => T | undefined | false,
-      token: number
+      token: number,
+      timeoutMs = 4000
     ): Promise<T> => {
       let elapsed = 0;
       let last = performance.now();
@@ -71,7 +77,7 @@ export function PlaybackBridge({
         const now = performance.now();
         if (!document.hidden) elapsed += Math.min(now - last, 100);
         last = now;
-        if (elapsed > 4000)
+        if (elapsed > timeoutMs)
           throw new Error("Demo control did not become available");
       }
       throw new Error("Playback superseded");
@@ -80,16 +86,23 @@ export function PlaybackBridge({
       description: DemoTarget,
       token: number,
       interactive = true,
-      reveal = true
+      reveal = true,
+      timeoutMs = 4000
     ) => {
-      const element = await waitFor(() => {
-        const match = findDemoTarget(document, description);
-        return match &&
-          (!interactive ||
-            !match.matches(':disabled,[aria-disabled="true"],[data-disabled]'))
-          ? match
-          : undefined;
-      }, token).catch((error: unknown) => {
+      const element = await waitFor(
+        () => {
+          const match = findDemoTarget(document, description);
+          return match &&
+            (!interactive ||
+              !match.matches(
+                ':disabled,[aria-disabled="true"],[data-disabled]'
+              ))
+            ? match
+            : undefined;
+        },
+        token,
+        timeoutMs
+      ).catch((error: unknown) => {
         throw new Error(
           `Demo control unavailable: ${description.selector} ${description.text ?? description.containsText ?? ""}`,
           { cause: error }
@@ -98,6 +111,10 @@ export function PlaybackBridge({
       if (reveal) revealDemoTarget(element);
       return element;
     };
+    // The host counts silent rebuild time against a stalled-scene watchdog.
+    // Report each milestone so a slow, progressing rebuild is never treated
+    // as stalled.
+    const beat = () => send("reacherx:restoring", { revision });
     const restore = async (index: number, token: number) => {
       const path = getBlogDemoInitialPath(scenario);
       // The real setup guard owns the canonical thread URL. Replacing it with
@@ -106,34 +123,53 @@ export function PlaybackBridge({
         router.replace(path, { scroll: false });
         // Leave the old route before replacing its data. Otherwise its mounted
         // guards see a missing thread/plan and navigate over this replacement.
+        beat();
         await waitFor(
           () => isDemoInitialLocation(window.location, path),
-          token
+          token,
+          RESTORE_CONTROL_TIMEOUT_MS
         );
         await frame();
         if (disposed || token !== generation) return;
       }
       const session = reset();
+      beat();
       await waitFor(
         () =>
           document.querySelector(`[data-demo-session="${session}"]`) &&
           // A same-path replacement can still be clearing an old thread or
           // profile query. Do not type into the editor that it is replacing.
           isDemoInitialLocation(window.location, path),
-        token
+        token,
+        RESTORE_CONTROL_TIMEOUT_MS
       );
-      await waitFor(() => document.querySelector("main h1"), token);
+      beat();
+      await waitFor(
+        () => document.querySelector("main h1"),
+        token,
+        RESTORE_CONTROL_TIMEOUT_MS
+      );
       // Setup bootstraps its canonical thread URL asynchronously. Its first
       // editor is replaced when that thread arrives; do not type into it early.
-      if (path === "/agent/setup")
+      if (path === "/agent/setup") {
+        beat();
         await waitFor(
           () => new URLSearchParams(window.location.search).has("threadId"),
-          token
+          token,
+          RESTORE_CONTROL_TIMEOUT_MS
         );
+      }
       // Seeking replays prior real interactions against fresh local data.
       for (const shot of BLOG_DEMO_SHOTS[scenario].slice(0, index)) {
+        beat();
         if (shot.waitFor) {
-          await target(shot.waitFor, token, false, false);
+          await target(
+            shot.waitFor,
+            token,
+            false,
+            false,
+            RESTORE_CONTROL_TIMEOUT_MS
+          );
           // Let the control's effects register before the next interaction.
           await frame();
           await frame();
@@ -142,7 +178,13 @@ export function PlaybackBridge({
         await performPlaybackAction(
           // Intermediate scrolls can dismiss autocomplete and open menus.
           // Reveal only the requested scene after the state has been rebuilt.
-          await target(shot.action, token, true, false),
+          await target(
+            shot.action,
+            token,
+            true,
+            false,
+            RESTORE_CONTROL_TIMEOUT_MS
+          ),
           shot.action,
           () => token === generation && !disposed
         );
@@ -163,14 +205,24 @@ export function PlaybackBridge({
       const shot = BLOG_DEMO_SHOTS[scenario][index];
       try {
         if (shouldReset) await restore(index, token);
-        if (shot.waitFor) await target(shot.waitFor, token, false);
+        // A reset prepare runs behind the host's preparing spinner; its own
+        // scene targets share the restoration budget. Visible playback keeps
+        // the tight budget the viewer experiences.
+        const budget = shouldReset ? RESTORE_CONTROL_TIMEOUT_MS : 4000;
+        if (shot.waitFor) {
+          beat();
+          await target(shot.waitFor, token, false, true, budget);
+        }
+        beat();
         const focus = shot.focus
-          ? await target(shot.focus, token, false)
+          ? await target(shot.focus, token, false, true, budget)
           : undefined;
+        beat();
         const action = shot.action
-          ? await target(shot.action, token)
+          ? await target(shot.action, token, true, true, budget)
           : undefined;
-        await waitFor(() => document.querySelector("main h1"), token);
+        beat();
+        await waitFor(() => document.querySelector("main h1"), token, budget);
         let previous = "";
         let stableFrames = 0;
         await waitFor(() => {

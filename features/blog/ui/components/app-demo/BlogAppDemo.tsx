@@ -50,6 +50,9 @@ import { getBlogDemoUrl } from "@/features/blog/lib/blogDemoUrl";
 import { readDemoRect } from "@/features/blog/lib/blogDemoDomHelpers";
 
 const IDLE_RESUME_MS = 4000;
+/** A resetting scene silently rebuilds prior scenes on a cold load; it may
+ * legitimately need longer than a visible scene's tight 8s readiness window. */
+const RESTORE_READY_MS = 45000;
 const CINEMATIC_EASE = [0.22, 1, 0.36, 1] as const;
 const subscribeToOrigin = () => () => {};
 const readParentOrigin = () => window.location.origin;
@@ -167,6 +170,7 @@ function BlogAppDemoPlayer({
     lastInteraction: 0,
     waitingTime: 0,
     retries: 0,
+    restoring: false,
     visibleSince: 0,
     lastConnect: 0,
   });
@@ -222,6 +226,7 @@ function BlogAppDemoPlayer({
       r.initialized = true;
       r.revision += 1;
       r.prepared = false;
+      r.restoring = reset === true;
       if (reset) setRebuilding(index > 0);
       setPrepared(false);
       r.actionSent = false;
@@ -297,6 +302,7 @@ function BlogAppDemoPlayer({
   const recover = useCallback(
     (message: string) => {
       const r = runtime.current;
+      r.restoring = false;
       r.prepared = false;
       const action = getBlogDemoRecoveryAction(r.playback, r.manual, r.retries);
       if (action === "defer") {
@@ -464,6 +470,13 @@ function BlogAppDemoPlayer({
         r.lastInteraction = performance.now();
       }
       if (event.data.type === "reacherx:escape") setExpanded(false);
+      if (event.data.type === "reacherx:restoring") {
+        // An in-flight rebuild is progress, not a stall; keep its budget
+        // alive while the bridge reports milestones.
+        if (event.data.revision === r.revision && r.restoring)
+          r.waitingTime = 0;
+        return;
+      }
       if (event.data.revision !== r.revision) return;
       if (event.data.type === "reacherx:error") {
         recover(
@@ -473,6 +486,7 @@ function BlogAppDemoPlayer({
         );
       }
       if (event.data.type === "reacherx:prepared") {
+        r.restoring = false;
         if (r.visible) restoreScroll();
         r.prepared = true;
         setPrepared(true);
@@ -622,7 +636,7 @@ function BlogAppDemoPlayer({
           if (progress.current) progress.current.value = String(frame.index);
         } else {
           r.waitingTime = advanceBlogDemoWait(r.waitingTime, delta, true);
-          if (r.waitingTime > 8000)
+          if (r.waitingTime > (r.restoring ? RESTORE_READY_MS : 8000))
             recover("The demo step did not become ready.");
         }
       }
