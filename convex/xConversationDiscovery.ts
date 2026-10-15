@@ -701,6 +701,124 @@ export const getConversationSeedsByWorkspaceStatusInternal = internalQuery({
   },
 });
 
+export const getConversationSeedInternal = internalQuery({
+  args: { seedId: v.id("twitterConversationSeeds") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.seedId);
+  },
+});
+
+/**
+ * Active or backfilling seeds whose monitor pointer refers to a row that no
+ * longer exists or was marked deleted. These pointers are stale: the remote
+ * monitor is gone, so no webhook can ever arrive for them.
+ */
+export const listStaleSeedMonitorPointersInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // Scanning well past the expected seed count keeps stale pointers from
+    // hiding behind a window full of valid ones.
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 200), 200));
+    const [active, backfilling] = await Promise.all([
+      ctx.db
+        .query("twitterConversationSeeds")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "active")
+        )
+        .take(limit),
+      ctx.db
+        .query("twitterConversationSeeds")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "pending_backfill")
+        )
+        .take(limit),
+    ]);
+
+    const stale = [];
+    for (const seed of [...active, ...backfilling]) {
+      if (stale.length >= limit) {
+        break;
+      }
+      if (!seed.monitorId) {
+        continue;
+      }
+      const monitor = await ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_monitor_id", (q) => q.eq("monitorId", seed.monitorId!))
+        .first();
+      if (!monitor || monitor.status === "deleted") {
+        stale.push({ seedId: seed._id, monitorId: seed.monitorId });
+      }
+    }
+    return stale;
+  },
+});
+
+export const clearSeedMonitorPointerInternal = internalMutation({
+  args: {
+    seedId: v.id("twitterConversationSeeds"),
+    expectedMonitorId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const seed = await ctx.db.get(args.seedId);
+    if (!seed || seed.monitorId !== args.expectedMonitorId) {
+      // A concurrent creation already re-pointed the seed; keep it.
+      return { cleared: false };
+    }
+    await ctx.db.patch(args.seedId, { monitorId: undefined });
+    return { cleared: true };
+  },
+});
+
+/**
+ * Re-arms reply discovery after the workspace's monitors were drained while
+ * dormant: clears stale seed monitor pointers, then lets the standard
+ * creation flow make fresh monitors for every seed still missing one.
+ * Called from workspace resume paths (user-initiated, so it runs even while
+ * the autonomous-jobs brake is on).
+ */
+export const resyncWorkspaceSeedMonitorsInternal = internalAction({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ cleared: number; created: number; errors: string[] }> => {
+    const stale = await ctx.runQuery(
+      internal.xConversationDiscovery.listStaleSeedMonitorPointersInternal,
+      { workspaceId: args.workspaceId }
+    );
+    let cleared = 0;
+    for (const pointer of stale) {
+      const result = await ctx.runMutation(
+        internal.xConversationDiscovery.clearSeedMonitorPointerInternal,
+        {
+          seedId: pointer.seedId,
+          expectedMonitorId: pointer.monitorId,
+        }
+      );
+      if (result.cleared) {
+        cleared += 1;
+      }
+    }
+
+    // Drained monitors leave no stale pointer behind (the drain clears them
+    // directly), so cleared === 0 does not mean there is nothing to create.
+    // Creation skips seeds that still have a pointer, so this is idempotent.
+    const creation = await ctx.runAction(
+      internal.xConversationDiscovery.createConversationSeedMonitorsInternal,
+      { workspaceId: args.workspaceId }
+    );
+    return {
+      cleared,
+      created: creation.created,
+      errors: creation.errors,
+    };
+  },
+});
+
 export const initialBackfillConversationSeedsInternal = internalAction({
   args: {
     seedIds: v.array(v.id("twitterConversationSeeds")),
@@ -912,6 +1030,17 @@ export const createConversationSeedMonitorsInternal = internalAction({
     let created = 0;
     const errors: string[] = [];
     for (const seed of seeds) {
+      // Re-check the pointer right before creating: a concurrent resync or
+      // promotion may have created this seed's monitor after the list above
+      // was fetched. Two monitors for one seed bill twice on SocialAPI's
+      // side and only one webhook is consumed.
+      const freshSeed = await ctx.runQuery(
+        internal.xConversationDiscovery.getConversationSeedInternal,
+        { seedId: seed._id }
+      );
+      if (!freshSeed || freshSeed.monitorId) {
+        continue;
+      }
       const result = await ctx.runAction(
         internal.socialapiMonitors.createMonitorInternal,
         {

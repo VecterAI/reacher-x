@@ -20,7 +20,7 @@ import {
   isValidTimeZoneIdentifier,
 } from "../shared/lib/utils/time/timeUtils";
 import { internal } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
@@ -40,7 +40,25 @@ import {
 } from "./lib/accessHelpers";
 import { assertValidWorkspaceName } from "./lib/workspaceNameHelpers";
 import { hasRequiredWorkspaceAgentData } from "./lib/workspaceSetup";
+import { isWorkspaceAutomationActive } from "./lib/workspaceSystem";
 import { getActiveSetupSessionForUser } from "./lib/setupSessionCore";
+
+/**
+ * Resumes may find their seed monitors drained (paused workspaces release
+ * them to stop SocialAPI billing). Schedule the resync so reply discovery
+ * re-arms for seeds whose monitors no longer exist remotely. Runs even while
+ * the autonomous-jobs brake is on: resuming is user-initiated.
+ */
+async function scheduleSeedMonitorResync(
+  ctx: Pick<ActionCtx, "scheduler">,
+  workspaceId: Id<"workspaces">
+): Promise<void> {
+  await ctx.scheduler.runAfter(
+    0,
+    internal.xConversationDiscovery.resyncWorkspaceSeedMonitorsInternal,
+    { workspaceId }
+  );
+}
 import {
   hasAnyWorkspaceIcpSyntheticPosts,
   listWorkspaceIcpSignalMissingIndices,
@@ -53,7 +71,6 @@ import {
 } from "../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
 import { deleteWorkspaceCascade } from "./lib/deleteWorkspaceCascade";
-import type { Id } from "./_generated/dataModel";
 import {
   doesSetupSessionReserveEntitlementSlot,
   doesWorkspaceReserveEntitlementSlot,
@@ -1178,6 +1195,13 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
         workspaceId: args.workspaceId,
       }
     );
+    // Only running workspaces consume seed monitor webhooks. Workspaces that
+    // stay dormant here get their monitors recreated when they actually
+    // resume; resyncing them now would create monitors the hourly drain
+    // deletes again.
+    if (isWorkspaceAutomationActive(workspace)) {
+      await scheduleSeedMonitorResync(ctx, args.workspaceId);
+    }
 
     if (
       workspace.prospectingWorkflowStatus === "limit_reached" &&
@@ -2184,6 +2208,7 @@ export const startProspectingWorkflow = action({
           workspaceId: args.workspaceId,
         }
       );
+      await scheduleSeedMonitorResync(ctx, args.workspaceId);
       await ctx.runMutation(
         internal.workspaces.clearOnboardingIssueStateInternal,
         {
@@ -2241,6 +2266,7 @@ export const startProspectingWorkflow = action({
         workspaceId: args.workspaceId,
       }
     );
+    await scheduleSeedMonitorResync(ctx, args.workspaceId);
     await ctx.runMutation(
       internal.workspaces.clearProspectingRecoveryStateInternal,
       {
@@ -2366,6 +2392,7 @@ export const startProspectingWorkflowInternal = internalAction({
           workspaceId: args.workspaceId,
         }
       );
+      await scheduleSeedMonitorResync(ctx, args.workspaceId);
       await ctx.runMutation(
         internal.workspaces.clearOnboardingIssueStateInternal,
         {
@@ -2421,6 +2448,7 @@ export const startProspectingWorkflowInternal = internalAction({
         workspaceId: args.workspaceId,
       }
     );
+    await scheduleSeedMonitorResync(ctx, args.workspaceId);
     await clearProspectingRecoveryStateForStart(ctx, {
       workspaceId: args.workspaceId,
       resetRecoveryAttempts: args.resetRecoveryAttempts !== false,
@@ -2574,6 +2602,7 @@ export const restartProspectingWorkflowForSetupCommitInternal =
           workspaceId: args.workspaceId,
         }
       );
+      await scheduleSeedMonitorResync(ctx, args.workspaceId);
       await ctx.runMutation(
         internal.workspaces.clearProspectingRecoveryStateInternal,
         {

@@ -28,6 +28,18 @@ crons.interval(
 );
 
 crons.interval(
+  "reconcile socialapi monitor costs",
+  { hours: 1 },
+  internal.socialapiMonitors.reconcileMonitorCostsCron
+);
+
+crons.interval(
+  "delete expired outreach response monitors",
+  { hours: 1 },
+  internal.prospectMonitors.cleanupExpiredMonitors
+);
+
+crons.interval(
   "delete expired SocialAPI webhook receipts",
   { hours: 1 },
   internal.socialApiWebhookReceipts.cleanupExpiredCron

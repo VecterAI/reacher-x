@@ -9,11 +9,13 @@ import {
 } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import {
   getRetriedActionStatus,
   runProviderActionRetried,
 } from "./lib/retrier";
 import { fetchSocialApi } from "./lib/socialApiFetch";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
 import { monitorStatusValidator } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { logger } from "../shared/lib/logger";
@@ -25,6 +27,15 @@ import { logger } from "../shared/lib/logger";
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
 // Default monitor expiration: 7 days
 const DEFAULT_MONITOR_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Bounded cleanup batch: one hourly run deletes at most this many expired
+// monitors and continues itself when the batch was full.
+const EXPIRED_MONITOR_CLEANUP_BATCH = 25;
+const EXPIRED_MONITOR_CLEANUP_DELAY_MS = 60_000;
+// Monitors whose remote deletion failed sit out this long before the cleanup
+// retries them, so a permanently failing row cannot occupy every batch.
+const EXPIRED_MONITOR_DELETE_BACKOFF_MS = 2 * 60 * 60 * 1000;
+// Async-iteration scan budget for one cleanup run (tiny index rows).
+const EXPIRED_MONITOR_SCAN_BUDGET = 400;
 const prospectMonitorLogger = logger.withScope("ProspectMonitors");
 
 // ============================================================================
@@ -147,6 +158,27 @@ export const updateProspectMonitorStatus = internalMutation({
 });
 
 /**
+ * Removes a tracked row entirely. Used when remote deletion failed with a
+ * permanent provider error during workspace deletion: the remote monitor
+ * becomes an orphan that the monitor cost reconciliation cron deletes once
+ * the provider works again.
+ */
+export const deleteProspectMonitorRowInternal = internalMutation({
+  args: { monitorId: v.string() },
+  handler: async (ctx, args) => {
+    const monitor = await ctx.db
+      .query("prospectMonitors")
+      .withIndex("by_monitor_id", (q) => q.eq("monitorId", args.monitorId))
+      .first();
+    if (!monitor) {
+      return { removed: false };
+    }
+    await ctx.db.delete(monitor._id);
+    return { removed: true };
+  },
+});
+
+/**
  * Record webhook received for a monitor
  */
 export const recordWebhook = internalMutation({
@@ -238,10 +270,17 @@ export const deleteMonitorApiCall = internalAction({
       { estimateUsage: () => ({ billableUnits: 0, estimatedCostUsd: 0 }) }
     );
 
-    // 404 is acceptable (already deleted)
+    // 404 is acceptable (already deleted). The status code must survive into
+    // the error text so transient (5xx/429) failures can be classified by
+    // the deletion workflows; the body message is appended defensively (the
+    // body can be a JSON null, so read it with optional chaining).
     if (!response.ok && response.status !== 404) {
-      const data = await response.json();
-      throw new Error(data.message ?? `HTTP ${response.status}`);
+      const data = await response.json().catch(() => null);
+      const message =
+        typeof data?.message === "string" ? data.message : undefined;
+      throw new Error(
+        `HTTP ${response.status}${message ? `: ${message}` : ""}`
+      );
     }
 
     return { success: true };
@@ -428,15 +467,54 @@ export const deleteProspectMonitor = internalAction({
           continue;
         }
 
-        // Mark as deleted in our database regardless of API result
-        await ctx.runMutation(
-          internal.prospectMonitors.updateProspectMonitorStatus,
-          {
-            monitorId: args.monitorId,
-            status: "deleted",
+        if (status.type === "completed" && status.result.type === "success") {
+          const apiResult = status.result.returnValue as {
+            success: boolean;
+            error?: string;
+          };
+          if (!apiResult.success) {
+            // The action completed without throwing but reported failure
+            // (for example a missing API key). Only mark deleted once
+            // SocialAPI confirmed the deletion; a row marked deleted while
+            // the remote monitor survives would bill forever as an
+            // invisible orphan.
+            prospectMonitorLogger.warn(
+              "Delete returned failure; leaving monitor tracked for the next cleanup run",
+              { monitorId: args.monitorId, error: apiResult.error }
+            );
+            return {
+              success: false,
+              error: apiResult.error ?? "Unknown error",
+            };
           }
-        );
+          await ctx.runMutation(
+            internal.prospectMonitors.updateProspectMonitorStatus,
+            {
+              monitorId: args.monitorId,
+              status: "deleted",
+            }
+          );
+          break;
+        }
 
+        if (status.type === "completed" && status.result.type === "failed") {
+          prospectMonitorLogger.warn(
+            "Delete failed after retries; leaving monitor tracked for the next cleanup run",
+            { monitorId: args.monitorId, error: status.result.error }
+          );
+          return {
+            success: false,
+            error: `Failed after retries: ${status.result.error}`,
+          };
+        }
+        if (status.type === "completed") {
+          // Canceled retrier run.
+          prospectMonitorLogger.warn(
+            "Delete request was canceled; leaving monitor tracked for the next cleanup run",
+            { monitorId: args.monitorId }
+          );
+          return { success: false, error: "Request was canceled" };
+        }
         break;
       }
 
@@ -448,19 +526,6 @@ export const deleteProspectMonitor = internalAction({
         error
       );
 
-      // Still mark as deleted locally
-      try {
-        await ctx.runMutation(
-          internal.prospectMonitors.updateProspectMonitorStatus,
-          {
-            monitorId: args.monitorId,
-            status: "deleted",
-          }
-        );
-      } catch {
-        // Ignore
-      }
-
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -470,44 +535,136 @@ export const deleteProspectMonitor = internalAction({
 });
 
 /**
- * Cleanup expired monitors (run periodically)
+ * Cleanup expired monitors (run periodically). Deleting an expired monitor
+ * stops its per-run billing on SocialAPI's side; the 7-day TTL on each
+ * outreach response monitor bounds how long a paused workspace keeps paying.
+ * Bounded to a small batch per run with self-continuation so a backlog or a
+ * provider outage cannot stretch one action past its time limit.
  */
 export const cleanupExpiredMonitors = internalAction({
   args: {},
-  handler: async (ctx): Promise<{ deleted: number }> => {
-    // Get all active monitors that have expired
+  handler: async (ctx): Promise<{ deleted: number; continuation: boolean }> => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[ProspectMonitors] Autonomous jobs paused, skipping expired monitor cleanup"
+      );
+      return { deleted: 0, continuation: false };
+    }
+
+    // Get a bounded batch of active monitors that have expired
     const allMonitors = await ctx.runQuery(
       internal.prospectMonitors.getExpiredMonitors,
       {}
     );
 
+    const now = getCurrentUTCTimestamp();
     let deleted = 0;
+    let backoffUpdated = 0;
     for (const monitor of allMonitors) {
-      await ctx.runAction(internal.prospectMonitors.deleteProspectMonitor, {
-        monitorId: monitor.monitorId,
-      });
-      deleted++;
+      const result = await ctx.runAction(
+        internal.prospectMonitors.deleteProspectMonitor,
+        {
+          monitorId: monitor.monitorId,
+        }
+      );
+      if (result.success) {
+        deleted += 1;
+      } else {
+        // Failed deletion: record the failure so the row sits out one
+        // interval and cannot occupy every batch ahead of newer expired
+        // rows. Transient outages retry after the backoff; the row only
+        // leaves the active set through a later successful deletion.
+        await ctx.runMutation(
+          internal.prospectMonitors.recordMonitorDeleteFailureInternal,
+          { monitorId: monitor.monitorId, now }
+        );
+        backoffUpdated += 1;
+      }
     }
 
-    return { deleted };
+    // Only continue when the run made progress: a full batch of failures
+    // must not stack 60-second continuations on top of the hourly cron.
+    const continuation =
+      allMonitors.length >= EXPIRED_MONITOR_CLEANUP_BATCH &&
+      deleted > 0 &&
+      // Progress in the backoff sense also counts: rows moved into their
+      // backoff window frees the next batch for newer expired rows.
+      !(deleted === 0 && backoffUpdated === allMonitors.length);
+    if (continuation) {
+      await ctx.scheduler.runAfter(
+        EXPIRED_MONITOR_CLEANUP_DELAY_MS,
+        internal.prospectMonitors.cleanupExpiredMonitors,
+        {}
+      );
+    }
+
+    return { deleted, continuation };
   },
 });
 
 /**
- * Get expired monitors (internal query for cleanup)
+ * Marks one monitor's remote-deletion failure time so the expired-monitor
+ * cleanup can back off from rows that keep failing.
+ */
+export const recordMonitorDeleteFailureInternal = internalMutation({
+  args: { monitorId: v.string(), now: v.number() },
+  handler: async (ctx, args) => {
+    const monitor = await ctx.db
+      .query("prospectMonitors")
+      .withIndex("by_monitor_id", (q) => q.eq("monitorId", args.monitorId))
+      .first();
+    if (!monitor) {
+      return { updated: false };
+    }
+    await ctx.db.patch(monitor._id, { lastDeleteAttemptAt: args.now });
+    return { updated: true };
+  },
+});
+
+/**
+ * Get expired monitors (bounded batch for cleanup). Paginates the
+ * by_status_expires_at index past rows that are sitting out their
+ * deletion-failure backoff until the batch is full or the index is
+ * exhausted, so a prefix of ineligible rows can never hide newer expired
+ * ones behind a fixed take window. The explicit lower bound matters because
+ * Convex index ordering places rows with an undefined field first, and an
+ * active row without an expiry must never be treated as expired.
  */
 export const getExpiredMonitors = internalQuery({
   args: {},
   handler: async (ctx) => {
     const now = getCurrentUTCTimestamp();
-    // Get all active monitors and filter by expiration
-    const monitors = await ctx.db
+    const backoffCutoff = now - EXPIRED_MONITOR_DELETE_BACKOFF_MS;
+    const eligible: Array<Doc<"prospectMonitors">> = [];
+    // Async iteration streams the index past rows sitting out their
+    // deletion-failure backoff until the batch is full, so an ineligible
+    // prefix can never hide newer expired rows behind a fixed take window.
+    // Convex allows only one paginated query per function, so pagination
+    // cursors would throw here; streaming has no such restriction. Scan
+    // budget: 400 tiny index rows per run; remaining rows resurface on the
+    // next hourly run.
+    let scanned = 0;
+    const expired = ctx.db
       .query("prospectMonitors")
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .collect();
+      .withIndex("by_status_expires_at", (q) =>
+        q.eq("status", "active").gt("expiresAt", 0).lt("expiresAt", now)
+      );
+    for await (const monitor of expired) {
+      scanned += 1;
+      if (
+        monitor.lastDeleteAttemptAt === undefined ||
+        monitor.lastDeleteAttemptAt <= backoffCutoff
+      ) {
+        eligible.push(monitor);
+      }
+      if (
+        eligible.length >= EXPIRED_MONITOR_CLEANUP_BATCH ||
+        scanned >= EXPIRED_MONITOR_SCAN_BUDGET
+      ) {
+        break;
+      }
+    }
 
-    return monitors.filter(
-      (m) => m.expiresAt !== undefined && m.expiresAt < now
-    );
+    return eligible;
   },
 });
