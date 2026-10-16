@@ -1714,13 +1714,16 @@ export default defineSchema({
     status: monitorStatusValidator,
     // Timestamps
     lastWebhookAt: v.optional(v.number()),
+    // Last failed remote-deletion attempt (cleanup backoff)
+    lastDeleteAttemptAt: v.optional(v.number()),
     // Expiration (auto-delete after plan completes or timeout)
     expiresAt: v.optional(v.number()),
   })
     .index("by_prospect", ["prospectId"])
     .index("by_monitor_id", ["monitorId"])
     .index("by_workspace_status", ["workspaceId", "status"])
-    .index("by_plan", ["planId"]),
+    .index("by_plan", ["planId"])
+    .index("by_status_expires_at", ["status", "expiresAt"]),
 
   // ============================================================================
   // Style Monitors (Writing Style Learning - platform-agnostic)

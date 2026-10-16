@@ -9,6 +9,7 @@ import {
   internalMutation,
 } from "./lib/functionBuilders";
 import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
+import { isWorkspaceAutomationActive } from "./lib/workspaceSystem";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { getUserFromIdentity } from "./lib/userUtils";
@@ -22,6 +23,7 @@ import {
   monitorStatusValidator,
   socialQueryMonitorPurposeValidator,
 } from "./validators";
+import type { Id } from "./_generated/dataModel";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { logger } from "../shared/lib/logger";
 import { normalizeMemoryText } from "./lib/memoryHelpers";
@@ -36,6 +38,19 @@ const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
 const DEFAULT_REFRESH_FREQUENCY = 3600; // 1 hour in seconds (SocialAPI max)
 const DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE = 25;
 const DISCOVERY_MONITOR_RETIREMENT_DELAY_MS = 60_000;
+// SocialAPI lists monitors 50 per page. The orphan sweep reads up to this many
+// pages per run; drift marking only happens when the listing was complete.
+const REMOTE_MONITOR_LIST_MAX_PAGES = 10;
+// Per-workspace scan window for live monitor rows. Far above any realistic
+// live count per workspace (seeds are promoted a few per cycle), and rows
+// beyond it resurface in later runs once earlier rows drain.
+const DISCOVERY_MONITOR_SCAN_PAGE = 500;
+// Rows whose remote deletion failed sit out this long before the drain
+// retries them, so a permanently failing row cannot block its siblings.
+const MONITOR_DELETE_RETRY_BACKOFF_MS = 60 * 60 * 1000;
+// Rows younger than this are skipped by drift marking: a monitor row created
+// moments ago may not appear in a remote listing fetched just before it.
+const MONITOR_DRIFT_GRACE_MS = 10 * 60 * 1000;
 const socialApiMonitorsLogger = logger.withScope("SocialApiMonitors");
 
 // ============================================================================
@@ -498,10 +513,17 @@ export const deleteMonitorApiCall = internalAction({
       }
     );
 
-    // 404 is acceptable (already deleted)
+    // 404 is acceptable (already deleted). The status code must survive into
+    // the error text so transient (5xx/429) failures can be classified by
+    // the deletion workflows; the body message is appended defensively.
     if (!response.ok && response.status !== 404) {
-      const data = (await response.json()) as SocialAPIDeleteMonitorResponse;
-      throw new Error(data.message ?? `HTTP ${response.status}`);
+      const data = (await response
+        .json()
+        .catch(() => ({}))) as SocialAPIDeleteMonitorResponse | null;
+      const message = typeof data?.message === "string" ? data.message : "";
+      throw new Error(
+        `HTTP ${response.status}${message ? `: ${message}` : ""}`
+      );
     }
 
     return { success: true };
@@ -664,6 +686,51 @@ export const createMonitorInternal = internalAction({
         return { success: false, error: result?.error ?? "Unknown error" };
       }
 
+      // A retrier retry or racing caller may have already registered this
+      // seed's monitor (slow create that actually succeeded on the retry).
+      // Keep the tracked row, delete the freshly created duplicate remotely,
+      // and re-point the seed at the tracked monitor. A failed duplicate
+      // deletion leaves an orphan the cost reconciliation cron sweeps later.
+      if (args.purpose === "conversation_seed") {
+        const duplicate = await ctx.runQuery(
+          internal.socialapiMonitors.findDuplicateSeedMonitorInternal,
+          {
+            workspaceId: args.workspaceId,
+            query: args.query,
+            excludeMonitorId: result.monitorId,
+          }
+        );
+        if (duplicate && duplicate.conversationSeedId) {
+          try {
+            await ctx.runAction(
+              internal.socialapiMonitors.deleteMonitorApiCall,
+              { monitorId: result.monitorId }
+            );
+          } catch (error) {
+            socialApiMonitorsLogger.warn(
+              "Failed to delete duplicate monitor; the cost reconciliation cron will sweep it",
+              {
+                monitorId: result.monitorId,
+                trackedMonitorId: duplicate.monitorId,
+              },
+              error
+            );
+          }
+          if (args.conversationSeedId) {
+            await ctx.runMutation(
+              internal.xConversationDiscovery
+                .recordConversationSeedProgressInternal,
+              {
+                seedId: args.conversationSeedId,
+                status: "active",
+                monitorId: duplicate.monitorId,
+              }
+            );
+          }
+          return { success: true, monitorId: duplicate.monitorId };
+        }
+      }
+
       await ctx.runMutation(internal.socialapiMonitors.saveMonitor, {
         workspaceId: args.workspaceId,
         userId: workspace.userId,
@@ -702,6 +769,36 @@ export const createMonitorInternal = internalAction({
         error: error instanceof Error ? error.message : "Unknown error",
       };
     }
+  },
+});
+
+/**
+ * Finds an existing active seed monitor for the same workspace and query.
+ * Retrier retries (a slow create that actually succeeded) and racing callers
+ * can register the same seed monitor twice; SocialAPI bills each copy.
+ */
+export const findDuplicateSeedMonitorInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    query: v.string(),
+    excludeMonitorId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("socialQueryMonitors")
+      .withIndex("by_workspace_purpose_status", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("purpose", "conversation_seed")
+          .eq("status", "active")
+      )
+      .take(200);
+    return (
+      rows.find(
+        (row) =>
+          row.query === args.query && row.monitorId !== args.excludeMonitorId
+      ) ?? null
+    );
   },
 });
 
@@ -835,6 +932,673 @@ export const recordDiscoveryMonitorRetirementFailureInternal = internalMutation(
     },
   }
 );
+
+/**
+ * Removes a tracked row entirely and detaches its seed/keyword pointers.
+ * Used when remote deletion failed with a permanent provider error: the row
+ * must stop blocking progress, and once it is gone the cost reconciliation
+ * cron classifies the still-billing remote monitor as an orphan and deletes
+ * it when the provider works again.
+ */
+export const deleteMonitorRowAndDetachInternal = internalMutation({
+  args: { monitorId: v.string() },
+  handler: async (ctx, args) => {
+    const monitor = await ctx.db
+      .query("socialQueryMonitors")
+      .withIndex("by_monitor_id", (q) => q.eq("monitorId", args.monitorId))
+      .first();
+    if (!monitor) {
+      return { removed: false };
+    }
+
+    await ctx.db.delete(monitor._id);
+
+    if (monitor.conversationSeedId) {
+      const seed = await ctx.db.get(monitor.conversationSeedId);
+      if (seed && seed.monitorId === args.monitorId) {
+        await ctx.db.patch(seed._id, { monitorId: undefined });
+      }
+    }
+    if (monitor.keywordId) {
+      const keyword = await ctx.db.get(monitor.keywordId);
+      if (keyword && keyword.monitorId === args.monitorId) {
+        await ctx.db.patch(keyword._id, { monitorId: undefined });
+      }
+    }
+    return { removed: true };
+  },
+});
+
+// ============================================================================
+// Monitor cost reconciliation
+// ============================================================================
+
+/**
+ * One page of the workspace scan for the cost reconciliation cron.
+ * Workspaces are the scan unit for every reconciliation phase: per-workspace
+ * queries are fully indexed and complete within their take bound, so no
+ * phase can be starved by rows it filters out. The cron paginates through
+ * every page, so workspaces beyond any single page are still processed.
+ */
+export const listWorkspaceAutomationStatesInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit ?? 250, 250));
+    const page = await ctx.db.query("workspaces").paginate({
+      numItems: limit,
+      cursor: args.cursor ?? null,
+    });
+    return {
+      workspaces: page.page.map((workspace) => ({
+        workspaceId: workspace._id,
+        automationActive: isWorkspaceAutomationActive(workspace),
+      })),
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/**
+ * Live seed monitors of one workspace (conversation-seed purpose or any row
+ * carrying a seed pointer). Walks the workspace's live rows, so
+ * workspace_query rows or rows that keep failing deletion cannot starve seed
+ * monitors behind them. Returns [] when the workspace became active again
+ * mid-run: the drain must never delete monitors a fresh resume just
+ * re-created.
+ */
+export const listWorkspaceMonitorDrainCandidatesInternal = internalQuery({
+  args: { workspaceId: v.id("workspaces"), limit: v.number() },
+  handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (workspace && isWorkspaceAutomationActive(workspace)) {
+      return { rows: [], isDone: true };
+    }
+    const now = getCurrentUTCTimestamp();
+    const limit = Math.max(
+      1,
+      Math.min(Math.floor(args.limit), DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE)
+    );
+    const [active, paused] = await Promise.all([
+      ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "active")
+        )
+        .take(DISCOVERY_MONITOR_SCAN_PAGE),
+      ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "paused")
+        )
+        .take(DISCOVERY_MONITOR_SCAN_PAGE),
+    ]);
+    const rows = [...active, ...paused]
+      .filter(
+        (monitor) =>
+          (monitor.purpose === "conversation_seed" ||
+            monitor.conversationSeedId !== undefined) &&
+          // Rows whose deletion failed recently sit out one cron interval so
+          // they cannot occupy the front of every scan and starve the rows
+          // behind them.
+          !(
+            typeof monitor.lastErrorAt === "number" &&
+            monitor.lastErrorAt > now - MONITOR_DELETE_RETRY_BACKOFF_MS
+          )
+      )
+      .sort((left, right) => left._creationTime - right._creationTime);
+    return {
+      rows: rows.slice(0, limit),
+      isDone: rows.length <= limit,
+    };
+  },
+});
+
+/**
+ * Live rows of one workspace that were absent from a complete remote
+ * listing. Remote state is the billing truth, so these rows are marked
+ * deleted (and their seed pointers cleared) by the drain action. Rows
+ * younger than the grace window are skipped: their remote monitor may have
+ * been created after the listing was fetched.
+ */
+export const listWorkspaceDriftCandidatesInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    remoteMonitorIds: v.array(v.string()),
+    graceCutoff: v.number(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(
+      1,
+      Math.min(Math.floor(args.limit), DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE)
+    );
+    const remoteIds = new Set(args.remoteMonitorIds);
+    const [active, paused] = await Promise.all([
+      ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "active")
+        )
+        .take(DISCOVERY_MONITOR_SCAN_PAGE),
+      ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "paused")
+        )
+        .take(DISCOVERY_MONITOR_SCAN_PAGE),
+    ]);
+    const rows = [...active, ...paused]
+      .filter(
+        (monitor) =>
+          !remoteIds.has(monitor.monitorId) &&
+          monitor._creationTime <= args.graceCutoff
+      )
+      .sort((left, right) => left._creationTime - right._creationTime);
+    return {
+      rows: rows.slice(0, limit).map((monitor) => ({
+        monitorId: monitor.monitorId,
+        conversationSeedId: monitor.conversationSeedId,
+      })),
+      isDone: rows.length <= limit,
+    };
+  },
+});
+
+/**
+ * Remote monitor IDs that match no live tracked row in any of the three
+ * monitor tables, found with one indexed point lookup per remote ID. All
+ * three kinds (discovery seed monitors, outreach response monitors, and
+ * writing-style monitors) live on the same SocialAPI key, so an ID tracked
+ * live in any of them is not an orphan. A remote monitor whose row is
+ * already marked deleted should not exist: older paths marked rows deleted
+ * without a confirmed remote deletion, so those IDs are returned and
+ * re-deleted (404 counts as success) instead of billing forever.
+ */
+export const listUnknownRemoteMonitorIdsInternal = internalQuery({
+  args: { remoteMonitorIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const unknown: string[] = [];
+    for (const monitorId of args.remoteMonitorIds) {
+      const row = await ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_monitor_id", (q) => q.eq("monitorId", monitorId))
+        .first();
+      if (row && row.status !== "deleted") {
+        continue;
+      }
+      const prospectRow = await ctx.db
+        .query("prospectMonitors")
+        .withIndex("by_monitor_id", (q) => q.eq("monitorId", monitorId))
+        .first();
+      if (prospectRow && prospectRow.status !== "deleted") {
+        continue;
+      }
+      const styleRow = await ctx.db
+        .query("styleMonitors")
+        .withIndex("by_monitor_id", (q) => q.eq("monitorId", monitorId))
+        .first();
+      if (styleRow && styleRow.status !== "deleted") {
+        continue;
+      }
+      unknown.push(monitorId);
+    }
+    return unknown;
+  },
+});
+
+/**
+ * Marks tracked rows deleted and detaches conversation seeds so the resume
+ * path can re-create fresh monitors. Only rows still claiming to be live are
+ * touched; seeds keep their pointer unless it matches the deleted monitor.
+ */
+export const markMonitorsDeletedWithSeedCleanupInternal = internalMutation({
+  args: { monitorIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    let marked = 0;
+    for (const monitorId of args.monitorIds) {
+      const monitor = await ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_monitor_id", (q) => q.eq("monitorId", monitorId))
+        .first();
+      if (!monitor || monitor.status === "deleted") {
+        continue;
+      }
+
+      await ctx.db.patch(monitor._id, {
+        status: "deleted",
+        healthStatus: "healthy",
+        lastErrorMessage: undefined,
+      });
+      marked += 1;
+
+      if (monitor.conversationSeedId) {
+        const seed = await ctx.db.get(monitor.conversationSeedId);
+        if (seed && seed.monitorId === monitorId) {
+          await ctx.db.patch(seed._id, { monitorId: undefined });
+        }
+      }
+      if (monitor.keywordId) {
+        const keyword = await ctx.db.get(monitor.keywordId);
+        if (keyword?.monitorId === monitorId) {
+          await ctx.db.patch(keyword._id, { monitorId: undefined });
+        }
+      }
+    }
+    return { marked };
+  },
+});
+
+/**
+ * Point check for one remote monitor. Returns `gone` when SocialAPI
+ * confirms the monitor no longer exists (404) and `present` when it does.
+ * Used to confirm drift candidates before marking their rows deleted, so a
+ * listing that shifted between page reads can never mark a live monitor as
+ * deleted.
+ */
+export const getMonitorApiCall = internalAction({
+  args: { monitorId: v.string() },
+  handler: async (ctx, args): Promise<{ gone: boolean }> => {
+    const apiKey = process.env.SOCIALAPI_API_KEY;
+    if (!apiKey) {
+      return { gone: false };
+    }
+    const response = await fetchSocialApi(
+      ctx,
+      "socialapiMonitors.getMonitor",
+      `${SOCIALAPI_BASE_URL}/monitors/${args.monitorId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+      },
+      { estimateUsage: () => ({ billableUnits: 0, estimatedCostUsd: 0 }) }
+    );
+    if (response.status === 404) {
+      return { gone: true };
+    }
+    if (!response.ok) {
+      throw new Error(
+        `SocialAPI monitor lookup failed with status ${response.status}`
+      );
+    }
+    return { gone: false };
+  },
+});
+
+/**
+ * Lists remote monitors owned by the SocialAPI key, page by page, without
+ * filtering: the full listing is what drift detection compares against (a
+ * tracked row whose monitor exists under any webhook URL is not a ghost),
+ * while orphan deletion separately scopes to this deployment's webhook so a
+ * shared API key can never delete another deployment's monitors. `complete`
+ * reports whether every page was read (the meta last_page was present and
+ * within the per-run cap); drift marking depends on a complete listing so it
+ * never marks rows whose monitor was merely unlisted this run. Creation
+ * timestamps let the orphan sweep skip monitors that may still be mid-save.
+ */
+export const listRemoteMonitorsApiCall = internalAction({
+  args: {},
+  handler: async (
+    ctx
+  ): Promise<{
+    monitors: Array<{
+      id: string;
+      createdAtMs?: number;
+      webhookUrl?: string | null;
+    }>;
+    complete: boolean;
+  }> => {
+    const apiKey = process.env.SOCIALAPI_API_KEY;
+    if (!apiKey) {
+      return { monitors: [], complete: false };
+    }
+
+    const monitors: Array<{
+      id: string;
+      createdAtMs?: number;
+      webhookUrl?: string | null;
+    }> = [];
+    let complete = false;
+    for (let page = 1; page <= REMOTE_MONITOR_LIST_MAX_PAGES; page += 1) {
+      const response = await fetchSocialApi(
+        ctx,
+        "socialapiMonitors.listRemoteMonitors",
+        `${SOCIALAPI_BASE_URL}/monitors?page=${page}`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/json",
+          },
+        },
+        { estimateUsage: () => ({ billableUnits: 0, estimatedCostUsd: 0 }) }
+      );
+      if (!response.ok) {
+        throw new Error(
+          `SocialAPI monitor listing failed with status ${response.status}`
+        );
+      }
+      const payload = (await response.json()) as {
+        data?: Array<{
+          id?: string;
+          created_at?: string;
+          webhook_url?: string | null;
+        }>;
+        meta?: { last_page?: number };
+      };
+      for (const monitor of payload.data ?? []) {
+        if (!monitor.id) {
+          continue;
+        }
+        const createdAtMs =
+          typeof monitor.created_at === "string"
+            ? Date.parse(monitor.created_at)
+            : undefined;
+        monitors.push({
+          id: monitor.id,
+          createdAtMs: Number.isNaN(createdAtMs) ? undefined : createdAtMs,
+          webhookUrl: monitor.webhook_url ?? null,
+        });
+      }
+      const lastPage = payload.meta?.last_page;
+      if (typeof lastPage !== "number" || Number.isNaN(lastPage)) {
+        // Without pagination metadata the listing is unverifiable; skip
+        // phases that depend on completeness this run.
+        return { monitors, complete: false };
+      }
+      if (page >= lastPage) {
+        complete = true;
+        break;
+      }
+    }
+    return { monitors, complete };
+  },
+});
+
+/**
+ * Hourly cost reconciliation for SocialAPI monitors. Monitors bill on
+ * SocialAPI's side for as long as they exist, so anything unreachable
+ * through our database is pure spend:
+ *
+ * - Dormant workspaces: seed monitors of paused, stopped, plan-limited, or
+ *   deleting workspaces are deleted remotely and marked deleted locally;
+ *   resuming the workspace recreates them.
+ * - Orphans: remote monitors with no live tracked row (leaked by older
+ *   deletion paths) are deleted remotely. Only monitors pointing at this
+ *   deployment's webhook are considered, so a shared key can never make one
+ *   deployment delete another deployment's monitors.
+ * - Drift: live rows of running workspaces missing remotely are marked
+ *   deleted so resume does not rely on ghosts.
+ *
+ * Every phase is bounded and the run self-continues when a phase reached its
+ * cap, mirroring the retirement drain below.
+ */
+export const reconcileMonitorCostsCron = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ continuationScheduled: boolean }> => {
+    if (areAutonomousJobsPaused()) {
+      console.warn(
+        "[SocialApiMonitors] Autonomous jobs paused, skipping cost reconciliation"
+      );
+      return { continuationScheduled: false };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    const budget = DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE;
+    let continuationScheduled = false;
+    let dormantDrained = 0;
+    let dormantAttempts = 0;
+    let orphansDeleted = 0;
+    let orphanAttempts = 0;
+    let driftMarked = 0;
+    let remoteListed = 0;
+
+    const workspaceStates: Array<{
+      workspaceId: Id<"workspaces">;
+      automationActive: boolean;
+    }> = [];
+    let workspaceScanDone = false;
+    let workspaceCursor: string | null = null;
+    while (!workspaceScanDone) {
+      const page: {
+        workspaces: Array<{
+          workspaceId: Id<"workspaces">;
+          automationActive: boolean;
+        }>;
+        continueCursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(
+        internal.socialapiMonitors.listWorkspaceAutomationStatesInternal,
+        { cursor: workspaceCursor }
+      );
+      workspaceStates.push(...page.workspaces);
+      workspaceScanDone = page.isDone;
+      workspaceCursor = page.continueCursor;
+    }
+
+    // Phase A: delete remote seed monitors of dormant workspaces and mark
+    // their rows deleted. A failed deletion leaves the row live so the next
+    // run retries (with a one-interval backoff); the row is never marked
+    // deleted without a confirmed remote deletion. Attempts, not successes,
+    // count against the budget so a provider outage cannot stretch the run.
+    for (const workspace of workspaceStates) {
+      if (dormantAttempts >= budget) {
+        continuationScheduled = true;
+        break;
+      }
+      if (workspace.automationActive) {
+        continue;
+      }
+      const scan = await ctx.runQuery(
+        internal.socialapiMonitors.listWorkspaceMonitorDrainCandidatesInternal,
+        { workspaceId: workspace.workspaceId, limit: budget - dormantAttempts }
+      );
+      for (const monitor of scan.rows) {
+        dormantAttempts += 1;
+        try {
+          const result = await ctx.runAction(
+            internal.socialapiMonitors.deleteMonitorApiCall,
+            { monitorId: monitor.monitorId }
+          );
+          if (!result.success) {
+            throw new Error(result.error ?? "Unknown deletion failure");
+          }
+        } catch (error) {
+          socialApiMonitorsLogger.warn(
+            "Dormant monitor remote deletion failed; backing off one interval",
+            { monitorId: monitor.monitorId },
+            error
+          );
+          await ctx.runMutation(
+            internal.socialapiMonitors
+              .recordDiscoveryMonitorRetirementFailureInternal,
+            {
+              monitorId: monitor.monitorId,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+          continue;
+        }
+        await ctx.runMutation(
+          internal.socialapiMonitors.markMonitorsDeletedWithSeedCleanupInternal,
+          { monitorIds: [monitor.monitorId] }
+        );
+        dormantDrained += 1;
+      }
+      if (!scan.isDone) {
+        continuationScheduled = true;
+      }
+    }
+
+    // Phase B: delete remote monitors that match no live tracked row.
+    // Monitors created moments ago are skipped: their local row may still be
+    // mid-save. Attempts count against the remaining budget. A listing
+    // failure skips phases B and C for this run while preserving any
+    // continuation phase A already requested.
+    let remote: {
+      monitors: Array<{
+        id: string;
+        createdAtMs?: number;
+        webhookUrl?: string | null;
+      }>;
+      complete: boolean;
+    };
+    try {
+      remote = await ctx.runAction(
+        internal.socialapiMonitors.listRemoteMonitorsApiCall,
+        {}
+      );
+    } catch (error) {
+      socialApiMonitorsLogger.warn(
+        "Remote monitor listing failed; skipping orphan and drift phases",
+        {},
+        error
+      );
+      remote = { monitors: [], complete: false };
+    }
+    remoteListed = remote.monitors.length;
+    const remoteIds = remote.monitors.map((monitor) => monitor.id);
+    const unknown = await ctx.runQuery(
+      internal.socialapiMonitors.listUnknownRemoteMonitorIdsInternal,
+      { remoteMonitorIds: remoteIds }
+    );
+    const ownWebhookUrl = `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
+    const remoteById = new Map(
+      remote.monitors.map((monitor) => [monitor.id, monitor])
+    );
+    const orphanBudget = Math.max(0, budget - dormantAttempts);
+    let orphansSkippedFresh = 0;
+    let foreignSkipped = 0;
+    for (const monitorId of unknown) {
+      if (orphanAttempts >= orphanBudget) {
+        // Only continue when this run made progress; otherwise the hourly
+        // cron retries the remaining orphans.
+        if (orphansDeleted > 0) {
+          continuationScheduled = true;
+        }
+        break;
+      }
+      const remoteMonitor = remoteById.get(monitorId);
+      // Never touch monitors created under a different webhook (another
+      // deployment sharing this key, or monitors not created by this app):
+      // they are not ours to delete. Skips do not consume the budget.
+      if (remoteMonitor?.webhookUrl !== ownWebhookUrl) {
+        foreignSkipped += 1;
+        continue;
+      }
+      const createdAtMs = remoteMonitor.createdAtMs;
+      if (
+        typeof createdAtMs !== "number" ||
+        createdAtMs > now - MONITOR_DRIFT_GRACE_MS
+      ) {
+        // Missing or fresh creation timestamp: the monitor may still be
+        // mid-save (remote created, local row pending). Skip it this run.
+        orphansSkippedFresh += 1;
+        continue;
+      }
+      orphanAttempts += 1;
+      try {
+        const result = await ctx.runAction(
+          internal.socialapiMonitors.deleteMonitorApiCall,
+          { monitorId }
+        );
+        if (!result.success) {
+          throw new Error(result.error ?? "Unknown deletion failure");
+        }
+        orphansDeleted += 1;
+      } catch (error) {
+        socialApiMonitorsLogger.warn(
+          "Orphan monitor deletion failed; retrying next run",
+          { monitorId },
+          error
+        );
+      }
+    }
+
+    // Phase C: mark live rows of running workspaces whose remote monitor is
+    // gone. Only runs against a complete listing, and dormant workspaces are
+    // excluded because phase A owns their deletion.
+    if (remote.complete) {
+      for (const workspace of workspaceStates) {
+        if (driftMarked >= budget) {
+          continuationScheduled = true;
+          break;
+        }
+        if (!workspace.automationActive) {
+          continue;
+        }
+        const scan = await ctx.runQuery(
+          internal.socialapiMonitors.listWorkspaceDriftCandidatesInternal,
+          {
+            workspaceId: workspace.workspaceId,
+            remoteMonitorIds: remoteIds,
+            graceCutoff: now - MONITOR_DRIFT_GRACE_MS,
+            limit: budget - driftMarked,
+          }
+        );
+        if (scan.rows.length === 0) {
+          continue;
+        }
+        // Point-confirm each candidate before marking: the listing above was
+        // paginated, and a concurrent deletion can shift entries across
+        // pages, so a live monitor could be absent from every page read.
+        const confirmedGone: string[] = [];
+        for (const candidate of scan.rows) {
+          try {
+            const result = await ctx.runAction(
+              internal.socialapiMonitors.getMonitorApiCall,
+              { monitorId: candidate.monitorId }
+            );
+            if (result.gone) {
+              confirmedGone.push(candidate.monitorId);
+            }
+          } catch (error) {
+            socialApiMonitorsLogger.warn(
+              "Drift confirmation lookup failed; skipping candidate this run",
+              { monitorId: candidate.monitorId },
+              error
+            );
+          }
+        }
+        if (confirmedGone.length === 0) {
+          continue;
+        }
+        const result = await ctx.runMutation(
+          internal.socialapiMonitors.markMonitorsDeletedWithSeedCleanupInternal,
+          { monitorIds: confirmedGone }
+        );
+        driftMarked += result.marked;
+        if (!scan.isDone) {
+          continuationScheduled = true;
+        }
+      }
+    }
+
+    if (continuationScheduled) {
+      await ctx.scheduler.runAfter(
+        DISCOVERY_MONITOR_RETIREMENT_DELAY_MS,
+        internal.socialapiMonitors.reconcileMonitorCostsCron,
+        {}
+      );
+    }
+
+    socialApiMonitorsLogger.info("Monitor cost reconciliation run", {
+      dormantDrained,
+      remoteListed,
+      orphansDeleted,
+      foreignSkipped,
+      orphansSkippedFresh,
+      driftMarked,
+      continuationScheduled,
+    });
+
+    return { continuationScheduled };
+  },
+});
 
 /**
  * Post-deploy safety valve: drains obsolete discovery monitors from SocialAPI

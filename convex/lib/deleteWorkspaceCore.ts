@@ -28,6 +28,174 @@ const OUTREACH_PLAN_DELETE_BATCH_SIZE = 10;
  */
 const DELETE_ACTION_BUDGET_MS = 45_000;
 
+/**
+ * Remote monitor IDs that still need deletion before the local rows are
+ * swept. SocialAPI keeps billing a monitor until it is deleted on their side,
+ * so the deletion workflow releases these first; the sweep step only removes
+ * local rows and would otherwise leak paid monitors permanently.
+ */
+export const getWorkspaceRemoteMonitorIdsInternal = internalQuery({
+  args: { workspaceId: v.id("workspaces") },
+  returns: v.object({
+    socialMonitorIds: v.array(v.string()),
+    prospectMonitorIds: v.array(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const n = WORKSPACE_DELETE_BATCH_SIZE;
+    const [activeSocial, pausedSocial] = await Promise.all([
+      ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "active")
+        )
+        .take(n),
+      ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "paused")
+        )
+        .take(n),
+    ]);
+    const [activeProspect, pausedProspect] = await Promise.all([
+      ctx.db
+        .query("prospectMonitors")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "active")
+        )
+        .take(n),
+      ctx.db
+        .query("prospectMonitors")
+        .withIndex("by_workspace_status", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "paused")
+        )
+        .take(n),
+    ]);
+    return {
+      socialMonitorIds: [...activeSocial, ...pausedSocial]
+        .filter((monitor) => monitor.status !== "deleted")
+        .map((monitor) => monitor.monitorId),
+      prospectMonitorIds: [...activeProspect, ...pausedProspect]
+        .filter((monitor) => monitor.status !== "deleted")
+        .map((monitor) => monitor.monitorId),
+    };
+  },
+});
+
+/**
+ * Transient provider failures are worth retrying through the durable step.
+ * Everything else (auth/key problems, provider 4xx, odd provider errors) is
+ * treated as permanent: the local row is marked deleted and the leaked
+ * monitorId is logged. The monitor then has no tracked row, so the hourly
+ * cost reconciliation deletes it remotely once the key works again.
+ */
+function isTransientMonitorDeleteError(error: unknown): boolean {
+  const message = String(error).toLowerCase();
+  return (
+    message.includes("429") ||
+    message.includes("rate limit") ||
+    message.includes("temporarily") ||
+    /\b5\d\d\b/.test(message) ||
+    message.includes("network") ||
+    message.includes("fetch failed") ||
+    message.includes("econn") ||
+    message.includes("timeout") ||
+    message.includes("terminated")
+  );
+}
+
+async function deleteRemoteMonitor(
+  ctx: ActionCtx,
+  apiCall: typeof internal.socialapiMonitors.deleteMonitorApiCall,
+  monitorId: string
+): Promise<"deleted" | "leaked"> {
+  try {
+    const result = await ctx.runAction(apiCall, { monitorId });
+    if (
+      !result.success &&
+      result.error &&
+      result.error !== "SocialAPI not configured"
+    ) {
+      throw new Error(
+        `SocialAPI monitor deletion failed after retries: ${result.error}`
+      );
+    }
+    return "deleted";
+  } catch (error) {
+    if (isTransientMonitorDeleteError(error)) {
+      throw error;
+    }
+    return "leaked";
+  }
+}
+
+/**
+ * Deletes one bounded batch of remote SocialAPI monitors for a workspace and
+ * marks the matching local rows deleted. Transient provider failures throw so
+ * the durable workflow step retries the whole batch; 404 (already deleted)
+ * is treated as success inside the API call actions.
+ */
+export const deleteWorkspaceMonitorsBatchInternal = internalAction({
+  args: {
+    socialMonitorIds: v.array(v.string()),
+    prospectMonitorIds: v.array(v.string()),
+  },
+  returns: v.object({ deleted: v.number() }),
+  handler: async (ctx, args) => {
+    let deleted = 0;
+
+    for (const monitorId of args.socialMonitorIds) {
+      const outcome = await deleteRemoteMonitor(
+        ctx,
+        internal.socialapiMonitors.deleteMonitorApiCall,
+        monitorId
+      );
+      if (outcome === "leaked") {
+        // Remove the row instead of marking it deleted: the reconciliation
+        // orphan sweep can only find (and later delete) a remote monitor
+        // that has no tracked row at all.
+        console.warn(
+          `[WorkspaceDelete] Could not delete SocialAPI monitor ${monitorId} (permanent provider error). Leaving it untracked; the monitor cost reconciliation cron will delete it remotely.`
+        );
+        await ctx.runMutation(
+          internal.socialapiMonitors.deleteMonitorRowAndDetachInternal,
+          { monitorId }
+        );
+      } else {
+        await ctx.runMutation(internal.socialapiMonitors.updateMonitorStatus, {
+          monitorId,
+          status: "deleted",
+        });
+      }
+      deleted += 1;
+    }
+
+    for (const monitorId of args.prospectMonitorIds) {
+      const outcome = await deleteRemoteMonitor(
+        ctx,
+        internal.prospectMonitors.deleteMonitorApiCall,
+        monitorId
+      );
+      if (outcome === "leaked") {
+        console.warn(
+          `[WorkspaceDelete] Could not delete SocialAPI monitor ${monitorId} (permanent provider error). Leaving it untracked; the monitor cost reconciliation cron will delete it remotely.`
+        );
+        await ctx.runMutation(
+          internal.prospectMonitors.deleteProspectMonitorRowInternal,
+          { monitorId }
+        );
+      } else {
+        await ctx.runMutation(
+          internal.prospectMonitors.updateProspectMonitorStatus,
+          { monitorId, status: "deleted" }
+        );
+      }
+      deleted += 1;
+    }
+
+    return { deleted };
+  },
+});
+
 async function deleteDocuments<TableName extends TableNames>(
   ctx: MutationCtx,
   rows: Array<Doc<TableName>>

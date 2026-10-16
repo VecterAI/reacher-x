@@ -107,6 +107,28 @@ export const deleteWorkspaceWorkflow = workflow.define({
   },
   returns: v.object({ deleted: v.boolean() }),
   handler: async (step, args): Promise<{ deleted: boolean }> => {
+    // Release paid SocialAPI monitors first. The sweep steps below only
+    // remove local rows; without this phase the remote monitors would keep
+    // billing forever as orphans. Remote deletion is idempotent (404 counts
+    // as success), so step retries and workflow restarts are safe.
+    while (true) {
+      const remoteMonitorIds = await step.runQuery(
+        internal.lib.deleteWorkspaceCore.getWorkspaceRemoteMonitorIdsInternal,
+        { workspaceId: args.workspaceId }
+      );
+      if (
+        remoteMonitorIds.socialMonitorIds.length === 0 &&
+        remoteMonitorIds.prospectMonitorIds.length === 0
+      ) {
+        break;
+      }
+      await step.runAction(
+        internal.lib.deleteWorkspaceCore.deleteWorkspaceMonitorsBatchInternal,
+        remoteMonitorIds,
+        { retry: true }
+      );
+    }
+
     // Workspace-level agent threads (setup/onboarding chats). Unprocessed
     // threads keep their links, so each indexed re-query returns whatever a
     // partial action step left behind and progress is guaranteed.
