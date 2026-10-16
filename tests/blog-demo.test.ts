@@ -223,7 +223,8 @@ test("menu failures during pause or manual exploration wait for resume", () => {
   assert.equal(getBlogDemoRecoveryAction("interactive", true, 0), "defer");
   assert.equal(getBlogDemoRecoveryAction("playing", true, 0), "defer");
   assert.equal(getBlogDemoRecoveryAction("playing", false, 0), "retry");
-  assert.equal(getBlogDemoRecoveryAction("playing", false, 1), "pause");
+  assert.equal(getBlogDemoRecoveryAction("playing", false, 1), "retry");
+  assert.equal(getBlogDemoRecoveryAction("playing", false, 2), "pause");
   assert.equal(getBlogDemoRecoveryAction("playing", false, 20), "pause");
 });
 

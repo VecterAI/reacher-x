@@ -465,5 +465,8 @@ export function getBlogDemoRecoveryAction(
   retries: number
 ) {
   if (manual || playback !== "playing") return "defer";
-  return retries < 1 ? "retry" : "pause";
+  // A cold, slow load can fail the first rebuild of a mid-story demo; allow a
+  // second full restore (by then chunks are cached) before pausing for a
+  // manual replay.
+  return retries < 2 ? "retry" : "pause";
 }

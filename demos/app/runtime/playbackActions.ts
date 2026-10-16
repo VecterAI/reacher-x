@@ -41,7 +41,12 @@ export async function performPlaybackAction(
       element.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
-    if (!element.isContentEditable)
+    if (
+      !element.isContentEditable &&
+      // WebKit reports false for editors inside an inert subtree, which
+      // scripted actions legitimately run in while the host owns focus.
+      element.getAttribute("contenteditable") !== "true"
+    )
       throw new Error("The demo input is not editable");
     // The editor needs its normal focus contract unless the host menu owns focus.
     if (!document.body.inert) element.focus({ preventScroll: true });
