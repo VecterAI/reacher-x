@@ -1,5 +1,7 @@
 import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
-import { ArrowForwardIcon } from "@/shared/ui/components/icons";
+import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
+import { GITHUB_REPO_URL } from "@/features/landing/lib/github";
+import { ArrowForwardIcon, GitHubIcon } from "@/shared/ui/components/icons";
 import Link from "next/link";
 import { Suspense } from "react";
 import { MarketingFaq } from "./MarketingFaq";
@@ -13,16 +15,17 @@ import {
   MarketingCapabilities,
   MarketingCapabilityIndex,
 } from "./MarketingProduct";
-import { LandingPromptCta } from "../LandingPromptCta";
+import { HeroPrimaryCta } from "./HeroPrimaryCta";
 import {
   MarketingHero,
   highlightTerms,
   inlinePlatformIcons,
 } from "./MarketingLayout";
+import { MarketingDemo } from "./MarketingDemo";
 import {
   MarketingWorkflow,
   MarketingFinish,
-  MarketingOneSubscription,
+  MarketingNarrative,
 } from "./MarketingSections";
 import { MarketingUseCaseTabs } from "./MarketingUseCaseTabs";
 import { MarketingBlog } from "./MarketingBlog";
@@ -41,13 +44,45 @@ function HeroReveal() {
   );
 }
 
+/** Hero tagline: everything muted; "Open source" links to the repo. */
+function HeroTagline() {
+  const phrase = "Open source";
+  const rest: string = MARKETING_COPY.home.tagline;
+  const index = rest.indexOf(phrase);
+  if (index === -1) {
+    return inlinePlatformIcons(rest);
+  }
+  return (
+    <>
+      <span>{inlinePlatformIcons(rest.slice(0, index))}</span>
+      <a
+        href={GITHUB_REPO_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="whitespace-nowrap hover:underline"
+      >
+        <GitHubIcon
+          className="mr-1 inline size-4 fill-current align-[-2px]"
+          aria-hidden="true"
+        />
+        {phrase}
+        <span aria-hidden="true"> ↗</span>
+      </a>
+      <span>{inlinePlatformIcons(rest.slice(index + phrase.length))}</span>
+    </>
+  );
+}
+
 export function MarketingHome() {
+  // First use case ("getting customers") drives the hero demo; the section
+  // below renders the same component, so the sizes match by construction.
+  const customersUseCase = MARKETING_USE_CASES[0];
   return (
     <>
       <MarketingHero
         className="pt-8 lg:pt-12"
         eyebrow={
-          <p className="flex flex-wrap items-center justify-center gap-2 text-center font-mono text-xs tracking-wide uppercase">
+          <p className="flex flex-wrap items-center justify-center gap-2 text-center">
             <span>
               {highlightTerms(MARKETING_COPY.home.guaranteeNote, [
                 "30-day money-back guarantee",
@@ -66,7 +101,22 @@ export function MarketingHome() {
           </p>
         }
         title={<HeroReveal />}
+        lede={<HeroTagline />}
+        actions={<HeroPrimaryCta />}
+        below={
+          <>
+            <MarketingDemo
+              scenario={customersUseCase.guide}
+              title={customersUseCase.goal}
+              caption={customersUseCase.navigationDescription}
+            />
+            <p className="text-muted-foreground mt-6 text-center text-sm">
+              This demo is interactive. Click around.
+            </p>
+          </>
+        }
       >
+        {/* Side column hidden for the new hero layout; may return later.
         <p className="text-base leading-7 text-pretty">
           {inlinePlatformIcons(MARKETING_COPY.home.description)}
         </p>
@@ -79,11 +129,12 @@ export function MarketingHome() {
         <p className="text-muted-foreground mt-3 text-sm">
           {MARKETING_COPY.home.setupTimeNote}
         </p>
+        */}
       </MarketingHero>
       <Suspense fallback={null}>
         <MarketingProof />
       </Suspense>
-      <MarketingOneSubscription />
+      <MarketingNarrative />
       <MarketingUseCaseTabs />
       <MarketingWorkflow />
       <MarketingCapabilities />

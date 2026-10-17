@@ -1,0 +1,67 @@
+/* Scroll-fill narrative: each paragraph fills char by char from muted to
+   primary while it travels up through the middle band of the viewport
+   (US Mobile-style). Nothing fills before its paragraph is properly in
+   view, and the effect reverses on scroll up. Icon terms pop from dim to
+   full color as the frontier passes. The emerald pre-echo ahead of the
+   frontier is theme-tuned so it reads on both backgrounds. */
+
+.marketing-scroll-fill {
+  --scroll-fill-edge: #059669;
+}
+
+.dark .marketing-scroll-fill {
+  --scroll-fill-edge: #34d399;
+}
+
+.scroll-fill-char {
+  color: hsl(var(--muted-foreground));
+  transition: color 0.25s ease;
+}
+
+.scroll-fill-char.is-edge {
+  color: var(--scroll-fill-edge);
+}
+
+.scroll-fill-char.is-filled {
+  color: hsl(var(--primary));
+}
+
+.scroll-fill-term {
+  color: hsl(var(--foreground));
+  opacity: 0.35;
+  transition: opacity 0.25s ease;
+}
+
+.scroll-fill-term.is-filled {
+  opacity: 1;
+}
+
+/* Filled terms color their glyph with the accent (same emerald family as
+   the pre-echo edge) while the term text stays in foreground. */
+.scroll-fill-term.is-filled .scroll-fill-glyph {
+  color: var(--scroll-fill-edge);
+}
+
+/* Inline icon sizing: em-based so icons match the responsive font size,
+   slightly under x-height so they read as decoration, not content.
+   Shared icons are mask-based and default to black; fill currentColor. */
+.scroll-fill-glyph {
+  width: 0.95em;
+  height: 0.95em;
+  display: inline-block;
+  vertical-align: -0.1em;
+  margin-right: 0.15em;
+  fill: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-fill-char {
+    transition: none;
+    color: hsl(var(--primary));
+  }
+
+  .scroll-fill-term {
+    transition: none;
+    opacity: 1;
+  }
+}
