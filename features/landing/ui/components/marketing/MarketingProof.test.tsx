@@ -13,9 +13,12 @@ vi.mock("@/features/threads/hooks/useQuotedTweets", () => ({
   useQuotedTweets: () => [],
 }));
 beforeEach(() => vi.clearAllMocks());
-test("development testimonial fixtures are never presented as real endorsements", async () => {
+test("development fixture quotes render through the same path as the real feed", async () => {
+  const tweet = MOCK_PUBLIC_TESTIMONIALS[0];
   vi.mocked(getPublicTestimonials).mockResolvedValue(MOCK_PUBLIC_TESTIMONIALS);
-  expect(await MarketingProof()).toBeNull();
+  const html = renderToStaticMarkup(await MarketingProof());
+  expect(html).toContain(`/status/${tweet.id_str}`);
+  expect(html).toContain(tweet.full_text!.slice(0, 24));
 });
 test("an unavailable public feed hides the section rather than inventing quotes", async () => {
   vi.mocked(getPublicTestimonials).mockResolvedValue([]);

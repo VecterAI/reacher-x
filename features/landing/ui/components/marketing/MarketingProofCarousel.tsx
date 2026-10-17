@@ -46,14 +46,20 @@ export function MarketingProofCarousel({ tweets }: { tweets: Tweet[] }) {
         aria-label="Early user quotes"
       >
         <CarouselContent
-          className="-ml-6 touch-pan-y touch-pinch-zoom"
+          className="-ml-12 touch-pan-y touch-pinch-zoom"
           viewportClassName="overflow-visible"
         >
-          {tweets.map((tweet) => (
+          {tweets.map((tweet, index) => (
             <CarouselItem
               key={tweet.id_str}
-              className="basis-[86%] pl-6 sm:basis-[400px] lg:basis-[440px]"
+              className="relative basis-[86%] pl-12 sm:basis-[400px] lg:basis-[440px]"
             >
+              {index > 0 ? (
+                <div
+                  aria-hidden="true"
+                  className="bg-border absolute inset-y-0 left-6 w-px"
+                />
+              ) : null}
               <TestimonialCard tweet={tweet} />
             </CarouselItem>
           ))}

@@ -460,7 +460,7 @@ export function PricingSection({
         >
           Pricing.
         </h1>
-        <p className="text-muted-foreground mt-4 font-mono text-sm tracking-wide uppercase">
+        <p className="text-muted-foreground mt-4 text-sm">
           Every plan comes with a{" "}
           <span className="text-foreground">30-day money-back guarantee</span>.
         </p>

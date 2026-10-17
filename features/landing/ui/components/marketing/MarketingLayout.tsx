@@ -2,6 +2,8 @@ import { cn } from "@/shared/lib/utils";
 import type { ReactNode } from "react";
 import { buttonVariants } from "@/shared/ui/components/Button";
 import {
+  ApolloIcon,
+  ClayIcon,
   FilledLinkedinIcon,
   FilledTwitterIcon,
 } from "@/shared/ui/components/icons";
@@ -32,8 +34,27 @@ export function highlightTerms(
   return nodes;
 }
 
-// Badge tiles mirror ProspectPlatformAvatar's platform badge styling.
-const PLATFORM_TERMS = [
+export type InlineIconTerm = {
+  term: string;
+  Icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  /** Badge chip tint classes; omitted when the logo is full-bleed colored. */
+  bg?: string;
+  fg?: string;
+};
+
+export type InlineIconSegment =
+  | { kind: "text"; text: string }
+  | {
+      kind: "icon";
+      term: string;
+      Icon: InlineIconTerm["Icon"];
+      bg?: string;
+      fg?: string;
+    };
+
+// Badge tiles mirror ProspectPlatformAvatar's platform badge styling. Brand
+// logos (Clay, Apollo) ship full-bleed artwork and render without a chip.
+const PLATFORM_TERMS: InlineIconTerm[] = [
   {
     term: "X/Twitter",
     Icon: FilledTwitterIcon,
@@ -46,45 +67,77 @@ const PLATFORM_TERMS = [
     bg: "bg-platform-linkedin-badge",
     fg: "text-platform-linkedin-badge-foreground",
   },
-] as const;
+  { term: "Clay", Icon: ClayIcon },
+  { term: "Apollo", Icon: ApolloIcon },
+];
 
 /**
- * Render `text` with each platform term prefixed by its inline brand icon.
- * Companion to highlightTerms for icon emphasis; unmatched terms are skipped.
+ * Split `text` into plain and icon segments by earliest term match, in
+ * reading order. Shared by inlinePlatformIcons and the scroll-fill
+ * narrative, which decorates text differently.
  */
-export function inlinePlatformIcons(text: string): ReactNode {
-  const nodes: ReactNode[] = [];
+export function getInlineIconSegments(
+  text: string,
+  terms: readonly InlineIconTerm[] = PLATFORM_TERMS
+): InlineIconSegment[] {
+  const segments: InlineIconSegment[] = [];
   let rest = text;
-  let key = 0;
   for (;;) {
-    // Earliest match wins so term order never depends on PLATFORM_TERMS order.
-    let match: ((typeof PLATFORM_TERMS)[number] & { index: number }) | null =
-      null;
-    for (const candidate of PLATFORM_TERMS) {
+    let match: (InlineIconTerm & { index: number }) | null = null;
+    for (const candidate of terms) {
       const index = rest.indexOf(candidate.term);
       if (index === -1) continue;
       if (!match || index < match.index) match = { ...candidate, index };
     }
     if (!match) break;
-    if (match.index > 0) nodes.push(rest.slice(0, match.index));
-    nodes.push(
-      <span key={key++} className="whitespace-nowrap">
-        <span
-          className={cn(
-            "mr-1 inline-flex size-4 items-center justify-center rounded-[4px] align-[-2px]",
-            match.bg,
-            match.fg
-          )}
-        >
-          <match.Icon className="size-3.5 shrink-0" aria-hidden="true" />
-        </span>
-        {match.term}
-      </span>
-    );
+    if (match.index > 0) {
+      segments.push({ kind: "text", text: rest.slice(0, match.index) });
+    }
+    segments.push({
+      kind: "icon",
+      term: match.term,
+      Icon: match.Icon,
+      bg: match.bg,
+      fg: match.fg,
+    });
     rest = rest.slice(match.index + match.term.length);
   }
-  if (rest) nodes.push(rest);
-  return nodes;
+  if (rest) segments.push({ kind: "text", text: rest });
+  return segments;
+}
+
+/**
+ * Render `text` with each platform term prefixed by its inline brand icon.
+ * Companion to highlightTerms for icon emphasis; unmatched terms are skipped.
+ */
+export function inlinePlatformIcons(
+  text: string,
+  terms: readonly InlineIconTerm[] = PLATFORM_TERMS
+): ReactNode {
+  return getInlineIconSegments(text, terms).map((segment, index) => {
+    if (segment.kind === "text") return segment.text;
+    return (
+      <span key={index} className="whitespace-nowrap">
+        {segment.bg && segment.fg ? (
+          <span
+            className={cn(
+              "mr-1 inline-flex size-4 items-center justify-center rounded-[4px] align-[-2px]",
+              segment.bg,
+              segment.fg
+            )}
+          >
+            <segment.Icon className="size-3.5 shrink-0" aria-hidden="true" />
+          </span>
+        ) : (
+          <segment.Icon
+            className="mr-1 inline size-4 align-[-2px]"
+            aria-hidden="true"
+          />
+        )}
+        {segment.term}
+      </span>
+    );
+  });
 }
 
 export function marketingButton(
@@ -138,14 +191,19 @@ export function MarketingHero({
   children,
   actions,
   eyebrow,
+  lede,
+  below,
   className,
 }: {
   title: ReactNode;
-  children: ReactNode;
+  children?: ReactNode;
   actions?: ReactNode;
   eyebrow?: ReactNode;
+  lede?: ReactNode;
+  below?: ReactNode;
   className?: string;
 }) {
+  const hasSideColumn = Boolean(children);
   return (
     <section
       id="get-started"
@@ -158,21 +216,56 @@ export function MarketingHero({
       {eyebrow && (
         <div className="text-muted-foreground mb-12 text-sm">{eyebrow}</div>
       )}
-      <div className="grid items-center gap-14 lg:grid-cols-2 lg:gap-32">
-        <div>
+      <div
+        className={cn(
+          "grid items-center",
+          hasSideColumn ? "gap-14 lg:grid-cols-2 lg:gap-32" : "gap-0"
+        )}
+      >
+        <div className={cn(!hasSideColumn && "text-center")}>
           <h1 className="text-4xl leading-[1.05] font-normal tracking-tight text-balance sm:text-6xl lg:text-7xl">
             {title}
           </h1>
+          {lede && (
+            <div
+              className={cn(
+                "text-foreground mt-8 text-lg leading-7 font-medium text-pretty",
+                hasSideColumn ? "max-w-md" : "mx-auto max-w-2xl"
+              )}
+            >
+              {lede}
+            </div>
+          )}
           {actions && (
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div
+              className={cn(
+                "mt-10 flex flex-wrap items-center gap-3",
+                !hasSideColumn && "justify-center"
+              )}
+            >
               {actions}
             </div>
           )}
         </div>
-        <div className={cn(marketingTextColumn, "w-full lg:justify-self-end")}>
-          {children}
-        </div>
+        {children ? (
+          <div
+            className={cn(marketingTextColumn, "w-full lg:justify-self-end")}
+          >
+            {children}
+          </div>
+        ) : null}
       </div>
+      {below ? (
+        /*
+         * Matches the demo column of the two-column feature sections:
+         * 3fr of (1fr + 3fr) split with a 56px gutter, centered.
+         */
+        <div className="mt-14 flex justify-center">
+          <div className="w-full min-w-0 lg:w-[calc((100%-56px)*3/4)]">
+            {below}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

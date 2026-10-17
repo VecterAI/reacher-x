@@ -59,7 +59,7 @@ function MarketingCapabilities() {
       <MarketingFeature
         id="capabilities"
         reverse
-        title="No contact database."
+        title="No stale contact database."
         demo={
           <MarketingDemo
             scenario="agent-around-the-clock"

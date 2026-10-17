@@ -10,10 +10,10 @@ import {
   highlightTerms,
   MarketingFeature,
   MarketingSection,
-  marketingSectionTitle,
 } from "./MarketingLayout";
 import { LandingBookDemoCta } from "../LandingBookDemoCta";
 import { MarketingDemo } from "./MarketingDemo";
+import { ScrollFillNarrative } from "./ScrollFillNarrative";
 
 export function MarketingWorkflow() {
   return (
@@ -95,29 +95,13 @@ export function MarketingWorkflow() {
   );
 }
 
-export function MarketingOneSubscription() {
-  const { lead, names } = MARKETING_COPY.subscription;
-  return (
-    <MarketingSection labelledBy="subscription-heading">
-      {/* One headline: the statement and its struck-through alternatives. */}
-      <h2 id="subscription-heading" className={marketingSectionTitle}>
-        One self-driving platform.{" "}
-        <span className="text-muted-foreground">
-          {lead}{" "}
-          {names.map((name, index) => (
-            <span key={name}>
-              <s className="font-pixel-square tracking-normal">{name}</s>
-              {index === names.length - 1
-                ? "."
-                : index === names.length - 2
-                  ? ", and "
-                  : ", "}
-            </span>
-          ))}
-        </span>
-      </h2>
-    </MarketingSection>
-  );
+/**
+ * Hero-follow narrative (US Mobile-style scroll fill). Replaces the old
+ * "one subscription" strikethrough headline with a clear statement of the
+ * four pillars: discovery, CRM, rich outreach, and baked-in social.
+ */
+export function MarketingNarrative() {
+  return <ScrollFillNarrative paragraphs={MARKETING_COPY.narrative} />;
 }
 
 export function MarketingFinish() {

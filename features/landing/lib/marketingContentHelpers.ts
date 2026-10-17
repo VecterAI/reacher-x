@@ -3,20 +3,28 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
-    reveal: ["Prospecting.", "CRM.", "Outreach."],
-    revealLine: "In one platform.",
+    reveal: [],
+    revealLine: "Clay for non-salespeople.",
     /** Plain-text form of the hero for the OG image and Markdown title. */
-    headline: "Prospecting. CRM. Outreach. In one platform.",
+    headline: "Clay for non-salespeople.",
+    /** Hero sub text; rendered with inline brand logos and repo link. */
+    tagline:
+      "Clay and Apollo are built for salespeople. ReacherX is built by non-salespeople, for non-salespeople. Open source.",
     description:
       "Say who you need. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn strangers into relationships.",
     guaranteeNote: "30-day money-back guarantee.",
     setupTimeNote: "Set up in under 5 minutes.",
   },
-  subscription: {
-    heading: "One self-driving platform.",
-    lead: "Instead of",
-    names: ["Apollo", "Clay", "your CRM", "your outreach tools"],
-  },
+  /**
+   * Hero-follow narrative, rendered as a scroll-fill statement. Covers the
+   * four pillars: 24/7 discovery (X/Twitter, LinkedIn), built-in CRM, rich
+   * outreach, and baked-in social engagement.
+   */
+  narrative: [
+    "The people you're looking for are out there on X/Twitter and LinkedIn.",
+    "ReacherX △ Agent finds them around the clock, keeps every relationship in a built-in CRM, and drafts outreach with voice notes, images, and videos. View profiles, like, comment, reply. All without leaving the app.",
+    "No more stitching prospecting, a CRM, and outreach tools together. No funnels, no sales vocabulary. Just say who you need, in plain words.",
+  ],
   workflow: {
     setup:
       "No tables or sales jargon. Tell △ Agent what you are working on and who you want to reach, in plain words.",
@@ -40,7 +48,7 @@ export const MARKETING_COPY = {
   },
   product: {
     discovery:
-      "There is no contact database to buy. ReacherX searches X/Twitter and LinkedIn in real time, around the clock, and researches every person it finds before you see them.",
+      "There is no stale contact database to buy. ReacherX searches X/Twitter and LinkedIn in real time, around the clock, and researches every person it finds before you see them.",
     plans:
       "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review. Mention several people in one message with @ tags.",
     messages: "Send voice notes, images, and video inside your conversations.",
