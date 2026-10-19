@@ -17,7 +17,7 @@ const chatSource = readFileSync("convex/chat.ts", "utf8");
 test("outreach uses one fixed text model with an explicit vision exception", () => {
   assert.match(
     aiSource,
-    /OUTREACH_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_MAIN_AGENT_MODEL",[\s\S]*?MODELS\.GPT_5_6_SOL/
+    /OUTREACH_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_MAIN_AGENT_MODEL",[\s\S]*?MODELS\.GPT_6_LUNA_PRO/
   );
   assert.doesNotMatch(
     aiSource,

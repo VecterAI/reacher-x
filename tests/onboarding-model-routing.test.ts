@@ -26,22 +26,22 @@ const workspacePageSource = readFileSync(
 const setupSessionsSource = readFileSync("convex/setupSessions.ts", "utf8");
 const workspacesSource = readFileSync("convex/workspaces.ts", "utf8");
 
-test("onboarding has a dedicated Sol route", () => {
+test("onboarding has a dedicated GPT-6 Luna Pro route", () => {
   assert.match(
     aiSource,
-    /ONBOARDING_MODEL = getConfiguredModel\([\s\S]*?"AI_ONBOARDING_MODEL",[\s\S]*?MODELS\.GPT_5_6_SOL/
+    /ONBOARDING_MODEL = getConfiguredModel\([\s\S]*?"AI_ONBOARDING_MODEL",[\s\S]*?MODELS\.GPT_6_LUNA_PRO/
   );
   assert.match(aiSource, /providerLabel: ONBOARDING_PROVIDER_LABEL/);
   assert.match(
     aiSource,
-    /ONBOARDING_PROVIDER_OPTIONS[\s\S]*?createGpt56ProviderOptions\(\{ requireParameters: false \}\)[\s\S]*?requireParameters: false/
+    /ONBOARDING_PROVIDER_OPTIONS[\s\S]*?createOpenAIProviderOptions\(\{ requireParameters: false \}\)[\s\S]*?requireParameters: false/
   );
   assert.match(setupClassificationSource, /routing = "onboarding" as const/);
   assert.match(setupGenerationSource, /routing = "onboarding" as const/);
   assert.match(qualificationSource, /routing: "onboarding"/);
 });
 
-test("keyword generation uses Sol and receives original intent", () => {
+test("keyword generation uses the onboarding route and receives original intent", () => {
   assert.match(
     readFileSync("convex/agents/internal.ts", "utf8"),
     /const routing = args.routing \?\? "onboarding"/
