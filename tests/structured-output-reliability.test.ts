@@ -176,7 +176,7 @@ test("fallback errors preserve every provider attempt", () => {
       {
         attemptNumber: 1,
         routing: "onboarding",
-        model: "openai/gpt-5.6-sol",
+        model: "openai/gpt-6-luna-pro",
         configuredProvider: "openai/azure",
         durationMs: 120,
         errorMessage: "Structured output did not match the required schema",

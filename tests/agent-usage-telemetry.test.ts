@@ -71,7 +71,7 @@ test("generic usage extraction exposes OpenRouter cache details", () => {
     },
     providerMetadata: {
       openrouter: {
-        model: "openai/gpt-5.6-terra",
+        model: "openai/gpt-6-luna-pro",
         provider: "OpenAI",
         usage: { cost: "0.04" },
       },
@@ -83,7 +83,7 @@ test("generic usage extraction exposes OpenRouter cache details", () => {
     outputTokens: 800,
     totalTokens: 12_800,
     cost: 0.04,
-    modelSelected: "openai/gpt-5.6-terra",
+    modelSelected: "openai/gpt-6-luna-pro",
     providerSelected: "OpenAI",
     cacheReadTokens: 9_000,
     cacheWriteTokens: 1_000,

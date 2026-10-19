@@ -85,7 +85,7 @@ export function createAIProvider() {
 
 /** Available models via OpenRouter. */
 export const MODELS = {
-  GPT_5_6_SOL: "openai/gpt-5.6-sol",
+  GPT_6_LUNA_PRO: "openai/gpt-6-luna-pro",
   KIMI_K2_6: "moonshotai/kimi-k2.6",
   GPT_OSS: "openai/gpt-oss-120b",
 } as const;
@@ -165,11 +165,12 @@ function createOnlyProviderOptions(
 }
 
 /**
- * Keep GPT-5.6 traffic on standard OpenAI first with standard Azure fallback.
- * An explicit allow-list prevents OpenRouter from choosing Flex, Priority, or
- * region-specific endpoints whose price/latency behavior differs materially.
+ * Keep premium OpenAI-family model traffic on standard OpenAI first with
+ * standard Azure fallback. An explicit allow-list prevents OpenRouter from
+ * choosing Flex, Priority, or region-specific endpoints whose price/latency
+ * behavior differs materially.
  */
-function createGpt56ProviderOptions(args?: {
+function createOpenAIProviderOptions(args?: {
   requireParameters?: boolean;
 }): OpenRouterProviderOptions {
   return {
@@ -197,6 +198,17 @@ function createGenericProviderOptions(args?: {
   };
 }
 
+/**
+ * Premium OpenAI chat families that pin to standard OpenAI/Azure providers and
+ * support OpenRouter's explicit prompt-cache mode. GPT-5.6 stays listed so
+ * deployments that still configure it via env keep those routing benefits.
+ */
+function isPremiumOpenAIChatModel(model: string): boolean {
+  return (
+    model.startsWith("openai/gpt-5.6-") || model.startsWith("openai/gpt-6")
+  );
+}
+
 function getConfiguredProviderOptions(args: {
   model: string;
   defaultModel: string;
@@ -207,8 +219,8 @@ function getConfiguredProviderOptions(args: {
     return args.defaultOptions;
   }
 
-  if (args.model.startsWith("openai/gpt-5.6-")) {
-    return createGpt56ProviderOptions({
+  if (isPremiumOpenAIChatModel(args.model)) {
+    return createOpenAIProviderOptions({
       requireParameters: args.requireParameters,
     });
   }
@@ -335,18 +347,18 @@ export const AUTOCOMPLETE_PROVIDER_OPTIONS = HELPER_PROVIDER_OPTIONS;
  */
 export const ONBOARDING_MODEL = getConfiguredModel(
   "AI_ONBOARDING_MODEL",
-  MODELS.GPT_5_6_SOL
+  MODELS.GPT_6_LUNA_PRO
 );
 
 export const ONBOARDING_PROVIDER_OPTIONS: OpenRouterProviderOptions =
   getConfiguredProviderOptions({
     model: ONBOARDING_MODEL,
-    defaultModel: MODELS.GPT_5_6_SOL,
-    defaultOptions: createGpt56ProviderOptions({ requireParameters: false }),
+    defaultModel: MODELS.GPT_6_LUNA_PRO,
+    defaultOptions: createOpenAIProviderOptions({ requireParameters: false }),
     requireParameters: false,
   });
 
-const ONBOARDING_PROVIDER_LABEL = ONBOARDING_MODEL.startsWith("openai/gpt-5.6-")
+const ONBOARDING_PROVIDER_LABEL = isPremiumOpenAIChatModel(ONBOARDING_MODEL)
   ? `${OPENROUTER_PROVIDERS.OPENAI}/${OPENROUTER_PROVIDERS.AZURE}`
   : "openrouter";
 
@@ -378,20 +390,21 @@ export const PINNED_AGENT_PROVIDER_OPTIONS: OpenRouterProviderOptions =
  */
 export const OUTREACH_AGENT_MODEL = getConfiguredModel(
   "AI_MAIN_AGENT_MODEL",
-  MODELS.GPT_5_6_SOL
+  MODELS.GPT_6_LUNA_PRO
 );
 
 export const OUTREACH_AGENT_PROVIDER_OPTIONS: OpenRouterProviderOptions =
   getConfiguredProviderOptions({
     model: OUTREACH_AGENT_MODEL,
-    defaultModel: MODELS.GPT_5_6_SOL,
-    defaultOptions: createGpt56ProviderOptions(),
+    defaultModel: MODELS.GPT_6_LUNA_PRO,
+    defaultOptions: createOpenAIProviderOptions(),
   });
 
 /**
- * GPT-5.6 supports OpenRouter's explicit prompt-cache mode. The corresponding
- * cache breakpoint is added by outreachPromptCacheMiddleware after the stable
- * agent instructions and current workspace context.
+ * OpenAI GPT-5.6+ and GPT-6 models support OpenRouter's explicit prompt-cache
+ * mode. The corresponding cache breakpoint is added by
+ * outreachPromptCacheMiddleware after the stable agent instructions and
+ * current workspace context.
  */
 export const OUTREACH_AGENT_PROMPT_CACHE_OPTIONS = {
   prompt_cache_options: {
@@ -421,7 +434,7 @@ export const PINNED_VISION_PROVIDER_OPTIONS: OpenRouterProviderOptions =
   });
 
 export function supportsExplicitPromptCaching(model: string): boolean {
-  return model.startsWith("openai/gpt-5.6-");
+  return isPremiumOpenAIChatModel(model);
 }
 
 export type ModelRouting = RoutingPreset | "onboarding";

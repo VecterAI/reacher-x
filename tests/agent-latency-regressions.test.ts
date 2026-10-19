@@ -68,10 +68,10 @@ test("setup agent uses the dedicated onboarding provider lane", () => {
   assert.match(contextSource, /maxRetries: OUTREACH_AGENT_MAX_RETRIES/);
 });
 
-test("prospect agent keeps one fixed Sol text model", () => {
+test("prospect agent keeps one fixed GPT-6 Luna Pro text model", () => {
   assert.match(
     aiSource,
-    /OUTREACH_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_MAIN_AGENT_MODEL",[\s\S]*?MODELS\.GPT_5_6_SOL/
+    /OUTREACH_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_MAIN_AGENT_MODEL",[\s\S]*?MODELS\.GPT_6_LUNA_PRO/
   );
   assert.match(contextSource, /OUTREACH_AGENT_MODEL/);
   assert.match(contextSource, /OUTREACH_AGENT_PROVIDER_OPTIONS/);

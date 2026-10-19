@@ -56,7 +56,7 @@ describe("qualification model failure recovery", () => {
     });
     const modelError = formatQualificationModelFailure({
       provider: "cerebras -> groq -> openai/azure",
-      model: "openai/gpt-oss-120b -> openai/gpt-5.6-sol",
+      model: "openai/gpt-oss-120b -> openai/gpt-6-luna-pro",
       attemptCount: 3,
       message: "AI_NoObjectGeneratedError: JSONParseError",
     });
@@ -610,7 +610,7 @@ describe("qualification model failure recovery", () => {
     });
     const modelError = formatQualificationModelFailure({
       provider: "openai/azure",
-      model: "openai/gpt-5.6-sol",
+      model: "openai/gpt-6-luna-pro",
       attemptCount: 2,
       message: "AI_NoObjectGeneratedError: JSONParseError",
     });
@@ -688,7 +688,7 @@ describe("qualification model failure recovery", () => {
       return { prospectId, workspaceId };
     });
     const creditError =
-      'Error: Uncaught QualificationEvaluationError: [QUALIFICATION_MODEL_EVALUATION_FAILED] provider="openai/azure" model="openai/gpt-5.6-sol" attempts=2 message="This request requires more credits, or fewer max_tokens. You requested up to 16384 tokens, but can only afford 1056."';
+      'Error: Uncaught QualificationEvaluationError: [QUALIFICATION_MODEL_EVALUATION_FAILED] provider="openai/azure" model="openai/gpt-6-luna-pro" attempts=2 message="This request requires more credits, or fewer max_tokens. You requested up to 16384 tokens, but can only afford 1056."';
 
     await t.mutation(
       internal.workflows.qualification.handleQualificationComplete,
@@ -763,7 +763,7 @@ describe("qualification model failure recovery", () => {
         qualificationLastFailure: {
           stage: "model_evaluation",
           provider: "openai/azure",
-          model: "openai/gpt-5.6-sol",
+          model: "openai/gpt-6-luna-pro",
           code: "qualification_model_evaluation_failed",
           message: "model evaluation failed",
           attemptCount: 2,

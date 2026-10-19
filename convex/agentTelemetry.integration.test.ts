@@ -29,7 +29,7 @@ describe("structured generation usage telemetry", () => {
     await t.mutation(internal.agentTelemetry.insertUsageEvent, {
       agentName: "Qualification Evaluator",
       workspaceId,
-      model: "openai/gpt-5.6-sol",
+      model: "openai/gpt-6-luna-pro",
       provider: "openai/azure",
       usage: {
         inputTokens: 19888,
@@ -37,7 +37,7 @@ describe("structured generation usage telemetry", () => {
         totalTokens: 20787,
         cachedInputTokens: 6160,
         cost: 0.0456,
-        modelSelected: "openai/gpt-5.6-sol",
+        modelSelected: "openai/gpt-6-luna-pro",
         providerSelected: "openai/azure",
       },
       errorMessage: undefined,
@@ -46,7 +46,7 @@ describe("structured generation usage telemetry", () => {
     await t.mutation(internal.agentTelemetry.insertUsageEvent, {
       agentName: "Qualification Evaluator",
       workspaceId,
-      model: "openai/gpt-5.6-sol",
+      model: "openai/gpt-6-luna-pro",
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
       errorMessage: "This request requires more credits, or fewer max_tokens.",
     });
