@@ -80,9 +80,10 @@ function PlansCopy() {
 
 function MarketingFeatureTitle({ children }: { children: ReactNode }) {
   // MarketingFeature titles accept ReactNode; headings that name app
-  // features render the app's own icon inline at text size.
+  // features render the app's own icon inline at text size, right before
+  // the word it describes. Mask-based icons need fill-current to show.
   return (
-    <span className="[&_svg]:mr-[0.18em] [&_svg]:inline [&_svg]:size-[0.72em] [&_svg]:shrink-0 [&_svg]:align-[-0.06em]">
+    <span className="[&_svg]:mr-[0.18em] [&_svg]:inline [&_svg]:size-[0.72em] [&_svg]:shrink-0 [&_svg]:align-[-0.06em] [&_svg]:fill-current">
       {children}
     </span>
   );
@@ -130,9 +131,13 @@ function MarketingCapabilities() {
         reverse
         title={
           <MarketingFeatureTitle>
-            Send <MicIcon aria-hidden="true" /> voice notes,{" "}
-            <ImageIcon aria-hidden="true" /> images, and{" "}
-            <VideoLibraryIcon aria-hidden="true" /> video.
+            {"Send "}
+            <MicIcon aria-hidden="true" />
+            {"voice notes, "}
+            <ImageIcon aria-hidden="true" />
+            {"images, and "}
+            <VideoLibraryIcon aria-hidden="true" />
+            {"video."}
           </MarketingFeatureTitle>
         }
         demo={
@@ -153,7 +158,9 @@ function MarketingCapabilities() {
       <MarketingFeature
         title={
           <MarketingFeatureTitle>
-            <CognitionIcon aria-hidden="true" /> △ Agent, with a memory.
+            {"Agent, with a "}
+            <CognitionIcon aria-hidden="true" />
+            {"memory."}
           </MarketingFeatureTitle>
         }
         demo={

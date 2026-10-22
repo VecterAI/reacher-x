@@ -4,12 +4,13 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 export const MARKETING_COPY = {
   home: {
     reveal: [],
-    revealLine: "One tool. The whole GTM stack.",
+    revealLine: "GTM. Unified",
     /** Plain-text form of the hero for the OG image and Markdown title. */
-    headline: "One tool. The whole GTM stack.",
-    /** Hero sub text; rendered with inline brand logos and repo link. */
+    headline: "GTM. Unified",
+    /** Hero sub text; rendered with inline brand logos and repo link.
+     * Ends without a period so the "Open source" link closes the line. */
     tagline:
-      "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. One tool, for the rest of us. Open source.",
+      "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. Prospecting, CRM, outreach, and social in one tool. Open source",
     description:
       "Describe who you want to reach. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who match, and helps you start real conversations.",
     guaranteeNote: "30-day money-back guarantee.",
