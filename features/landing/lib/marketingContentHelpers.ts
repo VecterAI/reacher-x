@@ -3,10 +3,10 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
-    reveal: ["The complete Go-To-Market stack,"],
+    reveal: ["The Go-To-Market stack,"],
     revealLine: "for everyone.",
     /** Plain-text form of the hero for the OG image and Markdown title. */
-    headline: "The complete Go-To-Market stack, for everyone.",
+    headline: "The Go-To-Market stack, for everyone.",
     /** Hero sub text; rendered with inline brand logos and repo link.
      * Ends without a period so the "Open source" link closes the line. */
     tagline:
