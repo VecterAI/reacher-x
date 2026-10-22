@@ -4,9 +4,9 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 export const MARKETING_COPY = {
   home: {
     reveal: [],
-    revealLine: "GTM. Unified",
+    revealLine: "Your unified GTM stack",
     /** Plain-text form of the hero for the OG image and Markdown title. */
-    headline: "GTM. Unified",
+    headline: "Your unified GTM stack",
     /** Hero sub text; rendered with inline brand logos and repo link.
      * Ends without a period so the "Open source" link closes the line. */
     tagline:
