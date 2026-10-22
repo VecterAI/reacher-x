@@ -107,12 +107,14 @@ function NavigationOverlay({ open }: { open: boolean }) {
 
 export function MarketingNavigation() {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  /** Which menu is open (Radix item value); null when all are closed. */
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const isUseCasesActive = MARKETING_USE_CASES.some((useCase) =>
     isActiveHref(useCase.blogHref, pathname)
   );
   const isResourcesActive =
     isActiveHref("/blog", pathname) && !isUseCasesActive;
+  const isPricingActive = isActiveHref("/pricing", pathname);
 
   const groups: NavigationGroup[] = [
     {
@@ -178,14 +180,22 @@ export function MarketingNavigation() {
       aria-label="Main navigation"
       data-rx-marketing-nav=""
       className="hidden justify-self-center xl:block"
-      onValueChange={(value) => setOpen(Boolean(value))}
+      onValueChange={(value) => setOpenMenu(value || null)}
     >
-      <NavigationOverlay open={open} />
+      <NavigationOverlay open={openMenu !== null} />
       <NavigationMenu.List className="flex list-none items-center gap-1">
         {groups.map((group) => (
-          <NavigationMenu.Item key={group.label}>
+          <NavigationMenu.Item key={group.label} value={group.label}>
             <NavigationMenu.Trigger
-              className={cn(triggerClass, group.active && activeLinkClass)}
+              className={cn(
+                triggerClass,
+                // Active-route emphasis yields to whichever menu is open, so
+                // the open trigger is the single point of focus (Polar-style).
+                group.active &&
+                  (openMenu === null || openMenu === group.label) &&
+                  activeLinkClass,
+                openMenu === group.label && "text-foreground"
+              )}
             >
               {group.label}
               <KeyboardArrowDownIcon className="size-4 fill-current transition-transform group-data-[state=open]:rotate-180" />
@@ -236,18 +246,13 @@ export function MarketingNavigation() {
           </NavigationMenu.Item>
         ))}
         <NavigationMenu.Item>
-          <NavigationMenu.Link
-            asChild
-            active={isActiveHref("/pricing", pathname)}
-          >
+          <NavigationMenu.Link asChild active={isPricingActive}>
             <Link
               href="/pricing"
-              aria-current={
-                isActiveHref("/pricing", pathname) ? "page" : undefined
-              }
+              aria-current={isPricingActive ? "page" : undefined}
               className={cn(
                 triggerClass,
-                isActiveHref("/pricing", pathname) && activeLinkClass
+                isPricingActive && openMenu === null && activeLinkClass
               )}
             >
               Pricing
