@@ -31,7 +31,7 @@ import { MarketingUseCaseTabs } from "./MarketingUseCaseTabs";
 import { MarketingBlog } from "./MarketingBlog";
 
 function HeroReveal() {
-  const { reveal, revealLine } = MARKETING_COPY.home;
+  const { reveal } = MARKETING_COPY.home;
   return (
     <>
       {/* Two-line headline, same color and weight; pixel font accents the
