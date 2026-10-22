@@ -24,21 +24,15 @@ type NavigationLink = {
 
 type NavigationGroup = {
   label: string;
-  eyebrow: string;
+  /** Marks the bar trigger when a panel route is active. */
   active: boolean;
-  /** Headline-size links that lead the panel, Polar-style. */
-  featured: NavigationLink[];
-  /** Smaller link columns shown beside the featured zone. */
+  /** Featured zone on the left: eyebrow + one big link with arrow. */
+  featuredEyebrow: string;
+  featured: NavigationLink;
+  /** Original link columns on the right, under their own eyebrow. */
+  columnsEyebrow: string;
   columns: NavigationLink[][];
 };
-
-const resources: NavigationLink[] = [
-  { href: "/blog/getting-started-with-reacherx", label: "Getting started" },
-  { href: "/blog", label: "Blog" },
-  { href: "/blog/category/comparisons", label: "Compare tools" },
-  { href: "/blog/category/announcements", label: "What's new" },
-  { href: "/blog/run-reacherx-yourself", label: "Self-hosting" },
-];
 
 const communityLinks: NavigationLink[] = [
   { href: DISCORD_INVITE_URL, label: "Join the Discord", external: true },
@@ -50,20 +44,35 @@ const communityLinks: NavigationLink[] = [
   },
 ];
 
-/** Primary use cases lead the panel at headline size. */
-const useCaseFeatured: NavigationLink[] = MARKETING_USE_CASES.slice(0, 4).map(
-  (item) => ({ href: item.blogHref, label: item.title })
-);
+const useCaseFeatured: NavigationLink = {
+  href: "/blog/category/use-cases",
+  label: "Use cases",
+};
 
 const useCaseColumns: NavigationLink[][] = [
+  MARKETING_USE_CASES.slice(0, 4).map((item) => ({
+    href: item.blogHref,
+    label: item.title,
+  })),
   MARKETING_USE_CASES.slice(4).map((item) => ({
     href: item.blogHref,
     label: item.title,
   })),
 ];
 
-const resourcesFeatured = resources.slice(0, 2);
-const resourceColumns: NavigationLink[][] = [resources.slice(2)];
+const resourcesFeatured: NavigationLink = { href: "/blog", label: "Blog" };
+
+const resourceColumns: NavigationLink[][] = [
+  [
+    { href: "/blog/getting-started-with-reacherx", label: "Getting started" },
+    { href: "/blog/category/comparisons", label: "Compare tools" },
+    { href: "/blog/category/announcements", label: "What's new" },
+    { href: "/blog/run-reacherx-yourself", label: "Self-hosting" },
+  ],
+];
+
+const communityFeatured = communityLinks[0];
+const communityColumns: NavigationLink[][] = [communityLinks.slice(1)];
 
 function isActiveHref(href: string, pathname: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -75,14 +84,13 @@ const activeLinkClass =
 const triggerClass =
   "group flex items-center gap-1 rounded-md px-3 py-2 text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-/** Featured panel links lead the panel at headline size. */
+/** Featured zone: one big link with arrow, Polar-style. */
 const featuredLinkClass =
-  "text-foreground block w-fit rounded-sm text-2xl/8 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring underline-offset-4";
+  "text-foreground mt-2 block w-fit rounded-sm text-3xl leading-9 font-normal tracking-tight outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring underline-offset-4";
 
-/** Secondary links follow the featured zone in smaller columns; the 8px gap
- * on a 24px line keeps their 32px pitch aligned with the featured links. */
+/** Panel link metrics follow the Vercel menu: text-xl/8, flush left. */
 const panelLinkClass =
-  "text-muted-foreground block w-fit rounded-sm text-sm/6 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring underline-offset-4";
+  "text-foreground block w-fit rounded-sm text-xl/8 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring underline-offset-4";
 
 /**
  * Dim the page while a menu is open. Portaled to <body> so it sits under the
@@ -113,29 +121,32 @@ export function MarketingNavigation() {
   const groups: NavigationGroup[] = [
     {
       label: "Use cases",
-      eyebrow: "Who do you want to find?",
       active: isUseCasesActive,
+      featuredEyebrow: "Explore Use cases",
       featured: useCaseFeatured,
+      columnsEyebrow: "Who do you want to find?",
       columns: useCaseColumns,
     },
     {
       label: "Resources",
-      eyebrow: "Learn about ReacherX",
       active: isResourcesActive,
+      featuredEyebrow: "Explore Resources",
       featured: resourcesFeatured,
+      columnsEyebrow: "Learn about ReacherX",
       columns: resourceColumns,
     },
     {
       label: "Community",
-      eyebrow: "Build ReacherX with us",
       active: false,
-      featured: communityLinks,
-      columns: [],
+      featuredEyebrow: "Join the community",
+      featured: communityFeatured,
+      columnsEyebrow: "Build ReacherX with us",
+      columns: communityColumns,
     },
   ];
 
-  /** Shared renderer for panel links in both zones (featured + secondary). */
-  const renderPanelLink = (link: NavigationLink, className: string) => {
+  /** Shared renderer for the right-zone column links. */
+  const renderPanelLink = (link: NavigationLink) => {
     const linkActive = !link.external && isActiveHref(link.href, pathname);
     return (
       <li key={link.href}>
@@ -145,7 +156,7 @@ export function MarketingNavigation() {
               href={link.href}
               target="_blank"
               rel="noopener noreferrer"
-              className={className}
+              className={panelLinkClass}
             >
               {link.label} <span aria-hidden="true">↗</span>
             </a>
@@ -154,7 +165,7 @@ export function MarketingNavigation() {
               href={link.href}
               aria-current={linkActive ? "page" : undefined}
               className={cn(
-                className,
+                panelLinkClass,
                 linkActive && "underline decoration-2"
               )}
             >
@@ -187,29 +198,42 @@ export function MarketingNavigation() {
                 radius, aligned with the page container like Vercel's menus. */}
             <NavigationMenu.Content className="border-border bg-background absolute inset-x-0 top-full border-b">
               <div className={cn(marketingPageWidth, "py-6 lg:py-8")}>
-                <p className="text-muted-foreground text-sm leading-5">
-                  {group.eyebrow}
-                </p>
-                {/* Two-zone panel: headline-size featured links on the left,
-                    smaller secondary columns on the right. Desktop only; the
-                    nav root is hidden below xl. */}
-                <div className="mt-3 grid grid-cols-2 gap-x-16">
-                  <ul className="list-none">
-                    {group.featured.map((link) =>
-                      renderPanelLink(link, featuredLinkClass)
-                    )}
-                  </ul>
-                  {group.columns.length > 0 && (
-                    <div className="flex flex-row gap-x-16">
+                {/* Featured zone on the left (one big link with arrow) and
+                    the original columns on the right, Polar-style. Desktop
+                    only; the nav root is hidden below xl. */}
+                <div className="grid grid-cols-[1fr_2fr] gap-x-16">
+                  <div>
+                    <p className="text-muted-foreground text-sm leading-5">
+                      {group.featuredEyebrow}
+                    </p>
+                    <NavigationMenu.Link asChild>
+                      <Link
+                        href={group.featured.href}
+                        target={group.featured.external ? "_blank" : undefined}
+                        rel={
+                          group.featured.external
+                            ? "noopener noreferrer"
+                            : undefined
+                        }
+                        className={featuredLinkClass}
+                      >
+                        {group.featured.label}{" "}
+                        <span aria-hidden="true">↗</span>
+                      </Link>
+                    </NavigationMenu.Link>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-sm leading-5">
+                      {group.columnsEyebrow}
+                    </p>
+                    <div className="mt-2 flex flex-row gap-x-16">
                       {group.columns.map((column, columnIndex) => (
-                        <ul key={columnIndex} className="list-none space-y-2">
-                          {column.map((link) =>
-                            renderPanelLink(link, panelLinkClass)
-                          )}
+                        <ul key={columnIndex} className="list-none">
+                          {column.map((link) => renderPanelLink(link))}
                         </ul>
                       ))}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             </NavigationMenu.Content>
