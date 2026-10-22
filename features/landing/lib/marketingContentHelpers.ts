@@ -4,14 +4,14 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 export const MARKETING_COPY = {
   home: {
     reveal: [],
-    revealLine: "Clay for non-salespeople.",
+    revealLine: "Your complete GTM stack. One tool.",
     /** Plain-text form of the hero for the OG image and Markdown title. */
-    headline: "Clay for non-salespeople.",
+    headline: "Your complete GTM stack. One tool.",
     /** Hero sub text; rendered with inline brand logos and repo link. */
     tagline:
-      "Clay and Apollo are built for salespeople. ReacherX is built by non-salespeople, for non-salespeople. Open source.",
+      "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. The full GTM stack for the rest of us. Open source.",
     description:
-      "Say who you need. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn strangers into relationships.",
+      "Describe who you want to reach. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who match, and helps you start real conversations.",
     guaranteeNote: "30-day money-back guarantee.",
     setupTimeNote: "Set up in under 5 minutes.",
   },
@@ -36,11 +36,11 @@ export const MARKETING_COPY = {
     finishHeading: "Not for you? Full refund in 30 days.",
   },
   story: {
-    connectionsHeading: "Use it for any goal that needs people.",
+    connectionsHeading: "Not just for sales.",
     connections:
       "For founders, recruiters, creators — anyone building a network. Founders find customers and investors. Recruiters find candidates. Creators find collaborators. The problem is always the same: the right people.",
     authenticityHeading:
-      "Your network is your net worth. Build it with △ Agent.",
+      "Everything in one tool. Nothing to learn.",
     developersHeading: "Open source.",
     developers:
       "ReacherX is built on Convex and part of the Convex Open Source program. Use, modify, and self-host it under AGPL-3.0. Improvements stay open for everyone.",

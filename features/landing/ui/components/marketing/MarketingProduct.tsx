@@ -77,7 +77,7 @@ function MarketingCapabilities() {
         </CapabilityLink>
       </MarketingFeature>
       <MarketingFeature
-        title="Plans for every person."
+        title="A different plan for each person."
         demo={
           <MarketingDemo
             scenario="create-plans-for-several-people"
@@ -95,7 +95,7 @@ function MarketingCapabilities() {
       </MarketingFeature>
       <MarketingFeature
         reverse
-        title="Send more than text."
+        title="Send voice notes, images, and video."
         demo={
           <MarketingDemo
             scenario="outreach-with-images-and-video"
