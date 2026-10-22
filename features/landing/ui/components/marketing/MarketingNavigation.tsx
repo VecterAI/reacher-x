@@ -50,11 +50,7 @@ const useCaseFeatured: NavigationLink = {
 };
 
 const useCaseColumns: NavigationLink[][] = [
-  MARKETING_USE_CASES.slice(0, 4).map((item) => ({
-    href: item.blogHref,
-    label: item.title,
-  })),
-  MARKETING_USE_CASES.slice(4).map((item) => ({
+  MARKETING_USE_CASES.map((item) => ({
     href: item.blogHref,
     label: item.title,
   })),
@@ -86,7 +82,7 @@ const triggerClass =
 
 /** Featured zone: one big link with arrow, Polar-style. */
 const featuredLinkClass =
-  "text-foreground mt-2 block w-fit rounded-sm text-3xl leading-9 font-normal tracking-tight outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring underline-offset-4";
+  "text-foreground mt-2 block w-fit rounded-sm text-4xl leading-10 font-normal tracking-tight outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring underline-offset-4";
 
 /** Panel link metrics follow the Vercel menu: text-xl/8, flush left. */
 const panelLinkClass =
