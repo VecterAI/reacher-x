@@ -3,10 +3,10 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
-    reveal: [],
-    revealLine: "Find the people you're looking for.",
+    reveal: ["The complete GTM stack,"],
+    revealLine: "for everyone.",
     /** Plain-text form of the hero for the OG image and Markdown title. */
-    headline: "Find the people you're looking for.",
+    headline: "The complete GTM stack, for everyone.",
     /** Hero sub text; rendered with inline brand logos and repo link.
      * Ends without a period so the "Open source" link closes the line. */
     tagline:

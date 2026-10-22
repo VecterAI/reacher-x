@@ -34,6 +34,7 @@ function HeroReveal() {
   const { reveal, revealLine } = MARKETING_COPY.home;
   return (
     <>
+      {/* Polar-style two-tone headline: muted context line, white payoff. */}
       {reveal.map((line) => (
         <span key={line} className="text-muted-foreground block">
           {line}
