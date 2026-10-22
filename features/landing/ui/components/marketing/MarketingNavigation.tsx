@@ -26,7 +26,9 @@ type NavigationGroup = {
   label: string;
   eyebrow: string;
   active: boolean;
-  /** Plain text columns in the panel, Vercel-style. */
+  /** Headline-size links that lead the panel, Polar-style. */
+  featured: NavigationLink[];
+  /** Smaller link columns shown beside the featured zone. */
   columns: NavigationLink[][];
 };
 
@@ -48,16 +50,20 @@ const communityLinks: NavigationLink[] = [
   },
 ];
 
+/** Primary use cases lead the panel at headline size. */
+const useCaseFeatured: NavigationLink[] = MARKETING_USE_CASES.slice(0, 4).map(
+  (item) => ({ href: item.blogHref, label: item.title })
+);
+
 const useCaseColumns: NavigationLink[][] = [
-  MARKETING_USE_CASES.slice(0, 4).map((item) => ({
-    href: item.blogHref,
-    label: item.title,
-  })),
   MARKETING_USE_CASES.slice(4).map((item) => ({
     href: item.blogHref,
     label: item.title,
   })),
 ];
+
+const resourcesFeatured = resources.slice(0, 2);
+const resourceColumns: NavigationLink[][] = [resources.slice(2)];
 
 function isActiveHref(href: string, pathname: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -69,9 +75,14 @@ const activeLinkClass =
 const triggerClass =
   "group flex items-center gap-1 rounded-md px-3 py-2 text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-/** Panel link metrics follow the Vercel menu: text-xl/8, flush left. */
+/** Featured panel links lead the panel at headline size. */
+const featuredLinkClass =
+  "text-foreground block w-fit rounded-sm text-2xl/8 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring underline-offset-4";
+
+/** Secondary links follow the featured zone in smaller columns; the 8px gap
+ * on a 24px line keeps their 32px pitch aligned with the featured links. */
 const panelLinkClass =
-  "text-foreground block w-fit rounded-sm text-xl/8 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring underline-offset-4";
+  "text-muted-foreground block w-fit rounded-sm text-sm/6 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring underline-offset-4";
 
 /**
  * Dim the page while a menu is open. Portaled to <body> so it sits under the
@@ -104,21 +115,56 @@ export function MarketingNavigation() {
       label: "Use cases",
       eyebrow: "Who do you want to find?",
       active: isUseCasesActive,
+      featured: useCaseFeatured,
       columns: useCaseColumns,
     },
     {
       label: "Resources",
       eyebrow: "Learn about ReacherX",
       active: isResourcesActive,
-      columns: [resources],
+      featured: resourcesFeatured,
+      columns: resourceColumns,
     },
     {
       label: "Community",
       eyebrow: "Build ReacherX with us",
       active: false,
-      columns: [communityLinks],
+      featured: communityLinks,
+      columns: [],
     },
   ];
+
+  /** Shared renderer for panel links in both zones (featured + secondary). */
+  const renderPanelLink = (link: NavigationLink, className: string) => {
+    const linkActive = !link.external && isActiveHref(link.href, pathname);
+    return (
+      <li key={link.href}>
+        <NavigationMenu.Link asChild active={linkActive}>
+          {link.external ? (
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={className}
+            >
+              {link.label} <span aria-hidden="true">↗</span>
+            </a>
+          ) : (
+            <Link
+              href={link.href}
+              aria-current={linkActive ? "page" : undefined}
+              className={cn(
+                className,
+                linkActive && "underline decoration-2"
+              )}
+            >
+              {link.label}
+            </Link>
+          )}
+        </NavigationMenu.Link>
+      </li>
+    );
+  };
 
   return (
     <NavigationMenu.Root
@@ -144,46 +190,26 @@ export function MarketingNavigation() {
                 <p className="text-muted-foreground text-sm leading-5">
                   {group.eyebrow}
                 </p>
-                <div
-                  className={cn(
-                    "mt-2 flex flex-col gap-x-16 gap-y-6 sm:flex-row"
+                {/* Two-zone panel: headline-size featured links on the left,
+                    smaller secondary columns on the right. Desktop only; the
+                    nav root is hidden below xl. */}
+                <div className="mt-3 grid grid-cols-2 gap-x-16">
+                  <ul className="list-none">
+                    {group.featured.map((link) =>
+                      renderPanelLink(link, featuredLinkClass)
+                    )}
+                  </ul>
+                  {group.columns.length > 0 && (
+                    <div className="flex flex-row gap-x-16">
+                      {group.columns.map((column, columnIndex) => (
+                        <ul key={columnIndex} className="list-none space-y-2">
+                          {column.map((link) =>
+                            renderPanelLink(link, panelLinkClass)
+                          )}
+                        </ul>
+                      ))}
+                    </div>
                   )}
-                >
-                  {group.columns.map((column, columnIndex) => (
-                    <ul key={columnIndex} className="list-none">
-                      {column.map((link) => {
-                        const linkActive =
-                          !link.external && isActiveHref(link.href, pathname);
-                        return (
-                          <li key={link.href}>
-                            <NavigationMenu.Link asChild active={linkActive}>
-                              {link.external ? (
-                                <a
-                                  href={link.href}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className={panelLinkClass}
-                                >
-                                  {link.label} <span aria-hidden="true">↗</span>
-                                </a>
-                              ) : (
-                                <Link
-                                  href={link.href}
-                                  aria-current={linkActive ? "page" : undefined}
-                                  className={cn(
-                                    panelLinkClass,
-                                    linkActive && "underline decoration-2"
-                                  )}
-                                >
-                                  {link.label}
-                                </Link>
-                              )}
-                            </NavigationMenu.Link>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ))}
                 </div>
               </div>
             </NavigationMenu.Content>
