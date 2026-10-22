@@ -86,7 +86,7 @@ export function MarketingHome() {
       <MarketingHero
         className="pt-8 lg:pt-12"
         eyebrow={
-          <p className="flex flex-wrap items-center justify-center gap-2 text-center">
+          <p className="text-foreground flex flex-wrap items-center justify-center gap-2 text-center text-sm font-medium">
             <span>
               {highlightTerms(MARKETING_COPY.home.guaranteeNote, [
                 "30-day money-back guarantee",
