@@ -34,13 +34,16 @@ function HeroReveal() {
   const { reveal, revealLine } = MARKETING_COPY.home;
   return (
     <>
-      {/* Polar-style two-tone headline: muted context line, white payoff. */}
+      {/* Two-line headline, same color and weight; pixel font accents the
+      key words for an edgy touch (matches the "adapts" treatment). */}
       {reveal.map((line) => (
-        <span key={line} className="text-muted-foreground block">
-          {line}
-        </span>
+        <span key={line} className="block">{line}</span>
       ))}
-      <span className="block font-medium">{revealLine}</span>
+      <span className="block font-medium">
+        {"for "}
+        <span className="font-pixel-square">everyone</span>
+        {"."}
+      </span>
     </>
   );
 }
