@@ -3,7 +3,10 @@
 import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 
 import Link from "next/link";
-import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
+import {
+  ArrowOutwardIcon,
+  FireCheckIcon,
+} from "@/shared/ui/components/icons";
 import { LandingPrimaryCta } from "../LandingPrimaryCta";
 import { marketingButton as buttonVariants } from "./MarketingLayout";
 import {
@@ -43,7 +46,16 @@ export function MarketingWorkflow() {
       </MarketingFeature>
       <MarketingFeature
         reverse
-        title="See who matches, and why."
+        title={
+          <>
+            See every{" "}
+            <FireCheckIcon
+              className="inline size-[0.72em] align-[-0.06em]"
+              aria-hidden="true"
+            />{" "}
+            match, and why.
+          </>
+        }
         demo={
           <MarketingDemo
             scenario="find-potential-customers"

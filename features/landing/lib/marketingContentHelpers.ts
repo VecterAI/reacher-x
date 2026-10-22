@@ -4,12 +4,12 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 export const MARKETING_COPY = {
   home: {
     reveal: [],
-    revealLine: "Your complete GTM stack. One tool.",
+    revealLine: "The complete GTM stack.",
     /** Plain-text form of the hero for the OG image and Markdown title. */
-    headline: "Your complete GTM stack. One tool.",
+    headline: "The complete GTM stack.",
     /** Hero sub text; rendered with inline brand logos and repo link. */
     tagline:
-      "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. The full GTM stack for the rest of us. Open source.",
+      "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. One tool, for the rest of us. Open source.",
     description:
       "Describe who you want to reach. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who match, and helps you start real conversations.",
     guaranteeNote: "30-day money-back guarantee.",
@@ -50,7 +50,7 @@ export const MARKETING_COPY = {
     discovery:
       "There is no stale contact database to buy. ReacherX searches X/Twitter and LinkedIn in real time, around the clock, and researches every person it finds before you see them.",
     plans:
-      "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review. Mention several people in one message with @ tags.",
+      "In a message, @ people and △ Agent drafts a plan for each: their profile, their recent work, the angle that fits. Review before anything goes out.",
     messages: "Send voice notes, images, and video inside your conversations.",
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",

@@ -53,6 +53,26 @@ function CapabilityLink({
   );
 }
 
+function PlansCopy() {
+  // The "@ " mention mirrors the app's composer, where typing @ tags a
+  // person (MentionNode: font-mono text-muted-foreground).
+  const parts = MARKETING_COPY.product.plans.split("@ ");
+  return (
+    <p className="text-lg leading-7 text-pretty">
+      {parts.map((part, index) => (
+        <span key={index}>
+          {index > 0 ? (
+            <span>
+              <span className="font-mono text-muted-foreground">@</span>{" "}
+            </span>
+          ) : null}
+          {part}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 function MarketingCapabilities() {
   return (
     <>
@@ -86,9 +106,7 @@ function MarketingCapabilities() {
           />
         }
       >
-        <p className="text-lg leading-7 text-pretty">
-          {MARKETING_COPY.product.plans}
-        </p>
+        <PlansCopy />
         <CapabilityLink href="/blog/how-reacherx-planning-works">
           How planning works
         </CapabilityLink>
