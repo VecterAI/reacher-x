@@ -186,83 +186,80 @@ export function MarketingNavigation() {
     >
       <NavigationOverlay open={openMenu !== null} />
       <NavigationMenu.List className="flex list-none items-center gap-1">
-        {groups.map((group) => (
-          <NavigationMenu.Item key={group.label} value={group.label}>
-            <NavigationMenu.Trigger
-              className={cn(
-                triggerClass,
-                // Active-route emphasis yields to whichever menu is open, so
-                // the open trigger is the single point of focus (Polar-style).
-                group.active &&
-                  (openMenu === null || openMenu === group.label) &&
-                  activeLinkClass,
-                openMenu === group.label && "text-foreground"
-              )}
-            >
-              {group.label}
-              <KeyboardArrowDownIcon className="size-4 fill-current transition-transform group-data-[state=open]:rotate-180" />
-            </NavigationMenu.Trigger>
-            {/* Full-bleed panel anchored to the sticky header: no shadow, no
+        {groups.map((group) => {
+          // Exact match only: on descendant routes (e.g. a blog post) the
+          // featured link is not the current page. Group/trigger activity
+          // keeps the prefix check above.
+          const featuredActive =
+            !group.featured.external && pathname === group.featured.href;
+          return (
+            <NavigationMenu.Item key={group.label} value={group.label}>
+              <NavigationMenu.Trigger
+                className={cn(
+                  triggerClass,
+                  // Active-route emphasis yields to whichever menu is open, so
+                  // the open trigger is the single point of focus (Polar-style).
+                  group.active &&
+                    (openMenu === null || openMenu === group.label) &&
+                    activeLinkClass,
+                  openMenu === group.label && "text-foreground"
+                )}
+              >
+                {group.label}
+                <KeyboardArrowDownIcon className="size-4 fill-current transition-transform group-data-[state=open]:rotate-180" />
+              </NavigationMenu.Trigger>
+              {/* Full-bleed panel anchored to the sticky header: no shadow, no
                 radius, aligned with the page container like Vercel's menus. */}
-            <NavigationMenu.Content className="border-border bg-background absolute inset-x-0 top-full border-b">
-              <div className={cn(marketingPageWidth, "py-6 lg:py-8")}>
-                {/* Featured zone on the left (one big link with arrow) and
+              <NavigationMenu.Content className="border-border bg-background absolute inset-x-0 top-full border-b">
+                <div className={cn(marketingPageWidth, "py-6 lg:py-8")}>
+                  {/* Featured zone on the left (one big link with arrow) and
                     the original columns on the right, Polar-style. Desktop
                     only; the nav root is hidden below xl. */}
-                <div className="grid grid-cols-[1fr_2fr] gap-x-16">
-                  <div>
-                    <p className="text-muted-foreground text-sm leading-5">
-                      {group.featuredEyebrow}
-                    </p>
-                    <NavigationMenu.Link
-                      asChild
-                      active={
-                        !group.featured.external &&
-                        isActiveHref(group.featured.href, pathname)
-                      }
-                    >
-                      <Link
-                        href={group.featured.href}
-                        target={group.featured.external ? "_blank" : undefined}
-                        rel={
-                          group.featured.external
-                            ? "noopener noreferrer"
-                            : undefined
-                        }
-                        aria-current={
-                          !group.featured.external &&
-                          isActiveHref(group.featured.href, pathname)
-                            ? "page"
-                            : undefined
-                        }
-                        className={cn(
-                          featuredLinkClass,
-                          !group.featured.external &&
-                            isActiveHref(group.featured.href, pathname) &&
-                            "underline decoration-2"
-                        )}
-                      >
-                        {group.featured.label} <span aria-hidden="true">↗</span>
-                      </Link>
-                    </NavigationMenu.Link>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-sm leading-5">
-                      {group.columnsEyebrow}
-                    </p>
-                    <div className="mt-2 flex flex-row gap-x-16">
-                      {group.columns.map((column, columnIndex) => (
-                        <ul key={columnIndex} className="list-none">
-                          {column.map((link) => renderPanelLink(link))}
-                        </ul>
-                      ))}
+                  <div className="grid grid-cols-[1fr_2fr] gap-x-16">
+                    <div>
+                      <p className="text-muted-foreground text-sm leading-5">
+                        {group.featuredEyebrow}
+                      </p>
+                      <NavigationMenu.Link asChild active={featuredActive}>
+                        <Link
+                          href={group.featured.href}
+                          target={
+                            group.featured.external ? "_blank" : undefined
+                          }
+                          rel={
+                            group.featured.external
+                              ? "noopener noreferrer"
+                              : undefined
+                          }
+                          aria-current={featuredActive ? "page" : undefined}
+                          className={cn(
+                            featuredLinkClass,
+                            featuredActive && "underline decoration-2"
+                          )}
+                        >
+                          {group.featured.label}{" "}
+                          <span aria-hidden="true">↗</span>
+                        </Link>
+                      </NavigationMenu.Link>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-sm leading-5">
+                        {group.columnsEyebrow}
+                      </p>
+                      <div className="mt-2 flex flex-row gap-x-16">
+                        {group.columns.map((column, columnIndex) => (
+                          <ul key={columnIndex} className="list-none">
+                            {column.map((link) => renderPanelLink(link))}
+                          </ul>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </NavigationMenu.Content>
-          </NavigationMenu.Item>
-        ))}
+              </NavigationMenu.Content>
+            </NavigationMenu.Item>
+          );
+        })}
         <NavigationMenu.Item>
           <NavigationMenu.Link asChild active={isPricingActive}>
             <Link
