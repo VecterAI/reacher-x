@@ -109,9 +109,11 @@ export function MarketingNavigation() {
   const pathname = usePathname();
   /** Which menu is open (Radix item value); null when all are closed. */
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const isUseCasesActive = MARKETING_USE_CASES.some((useCase) =>
-    isActiveHref(useCase.blogHref, pathname)
-  );
+  const isUseCasesActive =
+    isActiveHref(useCaseFeatured.href, pathname) ||
+    MARKETING_USE_CASES.some((useCase) =>
+      isActiveHref(useCase.blogHref, pathname)
+    );
   const isResourcesActive =
     isActiveHref("/blog", pathname) && !isUseCasesActive;
   const isPricingActive = isActiveHref("/pricing", pathname);
@@ -212,7 +214,13 @@ export function MarketingNavigation() {
                     <p className="text-muted-foreground text-sm leading-5">
                       {group.featuredEyebrow}
                     </p>
-                    <NavigationMenu.Link asChild>
+                    <NavigationMenu.Link
+                      asChild
+                      active={
+                        !group.featured.external &&
+                        isActiveHref(group.featured.href, pathname)
+                      }
+                    >
                       <Link
                         href={group.featured.href}
                         target={group.featured.external ? "_blank" : undefined}
@@ -221,10 +229,20 @@ export function MarketingNavigation() {
                             ? "noopener noreferrer"
                             : undefined
                         }
-                        className={featuredLinkClass}
+                        aria-current={
+                          !group.featured.external &&
+                          isActiveHref(group.featured.href, pathname)
+                            ? "page"
+                            : undefined
+                        }
+                        className={cn(
+                          featuredLinkClass,
+                          !group.featured.external &&
+                            isActiveHref(group.featured.href, pathname) &&
+                            "underline decoration-2"
+                        )}
                       >
-                        {group.featured.label}{" "}
-                        <span aria-hidden="true">↗</span>
+                        {group.featured.label} <span aria-hidden="true">↗</span>
                       </Link>
                     </NavigationMenu.Link>
                   </div>

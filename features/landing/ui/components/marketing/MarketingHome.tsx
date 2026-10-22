@@ -37,7 +37,9 @@ function HeroReveal() {
       {/* Two-line headline, same color and weight; pixel font accents the
       key words for an edgy touch (matches the "adapts" treatment). */}
       {reveal.map((line) => (
-        <span key={line} className="block">{line}</span>
+        <span key={line} className="block">
+          {line}
+        </span>
       ))}
       <span className="block font-medium">
         {"for "}

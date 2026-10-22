@@ -225,7 +225,9 @@ export function MarketingHero({
       )}
     >
       {eyebrow && (
-        <div className="text-foreground mb-12 text-sm font-medium">{eyebrow}</div>
+        <div className="text-foreground mb-12 text-sm font-medium">
+          {eyebrow}
+        </div>
       )}
       <div
         className={cn(

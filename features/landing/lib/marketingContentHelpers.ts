@@ -40,8 +40,7 @@ export const MARKETING_COPY = {
     connectionsHeading: "Not just for sales.",
     connections:
       "For founders, recruiters, creators — anyone building a network. Founders find customers and investors. Recruiters find candidates. Creators find collaborators. The problem is always the same: the right people.",
-    authenticityHeading:
-      "Everything in one tool. Nothing to learn.",
+    authenticityHeading: "Everything in one tool. Nothing to learn.",
     developersHeading: "Open source.",
     developers:
       "ReacherX is built on Convex and part of the Convex Open Source program. Use, modify, and self-host it under AGPL-3.0. Improvements stay open for everyone.",

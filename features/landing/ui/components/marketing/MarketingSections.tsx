@@ -3,10 +3,7 @@
 import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 
 import Link from "next/link";
-import {
-  ArrowOutwardIcon,
-  FireCheckIcon,
-} from "@/shared/ui/components/icons";
+import { ArrowOutwardIcon, FireCheckIcon } from "@/shared/ui/components/icons";
 import { LandingPrimaryCta } from "../LandingPrimaryCta";
 import { marketingButton as buttonVariants } from "./MarketingLayout";
 import {

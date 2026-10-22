@@ -68,7 +68,7 @@ function PlansCopy() {
         <span key={index}>
           {index > 0 ? (
             <span>
-              <span className="font-mono text-muted-foreground">@</span>{" "}
+              <span className="text-muted-foreground font-mono">@</span>{" "}
             </span>
           ) : null}
           {part}
@@ -83,7 +83,7 @@ function MarketingFeatureTitle({ children }: { children: ReactNode }) {
   // features render the app's own icon inline at text size, right before
   // the word it describes. Mask-based icons need fill-current to show.
   return (
-    <span className="[&_svg]:mr-[0.18em] [&_svg]:inline [&_svg]:size-[0.72em] [&_svg]:shrink-0 [&_svg]:align-[-0.06em] [&_svg]:fill-current">
+    <span className="[&_svg]:mr-[0.18em] [&_svg]:inline [&_svg]:size-[0.72em] [&_svg]:shrink-0 [&_svg]:fill-current [&_svg]:align-[-0.06em]">
       {children}
     </span>
   );
