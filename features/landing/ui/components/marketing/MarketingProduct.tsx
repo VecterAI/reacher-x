@@ -1,4 +1,5 @@
 import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   marketingButton as buttonVariants,
@@ -10,8 +11,12 @@ import { MarketingDemo } from "./MarketingDemo";
 import { MarketingCapabilityCarousel } from "./MarketingCapabilityCarousel";
 import {
   ArrowOutwardIcon,
+  CognitionIcon,
   FilledLinkedinIcon,
   FilledTwitterIcon,
+  ImageIcon,
+  MicIcon,
+  VideoLibraryIcon,
 } from "@/shared/ui/components/icons";
 
 function PlatformSearchRow() {
@@ -73,6 +78,16 @@ function PlansCopy() {
   );
 }
 
+function MarketingFeatureTitle({ children }: { children: ReactNode }) {
+  // MarketingFeature titles accept ReactNode; headings that name app
+  // features render the app's own icon inline at text size.
+  return (
+    <span className="[&_svg]:mr-[0.18em] [&_svg]:inline [&_svg]:size-[0.72em] [&_svg]:shrink-0 [&_svg]:align-[-0.06em]">
+      {children}
+    </span>
+  );
+}
+
 function MarketingCapabilities() {
   return (
     <>
@@ -113,7 +128,13 @@ function MarketingCapabilities() {
       </MarketingFeature>
       <MarketingFeature
         reverse
-        title="Send voice notes, images, and video."
+        title={
+          <MarketingFeatureTitle>
+            Send <MicIcon aria-hidden="true" /> voice notes,{" "}
+            <ImageIcon aria-hidden="true" /> images, and{" "}
+            <VideoLibraryIcon aria-hidden="true" /> video.
+          </MarketingFeatureTitle>
+        }
         demo={
           <MarketingDemo
             scenario="outreach-with-images-and-video"
@@ -130,7 +151,11 @@ function MarketingCapabilities() {
         </CapabilityLink>
       </MarketingFeature>
       <MarketingFeature
-        title="△ Agent, with a memory."
+        title={
+          <MarketingFeatureTitle>
+            <CognitionIcon aria-hidden="true" /> △ Agent, with a memory.
+          </MarketingFeatureTitle>
+        }
         demo={
           <MarketingDemo
             scenario="teach-reacherx-what-you-want"

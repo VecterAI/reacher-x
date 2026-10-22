@@ -12,7 +12,11 @@ import {
   ThumbUpIcon,
   VideoLibraryIcon,
 } from "@/shared/ui/components/icons";
-import { getInlineIconSegments, type InlineIconTerm } from "./MarketingLayout";
+import {
+  AGENT_TERMS,
+  getInlineIconSegments,
+  type InlineIconTerm,
+} from "./MarketingLayout";
 import "./marketing-scroll-fill.css";
 
 /**
@@ -30,6 +34,7 @@ const NARRATIVE_TERMS: InlineIconTerm[] = [
   { term: "View profiles", Icon: PersonIcon },
   { term: "like", Icon: ThumbUpIcon },
   { term: "comment", Icon: ForumIcon },
+  ...AGENT_TERMS,
 ];
 
 /** Characters ahead of the frontier that wear the accent color. */
@@ -52,7 +57,7 @@ function renderParagraph(paragraph: string) {
             className="scroll-fill-term whitespace-nowrap"
           >
             <segment.Icon className="scroll-fill-glyph" aria-hidden="true" />
-            {segment.term}
+            {segment.display}
           </span>
         );
       }

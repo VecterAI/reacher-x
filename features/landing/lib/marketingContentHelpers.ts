@@ -4,9 +4,9 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 export const MARKETING_COPY = {
   home: {
     reveal: [],
-    revealLine: "The complete GTM stack.",
+    revealLine: "One tool. The whole GTM stack.",
     /** Plain-text form of the hero for the OG image and Markdown title. */
-    headline: "The complete GTM stack.",
+    headline: "One tool. The whole GTM stack.",
     /** Hero sub text; rendered with inline brand logos and repo link. */
     tagline:
       "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. One tool, for the rest of us. Open source.",
