@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { buttonVariants } from "@/shared/ui/components/Button";
 import {
   ApolloIcon,
+  ChangeHistoryIcon,
   ClayIcon,
   FilledLinkedinIcon,
   FilledTwitterIcon,
@@ -37,6 +38,9 @@ export function highlightTerms(
 export type InlineIconTerm = {
   term: string;
   Icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  /** Text shown after the icon; defaults to `term`. Use when the copy's
+   * glyph (e.g. "△ Agent") is replaced by the icon itself. */
+  display?: string;
   /** Badge chip tint classes; omitted when the logo is full-bleed colored. */
   bg?: string;
   fg?: string;
@@ -47,6 +51,7 @@ export type InlineIconSegment =
   | {
       kind: "icon";
       term: string;
+      display: string;
       Icon: InlineIconTerm["Icon"];
       bg?: string;
       fg?: string;
@@ -69,6 +74,11 @@ const PLATFORM_TERMS: InlineIconTerm[] = [
   },
   { term: "Clay", Icon: ClayIcon },
   { term: "Apollo", Icon: ApolloIcon },
+];
+
+/** "△ Agent" copy renders as the app's agent glyph + "Agent". */
+export const AGENT_TERMS: InlineIconTerm[] = [
+  { term: "△ Agent", Icon: ChangeHistoryIcon, display: "Agent" },
 ];
 
 /**
@@ -96,6 +106,7 @@ export function getInlineIconSegments(
     segments.push({
       kind: "icon",
       term: match.term,
+      display: match.display ?? match.term,
       Icon: match.Icon,
       bg: match.bg,
       fg: match.fg,
@@ -134,7 +145,7 @@ export function inlinePlatformIcons(
             aria-hidden="true"
           />
         )}
-        {segment.term}
+        {segment.display}
       </span>
     );
   });
@@ -214,7 +225,9 @@ export function MarketingHero({
       )}
     >
       {eyebrow && (
-        <div className="text-muted-foreground mb-12 text-sm">{eyebrow}</div>
+        <div className="text-foreground mb-12 text-sm font-medium">
+          {eyebrow}
+        </div>
       )}
       <div
         className={cn(

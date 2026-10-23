@@ -3,15 +3,16 @@ import type { BlogDemoId } from "@/features/blog/lib/blogDemoHelpers";
 /** Editorial copy shared by the visible pages and their Markdown representations. */
 export const MARKETING_COPY = {
   home: {
-    reveal: [],
-    revealLine: "Clay for non-salespeople.",
+    reveal: ["The Go-To-Market stack,"],
+    revealLine: "for everyone.",
     /** Plain-text form of the hero for the OG image and Markdown title. */
-    headline: "Clay for non-salespeople.",
-    /** Hero sub text; rendered with inline brand logos and repo link. */
+    headline: "The Go-To-Market stack, for everyone.",
+    /** Hero sub text; rendered with inline brand logos and repo link.
+     * Ends without a period so the "Open source" link closes the line. */
     tagline:
-      "Clay and Apollo are built for salespeople. ReacherX is built by non-salespeople, for non-salespeople. Open source.",
+      "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. Prospecting, CRM, outreach, and social in one tool. Open source",
     description:
-      "Say who you need. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who fit, and helps you turn strangers into relationships.",
+      "Describe who you want to reach. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who match, and helps you start real conversations.",
     guaranteeNote: "30-day money-back guarantee.",
     setupTimeNote: "Set up in under 5 minutes.",
   },
@@ -36,11 +37,10 @@ export const MARKETING_COPY = {
     finishHeading: "Not for you? Full refund in 30 days.",
   },
   story: {
-    connectionsHeading: "Use it for any goal that needs people.",
+    connectionsHeading: "Not just for sales.",
     connections:
       "For founders, recruiters, creators — anyone building a network. Founders find customers and investors. Recruiters find candidates. Creators find collaborators. The problem is always the same: the right people.",
-    authenticityHeading:
-      "Your network is your net worth. Build it with △ Agent.",
+    authenticityHeading: "Everything in one tool. Nothing to learn.",
     developersHeading: "Open source.",
     developers:
       "ReacherX is built on Convex and part of the Convex Open Source program. Use, modify, and self-host it under AGPL-3.0. Improvements stay open for everyone.",
@@ -50,7 +50,7 @@ export const MARKETING_COPY = {
     discovery:
       "There is no stale contact database to buy. ReacherX searches X/Twitter and LinkedIn in real time, around the clock, and researches every person it finds before you see them.",
     plans:
-      "△ Agent plans how to reach each person and how to keep the conversation going, with every draft ready for your review. Mention several people in one message with @ tags.",
+      "In a message, @ people and △ Agent drafts a plan for each: their profile, their recent work, the angle that fits. Review before anything goes out.",
     messages: "Send voice notes, images, and video inside your conversations.",
     memory:
       "Tell △ Agent how you write and who you look for, once. It applies your preferences to every later search and message.",

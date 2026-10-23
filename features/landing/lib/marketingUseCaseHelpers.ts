@@ -15,7 +15,7 @@ type UseCaseStory = {
 
 const STORIES: Record<string, UseCaseStory> = {
   customer_prospecting: {
-    tabLabel: "Getting customers",
+    tabLabel: "Sales",
     heading: "Find the people who need what you’re building.",
     navigationDescription: "People discussing the problem you solve.",
     explanation:
@@ -31,7 +31,7 @@ const STORIES: Record<string, UseCaseStory> = {
     guide: "find-potential-customers",
   },
   recruiting: {
-    tabLabel: "Hiring",
+    tabLabel: "Recruiting",
     heading: "Meet your next teammate.",
     navigationDescription: "People with experience your team needs.",
     explanation:

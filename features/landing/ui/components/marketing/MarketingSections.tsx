@@ -3,7 +3,7 @@
 import { MARKETING_COPY } from "@/features/landing/lib/marketingContentHelpers";
 
 import Link from "next/link";
-import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
+import { ArrowOutwardIcon, FireCheckIcon } from "@/shared/ui/components/icons";
 import { LandingPrimaryCta } from "../LandingPrimaryCta";
 import { marketingButton as buttonVariants } from "./MarketingLayout";
 import {
@@ -20,7 +20,7 @@ export function MarketingWorkflow() {
     <>
       <MarketingFeature
         id="how-it-works"
-        title="Say who you're looking for."
+        title="Describe the people you want to reach."
         demo={
           <MarketingDemo
             scenario="find-potential-customers"
@@ -43,7 +43,16 @@ export function MarketingWorkflow() {
       </MarketingFeature>
       <MarketingFeature
         reverse
-        title="See who fits, and why."
+        title={
+          <>
+            See every{" "}
+            <FireCheckIcon
+              className="inline size-[0.72em] align-[-0.06em]"
+              aria-hidden="true"
+            />{" "}
+            match, and why.
+          </>
+        }
         demo={
           <MarketingDemo
             scenario="find-potential-customers"
@@ -65,7 +74,7 @@ export function MarketingWorkflow() {
         </Link>
       </MarketingFeature>
       <MarketingFeature
-        title="Reach out like a human."
+        title="Outreach that sounds like you."
         demo={
           <MarketingDemo
             scenario="find-potential-customers"

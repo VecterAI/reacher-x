@@ -31,15 +31,21 @@ import { MarketingUseCaseTabs } from "./MarketingUseCaseTabs";
 import { MarketingBlog } from "./MarketingBlog";
 
 function HeroReveal() {
-  const { reveal, revealLine } = MARKETING_COPY.home;
+  const { reveal } = MARKETING_COPY.home;
   return (
     <>
+      {/* Two-line headline, same color and weight; pixel font accents the
+      key words for an edgy touch (matches the "adapts" treatment). */}
       {reveal.map((line) => (
-        <span key={line} className="text-muted-foreground block">
+        <span key={line} className="block">
           {line}
         </span>
       ))}
-      <span className="block font-medium">{revealLine}</span>
+      <span className="block font-medium">
+        {"for "}
+        <span className="font-pixel-square">everyone</span>
+        {"."}
+      </span>
     </>
   );
 }
@@ -82,7 +88,7 @@ export function MarketingHome() {
       <MarketingHero
         className="pt-8 lg:pt-12"
         eyebrow={
-          <p className="flex flex-wrap items-center justify-center gap-2 text-center">
+          <p className="text-foreground flex flex-wrap items-center justify-center gap-2 text-center text-sm font-medium">
             <span>
               {highlightTerms(MARKETING_COPY.home.guaranteeNote, [
                 "30-day money-back guarantee",
