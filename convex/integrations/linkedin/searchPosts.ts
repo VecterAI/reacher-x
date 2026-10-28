@@ -25,6 +25,7 @@ import {
   linkedinTimeFilterValidator,
 } from "../../validators";
 import { requestLinkdApiData } from "./linkdapiClient";
+import { isProviderCircuitOpenError } from "../../lib/providerReliability";
 const linkedInSearchPostsLogger = logger.withScope("LinkedInSearchPosts");
 
 // ============================================================================
@@ -291,6 +292,11 @@ async function collectPaginatedPostResults(
         }
       );
       const pageResult = await waitForPostSearchResult(ctx, runId);
+      // A circuit-open failure returns as a value now; keep the results
+      // already collected instead of overwriting them with the failure.
+      if (!pageResult.success) {
+        break;
+      }
 
       posts.push(...pageResult.posts);
       lastResult = pageResult;
@@ -337,27 +343,46 @@ export const searchInternal = internalAction({
     const authorJobTitle = normalizeLinkedInPostAuthorJobTitle(
       args.authorJobTitle
     );
-    const data = await requestLinkdApiData<ApiResponse["data"]>(ctx, {
-      path: "/api/v1/search/posts",
-      query: {
-        keyword: args.query,
-        start: args.start,
-        sortBy: args.sortBy,
-        datePosted: args.datePosted,
-        authorJobTitle,
-      },
-      consumer: `linkedin.searchPosts:${args.searchMode ?? "plain_relevance"}:${args.query}`,
-    });
+    try {
+      const data = await requestLinkdApiData<ApiResponse["data"]>(ctx, {
+        path: "/api/v1/search/posts",
+        query: {
+          keyword: args.query,
+          start: args.start,
+          sortBy: args.sortBy,
+          datePosted: args.datePosted,
+          authorJobTitle,
+        },
+        consumer: `linkedin.searchPosts:${args.searchMode ?? "plain_relevance"}:${args.query}`,
+      });
 
-    return {
-      success: true,
-      posts: data.posts ?? [],
-      total: data.total,
-      start: data.start,
-      count: data.count,
-      hasMore: data.hasMore,
-      searchMode: args.searchMode,
-    };
+      return {
+        success: true,
+        posts: data.posts ?? [],
+        total: data.total,
+        start: data.start,
+        count: data.count,
+        hasMore: data.hasMore,
+        searchMode: args.searchMode,
+      };
+    } catch (error) {
+      // An open circuit is deterministic until the provider recovers, so
+      // return a failure instead of throwing: the action retrier would
+      // otherwise burn its whole retry budget against the open circuit.
+      if (isProviderCircuitOpenError(error)) {
+        return {
+          success: false,
+          posts: [],
+          total: 0,
+          start: 0,
+          count: 0,
+          hasMore: false,
+          searchMode: args.searchMode,
+          error: "LinkedIn search is temporarily unavailable",
+        };
+      }
+      throw error;
+    }
   },
 });
 

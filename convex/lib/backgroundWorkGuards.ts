@@ -20,6 +20,7 @@ import { internalQuery } from "./functionBuilders";
 import type { QueryCtx } from "../_generated/server";
 import { isWorkspaceAutomationActive } from "./workspaceSystem";
 import { checkProspectLimit } from "./prospectingHelpers";
+import { isProviderCircuitStateUsable } from "./providerReliability";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 export const backgroundWorkBlockReasonValidator = v.union(
@@ -34,12 +35,6 @@ function getProviderForPlatform(
   return platform === "twitter" ? "socialapi" : "linkdapi";
 }
 
-/**
- * Mirror of the circuit state check in
- * `providerReliability.acquireProviderCircuitPermission`: a closed circuit —
- * or an open/half-open one whose probe window has arrived — counts as
- * usable, so gating here never starves the circuit breaker's own probes.
- */
 async function isProviderCircuitUsable(
   ctx: QueryCtx,
   platform: "twitter" | "linkedin"
@@ -49,19 +44,7 @@ async function isProviderCircuitUsable(
     .query("providerCircuitStates")
     .withIndex("by_provider", (q) => q.eq("provider", provider))
     .first();
-  if (!state || state.status === "closed") {
-    return true;
-  }
-  const now = getCurrentUTCTimestamp();
-  const probeAvailable =
-    state.status === "open" &&
-    typeof state.retryAfterAt === "number" &&
-    state.retryAfterAt <= now;
-  const probeLeaseExpired =
-    state.status === "half_open" &&
-    typeof state.probeLeaseUntil === "number" &&
-    state.probeLeaseUntil <= now;
-  return probeAvailable || probeLeaseExpired;
+  return isProviderCircuitStateUsable(state, getCurrentUTCTimestamp());
 }
 
 /**

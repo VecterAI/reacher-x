@@ -19,6 +19,7 @@ import {
   type LinkedInPeopleSearchAttempt,
 } from "../../lib/linkedinSearchHelpers";
 import { requestLinkdApiData } from "./linkdapiClient";
+import { isProviderCircuitOpenError } from "../../lib/providerReliability";
 
 export interface LinkedInPerson {
   urn: string;
@@ -228,6 +229,11 @@ async function collectPaginatedPeopleResults(
         }
       );
       const pageResult = await waitForPeopleSearchResult(ctx, runId);
+      // A circuit-open failure returns as a value now; keep the results
+      // already collected instead of overwriting them with the failure.
+      if (!pageResult.success) {
+        break;
+      }
 
       people.push(...pageResult.people);
       lastResult = pageResult;
@@ -280,26 +286,44 @@ export const searchInternal = internalAction({
     profileLanguage: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<InternalSearchPeopleResult> => {
-    const data = await requestLinkdApiData<ApiResponse["data"]>(ctx, {
-      path: "/api/v1/search/people",
-      query: {
-        [args.searchMode === "title" ? "title" : "keyword"]: args.query,
-        geoUrn: args.geoUrn,
-        profileLanguage: args.profileLanguage,
-        count: args.count ?? LINKEDIN_PEOPLE_DEFAULT_COUNT,
-        start: args.start,
-      },
-      consumer: `linkedin.searchPeople:${args.searchMode}:${args.query}`,
-    });
+    try {
+      const data = await requestLinkdApiData<ApiResponse["data"]>(ctx, {
+        path: "/api/v1/search/people",
+        query: {
+          [args.searchMode === "title" ? "title" : "keyword"]: args.query,
+          geoUrn: args.geoUrn,
+          profileLanguage: args.profileLanguage,
+          count: args.count ?? LINKEDIN_PEOPLE_DEFAULT_COUNT,
+          start: args.start,
+        },
+        consumer: `linkedin.searchPeople:${args.searchMode}:${args.query}`,
+      });
 
-    return {
-      success: true,
-      people: data.people ?? [],
-      total: data.total,
-      start: data.start,
-      hasMore: data.hasMore,
-      searchMode: args.searchMode,
-    };
+      return {
+        success: true,
+        people: data.people ?? [],
+        total: data.total,
+        start: data.start,
+        hasMore: data.hasMore,
+        searchMode: args.searchMode,
+      };
+    } catch (error) {
+      // An open circuit is deterministic until the provider recovers, so
+      // return a failure instead of throwing: the action retrier would
+      // otherwise burn its whole retry budget against the open circuit.
+      if (isProviderCircuitOpenError(error)) {
+        return {
+          success: false,
+          people: [],
+          total: 0,
+          start: 0,
+          hasMore: false,
+          searchMode: args.searchMode,
+          error: "LinkedIn search is temporarily unavailable",
+        };
+      }
+      throw error;
+    }
   },
 });
 
