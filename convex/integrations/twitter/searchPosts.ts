@@ -14,6 +14,7 @@ import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import type { RunId } from "@convex-dev/action-retrier";
 import { fetchSocialApi } from "../../lib/socialApiFetch";
+import { isProviderCircuitOpenError } from "../../lib/providerReliability";
 import {
   twitterProspectingQueryPlanValidator,
   twitterSearchTypeValidator,
@@ -226,19 +227,35 @@ export const searchInternal = internalAction({
 
     const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
 
-    const response = await fetchSocialApi(
-      ctx,
-      "twitter.searchPosts.searchInternal",
-      url,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: "application/json",
+    let response: Response;
+    try {
+      response = await fetchSocialApi(
+        ctx,
+        "twitter.searchPosts.searchInternal",
+        url,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/json",
+          },
         },
-      },
-      args.workspaceId ? { workspaceId: args.workspaceId } : undefined
-    );
+        args.workspaceId ? { workspaceId: args.workspaceId } : undefined
+      );
+    } catch (error) {
+      // An open circuit is deterministic until the provider recovers, so
+      // return a failure instead of throwing: the action retrier would
+      // otherwise burn its whole retry budget against the open circuit.
+      if (isProviderCircuitOpenError(error)) {
+        return {
+          success: false,
+          posts: [],
+          hasMore: false,
+          error: "X search is temporarily unavailable",
+        };
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       const errorText = await response.text();

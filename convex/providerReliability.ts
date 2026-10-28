@@ -6,7 +6,10 @@ import {
   providerRequestOutcomeValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
-import { hasProviderHealthEvidence } from "./lib/providerReliability";
+import {
+  hasProviderHealthEvidence,
+  isProviderCircuitStateUsable,
+} from "./lib/providerReliability";
 import { getSystemRuntimeConfig } from "./lib/runtimeConfigHelpers";
 
 export const acquireProviderCircuitPermission = internalMutation({
@@ -206,5 +209,33 @@ export const listProviderCircuitStatesInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
     return await ctx.db.query("providerCircuitStates").collect();
+  },
+});
+
+/**
+ * Whether requests for one provider may proceed right now. Used by the
+ * prospecting workflow to skip a provider's discovery leg while its circuit
+ * is open instead of grinding retries against a deterministic block. A due
+ * probe window counts as usable so the circuit still gets probed.
+ */
+export const checkProviderCircuitUsabilityInternal = internalQuery({
+  args: {
+    provider: providerNameValidator,
+  },
+  returns: v.object({
+    usable: v.boolean(),
+    status: v.optional(v.string()),
+    reason: v.optional(providerCircuitReasonValidator),
+  }),
+  handler: async (ctx, { provider }) => {
+    const state = await ctx.db
+      .query("providerCircuitStates")
+      .withIndex("by_provider", (q) => q.eq("provider", provider))
+      .first();
+    return {
+      usable: isProviderCircuitStateUsable(state, getCurrentUTCTimestamp()),
+      status: state?.status,
+      reason: state?.reason,
+    };
   },
 });

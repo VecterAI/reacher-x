@@ -504,6 +504,49 @@ export const prospectingWorkflow = workflow.define({
           );
 
           if (twitterQueue.length > 0) {
+            // Skip the whole leg while the X provider circuit is unusable:
+            // retrying against an open circuit is deterministic failure that
+            // would stretch the shared discovery cycle. A due probe window
+            // counts as usable so the circuit still gets probed and can
+            // self-heal.
+            const socialApiCircuit = await step.runQuery(
+              internal.providerReliability
+                .checkProviderCircuitUsabilityInternal,
+              { provider: "socialapi" }
+            );
+            if (!socialApiCircuit.usable) {
+              onboardingIssueRaised = true;
+              searchIssueRaised = true;
+              await step.runMutation(
+                internal.workspaces.setOnboardingIssueStateInternal,
+                {
+                  workspaceId: args.workspaceId,
+                  statusCode: "search_failed",
+                  source: "search",
+                }
+              );
+              prospectingWorkflowLogger.warn(
+                "Twitter search skipped: provider circuit open",
+                {
+                  workspaceId: String(args.workspaceId),
+                  workspaceName: workspace.name,
+                  circuitReason: socialApiCircuit.reason,
+                }
+              );
+              return {
+                platformFailed: true,
+                saved: 0,
+                queryStats: [] as Array<{
+                  query: string;
+                  postsFound: number;
+                  success: boolean;
+                  error?: string;
+                }>,
+                posts: [] as TwitterPost[],
+                matchedQueriesByPostId: {} as Record<string, string[]>,
+              };
+            }
+
             const typedTwitterQueue: TwitterQueueItem[] = twitterQueue.map(
               (query) => ({
                 id: query.id,
@@ -610,6 +653,54 @@ export const prospectingWorkflow = workflow.define({
           ]);
 
           if (linkedInPostQueue.length > 0 || linkedInPeopleQueue.length > 0) {
+            // Skip the whole leg while the LinkedIn provider circuit is
+            // unusable: retrying against an open circuit is deterministic
+            // failure that would stretch the shared discovery cycle (and
+            // starve the X leg of turns). A due probe window counts as
+            // usable so the circuit still gets probed and can self-heal.
+            const linkdApiCircuit = await step.runQuery(
+              internal.providerReliability
+                .checkProviderCircuitUsabilityInternal,
+              { provider: "linkdapi" }
+            );
+            if (!linkdApiCircuit.usable) {
+              onboardingIssueRaised = true;
+              searchIssueRaised = true;
+              await step.runMutation(
+                internal.workspaces.setOnboardingIssueStateInternal,
+                {
+                  workspaceId: args.workspaceId,
+                  statusCode: "search_failed",
+                  source: "search",
+                }
+              );
+              prospectingWorkflowLogger.warn(
+                "LinkedIn search skipped: provider circuit open",
+                {
+                  workspaceId: String(args.workspaceId),
+                  workspaceName: workspace.name,
+                  circuitReason: linkdApiCircuit.reason,
+                }
+              );
+              return {
+                success: false,
+                error: "LinkedIn search is temporarily unavailable",
+                saved: 0,
+                postQueryStats: [] as Array<{
+                  query: string;
+                  postsFound: number;
+                  success: boolean;
+                  error?: string;
+                }>,
+                peopleQueryStats: [] as Array<{
+                  query: string;
+                  postsFound: number;
+                  success: boolean;
+                  error?: string;
+                }>,
+              };
+            }
+
             const result = await step.runAction(
               internal.workflows.prospecting.searchLinkedInInternal,
               {

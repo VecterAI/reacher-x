@@ -104,6 +104,45 @@ export class ProviderCircuitOpenError extends Error {
   }
 }
 
+export function isProviderCircuitOpenError(error: unknown): boolean {
+  if (error instanceof ProviderCircuitOpenError) {
+    return true;
+  }
+  // Errors crossing a Convex function boundary lose their class, so also
+  // recognize the serialized name.
+  return error instanceof Error && error.name === "ProviderCircuitOpenError";
+}
+
+export type ProviderCircuitStateSnapshot = {
+  status?: "closed" | "open" | "half_open";
+  retryAfterAt?: number;
+  probeLeaseUntil?: number;
+};
+
+/**
+ * Whether provider requests may proceed right now. Mirrors the gate in
+ * `acquireProviderCircuitPermission`: a due probe window (retry time passed
+ * or probe lease expired) counts as usable so callers keep feeding the
+ * circuit breaker its probe instead of starving it.
+ */
+export function isProviderCircuitStateUsable(
+  state: ProviderCircuitStateSnapshot | undefined | null,
+  now: number
+): boolean {
+  if (!state || state.status === "closed" || state.status === undefined) {
+    return true;
+  }
+  const probeAvailable =
+    state.status === "open" &&
+    typeof state.retryAfterAt === "number" &&
+    state.retryAfterAt <= now;
+  const probeLeaseExpired =
+    state.status === "half_open" &&
+    typeof state.probeLeaseUntil === "number" &&
+    state.probeLeaseUntil <= now;
+  return probeAvailable || probeLeaseExpired;
+}
+
 export function classifyProviderFailure(
   error: unknown,
   httpStatus?: number
