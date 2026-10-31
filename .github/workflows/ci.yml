@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, lint, format, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
+      - name: Lint
+        run: pnpm lint:strict
+
+      - name: Prettier check on changed files
+        run: |
+          files=$(git diff --name-only --diff-filter=ACMR origin/"${{ github.event.pull_request.base.ref }}"...HEAD -- '*.md' '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.json' '*.css' '*.yml' '*.yaml')
+          if [ -n "$files" ]; then
+            git diff -z --name-only --diff-filter=ACMR origin/"${{ github.event.pull_request.base.ref }}"...HEAD -- '*.md' '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.json' '*.css' '*.yml' '*.yaml' | xargs -0 pnpm exec prettier --check
+          else
+            echo "No formattable files changed."
+          fi
+
+      - name: Convex tests
+        run: pnpm test:convex

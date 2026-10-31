@@ -47,14 +47,24 @@ Small bug fixes, typo fixes, and focused polish PRs are fine without a long pre-
 
 Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned.
 
+Contributors do not have push access to the main repo, so start by forking it on GitHub. Clone your fork and add the main repo as a second remote so you can stay in sync:
+
 ```bash
-git clone https://github.com/VecterAI/reacher-x.git
+# 1. Fork https://github.com/VecterAI/reacher-x on GitHub, then clone your fork:
+git clone https://github.com/YOUR-USERNAME/reacher-x.git
 cd reacher-x
+
+# 2. Add the main repo as upstream:
+git remote add upstream https://github.com/VecterAI/reacher-x.git
+git fetch upstream
+
 corepack enable pnpm
 pnpm install
 cp .env.example .env.local
 npx convex dev --once
 ```
+
+If you are self-hosting instead of contributing, the direct clone in the [README](./README.md#self-hosting) is the right way.
 
 After the one-time Convex validation succeeds, run the development processes in separate terminals:
 
@@ -177,6 +187,43 @@ For features, roadmap items, integrations, or architectural work:
 - open an issue, and
 - message me on Discord or X/Twitter so we can brainstorm before implementation
 
+## Submitting changes
+
+Work on a branch, never directly on `main`:
+
+```bash
+# start from the latest main
+git fetch upstream
+git switch main
+git merge --ff-only upstream/main
+
+# create a branch
+git switch -c fix/short-description
+
+# ...make your changes and commit...
+```
+
+Push the branch to your fork and open a pull request against `VecterAI/reacher-x:main`:
+
+```bash
+git push origin fix/short-description
+```
+
+GitHub shows a "Compare & pull request" button after you push, or open one from the [pull requests page](https://github.com/VecterAI/reacher-x/pulls). Use the PR template that appears when you open it.
+
+To keep your fork up to date over time:
+
+```bash
+git fetch upstream
+git switch main
+git merge --ff-only upstream/main
+git push origin main
+```
+
+Keep one PR focused on one change. If `main` has moved and your PR conflicts, rebase your branch on `upstream/main`, then run `git push --force-with-lease origin fix/short-description`.
+
+CI runs on every pull request and checks types, lint, formatting on the changed files, and the Convex tests. Run the same checks locally before opening the PR so it goes green on the first push.
+
 ## PR checklist
 
 Before opening a PR:
@@ -198,6 +245,8 @@ pnpm build
 ```
 
 Run the focused test commands that cover your change as well. Keep editor/LSP diagnostics clean for every touched code file.
+
+CI must pass on your PR before it can be merged.
 
 ## Where to ask questions
 

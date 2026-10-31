@@ -23,9 +23,11 @@ If this changes UI, include before or after screenshots or a short recording.
 
 List what you ran locally.
 
-- [ ] `pnpm lint`
+- [ ] `pnpm exec tsc --noEmit`
+- [ ] `pnpm lint:strict`
+- [ ] `pnpm exec prettier --check` on the files you changed
+- [ ] `pnpm test:convex`
 - [ ] `pnpm build`
-- [ ] `pnpm test:targeted`
 - [ ] Manual verification
 
 ## Environment Or Schema Impact
