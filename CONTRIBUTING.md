@@ -217,6 +217,7 @@ To keep your fork up to date over time:
 git fetch upstream
 git switch main
 git merge --ff-only upstream/main
+git push origin main
 ```
 
 Keep one PR focused on one change. If `main` has moved and your PR conflicts, rebase your branch on `upstream/main`, then run `git push --force-with-lease origin fix/short-description`.

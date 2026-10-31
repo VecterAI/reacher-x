@@ -34,9 +34,9 @@ jobs:
 
       - name: Prettier check on changed files
         run: |
-          files=$(git diff --name-only --diff-filter=ACM origin/"${{ github.event.pull_request.base.ref }}"...HEAD -- '*.md' '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.json' '*.css' '*.yml' '*.yaml' || true)
+          files=$(git diff --name-only --diff-filter=ACMR origin/"${{ github.event.pull_request.base.ref }}"...HEAD -- '*.md' '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.json' '*.css' '*.yml' '*.yaml')
           if [ -n "$files" ]; then
-            echo "$files" | xargs pnpm exec prettier --check
+            git diff -z --name-only --diff-filter=ACMR origin/"${{ github.event.pull_request.base.ref }}"...HEAD -- '*.md' '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.json' '*.css' '*.yml' '*.yaml' | xargs -0 pnpm exec prettier --check
           else
             echo "No formattable files changed."
           fi
