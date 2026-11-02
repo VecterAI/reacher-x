@@ -302,6 +302,31 @@ export function normalizeMentionEntitySearchResult(
   };
 }
 
+/**
+ * One short line for showing a mention. Display only: what the agent reads is
+ * resolved from the entity's id when the message is sent.
+ */
+export function compactMentionText(text: string, maxLength = 48) {
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= maxLength) {
+    return singleLine;
+  }
+
+  return `${singleLine.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+/** A task's picker row and its short @mention; never the whole draft. */
+export function buildTaskMentionDisplay(args: {
+  order: number;
+  summary: string;
+  prospectLabel: string;
+}) {
+  return {
+    label: `Task ${args.order}: ${compactMentionText(args.summary, 80)}`,
+    mentionText: `Task ${args.order}: ${args.prospectLabel}`,
+  };
+}
+
 export function buildMentionEntityReferenceLine(
   entity: MentionEntitySearchResult
 ): string {

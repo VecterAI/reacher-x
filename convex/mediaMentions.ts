@@ -15,9 +15,10 @@ import {
   buildPostMentionEntity,
   buildTwitterReplyMentionEntity,
 } from "../shared/lib/mentions/postMentions";
-import type {
-  MentionEntityKind,
-  MentionEntitySearchResult,
+import {
+  buildTaskMentionDisplay,
+  type MentionEntityKind,
+  type MentionEntitySearchResult,
 } from "../shared/lib/mentions/mentionEntities";
 import {
   mentionEntityKindValidator,
@@ -611,8 +612,11 @@ export const searchMentionEntities = query({
                 id: `task:${String(task._id)}`,
                 entityId: String(task._id),
                 kind: "task" as const,
-                label: `Task ${task.order}: ${taskSummary}`,
-                mentionText: `Task ${task.order}: ${taskSummary}`,
+                ...buildTaskMentionDisplay({
+                  order: task.order,
+                  summary: taskSummary,
+                  prospectLabel,
+                }),
                 secondaryLabel: `${task.type} task • ${prospectLabel}`,
                 avatarUrl: prospectAvatarUrl,
                 verified: false,

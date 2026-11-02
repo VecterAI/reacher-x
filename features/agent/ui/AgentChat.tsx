@@ -106,7 +106,10 @@ import {
 } from "@/shared/lib/json-render/agentArtifacts";
 import { logger } from "@/shared/lib/logger";
 import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
-import type { MentionEntitySearchResult } from "@/shared/lib/mentions/mentionEntities";
+import {
+  compactMentionText,
+  type MentionEntitySearchResult,
+} from "@/shared/lib/mentions/mentionEntities";
 import {
   normalizeAgentMessageContextMetadata,
   parseLegacyAgentMessageContent,
@@ -1523,8 +1526,9 @@ function HighlightTaggedText({
       <span
         key={`${tokenStart}-${token}`}
         className="text-primary-foreground/70 font-mono"
+        title={token}
       >
-        {token}
+        {compactMentionText(token)}
       </span>
     );
 
@@ -1569,8 +1573,9 @@ function UserMessageContextContent({
             <span
               key={entity.id}
               className="text-primary-foreground/70 font-mono"
+              title={entity.mentionText.trim()}
             >
-              @{entity.mentionText.trim()}
+              @{compactMentionText(entity.mentionText)}
             </span>
           ))}
         </div>
