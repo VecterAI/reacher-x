@@ -530,6 +530,10 @@ export const searchMentionEntities = query({
           ]
         : [];
 
+    // Task rows show a short draft preview, but the whole draft stays
+    // searchable: extra haystack per entity id, never returned to the client.
+    const extraSearchTextByEntityId = new Map<string, string>();
+
     const mentionEntities: MentionEntitySearchResult[] = [
       ...(shouldIncludeProspects
         ? prospects.map((prospect) => {
@@ -608,8 +612,10 @@ export const searchMentionEntities = query({
             const taskEntries = tasks.map((task) => {
               const taskSummary =
                 task.content?.trim() || task.description.trim();
+              const taskEntityId = `task:${String(task._id)}`;
+              extraSearchTextByEntityId.set(taskEntityId, taskSummary);
               return {
-                id: `task:${String(task._id)}`,
+                id: taskEntityId,
                 entityId: String(task._id),
                 kind: "task" as const,
                 ...buildTaskMentionDisplay({
@@ -639,7 +645,11 @@ export const searchMentionEntities = query({
         const score =
           scoreMatch(entity.label, normalizedQuery) * 3 +
           scoreMatch(entity.mentionText, normalizedQuery) * 2 +
-          scoreMatch(entity.secondaryLabel, normalizedQuery);
+          scoreMatch(entity.secondaryLabel, normalizedQuery) +
+          scoreMatch(
+            extraSearchTextByEntityId.get(entity.id) ?? "",
+            normalizedQuery
+          );
 
         if (normalizedQuery && score === 0) {
           return null;

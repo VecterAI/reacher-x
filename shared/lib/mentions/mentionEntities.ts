@@ -315,7 +315,11 @@ export function compactMentionText(text: string, maxLength = 48) {
   return `${singleLine.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
-/** A task's picker row and its short @mention; never the whole draft. */
+/**
+ * A task's picker row and its short @mention; never the whole draft. The
+ * mention text is clamped too, so a long or multi-line prospect name cannot
+ * push a long token into the composer.
+ */
 export function buildTaskMentionDisplay(args: {
   order: number;
   summary: string;
@@ -323,7 +327,9 @@ export function buildTaskMentionDisplay(args: {
 }) {
   return {
     label: `Task ${args.order}: ${compactMentionText(args.summary, 80)}`,
-    mentionText: `Task ${args.order}: ${args.prospectLabel}`,
+    mentionText: compactMentionText(
+      `Task ${args.order}: ${args.prospectLabel}`
+    ),
   };
 }
 

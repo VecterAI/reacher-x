@@ -1475,6 +1475,15 @@ function AgentAttachmentList({
   );
 }
 
+/** One-line chip: never wraps, clips with an ellipsis at the bubble's width. */
+const TAGGED_MENTION_CHIP_CLASS_NAME =
+  "text-primary-foreground/70 inline-block max-w-full truncate align-bottom font-mono";
+
+/**
+ * Renders a sent message with its @mentions styled. Mentions matched against
+ * the message's tagged entities are clamped to one short line; without tagged
+ * entities the "@word word" fallback match is styled but left intact.
+ */
 function HighlightTaggedText({
   text,
   taggedEntities,
@@ -1493,6 +1502,11 @@ function HighlightTaggedText({
     .map((entity) => entity.mentionText.trim())
     .filter(Boolean)
     .sort((left, right) => right.length - left.length);
+
+  // Only tokens matched against a tagged entity are known mentions. The
+  // fallback pattern below is a guess over words after "@", so clamping it
+  // would hide ordinary message text.
+  const hasConfirmedMentions = mentionLabels.length > 0;
 
   const pattern =
     mentionLabels.length > 0
@@ -1523,13 +1537,22 @@ function HighlightTaggedText({
     }
 
     parts.push(
-      <span
-        key={`${tokenStart}-${token}`}
-        className="text-primary-foreground/70 font-mono"
-        title={token}
-      >
-        {compactMentionText(token)}
-      </span>
+      hasConfirmedMentions ? (
+        <span
+          key={`${tokenStart}-${token}`}
+          className={TAGGED_MENTION_CHIP_CLASS_NAME}
+          title={token}
+        >
+          {compactMentionText(token)}
+        </span>
+      ) : (
+        <span
+          key={`${tokenStart}-${token}`}
+          className="text-primary-foreground/70 font-mono"
+        >
+          {token}
+        </span>
+      )
     );
 
     lastIndex = tokenStart + token.length;
@@ -1572,7 +1595,7 @@ function UserMessageContextContent({
           {nonAttachmentTags.map((entity) => (
             <span
               key={entity.id}
-              className="text-primary-foreground/70 font-mono"
+              className={TAGGED_MENTION_CHIP_CLASS_NAME}
               title={entity.mentionText.trim()}
             >
               @{compactMentionText(entity.mentionText)}

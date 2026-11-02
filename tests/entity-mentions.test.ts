@@ -85,6 +85,15 @@ test("a task mention stays short however long the task's draft is", () => {
   assert.equal(mentionText, "Task 4: Jarl");
   assert.equal(label.startsWith("Task 4: Hi Jarl, A long"), true);
   assert.equal(label.length < 100, true);
+
+  const longName = buildTaskMentionDisplay({
+    order: 12,
+    summary: "Follow up",
+    prospectLabel: `Dr. Jarl Hansen-Olofsson\n| Fintech advisor | ${"x".repeat(60)}`,
+  });
+  assert.equal(longName.mentionText.startsWith("Task 12: Dr. Jarl"), true);
+  assert.equal(longName.mentionText.length <= 48, true);
+  assert.equal(longName.mentionText.includes("\n"), false);
   assert.equal(
     buildAgentMentionReplacementText({
       id: "task:1",
