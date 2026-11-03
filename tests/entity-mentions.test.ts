@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildMentionEntityReferenceLine,
+  buildTaskMentionDisplay,
+  compactMentionText,
   normalizeMentionEntitySearchResult,
   type MentionEntitySearchResult,
 } from "../shared/lib/mentions/mentionEntities";
@@ -57,6 +59,53 @@ test("agent mention helpers keep visible inline text and drop partial false posi
       entities: [personEntity],
     }),
     []
+  );
+});
+
+test("compactMentionText keeps short mentions and clamps long ones to one line", () => {
+  assert.equal(compactMentionText("Task 4: Jarl"), "Task 4: Jarl");
+  assert.equal(
+    compactMentionText("Task 4:  Hi Jarl,\n\nThanks for the intro"),
+    "Task 4: Hi Jarl, Thanks for the intro"
+  );
+
+  const clamped = compactMentionText(`Task 4: ${"word ".repeat(100)}`);
+  assert.equal(clamped.endsWith("…"), true);
+  assert.equal(clamped.length <= 48, true);
+  assert.equal(clamped.includes("\n"), false);
+});
+
+test("a task mention stays short however long the task's draft is", () => {
+  const { label, mentionText } = buildTaskMentionDisplay({
+    order: 4,
+    summary: `Hi Jarl,\n\n${"A long outreach draft. ".repeat(50)}`,
+    prospectLabel: "Jarl",
+  });
+
+  assert.equal(mentionText, "Task 4: Jarl");
+  assert.equal(label.startsWith("Task 4: Hi Jarl, A long"), true);
+  assert.equal(label.length < 100, true);
+
+  const longName = buildTaskMentionDisplay({
+    order: 12,
+    summary: "Follow up",
+    prospectLabel: `Dr. Jarl Hansen-Olofsson\n| Fintech advisor | ${"x".repeat(60)}`,
+  });
+  assert.equal(longName.mentionText.startsWith("Task 12: Dr. Jarl"), true);
+  assert.equal(longName.mentionText.length <= 48, true);
+  assert.equal(longName.mentionText.includes("\n"), false);
+  assert.equal(
+    buildAgentMentionReplacementText({
+      id: "task:1",
+      entityId: "1",
+      kind: "task",
+      label,
+      mentionText,
+      secondaryLabel: "dm task",
+      avatarUrl: null,
+      verified: false,
+    }),
+    "@Task 4: Jarl "
   );
 });
 
