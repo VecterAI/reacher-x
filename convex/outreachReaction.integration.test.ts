@@ -461,24 +461,22 @@ describe("reaction approval workflow", () => {
             targetCommentId: "linkedin-comment-approval",
             reactionType: "support",
           },
-          {
-            type: "react",
-            description:
-              "Same reaction again, deduplicated without a provider.",
-            timing: { type: "immediate" },
-            targetTweetId: "linkedin-post-approval",
-            targetCommentId: "linkedin-comment-approval",
-            reactionType: "support",
-          },
         ],
       });
-      // A completed twin makes the second task take the duplicate path, so the
-      // run finishes deterministically without calling LinkedIn.
-      const [first] = await ctx.db
-        .query("outreachTasks")
-        .withIndex("by_plan_order", (q) => q.eq("planId", createdPlanId))
-        .collect();
-      await ctx.db.patch(first._id, { status: "completed" });
+      // A completed twin (planning rejects duplicates, so insert it directly)
+      // makes the task take the duplicate path and finish without calling
+      // LinkedIn.
+      await ctx.db.insert("outreachTasks", {
+        planId: createdPlanId,
+        order: 0,
+        type: "react",
+        description: "Earlier identical reaction.",
+        timing: { type: "immediate" },
+        targetTweetId: "linkedin-post-approval",
+        targetCommentId: "linkedin-comment-approval",
+        reactionType: "support",
+        status: "completed",
+      });
       await ctx.db.patch(createdPlanId, { status: "approved" });
       return createdPlanId;
     });
