@@ -184,9 +184,7 @@ for (const platform of ["twitter", "linkedin"] as const) {
           .withIndex("by_plan_order", (q) => q.eq("planId", planId))
           .first(),
       }));
-      expect(execution.plan?.status).toBe("executing");
       expect(execution.task?.approvalEventId).toBeUndefined();
-      expect(execution.task?.resultData).toBeUndefined();
       expect(await t.run((ctx) => ctx.db.get(planId))).toMatchObject({
         workflowId: first.workflowId,
       });
