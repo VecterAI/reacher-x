@@ -438,7 +438,7 @@ describe("outreach reaction persistence and adaptive planning", () => {
 });
 
 describe("reaction approval workflow", () => {
-  test("stops before provider execution in review mode", async () => {
+  test("does not park on per-task approval in review mode after plan approval", async () => {
     vi.useFakeTimers();
     const t = createReactionTest();
     const seeded = await seedEntities(t, "linkedin", "approval");
@@ -486,18 +486,9 @@ describe("reaction approval workflow", () => {
       return { notifications, plan: await ctx.db.get(planId), task };
     });
 
-    expect(state.plan?.status).toBe("executing");
-    expect(state.task).toMatchObject({
-      type: "react",
-      status: "executing",
-    });
-    expect(state.task.resultData).toBeUndefined();
-    expect(state.task.approvalEventId).toEqual(expect.any(String));
-    expect(state.notifications).toHaveLength(1);
-    expect(state.notifications[0]).toMatchObject({
-      type: "ask_human",
-      taskId: state.task._id,
-      status: "pending",
-    });
+    expect(state.task.approvalEventId).toBeUndefined();
+    expect(
+      state.notifications.filter((n) => n.type === "ask_human")
+    ).toHaveLength(0);
   });
 });
