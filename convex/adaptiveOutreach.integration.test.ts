@@ -447,6 +447,65 @@ describe("adaptive outreach planning", () => {
     });
   });
 
+  test("does not approve a draft plan when a response continues it", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "linkedin");
+    const response = await t.mutation(
+      internal.outreach.onProspectLinkedInResponse,
+      {
+        prospectId: seeded.prospectId,
+        planId: seeded.planId,
+        responseType: "comment",
+        responseMessageId: "comment-reply-draft",
+        responseText: "Tell me more.",
+        conversationId: "linkedin-post-1",
+      }
+    );
+    await t.run((ctx) => ctx.db.patch(seeded.planId, { status: "draft" }));
+    const decision = parseAdaptiveOutreachDecision(
+      {
+        outcome: "continue",
+        summary: "Answer the prospect.",
+        reasoning: "A direct answer is the natural next move.",
+        strategy: {
+          rationale: "Continue the conversation.",
+          targetTweetId: "linkedin-post-1",
+          valueProposition: "Explain the workflow.",
+          tone: "helpful",
+        },
+        tasks: [
+          {
+            type: "comment",
+            description: "Answer the prospect.",
+            timing: { type: "immediate", value: null },
+            targetTweetId: null,
+            targetCommentId: null,
+            reactionType: null,
+            content: "Happy to explain.",
+          },
+        ],
+      },
+      {
+        channel: "linkedin_comment",
+        responseMessageId: "comment-reply-draft",
+        responseText: "Tell me more.",
+        conversationId: "linkedin-post-1",
+      }
+    );
+    await t.mutation(
+      internal.adaptiveOutreach.applyAdaptiveOutreachDecisionInternal,
+      {
+        eventId: response.eventId as Id<"outreachInteractionEvents">,
+        decision,
+      }
+    );
+
+    expect(await t.run((ctx) => ctx.db.get(seeded.planId))).toMatchObject({
+      status: "draft",
+      version: 2,
+    });
+  });
+
   test("rejects a stale decision after a newer interaction generation", async () => {
     const t = createAdaptiveTest();
     const seeded = await seedOutreach(t, "twitter");

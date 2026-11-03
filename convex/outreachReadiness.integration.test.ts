@@ -165,6 +165,20 @@ for (const platform of ["twitter", "linkedin"] as const) {
           { workspaceId }
         )
       ).toMatchObject({ limitReached: true, currentCount: 100, limit: 100 });
+      // A completed twin makes the task take the duplicate path, which
+      // finishes without calling the provider.
+      await t.run((ctx) =>
+        ctx.db.insert("outreachTasks", {
+          planId,
+          order: 0,
+          type: "react",
+          targetTweetId: "post",
+          description: "Earlier identical reaction",
+          reactionType: "like",
+          timing: { type: "immediate" },
+          status: "completed",
+        })
+      );
       await owner.mutation(api.outreach.approvePlan, { planId });
       const first = await t.mutation(
         internal.workflows.outreach.startOutreachWorkflow,
@@ -179,14 +193,18 @@ for (const platform of ["twitter", "linkedin"] as const) {
       await t.finishAllScheduledFunctions(vi.runAllTimers);
       const execution = await t.run(async (ctx) => ({
         plan: await ctx.db.get("outreachPlans", planId),
-        task: await ctx.db
-          .query("outreachTasks")
-          .withIndex("by_plan_order", (q) => q.eq("planId", planId))
-          .first(),
+        task: (
+          await ctx.db
+            .query("outreachTasks")
+            .withIndex("by_plan_order", (q) => q.eq("planId", planId))
+            .collect()
+        )[1],
       }));
-      expect(execution.plan?.status).toBe("executing");
-      expect(execution.task?.approvalEventId).toEqual(expect.any(String));
-      expect(execution.task?.resultData).toBeUndefined();
+      expect(execution.task).toMatchObject({
+        status: "completed",
+        resultData: { duplicate: true },
+      });
+      expect(execution.task?.approvalEventId).toBeUndefined();
       expect(await t.run((ctx) => ctx.db.get(planId))).toMatchObject({
         workflowId: first.workflowId,
       });

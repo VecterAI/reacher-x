@@ -293,7 +293,8 @@ export async function applyAdaptiveOutreachDecision(
     await refinePlan(ctx, plan._id, {
       strategy: args.decision.strategy,
       tasks: args.decision.tasks,
-      status: "approved",
+      // An unapproved draft stays a draft: a response must not approve it.
+      status: plan.status === "draft" ? undefined : "approved",
       revisionTrigger: {
         kind: "interaction_replan",
         actor: "agent",
