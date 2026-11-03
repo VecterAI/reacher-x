@@ -45,6 +45,8 @@ import {
   getProspectDisplayFields,
   upsertNotificationByKey,
   dismissNotificationsByKey,
+  dismissNotificationsForTask,
+  dismissPendingAskHumanNotificationsForPlan,
 } from "./lib/notificationHelpers";
 import { getLatestActiveProspectThreadLink } from "./lib/relationshipHelpers";
 import {
@@ -1910,6 +1912,7 @@ export const pausePlan = mutation({
       status: "paused",
       updatedAt: getCurrentUTCTimestamp(),
     });
+    await dismissPendingAskHumanNotificationsForPlan(ctx, planId);
   },
 });
 
@@ -1940,6 +1943,7 @@ async function cancelOwnedPlan(
     status: "abandoned",
     updatedAt: getCurrentUTCTimestamp(),
   });
+  await dismissPendingAskHumanNotificationsForPlan(ctx, planId);
   await stopActiveOutreachRecoveryMonitorsForPlan(ctx, planId);
   await recordMemoryWorkflowEvent(ctx, {
     workspaceId: plan.workspaceId,
@@ -2498,6 +2502,17 @@ export const updateTaskStatus = internalMutation({
       status,
       executedAt: status === "completed" ? getCurrentUTCTimestamp() : undefined,
     });
+
+    if (
+      status === "completed" ||
+      status === "failed" ||
+      status === "skipped" ||
+      status === "waiting_manual" ||
+      status === "waiting_connection" ||
+      status === "waiting_response"
+    ) {
+      await dismissNotificationsForTask(ctx, taskId);
+    }
 
     if (status === "completed" || status === "failed") {
       const plan = await ctx.db.get(task.planId);
@@ -3757,6 +3772,81 @@ export const resumeOutreachPlansAfterUnarchive = internalMutation({
  * Create notification for task approval (internal).
  * Called before executing comment tasks to get human approval.
  */
+
+/**
+ * One-shot cleanup: dismiss stale pending ask_human task-approval notifications
+ * whose task is missing, already approved, or past the approval-waiting window.
+ * Invoke manually with optional notificationIds; omit ids to scan all pending
+ * ask_human rows that reference a task. Not a cron.
+ */
+export const cleanupStaleAskHumanApprovalNotifications = internalMutation({
+  args: {
+    notificationIds: v.optional(v.array(v.id("outreachNotifications"))),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { notificationIds, dryRun }) => {
+    const dry = dryRun === true;
+    const STALE_TASK_STATUSES = new Set([
+      "completed",
+      "failed",
+      "skipped",
+      "waiting_manual",
+      "waiting_connection",
+      "waiting_response",
+    ]);
+    let candidates: Doc<"outreachNotifications">[] = [];
+    if (notificationIds && notificationIds.length > 0) {
+      for (const id of notificationIds) {
+        const row = await ctx.db.get(id);
+        if (row) candidates.push(row);
+      }
+    } else {
+      candidates = (await ctx.db.query("outreachNotifications").collect()).filter(
+        (n) =>
+          n.status === "pending" &&
+          n.type === "ask_human" &&
+          n.taskId !== undefined
+      );
+    }
+    const toDismiss: Id<"outreachNotifications">[] = [];
+    for (const n of candidates) {
+      if (n.status !== "pending" || n.type !== "ask_human" || !n.taskId) {
+        continue;
+      }
+      const task = await ctx.db.get(n.taskId);
+      if (!task || STALE_TASK_STATUSES.has(task.status) || task.approvedAt) {
+        toDismiss.push(n._id);
+        continue;
+      }
+      if (n.planId) {
+        const plan = await ctx.db.get(n.planId);
+        if (
+          plan &&
+          (plan.status === "paused" ||
+            plan.status === "abandoned" ||
+            plan.status === "completed" ||
+            plan.status === "failed")
+        ) {
+          toDismiss.push(n._id);
+        }
+      }
+    }
+    if (!dry) {
+      const dismissedAt = getCurrentUTCTimestamp();
+      await Promise.all(
+        toDismiss.map((id) =>
+          ctx.db.patch(id, { status: "dismissed", dismissedAt })
+        )
+      );
+    }
+    return {
+      matched: candidates.length,
+      dismissed: toDismiss.length,
+      dryRun: dry,
+    };
+  },
+});
+
 export const createTaskApprovalNotification = internalMutation({
   args: {
     userId: v.id("users"),
@@ -3972,6 +4062,7 @@ export const approveTaskWithEdits = mutation({
             platform: validation.platform,
           },
     });
+    await dismissNotificationsForTask(ctx, args.taskId);
 
     await recordEditableTaskApprovalMemory(ctx, {
       task,
@@ -4199,6 +4290,7 @@ export const approveTask = mutation({
       },
       approvedAt: getCurrentUTCTimestamp(),
     });
+    await dismissNotificationsForTask(ctx, args.taskId);
 
     await recordMemoryWorkflowEvent(ctx, {
       workspaceId: plan.workspaceId,
@@ -4260,6 +4352,7 @@ export const approveTaskInternal = internalMutation({
     await ctx.db.patch(taskId, {
       approvedAt: getCurrentUTCTimestamp(),
     });
+    await dismissNotificationsForTask(ctx, taskId);
 
     await recordMemoryWorkflowEvent(ctx, {
       workspaceId: plan.workspaceId,
