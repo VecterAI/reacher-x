@@ -438,7 +438,7 @@ describe("outreach reaction persistence and adaptive planning", () => {
 });
 
 describe("reaction approval workflow", () => {
-  test("does not park on per-task approval in review mode after plan approval", async () => {
+  test("runs tasks without per-task approval in review mode after plan approval", async () => {
     vi.useFakeTimers();
     const t = createReactionTest();
     const seeded = await seedEntities(t, "linkedin", "approval");
@@ -461,8 +461,23 @@ describe("reaction approval workflow", () => {
             targetCommentId: "linkedin-comment-approval",
             reactionType: "support",
           },
+          {
+            type: "react",
+            description: "Same reaction again, deduplicated without a provider.",
+            timing: { type: "immediate" },
+            targetTweetId: "linkedin-post-approval",
+            targetCommentId: "linkedin-comment-approval",
+            reactionType: "support",
+          },
         ],
       });
+      // A completed twin makes the second task take the duplicate path, so the
+      // run finishes deterministically without calling LinkedIn.
+      const [first] = await ctx.db
+        .query("outreachTasks")
+        .withIndex("by_plan_order", (q) => q.eq("planId", createdPlanId))
+        .collect();
+      await ctx.db.patch(first._id, { status: "completed" });
       await ctx.db.patch(createdPlanId, { status: "approved" });
       return createdPlanId;
     });
@@ -473,10 +488,12 @@ describe("reaction approval workflow", () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     const state = await t.run(async (ctx) => {
-      const [task] = await ctx.db
-        .query("outreachTasks")
-        .withIndex("by_plan_order", (q) => q.eq("planId", planId))
-        .collect();
+      const task = (
+        await ctx.db
+          .query("outreachTasks")
+          .withIndex("by_plan_order", (q) => q.eq("planId", planId))
+          .collect()
+      )[1];
       const notifications = await ctx.db
         .query("outreachNotifications")
         .withIndex("by_workspace", (q) =>
@@ -486,10 +503,10 @@ describe("reaction approval workflow", () => {
       return { notifications, plan: await ctx.db.get(planId), task };
     });
 
-    // The task must have run past the old approval wait, whatever the provider outcome.
-    expect(["pending", "scheduled", "executing"]).not.toContain(
-      state.task.status
-    );
+    expect(state.task).toMatchObject({
+      status: "completed",
+      resultData: { duplicate: true },
+    });
     expect(state.task.approvalEventId).toBeUndefined();
     expect(
       state.notifications.filter((n) => n.type === "ask_human")
