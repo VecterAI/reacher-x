@@ -422,7 +422,8 @@ describe("adaptive outreach planning", () => {
       outcome: "continue",
       planVersion: 2,
     });
-    expect(state.plan?.status).toBe("approved");
+    // review_required: the revised plan waits for a plan-level approval.
+    expect(state.plan?.status).toBe("paused");
     expect(state.event).toMatchObject({
       status: "completed",
       decisionOutcome: "continue",
@@ -597,5 +598,77 @@ describe("adaptive outreach planning", () => {
       },
       tasks: [],
     });
+  });
+
+  test("revising an executing plan pauses it and raises one approval in review_required", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const revise = (description: string) =>
+      t.run(async (ctx) => {
+        await refinePlan(ctx, seeded.planId, {
+          tasks: [
+            {
+              type: "dm",
+              description,
+              content: "Revised message.",
+              timing: { type: "immediate" },
+            },
+          ],
+        });
+      });
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.planId, { status: "executing" });
+    });
+    await revise("First revision.");
+    await revise("Second revision.");
+
+    const state = await t.run(async (ctx) => ({
+      plan: await ctx.db.get(seeded.planId),
+      notifications: await ctx.db.query("outreachNotifications").collect(),
+      events: await ctx.db
+        .query("memoryWorkflowEvents")
+        .filter((q) =>
+          q.eq(q.field("eventType"), "outreach_plan_revision_pending")
+        )
+        .collect(),
+    }));
+    expect(state.plan).toMatchObject({ status: "paused", version: 3 });
+    expect(state.notifications).toHaveLength(1);
+    expect(state.notifications[0]).toMatchObject({
+      planId: seeded.planId,
+      status: "pending",
+    });
+    expect(state.events).toHaveLength(2);
+  });
+
+  test("revising an executing plan applies silently when autonomous", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const state = await t.run(async (ctx) => {
+      await ctx.db.insert("workspaceAgentSettings", {
+        workspaceId: seeded.workspaceId,
+        userId: seeded.userId,
+        autonomyMode: "autonomous",
+        updatedAt: 2,
+      });
+      await ctx.db.patch(seeded.planId, { status: "executing" });
+      await refinePlan(ctx, seeded.planId, {
+        tasks: [
+          {
+            type: "dm",
+            description: "Autonomous revision.",
+            content: "Revised message.",
+            timing: { type: "immediate" },
+          },
+        ],
+      });
+      return {
+        plan: await ctx.db.get(seeded.planId),
+        notifications: await ctx.db.query("outreachNotifications").collect(),
+      };
+    });
+    expect(state.plan?.status).toBe("executing");
+    expect(state.notifications).toHaveLength(0);
   });
 });

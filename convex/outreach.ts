@@ -25,6 +25,7 @@ import {
   createOutreachPlan,
   deleteOutreachPlanCascade,
   stopActiveOutreachRecoveryMonitorsForPlan,
+  planRevisionNotificationKey,
   refinePlan as refinePlanCore,
   getProspectActivityLog,
   logProspectActivity,
@@ -1874,6 +1875,11 @@ export const resumePlan = mutation({
     await ctx.db.patch(planId, {
       status: "approved",
       updatedAt: getCurrentUTCTimestamp(),
+    });
+    await dismissNotificationsByKey(ctx, {
+      userId: plan.userId,
+      workspaceId: plan.workspaceId,
+      notificationKey: planRevisionNotificationKey(planId),
     });
 
     await ctx.scheduler.runAfter(
