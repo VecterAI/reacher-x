@@ -123,7 +123,7 @@ export function ConversationReplyQuote({
         <span className="block truncate font-medium opacity-100">
           {senderLabel}
         </span>
-        <span className="mt-0.5 line-clamp-2 block leading-4">
+        <span className="mt-0.5 line-clamp-2 leading-4">
           {getReplySummary(quote)}
         </span>
       </span>
