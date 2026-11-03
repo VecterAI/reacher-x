@@ -315,7 +315,6 @@ export const outreachPlanWorkflow = workflowManager.define({
             throw new Error("Task missing required DM content");
           }
 
-          const platform = prospectPlatform;
           const delayMs = getTaskDelay(task.timing);
           const executionResult = await step.runAction(
             internal.outreachActions.executeDmTask,
