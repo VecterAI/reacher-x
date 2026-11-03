@@ -486,6 +486,10 @@ describe("reaction approval workflow", () => {
       return { notifications, plan: await ctx.db.get(planId), task };
     });
 
+    // The task must have run past the old approval wait, whatever the provider outcome.
+    expect(["pending", "scheduled", "executing"]).not.toContain(
+      state.task.status
+    );
     expect(state.task.approvalEventId).toBeUndefined();
     expect(
       state.notifications.filter((n) => n.type === "ask_human")
