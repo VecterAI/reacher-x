@@ -463,7 +463,8 @@ describe("reaction approval workflow", () => {
           },
           {
             type: "react",
-            description: "Same reaction again, deduplicated without a provider.",
+            description:
+              "Same reaction again, deduplicated without a provider.",
             timing: { type: "immediate" },
             targetTweetId: "linkedin-post-approval",
             targetCommentId: "linkedin-comment-approval",
