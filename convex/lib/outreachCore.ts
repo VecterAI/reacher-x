@@ -786,9 +786,11 @@ export async function refinePlan(
   // unless the workspace is autonomous.
   const requiresRevisionApproval =
     plan.status !== "draft" &&
-    !isAutonomous &&
     (updates.status === undefined || updates.status === "approved") &&
-    (updates.tasks !== undefined || tasksToSkip.length > 0);
+    // A pending revision stays pending even if autonomy changed meanwhile.
+    (plan.revisionApprovalPending ||
+      (!isAutonomous &&
+        (updates.tasks !== undefined || tasksToSkip.length > 0)));
 
   if (
     updates.strategy ||

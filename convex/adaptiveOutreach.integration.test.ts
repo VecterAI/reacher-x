@@ -705,4 +705,37 @@ describe("adaptive outreach planning", () => {
     });
     expect(started).toBe(false);
   });
+
+  test("a later approved refinement keeps a pending revision approval", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const plan = await t.run(async (ctx) => {
+      await ctx.db.insert("workspaceAgentSettings", {
+        workspaceId: seeded.workspaceId,
+        userId: seeded.userId,
+        autonomyMode: "autonomous",
+        updatedAt: 2,
+      });
+      await ctx.db.patch(seeded.planId, {
+        status: "paused",
+        revisionApprovalPending: true,
+      });
+      await refinePlan(ctx, seeded.planId, {
+        status: "approved",
+        tasks: [
+          {
+            type: "dm",
+            description: "Later revision.",
+            content: "Revised message.",
+            timing: { type: "immediate" },
+          },
+        ],
+      });
+      return await ctx.db.get(seeded.planId);
+    });
+    expect(plan).toMatchObject({
+      status: "paused",
+      revisionApprovalPending: true,
+    });
+  });
 });

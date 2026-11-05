@@ -1058,7 +1058,9 @@ async function resumeDmAfterLinkedInConnection(
     type: "outreach_sent",
     notificationKey: `linkedin-connection-resumed:${task._id}`,
     title: "LinkedIn connection accepted",
-    message: "ReacherX is sending the approved DM automatically.",
+    message: plan.revisionApprovalPending
+      ? "Approve the revised plan to send the DM."
+      : "ReacherX is sending the approved DM automatically.",
     prospectId: plan.prospectId,
     planId: plan._id,
     taskId: task._id,
