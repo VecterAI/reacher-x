@@ -801,7 +801,7 @@ export async function refinePlan(
       strategy: nextStrategy,
       threadId: nextThreadId,
       ...(requiresRevisionApproval
-        ? { status: "paused" as const }
+        ? { status: "paused" as const, revisionApprovalPending: true }
         : updates.status
           ? { status: updates.status }
           : {}),

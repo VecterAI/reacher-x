@@ -633,7 +633,11 @@ describe("adaptive outreach planning", () => {
         )
         .collect(),
     }));
-    expect(state.plan).toMatchObject({ status: "paused", version: 3 });
+    expect(state.plan).toMatchObject({
+      status: "paused",
+      version: 3,
+      revisionApprovalPending: true,
+    });
     expect(state.notifications).toHaveLength(1);
     expect(state.notifications[0]).toMatchObject({
       planId: seeded.planId,
@@ -670,5 +674,35 @@ describe("adaptive outreach planning", () => {
     });
     expect(state.plan?.status).toBe("executing");
     expect(state.notifications).toHaveLength(0);
+  });
+
+  test("recovery does not resume a plan with a pending revision approval", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const resumed = await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.planId, {
+        status: "paused",
+        revisionApprovalPending: true,
+      });
+      return await ctx.runMutation(
+        internal.outreachRecovery.resumeRecoveredLinkedInDmPlan,
+        { planId: seeded.planId }
+      );
+    });
+    expect(resumed).toEqual({ resumed: false });
+  });
+
+  test("workflow status guard rejects a plan that is no longer approved", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const started = await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.planId, { status: "paused" });
+      return await ctx.runMutation(internal.outreach.updatePlanStatus, {
+        planId: seeded.planId,
+        status: "executing",
+        expectedStatus: "approved",
+      });
+    });
+    expect(started).toBe(false);
   });
 });

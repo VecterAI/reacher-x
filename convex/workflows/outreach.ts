@@ -94,11 +94,7 @@ export const outreachPlanWorkflow = workflowManager.define({
     }
 
     // Validate plan is approved
-    if (
-      plan.status !== "approved" &&
-      plan.status !== "paused" &&
-      plan.status !== "blocked_auth"
-    ) {
+    if (plan.status !== "approved") {
       return {
         success: false,
         status: "skipped",
@@ -111,6 +107,7 @@ export const outreachPlanWorkflow = workflowManager.define({
       planId: args.planId,
       status: "executing",
       expectedExecutionGeneration: args.executionGeneration,
+      expectedStatus: "approved",
     });
     if (!started) {
       return { success: true, status: "superseded" };
