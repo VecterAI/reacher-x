@@ -222,6 +222,7 @@ import { buildAgentComposerSubmission } from "@/features/agent/lib/buildAgentCom
 import { getLatestUserMessageScrollAnchorKey } from "@/features/agent/lib/agentMessageScrollHelpers";
 import {
   buildAgentMentionReplacementText,
+  collectComposerMentionState,
   filterSelectedMentionEntitiesByInput,
 } from "@/features/agent/lib/entityMentions";
 import { OnboardingProgressCard } from "./components/OnboardingProgressCard";
@@ -2707,6 +2708,20 @@ export function AgentChat({
     setAgentComposerContent(buildSerializedTextState(""));
   }, [mentionScopeKey]);
 
+  // Mention chips carry the id of the entity the user picked; use them instead
+  // of re-matching `@name` text, so same-named entities stay distinct. Only
+  // trust the editor state while it agrees with `input` (an external setInput
+  // replaces the editor with plain text a render later).
+  const composerMentions = useMemo(() => {
+    if (
+      !agentComposerContent ||
+      extractTextFromEditorState(agentComposerContent) !== input
+    ) {
+      return null;
+    }
+    return collectComposerMentionState(agentComposerContent);
+  }, [agentComposerContent, input]);
+
   useEffect(() => {
     setMentionComposerState((current) => {
       const inlineEntities = current.selectedEntities.filter(
@@ -2718,6 +2733,7 @@ export function AgentChat({
       const filteredInlineEntities = filterSelectedMentionEntitiesByInput({
         input,
         entities: inlineEntities,
+        composerMentions,
       });
       const nextSelectedEntities = [
         ...filteredInlineEntities,
@@ -2738,7 +2754,7 @@ export function AgentChat({
         selectedEntities: nextSelectedEntities,
       };
     });
-  }, [input]);
+  }, [composerMentions, input]);
 
   useEffect(() => {
     const editorText = agentComposerContent

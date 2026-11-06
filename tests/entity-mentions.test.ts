@@ -9,8 +9,10 @@ import {
 } from "../shared/lib/mentions/mentionEntities";
 import {
   buildAgentMentionReplacementText,
+  collectComposerMentionState,
   filterSelectedMentionEntitiesByInput,
 } from "../features/agent/lib/entityMentions";
+import { extractTextFromEditorState } from "../shared/lib/utils/url/urlDetection";
 import {
   buildComposerMentionInsertionText,
   buildInitialMediaUploadFromMentionEntity,
@@ -308,5 +310,120 @@ test("post mention normalization backfills exact hidden references for sparse en
   assert.equal(
     buildMentionEntityReferenceLine(sparseLinkedInComment!),
     sparseLinkedInComment?.referenceText
+  );
+});
+
+function buildPersonEntity(
+  id: string,
+  name: string
+): MentionEntitySearchResult {
+  return {
+    id: `prospect:${id}`,
+    entityId: id,
+    kind: "prospect",
+    label: name,
+    mentionText: name,
+    secondaryLabel: `@${id}`,
+    avatarUrl: null,
+    verified: false,
+    handle: id,
+  };
+}
+
+function buildEditorState(
+  children: Array<
+    | { type: "text"; text: string }
+    | { type: "MentionNode"; mentionName: string; mentionId: string }
+  >
+) {
+  return {
+    root: {
+      type: "root",
+      children: [{ type: "paragraph", children }],
+    },
+  };
+}
+
+function selectByComposer(
+  entities: MentionEntitySearchResult[],
+  editorState: unknown
+) {
+  return filterSelectedMentionEntitiesByInput({
+    input: extractTextFromEditorState(editorState),
+    entities,
+    composerMentions: collectComposerMentionState(editorState),
+  }).map((entity) => entity.id);
+}
+
+test("same-named mentions stay distinct: deleting one chip drops only that entity", () => {
+  const johnA = buildPersonEntity("john-a", "John Smith");
+  const johnB = buildPersonEntity("john-b", "John Smith");
+
+  const bothTagged = buildEditorState([
+    { type: "text", text: "Compare " },
+    { type: "MentionNode", mentionName: "John Smith", mentionId: johnA.id },
+    { type: "text", text: " and " },
+    { type: "MentionNode", mentionName: "John Smith", mentionId: johnB.id },
+  ]);
+  assert.deepEqual(selectByComposer([johnA, johnB], bothTagged), [
+    johnA.id,
+    johnB.id,
+  ]);
+
+  // The visible text still contains "@John Smith", but only johnB's chip is left.
+  const firstDeleted = buildEditorState([
+    { type: "text", text: "Compare  and " },
+    { type: "MentionNode", mentionName: "John Smith", mentionId: johnB.id },
+  ]);
+  assert.deepEqual(selectByComposer([johnA, johnB], firstDeleted), [johnB.id]);
+
+  // Text matching alone (the old behaviour) cannot tell them apart.
+  assert.deepEqual(
+    filterSelectedMentionEntitiesByInput({
+      input: extractTextFromEditorState(firstDeleted),
+      entities: [johnA, johnB],
+    }).map((entity) => entity.id),
+    [johnA.id, johnB.id]
+  );
+});
+
+test("a mention that prefixes another is dropped when its own chip is deleted", () => {
+  const john = buildPersonEntity("john", "John");
+  const johnSmith = buildPersonEntity("john-smith", "John Smith");
+
+  const onlyJohnSmithLeft = buildEditorState([
+    { type: "text", text: "Ask " },
+    { type: "MentionNode", mentionName: "John Smith", mentionId: johnSmith.id },
+    { type: "text", text: " today" },
+  ]);
+  assert.deepEqual(selectByComposer([john, johnSmith], onlyJohnSmithLeft), [
+    johnSmith.id,
+  ]);
+});
+
+test("mentions fall back to plain-text matching when the composer has no chips", () => {
+  const john = buildPersonEntity("john", "John Doe");
+  const jane = buildPersonEntity("jane", "Jane Roe");
+
+  // replaceContent() rebuilds the composer as one plain text node.
+  const plainText = buildEditorState([
+    { type: "text", text: "Follow up with @John Doe tomorrow" },
+  ]);
+  assert.deepEqual(selectByComposer([john, jane], plainText), [john.id]);
+
+  // A typed @name next to a chip still keeps its entity selected.
+  const mixed = buildEditorState([
+    { type: "MentionNode", mentionName: "Jane Roe", mentionId: jane.id },
+    { type: "text", text: " and @John Doe" },
+  ]);
+  assert.deepEqual(selectByComposer([john, jane], mixed), [john.id, jane.id]);
+
+  assert.deepEqual(
+    collectComposerMentionState(mixed).mentionIds,
+    new Set([jane.id])
+  );
+  assert.deepEqual(
+    collectComposerMentionState(undefined).mentionIds,
+    new Set()
   );
 });
