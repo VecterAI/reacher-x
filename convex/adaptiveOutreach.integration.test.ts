@@ -743,4 +743,34 @@ describe("adaptive outreach planning", () => {
       revisionApprovalPending: true,
     });
   });
+
+  test("task status writes from an invalidated workflow generation are rejected", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const result = await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.planId, { executionGeneration: 2 });
+      const task = await ctx.db
+        .query("outreachTasks")
+        .withIndex("by_plan_order", (q) => q.eq("planId", seeded.planId))
+        .first();
+      const taskId = task!._id;
+      const stale = await ctx.runMutation(internal.outreach.updateTaskStatus, {
+        taskId,
+        status: "completed",
+        expectedExecutionGeneration: 1,
+      });
+      const afterStale = (await ctx.db.get(taskId))?.status;
+      await ctx.runMutation(internal.outreach.updateTaskStatus, {
+        taskId,
+        status: "completed",
+        expectedExecutionGeneration: 2,
+      });
+      return { stale, afterStale, active: (await ctx.db.get(taskId))?.status };
+    });
+    expect(result).toEqual({
+      stale: false,
+      afterStale: "pending",
+      active: "completed",
+    });
+  });
 });

@@ -177,6 +177,7 @@ export const outreachPlanWorkflow = workflowManager.define({
       await step.runMutation(internal.outreach.updateTaskStatus, {
         taskId: task._id,
         status: "executing",
+        expectedExecutionGeneration: args.executionGeneration,
       });
 
       try {
@@ -407,13 +408,18 @@ export const outreachPlanWorkflow = workflowManager.define({
             await step.runMutation(internal.outreach.updateTaskStatus, {
               taskId: task._id,
               status: "completed",
+              expectedExecutionGeneration: args.executionGeneration,
             });
           } else {
             // Wait tasks - complete after configured delay.
             const waitMs = parseWaitDuration(task.timing.value);
             await step.runMutation(
               internal.outreach.updateTaskStatus,
-              { taskId: task._id, status: "completed" },
+              {
+                taskId: task._id,
+                status: "completed",
+                expectedExecutionGeneration: args.executionGeneration,
+              },
               { runAfter: waitMs }
             );
           }
@@ -436,11 +442,13 @@ export const outreachPlanWorkflow = workflowManager.define({
           await step.runMutation(internal.outreach.updateTaskStatus, {
             taskId: task._id,
             status: "completed",
+            expectedExecutionGeneration: args.executionGeneration,
           });
         } else {
           await step.runMutation(internal.outreach.updateTaskStatus, {
             taskId: task._id,
             status: "completed",
+            expectedExecutionGeneration: args.executionGeneration,
           });
         }
 
@@ -450,6 +458,7 @@ export const outreachPlanWorkflow = workflowManager.define({
         await step.runMutation(internal.outreach.updateTaskStatus, {
           taskId: task._id,
           status: "failed",
+          expectedExecutionGeneration: args.executionGeneration,
         });
 
         const errorMessage =

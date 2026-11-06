@@ -2506,11 +2506,19 @@ export const updateTaskStatus = internalMutation({
   args: {
     taskId: v.id("outreachTasks"),
     status: outreachTaskStatusValidator,
+    expectedExecutionGeneration: v.optional(v.number()),
   },
-  handler: async (ctx, { taskId, status }) => {
+  handler: async (ctx, { taskId, status, expectedExecutionGeneration }) => {
     const task = await ctx.db.get(taskId);
     if (!task) {
       throw new Error("Task not found");
+    }
+    if (expectedExecutionGeneration !== undefined) {
+      // An invalidated workflow must not write task state.
+      const owner = await ctx.db.get(task.planId);
+      if ((owner?.executionGeneration ?? 0) !== expectedExecutionGeneration) {
+        return false;
+      }
     }
 
     await ctx.db.patch(taskId, {
