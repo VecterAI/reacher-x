@@ -792,6 +792,22 @@ export async function refinePlan(
       (!isAutonomous &&
         (updates.tasks !== undefined || tasksToSkip.length > 0)));
 
+  if (requiresRevisionApproval && plan.workflowId) {
+    try {
+      const workflowId = plan.workflowId as unknown as WorkflowId;
+      const workflowStatus = await workflowManager.status(ctx, workflowId);
+      if (workflowStatus.type === "inProgress") {
+        await workflowManager.cancel(ctx, workflowId);
+      }
+    } catch (error) {
+      console.warn("[OutreachCore] Failed to cancel workflow on revision", {
+        planId: String(planId),
+        workflowId: plan.workflowId,
+        error,
+      });
+    }
+  }
+
   if (
     updates.strategy ||
     updates.tasks ||
