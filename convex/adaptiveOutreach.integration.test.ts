@@ -637,6 +637,7 @@ describe("adaptive outreach planning", () => {
       status: "paused",
       version: 3,
       revisionApprovalPending: true,
+      executionGeneration: 2,
     });
     expect(state.notifications).toHaveLength(1);
     expect(state.notifications[0]).toMatchObject({

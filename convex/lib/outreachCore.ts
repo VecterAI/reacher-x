@@ -803,7 +803,12 @@ export async function refinePlan(
       strategy: nextStrategy,
       threadId: nextThreadId,
       ...(requiresRevisionApproval
-        ? { status: "paused" as const, revisionApprovalPending: true }
+        ? {
+            status: "paused" as const,
+            revisionApprovalPending: true,
+            // Invalidates the running workflow so it cannot complete the plan.
+            executionGeneration: (plan.executionGeneration ?? 0) + 1,
+          }
         : updates.status
           ? { status: updates.status }
           : {}),
