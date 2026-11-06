@@ -1,0 +1,20 @@
+[project]
+name = "reacherx-people-search-bench"
+version = "0.1.0"
+description = "ReacherX vs people-search tools, scored with People Search Bench (LessieAI) criteria-grounded verification"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    # Same stack as the upstream scorer (LessieAI/people-search-bench pyproject.toml)
+    "langchain>=1.2.10",
+    "langchain-community>=0.4.1",
+    "langchain-openai>=1.1.9",
+    "langchain-tavily>=0.2.17",
+    "langgraph>=1.0.8",
+    "pandas>=3.0.1",
+    "pydantic>=2.12.5",
+    "tavily-python>=0.7.21",
+    "httpx>=0.28",
+]
+
+[tool.uv]
+package = false
