@@ -618,7 +618,10 @@ describe("adaptive outreach planning", () => {
       });
 
     await t.run(async (ctx) => {
-      await ctx.db.patch(seeded.planId, { status: "executing" });
+      await ctx.db.patch(seeded.planId, {
+        status: "executing",
+        workflowId: "stale-workflow",
+      });
     });
     await revise("First revision.");
     await revise("Second revision.");
@@ -639,6 +642,7 @@ describe("adaptive outreach planning", () => {
       revisionApprovalPending: true,
       executionGeneration: 2,
     });
+    expect(state.plan?.workflowId).toBeUndefined();
     expect(state.notifications).toHaveLength(1);
     expect(state.notifications[0]).toMatchObject({
       planId: seeded.planId,

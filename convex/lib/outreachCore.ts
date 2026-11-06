@@ -808,6 +808,9 @@ export async function refinePlan(
             revisionApprovalPending: true,
             // Invalidates the running workflow so it cannot complete the plan.
             executionGeneration: (plan.executionGeneration ?? 0) + 1,
+            // Forces the post-approval start to launch a fresh workflow
+            // instead of reusing the invalidated one.
+            workflowId: undefined,
           }
         : updates.status
           ? { status: updates.status }
