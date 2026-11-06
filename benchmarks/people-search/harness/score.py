@@ -99,11 +99,14 @@ def web_search(query: str) -> str:
     """Search the live web for evidence about a person (name, role, company, location, posts). Returns the top results with snippets."""
     ctx = _person_ctx.get()
     if ctx["searches"] >= VCFG["max_searches_per_person"]:
-        return "Search limit reached for this person. Decide using the evidence you already have."
+        # A retry runs a fresh agent; hand it the results already paid for so it keeps the evidence.
+        earlier = json.dumps(ctx["search_results"], ensure_ascii=False)
+        return f"Search limit reached for this person. Results of the earlier searches: {earlier}"
     ctx["searches"] += 1
     resp = tavily_search_cached(query)
     ctx["search_log"].append({"query": query, "urls": [r.get("url") for r in resp.get("results", [])]})
     slim = {"answer": resp.get("answer"), "results": [{k: r.get(k) for k in ("title", "url", "content", "published_date")} for r in resp.get("results", [])]}
+    ctx["search_results"].append({"query": query, **slim})
     return json.dumps(slim, ensure_ascii=False)
 
 
@@ -182,7 +185,7 @@ async def score_one(ev: BenchEvaluator, model: str, tool_name: str, q: dict, per
             tavily_budget_check(VCFG["max_searches_per_person"])
             if paid:
                 guard(0.02, label=f"judge {tool_name} {q['query_id']}")
-            ctx = {"searches": 0, "search_log": [], "input_tokens": 0, "output_tokens": 0, "llm_calls": 0}
+            ctx = {"searches": 0, "search_log": [], "search_results": [], "input_tokens": 0, "output_tokens": 0, "llm_calls": 0}
             token = _person_ctx.set(ctx)
             try:
                 # Upstream silently grades an empty or unparseable verdict as 0. Retry it,

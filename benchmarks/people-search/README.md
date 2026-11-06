@@ -18,7 +18,10 @@ keys you need (`OPENROUTER_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL
 ```bash
 cd benchmarks/people-search
 uv run python -m harness.collect --queries all          # top 10 from each API tool
-uv run python -m harness.reacherx_runner --query int_0002 --user-id <dev users _id> --credit-cap 55
+# ReacherX: one paid run per query it was run on (the others are listed under not_run in config.json)
+for q in b2b_0014 int_0001 int_0002; do
+  uv run python -m harness.reacherx_runner --query "$q" --user-id <dev users _id> --credit-cap 55
+done
 uv run python -m harness.collect --tools reacherx,reacherx_topfit
 uv run python -m harness.score --judge final            # verify every person on the web
 uv run python -m harness.report --judge final           # results table, no keys needed
@@ -33,8 +36,9 @@ data), so a rerun never pays twice.
 
 The runner only targets a Convex dev deployment, through internal functions in
 `convex/benchmarkPeopleSearch.ts`. It turns `PAUSE_AUTONOMOUS_JOBS` off for the run and always
-back on, stops the run, deletes the SocialAPI monitors and the benchmark workspace it created,
-and can stop early at a LinkdAPI credit cap. `harness.linkdapi_key` swaps the dev LinkdAPI key
+puts back the value it had before (removing it if it was unset), stops the run, deletes the
+SocialAPI monitors and the benchmark workspace it created, and can stop early at a LinkdAPI
+credit cap. `harness.linkdapi_key` swaps the dev LinkdAPI key
 for a run and restores it (`status`, `use-prod`, `restore`; it prints fingerprints, never keys).
 
 Spend guards stop before a paid step if OpenRouter usage passes $5 or total spend nears $9.50.

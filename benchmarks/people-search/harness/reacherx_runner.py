@@ -4,8 +4,8 @@
 
 Steps: budget check -> PAUSE_AUTONOMOUS_JOBS=false -> setup draft + workspace + one
 prospecting cycle (convex/benchmarkPeopleSearch.ts) -> wait for discovery and
-qualification -> stop the run and delete SocialAPI monitors -> PAUSE_AUTONOMOUS_JOBS=true
-(always, even on failure) -> export. Cost = OpenRouter key usage delta (nothing else may
+qualification -> stop the run and delete SocialAPI monitors -> PAUSE_AUTONOMOUS_JOBS back to
+its value before the run (always, even on failure) -> export. Cost = OpenRouter key usage delta (nothing else may
 use the key during a run) + provider costs ReacherX records for the workspace.
 """
 
@@ -32,8 +32,22 @@ def convex_run(fn: str, payload: dict[str, Any]) -> Any:
     return json.loads(raw) if raw else None
 
 
-def set_pause(paused: bool) -> None:
-    convex_cli("env", "set", "PAUSE_AUTONOMOUS_JOBS", "true" if paused else "false")
+PAUSE_VAR = "PAUSE_AUTONOMOUS_JOBS"
+
+
+def get_pause() -> str | None:
+    """Current value on dev, or None when unset. Fails before any change if it cannot be read."""
+    out = convex_cli("env", "get", PAUSE_VAR, check=False, timeout=120)
+    if out.returncode != 0:
+        raise SystemExit(f"Could not read {PAUSE_VAR} on dev (exit {out.returncode}); nothing changed")
+    return out.stdout.strip() or None
+
+
+def restore_pause(value: str | None) -> None:
+    if value is None:
+        convex_cli("env", "remove", PAUSE_VAR)
+    else:
+        convex_cli("env", "set", PAUSE_VAR, value)
 
 
 def _post_fields(raw: str) -> dict[str, Any]:
@@ -152,11 +166,23 @@ def main() -> int:
     status: dict[str, Any] | None = None
     aborted = None
     stop = None
+    pause_before = get_pause()
     print(f"linkdapi circuit: {convex_run('resetLinkdApiCircuit', {})}")
-    set_pause(False)
+    convex_cli("env", "set", PAUSE_VAR, "false")
     try:
-        prep = convex_run("prepareAndStart", {"userId": args.user_id, "queryId": q["query_id"], "prompt": q["prompt"], "useCaseKey": use_case})
-        workspace_id, since_ms = prep["workspaceId"], prep["startedAt"]
+        requested_ms = time.time() * 1000
+        try:
+            prep = convex_run("prepareAndStart", {"userId": args.user_id, "queryId": q["query_id"], "prompt": q["prompt"], "useCaseKey": use_case})
+            workspace_id, since_ms = prep["workspaceId"], prep["startedAt"]
+        except Exception as exc:
+            # A timeout can land after the workspace was created; find it so it is stopped and cleaned up.
+            found = convex_run("findRunWorkspace", {"userId": args.user_id, "queryId": q["query_id"], "since": requested_ms - 60_000})
+            if not found:
+                raise
+            workspace_id, since_ms = found["workspaceId"], found["createdAt"]
+            aborted = f"start failed after the workspace was created: {type(exc).__name__}: {exc}"[:300]
+            write_json(run_file, {"started_at": started_at, "since_ms": since_ms, "workspace_id": workspace_id, "or_before": or_before, "or_delta": None, "aborted": aborted, "stop": None, "final_status": None, "poll_log": [], "latency_s": None})
+            raise
         # Recovery facts go to disk before polling, so a crash can still be exported.
         write_json(run_file, {"started_at": started_at, "since_ms": since_ms, "workspace_id": workspace_id, "or_before": or_before, "or_delta": None, "aborted": "run did not finish", "stop": None, "final_status": None, "poll_log": [], "latency_s": None})
         print(f"workspace {workspace_id} started ({use_case})")
@@ -180,9 +206,13 @@ def main() -> int:
                 aborted = f"per-run cap ${PER_RUN_CAP_USD} exceeded"
                 break
             if args.credit_cap:
-                units = convex_run("linkdApiUnitsSince", {"since": since_ms})["billableUnits"]
+                used = convex_run("linkdApiUnitsSince", {"since": since_ms})
+                units = used["billableUnits"]
                 log[-1]["linkdapi_units"] = units
                 print(f"    linkdapi credits used this run: {units} / cap {args.credit_cap}")
+                if used.get("capped"):
+                    aborted = f"LinkdAPI event read hit its limit at {units} credits; true use unknown, stopping"
+                    break
                 if units > args.credit_cap:
                     aborted = f"LinkdAPI credit cap {args.credit_cap} exceeded ({units})"
                     break
@@ -198,10 +228,10 @@ def main() -> int:
         if workspace_id:
             try:
                 stop = convex_run("stopRun", {"workspaceId": workspace_id})
-            except Exception as exc:  # report, but never skip re-pausing
+            except Exception as exc:  # report, but never skip restoring the pause flag
                 stop = {"error": str(exc)[:500]}
-        set_pause(True)
-        print(f"stopped: {stop}; PAUSE_AUTONOMOUS_JOBS=true")
+        restore_pause(pause_before)
+        print(f"stopped: {stop}; {PAUSE_VAR} restored to {pause_before or '(unset)'}")
         if workspace_id:
             write_json(run_file, {"started_at": started_at, "since_ms": since_ms, "workspace_id": workspace_id, "or_before": or_before, "or_delta": None, "aborted": aborted or "run did not finish", "stop": stop, "final_status": status, "poll_log": log, "latency_s": round(time.monotonic() - started, 1)})
 

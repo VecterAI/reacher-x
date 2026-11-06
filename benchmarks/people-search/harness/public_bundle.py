@@ -16,7 +16,8 @@ import re
 import sys
 from typing import Any
 
-from .core import BENCH_DIR, CONFIG, DATA_DIR, ensure_upstream, load_queries, now_iso, read_json, sha256_text, stable_json, write_json
+from .core import CONFIG, DATA_DIR, ensure_upstream, load_queries, now_iso, read_json, sha256_text, stable_json, write_json
+from .report import build as build_report
 
 ensure_upstream()
 
@@ -48,7 +49,10 @@ def slug(model: str) -> str:
 
 def build(judge_key: str) -> dict[str, Any]:
     model = CONFIG["judge"][judge_key]
-    results = read_json(DATA_DIR / "results" / f"{judge_key}_top{CONFIG['top_k']}.json")
+    # Score from the verdicts on disk now, so the summary and the people below come from one snapshot.
+    results = build_report(judge_key, CONFIG["top_k"])
+    if results["missing_verdicts"]:
+        raise SystemExit(f"{len(results['missing_verdicts'])} verdicts missing; run harness.score first")
     queries = load_queries()
     people: list[dict[str, Any]] = []
     for q in queries:
@@ -106,9 +110,11 @@ def build(judge_key: str) -> dict[str, Any]:
     return bundle
 
 
-def rescore() -> int:
-    """Recompute every tool's scores from the bundle alone, using the upstream metric code."""
-    b = read_json(BUNDLE)
+SCORE_FIELDS = ("overall", "relevance_precision", "effective_coverage", "information_utility", "task_completion_rate")
+
+
+def check_scores(b: dict[str, Any]) -> bool:
+    """Recompute every tool's scores from a bundle alone with the upstream metric code; True if all match."""
     top_k = b["method"]["config"]["top_k"]
     by_q: dict[tuple[str, str], list[dict]] = {}
     for p in b["people"]:
@@ -128,11 +134,16 @@ def rescore() -> int:
                 if any(r["tool"] == tool and r["query_id"] == q["query_id"] for r in b["query_rows"]):
                     qms.append(compute_query_metrics(q["query_id"], tool, q["category"], evals, requested_k=top_k))
             s = compute_platform_scores(tool, qms, total_queries=len([q for q in qids if q["query_id"] not in not_run]))
-            want = b["summary"][track][tool]["overall"]
-            same = abs(s.overall - want) < 0.01
-            ok &= same
-            print(f"{track:6s} {tool:16s} overall {s.overall:6.2f}  (published {want:6.2f}) {'OK' if same else 'MISMATCH'}")
-    return 0 if ok else 1
+            got = s.model_dump()
+            published = b["summary"][track][tool]
+            bad = [f"{f} {got[f]:.2f} vs {published[f]:.2f}" for f in SCORE_FIELDS if abs(got[f] - published[f]) >= 0.01]
+            ok &= not bad
+            print(f"{track:6s} {tool:16s} overall {got['overall']:6.2f}  {'OK (all 5 scores match)' if not bad else 'MISMATCH: ' + '; '.join(bad)}")
+    return ok
+
+
+def rescore() -> int:
+    return 0 if check_scores(read_json(BUNDLE)) else 1
 
 
 def main() -> int:
@@ -143,6 +154,9 @@ def main() -> int:
     if args.rescore:
         return rescore()
     bundle = build(args.judge)
+    if not check_scores(bundle):
+        print("NOT written: scores recomputed from the bundle do not match its summary")
+        return 1
     # Check everything that would be published, not only the people list, before writing.
     leaked = EMAIL.findall(json.dumps(bundle, ensure_ascii=False))
     if leaked:

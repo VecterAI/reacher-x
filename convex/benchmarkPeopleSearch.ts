@@ -65,10 +65,41 @@ export const prepareAndStart = internalAction({
         setupCompletedAt: startedAt,
       }
     );
-    await ctx.runMutation(internal.benchmarkPeopleSearch.scheduleStart, {
-      workspaceId,
-    });
+    try {
+      await ctx.runMutation(internal.benchmarkPeopleSearch.scheduleStart, {
+        workspaceId,
+      });
+    } catch (error) {
+      // Never leave a half-started workspace holding a plan slot.
+      await ctx.runMutation(
+        internal.benchmarkPeopleSearch.deleteBenchmarkWorkspace,
+        { workspaceId, queryId: args.queryId, runStartedAt: startedAt }
+      );
+      throw error;
+    }
     return { workspaceId, startedAt };
+  },
+});
+
+export const findRunWorkspace = internalQuery({
+  args: { userId: v.id("users"), queryId: v.string(), since: v.number() },
+  handler: async (ctx, { userId, queryId, since }) => {
+    // Lets the runner recover the workspace if prepareAndStart timed out after
+    // creating it: the benchmark workspace for this query created since `since`.
+    const workspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .order("desc")
+      .take(50);
+    const match = workspaces.find(
+      (w) =>
+        w.name === `${BENCHMARK_NAME_PREFIX}${queryId}` &&
+        w._creationTime >= since &&
+        !w.deletionWorkflowId
+    );
+    return match
+      ? { workspaceId: match._id, createdAt: match._creationTime }
+      : null;
   },
 });
 
@@ -347,6 +378,12 @@ export const linkdApiUnitsSince = internalQuery({
       billableUnits += e.billableUnits;
       if (e.outcome === "success") successes += 1;
     }
-    return { billableUnits, successes, events: events.length };
+    // A full page means the total may be incomplete; the runner stops on it.
+    return {
+      billableUnits,
+      successes,
+      events: events.length,
+      capped: events.length === MAX_COST_EVENTS_READ,
+    };
   },
 });
