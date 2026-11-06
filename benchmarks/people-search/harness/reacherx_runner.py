@@ -14,13 +14,12 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from typing import Any
 
-from .core import CONFIG, DATA_DIR, OPENROUTER_LEDGER_SERVICES, REPO_DIR, BudgetStop, guard, ledger_window, now_iso, openrouter_usage, query_by_id, read_json, record_spend, write_json
+from .core import CONFIG, DATA_DIR, OPENROUTER_LEDGER_SERVICES, BudgetStop, convex_cli, dev_deployment, guard, ledger_window, now_iso, openrouter_usage, query_by_id, read_json, record_spend, write_json
 
 POLL_S = 30
 TIMEOUT_S = 60 * 60
@@ -28,20 +27,13 @@ PER_RUN_CAP_USD = 1.5  # abort a single query's run past this OpenRouter spend
 STABLE_POLLS = 2
 
 
-def convex(*args: str) -> str:
-    out = subprocess.run(["npx", "convex", *args], cwd=REPO_DIR, capture_output=True, text=True, timeout=600)
-    if out.returncode != 0:
-        raise RuntimeError(f"npx convex {args[0]} failed: {out.stderr.strip()[-800:]}")
-    return out.stdout.strip()
-
-
 def convex_run(fn: str, payload: dict[str, Any]) -> Any:
-    raw = convex("run", f"benchmarkPeopleSearch:{fn}", json.dumps(payload))
+    raw = convex_cli("run", f"benchmarkPeopleSearch:{fn}", json.dumps(payload)).stdout.strip()
     return json.loads(raw) if raw else None
 
 
 def set_pause(paused: bool) -> None:
-    convex("env", "set", "PAUSE_AUTONOMOUS_JOBS", "true" if paused else "false")
+    convex_cli("env", "set", "PAUSE_AUTONOMOUS_JOBS", "true" if paused else "false")
 
 
 def _post_fields(raw: str) -> dict[str, Any]:
@@ -123,22 +115,32 @@ def main() -> int:
     ap.add_argument("--latency-s", type=float, help="export-only: run duration in seconds")
     ap.add_argument("--aborted", help="export-only: why the run stopped early, if it did")
     args = ap.parse_args()
+    dev_deployment()  # refuse anything but a dev deployment before any read or write
     q = query_by_id(args.query)
     use_case = CONFIG["tools"]["reacherx"]["use_case_by_category"][q["category"]]
-    out_path = DATA_DIR / "reacherx_exports" / f"{q['query_id']}.json"
+    exports = DATA_DIR / "reacherx_exports"
+    out_path = exports / f"{q['query_id']}.json"
+    run_file = exports / f"{q['query_id']}.run.json"
     if out_path.exists():
         print(f"skip {q['query_id']}: already exported (never re-run a paid query)")
         return 0
     if args.export_only:
-        run_file = DATA_DIR / "reacherx_exports" / f"{q['query_id']}.run.json"
         if run_file.exists():
             saved = read_json(run_file)
-            return finalize(q, use_case, saved["workspace_id"], saved, saved["or_delta"])
+            or_delta = saved.get("or_delta")
+            if or_delta is None:
+                # The run stopped before its final measurement: estimate it, and say so.
+                others = ledger_window(OPENROUTER_LEDGER_SERVICES, saved["started_at"], now_iso())
+                or_delta = round(max(openrouter_usage() - saved["or_before"] - others, 0.0), 6)
+                saved["or_delta_estimated"] = True
+            return finalize(q, use_case, saved["workspace_id"], saved, or_delta)
         if not (args.workspace_id and args.since_ms and args.or_delta is not None and args.latency_s):
             raise SystemExit("--export-only needs <query>.run.json or --workspace-id --since-ms --or-delta --latency-s")
         meta = {"started_at": datetime.fromtimestamp(args.since_ms / 1000, tz=timezone.utc).isoformat(timespec="seconds"), "since_ms": args.since_ms, "latency_s": args.latency_s, "aborted": args.aborted, "stop": "see run log", "final_status": None, "poll_log": []}
         write_json(run_file, {**meta, "workspace_id": args.workspace_id, "or_delta": args.or_delta})
         return finalize(q, use_case, args.workspace_id, meta, args.or_delta)
+    if run_file.exists():
+        raise SystemExit(f"A paid run for {q['query_id']} already happened without an export. Recover it with --export-only; a second paid run is refused.")
 
     guard(PER_RUN_CAP_USD, label=f"reacherx {q['query_id']}")
     or_before = openrouter_usage()
@@ -146,23 +148,34 @@ def main() -> int:
     started_at = now_iso()
     log: list[dict[str, Any]] = []
     workspace_id = None
+    since_ms = None
     status: dict[str, Any] | None = None
     aborted = None
+    stop = None
     print(f"linkdapi circuit: {convex_run('resetLinkdApiCircuit', {})}")
     set_pause(False)
     try:
         prep = convex_run("prepareAndStart", {"userId": args.user_id, "queryId": q["query_id"], "prompt": q["prompt"], "useCaseKey": use_case})
         workspace_id, since_ms = prep["workspaceId"], prep["startedAt"]
+        # Recovery facts go to disk before polling, so a crash can still be exported.
+        write_json(run_file, {"started_at": started_at, "since_ms": since_ms, "workspace_id": workspace_id, "or_before": or_before, "or_delta": None, "aborted": "run did not finish", "stop": None, "final_status": None, "poll_log": [], "latency_s": None})
         print(f"workspace {workspace_id} started ({use_case})")
         stable = 0
         last_key = None
         while time.monotonic() - started < TIMEOUT_S:
             time.sleep(POLL_S)
-            status = convex_run("runStatus", {"workspaceId": workspace_id})
-            spent = openrouter_usage() - or_before - ledger_window(OPENROUTER_LEDGER_SERVICES, started_at, now_iso())
+            try:
+                status = convex_run("runStatus", {"workspaceId": workspace_id})
+                spent = openrouter_usage() - or_before - ledger_window(OPENROUTER_LEDGER_SERVICES, started_at, now_iso())
+            except Exception as exc:  # keep the run recoverable instead of crashing
+                aborted = f"polling failed: {type(exc).__name__}: {exc}"[:300]
+                break
             log.append({"t": round(time.monotonic() - started), "status": status, "openrouter_delta": round(spent, 4)})
             c = status["counts"]
             print(f"  t={log[-1]['t']}s wf={status['workflowState']} total={c['total']} pending={c['pending']} qualified={c['qualified']} spent=${spent:.3f}")
+            if status.get("workspaceStatus") == "limit_reached":
+                aborted = "start declined: plan limit reached"
+                break
             if spent > PER_RUN_CAP_USD:
                 aborted = f"per-run cap ${PER_RUN_CAP_USD} exceeded"
                 break
@@ -181,36 +194,46 @@ def main() -> int:
                 break
         else:
             aborted = f"timeout after {TIMEOUT_S}s"
-        latency = time.monotonic() - started
     finally:
-        stop = None
         if workspace_id:
             try:
                 stop = convex_run("stopRun", {"workspaceId": workspace_id})
             except Exception as exc:  # report, but never skip re-pausing
-                stop = {"error": str(exc)}
+                stop = {"error": str(exc)[:500]}
         set_pause(True)
         print(f"stopped: {stop}; PAUSE_AUTONOMOUS_JOBS=true")
+        if workspace_id:
+            write_json(run_file, {"started_at": started_at, "since_ms": since_ms, "workspace_id": workspace_id, "or_before": or_before, "or_delta": None, "aborted": aborted or "run did not finish", "stop": stop, "final_status": status, "poll_log": log, "latency_s": round(time.monotonic() - started, 1)})
 
     time.sleep(5)
-    run_meta = {"started_at": started_at, "since_ms": since_ms, "latency_s": round(latency, 1), "aborted": aborted, "stop": stop, "final_status": status, "poll_log": log}
+    run_meta = read_json(run_file)
+    run_meta["aborted"] = aborted
     # Other harness OpenRouter calls (judge, translations) during the window are not ReacherX's.
     others = ledger_window(OPENROUTER_LEDGER_SERVICES, started_at, now_iso())
-    or_delta = round(max(openrouter_usage() - or_before - others, 0.0), 6)
+    run_meta["or_delta"] = round(max(openrouter_usage() - or_before - others, 0.0), 6)
     run_meta["openrouter_other_harness_usd"] = round(others, 6)
-    # Save run facts first, so a failed export can be redone with --export-only.
-    write_json(DATA_DIR / "reacherx_exports" / f"{q['query_id']}.run.json", {**run_meta, "workspace_id": workspace_id, "or_delta": or_delta})
-    return finalize(q, use_case, workspace_id, run_meta, or_delta)
+    write_json(run_file, run_meta)
+    return finalize(q, use_case, workspace_id, run_meta, run_meta["or_delta"])
 
 
 def finalize(q: dict, use_case: str, workspace_id: str, run_meta: dict[str, Any], or_delta: float) -> int:
     out_path = DATA_DIR / "reacherx_exports" / f"{q['query_id']}.json"
-    since_ms, latency, started_at = run_meta["since_ms"], run_meta["latency_s"], run_meta["started_at"]
-    aborted, stop, status, log = run_meta["aborted"], run_meta["stop"], run_meta["final_status"], run_meta["poll_log"]
+    since_ms, latency, started_at = run_meta["since_ms"], run_meta.get("latency_s"), run_meta["started_at"]
+    aborted, stop, status, log = run_meta.get("aborted"), run_meta.get("stop"), run_meta.get("final_status"), run_meta.get("poll_log") or []
     export = convex_run("exportProspects", {"workspaceId": workspace_id})
     costs = convex_run("runCosts", {"workspaceId": workspace_id, "since": since_ms - 60_000})
     provider_usd = round(sum(v["usd"] for v in costs["providers"].values()), 6)
-    record_spend("reacherx-providers", f"reacherx run {q['query_id']}", provider_usd, breakdown=costs["providers"])
+    record_spend("reacherx-providers", f"reacherx run {q['query_id']}", provider_usd, once_key=f"reacherx:{q['query_id']}:{workspace_id}", breakdown=costs["providers"])
+    warnings = []
+    if costs.get("providerEventsCapped"):
+        warnings.append("provider cost events hit the read cap; provider cost is a lower bound")
+    if costs.get("llmEventsCapped"):
+        warnings.append("in-app LLM usage events hit the read cap; llm_usd_recorded_in_app is a lower bound")
+    if run_meta.get("or_delta_estimated"):
+        warnings.append("OpenRouter spend estimated after the run stopped early; may include later spend")
+    cleanup_problem = isinstance(stop, dict) and (stop.get("error") or stop.get("monitorFailures"))
+    if cleanup_problem:
+        warnings.append(f"stopRun did not finish cleanly: {stop}; workspace kept so its SocialAPI monitors can be cleaned up")
 
     fit_min = export["workspace"]["fitScoreMin"]
     qualified = [p for p in export["prospects"] if p["qualificationStatus"] == "qualified" and (p["qualificationScore"] or 0) >= fit_min]
@@ -219,9 +242,10 @@ def finalize(q: dict, use_case: str, workspace_id: str, run_meta: dict[str, Any]
         "query_id": q["query_id"],
         "at": started_at,
         "input": {"prompt": q["prompt"], "useCaseKey": use_case, "workspaceId": workspace_id, "models": "production defaults (openai/gpt-6-luna-pro)"},
-        "latency_s": round(latency, 1),
+        "latency_s": latency,
         "cost_usd": round(or_delta + provider_usd, 6),
         "cost_breakdown": {"openrouter_delta_usd": or_delta, "providers": costs["providers"], "llm_usd_recorded_in_app": costs["llmUsdRecorded"]},
+        "warnings": warnings,
         "aborted": aborted,
         "stop": stop,
         "final_status": status,
@@ -232,9 +256,14 @@ def finalize(q: dict, use_case: str, workspace_id: str, run_meta: dict[str, Any]
     }
     write_json(out_path, result)
     write_json(DATA_DIR / "reacherx_exports" / f"{q['query_id']}.full.json", export)
-    deleted = convex_run("deleteBenchmarkWorkspace", {"workspaceId": workspace_id})
+    for w in warnings:
+        print(f"WARNING: {w}")
+    if cleanup_problem:
+        print("Workspace NOT deleted. Fix the monitor cleanup, then delete it from the app.")
+        return 3
+    deleted = convex_run("deleteBenchmarkWorkspace", {"workspaceId": workspace_id, "queryId": q["query_id"], "runStartedAt": since_ms})
     print(f"workspace delete requested: {deleted}")
-    print(f"exported {len(result['prospects'])} of {len(qualified)} qualified ({len(export['prospects'])} discovered); cost ${result['cost_usd']:.4f}; {result['latency_s']}s")
+    print(f"exported {len(result['prospects'])} of {len(qualified)} qualified ({len(export['prospects'])} discovered); cost ${result['cost_usd']:.4f}; {latency}s")
     return 0
 
 

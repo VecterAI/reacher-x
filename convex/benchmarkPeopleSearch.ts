@@ -219,6 +219,7 @@ export const runCosts = internalQuery({
     return {
       providers: byProvider,
       providerEventsCapped: events.length === MAX_COST_EVENTS_READ,
+      llmEventsCapped: usage.length === MAX_COST_EVENTS_READ,
       llmUsdRecorded: llmUsd,
       llmCallsRecorded: llmCalls,
     };
@@ -281,15 +282,25 @@ export const stopRun = internalAction({
   },
 });
 
+const DELETE_WINDOW_MS = 10 * 60 * 1000;
+
 export const deleteBenchmarkWorkspace = internalMutation({
-  args: { workspaceId: v.id("workspaces") },
-  handler: async (ctx, { workspaceId }) => {
-    // Frees a plan slot after a run is exported. Only benchmark workspaces.
+  args: {
+    workspaceId: v.id("workspaces"),
+    queryId: v.string(),
+    runStartedAt: v.number(),
+  },
+  handler: async (ctx, { workspaceId, queryId, runStartedAt }) => {
+    // Frees a plan slot after a run is exported. Only the workspace this run
+    // created: exact benchmark name and a creation time inside the run window.
     const workspace = await ctx.db.get(workspaceId);
     if (!workspace) return { deleted: false };
-    if (!workspace.name.startsWith(BENCHMARK_NAME_PREFIX)) {
+    const sameName = workspace.name === `${BENCHMARK_NAME_PREFIX}${queryId}`;
+    const sameRun =
+      Math.abs(workspace._creationTime - runStartedAt) <= DELETE_WINDOW_MS;
+    if (!sameName || !sameRun) {
       throw new Error(
-        "Refusing to delete a workspace the benchmark did not create"
+        "Refusing to delete a workspace this benchmark run did not create"
       );
     }
     await requestWorkspaceDeletion(ctx, workspace);

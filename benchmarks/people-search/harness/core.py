@@ -155,11 +155,49 @@ def http_json(
 SPEND_LEDGER = DATA_DIR / "spend.jsonl"
 
 
-def record_spend(service: str, what: str, usd: float, **extra: Any) -> None:
+def record_spend(service: str, what: str, usd: float, *, once_key: str | None = None, **extra: Any) -> None:
+    """Append a spend row. With `once_key`, a retry of the same paid step is not counted twice."""
     SPEND_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    if once_key and SPEND_LEDGER.exists():
+        for line in SPEND_LEDGER.read_text().splitlines():
+            if line.strip() and json.loads(line).get("once_key") == once_key:
+                return
     row = {"at": now_iso(), "service": service, "what": what, "usd": round(usd, 6), **extra}
+    if once_key:
+        row["once_key"] = once_key
     with SPEND_LEDGER.open("a") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+# ---------------------------------------------------------------- Convex (dev only)
+
+
+def dev_deployment() -> str:
+    """The Convex deployment the benchmark may touch. Refuses anything that is not a dev deployment."""
+    env_local = REPO_DIR / ".env.local"
+    values: dict[str, str] = {}
+    if env_local.exists():
+        for line in env_local.read_text().splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.split("=", 1)
+                values[k.strip()] = v.split("#", 1)[0].strip().strip('"').strip("'")
+    deployment = values.get("CONVEX_DEPLOYMENT", "")
+    if not deployment.startswith("dev:"):
+        raise SystemExit(f"Refusing to run: CONVEX_DEPLOYMENT in .env.local is not a dev deployment ({deployment or 'unset'})")
+    for source in (values.get("CONVEX_DEPLOY_KEY", ""), os.environ.get("CONVEX_DEPLOY_KEY", "")):
+        if source and not source.startswith("dev:"):
+            raise SystemExit("Refusing to run: a non-dev CONVEX_DEPLOY_KEY is set; unset it first")
+    return deployment
+
+
+def convex_cli(*args: str, input_text: str | None = None, check: bool = True, timeout: int = 600) -> subprocess.CompletedProcess:
+    """Run `npx convex ...` pinned to the dev deployment from .env.local."""
+    env = {k: v for k, v in os.environ.items() if k not in ("CONVEX_DEPLOY_KEY", "CONVEX_URL")}
+    env["CONVEX_DEPLOYMENT"] = dev_deployment()
+    out = subprocess.run(["npx", "convex", *args], cwd=REPO_DIR, capture_output=True, text=True, timeout=timeout, input=input_text, env=env)
+    if check and out.returncode != 0:
+        raise RuntimeError(f"npx convex {args[0]} failed (exit {out.returncode}): {out.stderr.strip()[-800:]}")
+    return out
 
 
 def ledger_total(exclude: set[str] | None = None) -> float:

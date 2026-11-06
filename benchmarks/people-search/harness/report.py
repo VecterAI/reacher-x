@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import unicodedata
 from datetime import datetime, timedelta
 from statistics import median
 from typing import Any
@@ -23,6 +24,8 @@ ensure_upstream()
 from benchmark.metrics import PersonEvaluation, compute_platform_scores, compute_query_metrics  # noqa: E402
 
 STALE_AFTER_DAYS = 180
+# Extra views of a tool's run that must never be read as a separate primary result.
+SECONDARY_VIEWS = {"reacherx_topfit"}
 INTENT_SINCE = "2026-10-01"
 
 
@@ -35,7 +38,10 @@ def identity(p: dict[str, Any]) -> str:
     m = re.search(r"linkedin\.com/in/([^/?#]+)", li)
     if m:
         return "li:" + m.group(1)
-    return "name:" + re.sub(r"[^a-z]", "", (p.get("name") or "").lower().split(",")[0])
+    # Unicode-aware, so names in any script stay distinct; no usable name falls back to the rank.
+    name = unicodedata.normalize("NFKC", p.get("name") or "").casefold().split(",")[0]
+    key = "".join(ch for ch in name if ch.isalnum())
+    return "name:" + key if key else f"rank:{p.get('rank')}"
 
 
 def parse_date(s: str | None) -> datetime | None:
@@ -86,6 +92,8 @@ def build(judge_key: str, top_k: int) -> dict[str, Any]:
 
     for q in queries:
         for tool in tools:
+            if q["query_id"] in (CONFIG.get("not_run") or {}).get(tool, {}):
+                continue  # not run: left out of every average, not scored as zero
             rp = DATA_DIR / "raw" / tool / f"{q['query_id']}.json"
             if not rp.exists():
                 continue
@@ -149,6 +157,7 @@ def build(judge_key: str, top_k: int) -> dict[str, Any]:
         n_track = sum(1 for q in queries if q["track"] == track and q["query_id"] not in not_run)
         s = compute_platform_scores(tool, qms, total_queries=n_track).model_dump()
         s["queries_scored"] = n_track
+        s["role"] = "secondary" if tool in SECONDARY_VIEWS else "primary"
         s["not_run"] = sorted(q["query_id"] for q in queries if q["track"] == track and q["query_id"] in not_run)
         mine = [r for r in rows if r["tool"] == tool and r["track"] == track]
         lat = [r["latency_s"] for r in mine if r["latency_s"]]
@@ -180,7 +189,8 @@ def main() -> int:
         print(f"{'tool':12s} {'overall':>7s} {'nDCG@10':>7s} {'cover':>6s} {'util':>6s} {'TCR':>5s} {'lat_s':>6s} {'cost$':>7s} {'$/usable':>8s}")
         for tool, s in sorted(tools.items(), key=lambda kv: -kv[1]["overall"]):
             cpu = f"{s['cost_per_usable_usd']:.4f}" if s["cost_per_usable_usd"] is not None else "-"
-            print(f"{tool:12s} {s['overall']:7.1f} {s['relevance_precision']:7.1f} {s['effective_coverage']:6.1f} {s['information_utility']:6.1f} {s['task_completion_rate']:5.0f} {s['median_latency_s'] or 0:6.1f} {s['total_cost_usd']:7.4f} {cpu:>8s}")
+            name = f"{tool} (secondary view)" if tool in SECONDARY_VIEWS else tool
+            print(f"{name:12s} {s['overall']:7.1f} {s['relevance_precision']:7.1f} {s['effective_coverage']:6.1f} {s['information_utility']:6.1f} {s['task_completion_rate']:5.0f} {s['median_latency_s'] or 0:6.1f} {s['total_cost_usd']:7.4f} {cpu:>8s}")
     print(f"\n{'tool':12s} {'query':9s} {'ret':>3s} {'uniq':>4s} {'pass':>4s} {'verif':>5s} {'intent':>6s} {'undated':>7s}")
     for r in out["rows"]:
         it = "-" if r["intent_verified"] is None else str(r["intent_verified"])

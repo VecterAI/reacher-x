@@ -25,12 +25,21 @@ from benchmark.metrics import PersonEvaluation, compute_platform_scores, compute
 BUNDLE = DATA_DIR / "public" / "bundle.json"  # stays out of git until publishing is decided
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 PHONE = re.compile(r"\+?\d[\d\s().-]{7,}\d")
+# Dates, year ranges and long numeric ids look like phone numbers to PHONE; keep them.
+DATE_LIKE = re.compile(r"^(\d{4}-\d{2}-\d{2}([T ][\d:.]+)?|(19|20)\d{2}\s*[-/]\s*((19|20)\d{2}|\d{2})|\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})$")
+
+
+def _phone_or_keep(m: re.Match) -> str:
+    s = m.group(0).strip()
+    if DATE_LIKE.match(s) or (s.isdigit() and len(s) > 15):
+        return m.group(0)
+    return "[phone]"
 
 
 def scrub(text: str | None) -> str | None:
     if not text:
         return text
-    return PHONE.sub("[phone]", EMAIL.sub("[email]", text))
+    return PHONE.sub(_phone_or_keep, EMAIL.sub("[email]", text))
 
 
 def slug(model: str) -> str:
@@ -63,8 +72,8 @@ def build(judge_key: str) -> dict[str, Any]:
                         "location": p.get("location"),
                         "profile_urls": [u for u in (p.get("profile_urls") or []) if u and "@" not in u][:3],
                         "tool_score": p.get("tool_score"),
-                        "evidence_urls": [e.get("url") for e in (p.get("evidence") or []) if e.get("url")][:3],
-                        "judge_search_urls": [u for s in v.get("searches") or [] for u in s.get("urls") or []][:6],
+                        "evidence_urls": [e.get("url") for e in (p.get("evidence") or []) if e.get("url") and "@" not in e.get("url")][:3],
+                        "judge_search_urls": [u for s in v.get("searches") or [] for u in s.get("urls") or [] if u and "@" not in u][:6],
                         "evaluation": {
                             "relevance_grade": ev["relevance_grade"],
                             "structural_score": ev["structural_score"],
@@ -110,12 +119,14 @@ def rescore() -> int:
         tools = sorted({r["tool"] for r in b["query_rows"] if r["track"] == track})
         for tool in tools:
             qms = []
+            not_run = set((b["method"]["config"].get("not_run") or {}).get(tool, {}))
             for q in qids:
+                if q["query_id"] in not_run:
+                    continue  # same rule as the report: not run means left out, not zero
                 rows = sorted(by_q.get((tool, q["query_id"]), []), key=lambda r: r["rank"])
                 evals = [PersonEvaluation(person_name=r["name"] or "", relevance_grade=r["evaluation"]["relevance_grade"], structural_score=r["evaluation"]["structural_score"], contextual_score=r["evaluation"]["contextual_score"], utility_score=r["evaluation"]["utility_score"], error=r["evaluation"]["error"]) for r in rows]
                 if any(r["tool"] == tool and r["query_id"] == q["query_id"] for r in b["query_rows"]):
                     qms.append(compute_query_metrics(q["query_id"], tool, q["category"], evals, requested_k=top_k))
-            not_run = set((b["method"]["config"].get("not_run") or {}).get(tool, {}))
             s = compute_platform_scores(tool, qms, total_queries=len([q for q in qids if q["query_id"] not in not_run]))
             want = b["summary"][track][tool]["overall"]
             same = abs(s.overall - want) < 0.01
@@ -132,9 +143,13 @@ def main() -> int:
     if args.rescore:
         return rescore()
     bundle = build(args.judge)
+    # Check everything that would be published, not only the people list, before writing.
+    leaked = EMAIL.findall(json.dumps(bundle, ensure_ascii=False))
+    if leaked:
+        print(f"NOT written: {len(leaked)} email-like strings remain in the bundle; fix the scrub first")
+        return 1
     write_json(BUNDLE, bundle)
-    leaked = EMAIL.search(json.dumps(bundle["people"]))
-    print(f"wrote {BUNDLE} ({len(bundle['people'])} people); email-like strings left: {bool(leaked)}")
+    print(f"wrote {BUNDLE} ({len(bundle['people'])} people); no email-like strings")
     return 0
 
 

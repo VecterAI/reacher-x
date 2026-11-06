@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from .core import CONFIG, DATA_DIR, guard, http_json, now_iso, read_json, record_spend, secret, sha256_text, stable_json, write_json
@@ -34,6 +35,7 @@ def chat(
     if path.exists():
         hit = read_json(path)
         hit["cached"] = True
+        hit["cache_path"] = str(path)
         return hit
 
     guard(estimate_usd, label=purpose)
@@ -66,4 +68,16 @@ def chat(
     }
     write_json(path, out)
     out["cached"] = False
+    out["cache_path"] = str(path)
     return out
+
+
+def parse_reply(result: dict[str, Any]) -> Any:
+    """Parse a cached chat reply as JSON; drop it from the cache when it is not valid, so a retry asks again."""
+    try:
+        return parse_json(result["content"])
+    except (ValueError, TypeError) as exc:
+        cache_path = result.get("cache_path")
+        if cache_path:
+            Path(cache_path).unlink(missing_ok=True)
+        raise ValueError(f"{result.get('purpose', 'chat')} returned invalid JSON; cache entry removed") from exc

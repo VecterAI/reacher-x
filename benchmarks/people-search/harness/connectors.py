@@ -24,7 +24,7 @@ from .core import (
     secret,
     write_json,
 )
-from .llm import chat, parse_json
+from .llm import chat, parse_json, parse_reply
 
 TREG_URL = "https://treg.to/call/"
 
@@ -136,11 +136,20 @@ def firecrawl(query: dict, top_k: int) -> dict[str, Any]:
     ext = chat(FIRECRAWL_EXTRACT_SYSTEM, f"Search request: {query['prompt']}\n\nResults:\n{listing}", purpose=f"firecrawl-extract {query['query_id']}")
     res["translation"] = {"kind": "person_extraction", "model": ext["model"], "content": ext["content"], "cost_usd": ext["cost_usd"]}
     res["latency_s"] = round(latency + float(ext.get("latency_s") or 0), 2)
-    people = (parse_json(ext["content"]) or {}).get("people") or []
+    people = (parse_reply(ext) or {}).get("people") or []
+    # Keep at most one person per web result, and skip result numbers that are not valid.
+    by_result: dict[int, dict] = {}
+    for p in people:
+        try:
+            idx = int(p.get("result"))
+        except (TypeError, ValueError):
+            continue
+        if 1 <= idx <= len(web) and idx not in by_result:
+            by_result[idx] = p
     persons: list[Person] = []
-    for p in sorted(people, key=lambda x: int(x.get("result") or 999)):
-        idx = int(p.get("result") or 0)
-        src = web[idx - 1] if 1 <= idx <= len(web) else {}
+    for idx in sorted(by_result):
+        p = by_result[idx]
+        src = web[idx - 1]
         url = src.get("url")
         persons.append(
             Person(
@@ -414,7 +423,7 @@ def apollo(query: dict, top_k: int) -> dict[str, Any]:
         if previous is not None:
             user += f"\n\nPrevious filters:\n{json.dumps(previous)}\n{BROADEN_NOTE.replace('query', 'filter set')}"
         tr = chat(APOLLO_SYSTEM, user, purpose=f"apollo-translate {query['query_id']} #{attempt}", max_tokens=1500)
-        filters = {k: v for k, v in (parse_json(tr["content"]) or {}).items() if k in APOLLO_FILTER_KEYS and v}
+        filters = {k: v for k, v in (parse_reply(tr) or {}).items() if k in APOLLO_FILTER_KEYS and v}
         body = {**filters, "page": 1, "per_page": top_k}
         res["translation"].append({"attempt": attempt, "kind": "apollo_filters", "model": tr["model"], "content": tr["content"], "cost_usd": tr["cost_usd"]})
         res["input"].append({"search": body})
