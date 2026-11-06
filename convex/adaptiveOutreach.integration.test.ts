@@ -422,7 +422,8 @@ describe("adaptive outreach planning", () => {
       outcome: "continue",
       planVersion: 2,
     });
-    expect(state.plan?.status).toBe("approved");
+    // review_required: the revised plan waits for a plan-level approval.
+    expect(state.plan?.status).toBe("paused");
     expect(state.event).toMatchObject({
       status: "completed",
       decisionOutcome: "continue",
@@ -444,6 +445,65 @@ describe("adaptive outreach planning", () => {
       targetCommentId: "comment-reply-1",
       planVersion: 2,
       status: "pending",
+    });
+  });
+
+  test("does not approve a draft plan when a response continues it", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "linkedin");
+    const response = await t.mutation(
+      internal.outreach.onProspectLinkedInResponse,
+      {
+        prospectId: seeded.prospectId,
+        planId: seeded.planId,
+        responseType: "comment",
+        responseMessageId: "comment-reply-draft",
+        responseText: "Tell me more.",
+        conversationId: "linkedin-post-1",
+      }
+    );
+    await t.run((ctx) => ctx.db.patch(seeded.planId, { status: "draft" }));
+    const decision = parseAdaptiveOutreachDecision(
+      {
+        outcome: "continue",
+        summary: "Answer the prospect.",
+        reasoning: "A direct answer is the natural next move.",
+        strategy: {
+          rationale: "Continue the conversation.",
+          targetTweetId: "linkedin-post-1",
+          valueProposition: "Explain the workflow.",
+          tone: "helpful",
+        },
+        tasks: [
+          {
+            type: "comment",
+            description: "Answer the prospect.",
+            timing: { type: "immediate", value: null },
+            targetTweetId: null,
+            targetCommentId: null,
+            reactionType: null,
+            content: "Happy to explain.",
+          },
+        ],
+      },
+      {
+        channel: "linkedin_comment",
+        responseMessageId: "comment-reply-draft",
+        responseText: "Tell me more.",
+        conversationId: "linkedin-post-1",
+      }
+    );
+    await t.mutation(
+      internal.adaptiveOutreach.applyAdaptiveOutreachDecisionInternal,
+      {
+        eventId: response.eventId as Id<"outreachInteractionEvents">,
+        decision,
+      }
+    );
+
+    expect(await t.run((ctx) => ctx.db.get(seeded.planId))).toMatchObject({
+      status: "draft",
+      version: 2,
     });
   });
 
@@ -537,6 +597,180 @@ describe("adaptive outreach planning", () => {
         responseMessageId: "decline-1",
       },
       tasks: [],
+    });
+  });
+
+  test("revising an executing plan pauses it and raises one approval in review_required", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const revise = (description: string) =>
+      t.run(async (ctx) => {
+        await refinePlan(ctx, seeded.planId, {
+          tasks: [
+            {
+              type: "dm",
+              description,
+              content: "Revised message.",
+              timing: { type: "immediate" },
+            },
+          ],
+        });
+      });
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.planId, {
+        status: "executing",
+        workflowId: "stale-workflow",
+      });
+    });
+    await revise("First revision.");
+    await revise("Second revision.");
+
+    const state = await t.run(async (ctx) => ({
+      plan: await ctx.db.get(seeded.planId),
+      notifications: await ctx.db.query("outreachNotifications").collect(),
+      events: await ctx.db
+        .query("memoryWorkflowEvents")
+        .filter((q) =>
+          q.eq(q.field("eventType"), "outreach_plan_revision_pending")
+        )
+        .collect(),
+    }));
+    expect(state.plan).toMatchObject({
+      status: "paused",
+      version: 3,
+      revisionApprovalPending: true,
+      executionGeneration: 2,
+    });
+    expect(state.plan?.workflowId).toBeUndefined();
+    expect(state.notifications).toHaveLength(1);
+    expect(state.notifications[0]).toMatchObject({
+      planId: seeded.planId,
+      status: "pending",
+    });
+    expect(state.events).toHaveLength(2);
+  });
+
+  test("revising an executing plan applies silently when autonomous", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const state = await t.run(async (ctx) => {
+      await ctx.db.insert("workspaceAgentSettings", {
+        workspaceId: seeded.workspaceId,
+        userId: seeded.userId,
+        autonomyMode: "autonomous",
+        updatedAt: 2,
+      });
+      await ctx.db.patch(seeded.planId, { status: "executing" });
+      await refinePlan(ctx, seeded.planId, {
+        tasks: [
+          {
+            type: "dm",
+            description: "Autonomous revision.",
+            content: "Revised message.",
+            timing: { type: "immediate" },
+          },
+        ],
+      });
+      return {
+        plan: await ctx.db.get(seeded.planId),
+        notifications: await ctx.db.query("outreachNotifications").collect(),
+      };
+    });
+    expect(state.plan?.status).toBe("executing");
+    expect(state.notifications).toHaveLength(0);
+  });
+
+  test("recovery does not resume a plan with a pending revision approval", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const resumed = await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.planId, {
+        status: "paused",
+        revisionApprovalPending: true,
+      });
+      return await ctx.runMutation(
+        internal.outreachRecovery.resumeRecoveredLinkedInDmPlan,
+        { planId: seeded.planId }
+      );
+    });
+    expect(resumed).toEqual({ resumed: false });
+  });
+
+  test("workflow status guard rejects a plan that is no longer approved", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const started = await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.planId, { status: "paused" });
+      return await ctx.runMutation(internal.outreach.updatePlanStatus, {
+        planId: seeded.planId,
+        status: "executing",
+        expectedStatus: "approved",
+      });
+    });
+    expect(started).toBe(false);
+  });
+
+  test("a later approved refinement keeps a pending revision approval", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const plan = await t.run(async (ctx) => {
+      await ctx.db.insert("workspaceAgentSettings", {
+        workspaceId: seeded.workspaceId,
+        userId: seeded.userId,
+        autonomyMode: "autonomous",
+        updatedAt: 2,
+      });
+      await ctx.db.patch(seeded.planId, {
+        status: "paused",
+        revisionApprovalPending: true,
+      });
+      await refinePlan(ctx, seeded.planId, {
+        status: "approved",
+        tasks: [
+          {
+            type: "dm",
+            description: "Later revision.",
+            content: "Revised message.",
+            timing: { type: "immediate" },
+          },
+        ],
+      });
+      return await ctx.db.get(seeded.planId);
+    });
+    expect(plan).toMatchObject({
+      status: "paused",
+      revisionApprovalPending: true,
+    });
+  });
+
+  test("task status writes from an invalidated workflow generation are rejected", async () => {
+    const t = createAdaptiveTest();
+    const seeded = await seedOutreach(t, "twitter");
+    const result = await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.planId, { executionGeneration: 2 });
+      const task = await ctx.db
+        .query("outreachTasks")
+        .withIndex("by_plan_order", (q) => q.eq("planId", seeded.planId))
+        .first();
+      const taskId = task!._id;
+      const stale = await ctx.runMutation(internal.outreach.updateTaskStatus, {
+        taskId,
+        status: "completed",
+        expectedExecutionGeneration: 1,
+      });
+      const afterStale = (await ctx.db.get(taskId))?.status;
+      await ctx.runMutation(internal.outreach.updateTaskStatus, {
+        taskId,
+        status: "completed",
+        expectedExecutionGeneration: 2,
+      });
+      return { stale, afterStale, active: (await ctx.db.get(taskId))?.status };
+    });
+    expect(result).toEqual({
+      stale: false,
+      afterStale: "pending",
+      active: "completed",
     });
   });
 });

@@ -24,7 +24,10 @@ import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import {
   createNotification as createNotificationRecord,
   dismissNotificationsForTask,
+  getProspectDisplayFields,
+  upsertNotificationByKey,
 } from "./notificationHelpers";
+import { recordMemoryWorkflowEvent } from "./memoryCore";
 import { isRecord } from "./typeGuards";
 import { workflow as workflowManager } from "./workflow";
 import type {
@@ -669,6 +672,44 @@ export async function createOutreachPlan(
   return planId;
 }
 
+export function planRevisionNotificationKey(planId: Id<"outreachPlans">) {
+  return `plan-revision:${planId}`;
+}
+
+/**
+ * Raises the single plan-level approval for an agent revision: one
+ * notification per plan (upserted) and one event per plan version.
+ */
+async function requestPlanRevisionApproval(
+  ctx: MutationCtx,
+  plan: Doc<"outreachPlans">
+): Promise<void> {
+  const prospect = await ctx.db.get("prospects", plan.prospectId);
+  await upsertNotificationByKey(ctx, {
+    userId: plan.userId,
+    workspaceId: plan.workspaceId,
+    type: "ask_human",
+    title: "Approve revised outreach plan",
+    message:
+      "The agent revised this plan after it was approved. Review and approve the new version to resume outreach.",
+    notificationKey: planRevisionNotificationKey(plan._id),
+    prospectId: plan.prospectId,
+    planId: plan._id,
+    threadId: plan.threadId,
+    ...getProspectDisplayFields(prospect),
+  });
+  await recordMemoryWorkflowEvent(ctx, {
+    workspaceId: plan.workspaceId,
+    eventType: "outreach_plan_revision_pending",
+    sourceType: "outreach_plan",
+    sourceId: String(plan._id),
+    planId: plan._id,
+    prospectId: plan.prospectId,
+    eventKey: `outreach_plan_revision_pending:${plan._id}:v${plan.version}`,
+    payload: { version: plan.version },
+  });
+}
+
 /**
  * Update an existing plan with refinements.
  */
@@ -706,6 +747,13 @@ export async function refinePlan(
   const now = getCurrentUTCTimestamp();
   const nextVersion = plan.version + 1;
   const nextStrategy = updates.strategy ?? plan.strategy;
+  const agentSettings = await getWorkspaceAgentSettingsRow(
+    ctx,
+    plan.workspaceId
+  );
+  const isAutonomous =
+    (agentSettings?.autonomyMode ?? DEFAULT_WORKSPACE_AGENT_AUTONOMY_MODE) ===
+    "autonomous";
   const nextThreadId = updates.threadId ?? plan.threadId;
   const preparedTasks = updates.tasks
     ? await validateTaskInputs(
@@ -734,6 +782,32 @@ export async function refinePlan(
         : task.status !== "completed" && task.status !== "skipped")
   );
 
+  // A revision of an already-approved plan needs a fresh plan-level approval
+  // unless the workspace is autonomous.
+  const requiresRevisionApproval =
+    plan.status !== "draft" &&
+    (updates.status === undefined || updates.status === "approved") &&
+    // A pending revision stays pending even if autonomy changed meanwhile.
+    (plan.revisionApprovalPending ||
+      (!isAutonomous &&
+        (updates.tasks !== undefined || tasksToSkip.length > 0)));
+
+  if (requiresRevisionApproval && plan.workflowId) {
+    try {
+      const workflowId = plan.workflowId as unknown as WorkflowId;
+      const workflowStatus = await workflowManager.status(ctx, workflowId);
+      if (workflowStatus.type === "inProgress") {
+        await workflowManager.cancel(ctx, workflowId);
+      }
+    } catch (error) {
+      console.warn("[OutreachCore] Failed to cancel workflow on revision", {
+        planId: String(planId),
+        workflowId: plan.workflowId,
+        error,
+      });
+    }
+  }
+
   if (
     updates.strategy ||
     updates.tasks ||
@@ -744,7 +818,19 @@ export async function refinePlan(
     await ctx.db.patch(planId, {
       strategy: nextStrategy,
       threadId: nextThreadId,
-      ...(updates.status ? { status: updates.status } : {}),
+      ...(requiresRevisionApproval
+        ? {
+            status: "paused" as const,
+            revisionApprovalPending: true,
+            // Invalidates the running workflow so it cannot complete the plan.
+            executionGeneration: (plan.executionGeneration ?? 0) + 1,
+            // Forces the post-approval start to launch a fresh workflow
+            // instead of reusing the invalidated one.
+            workflowId: undefined,
+          }
+        : updates.status
+          ? { status: updates.status }
+          : {}),
       version: nextVersion,
       updatedAt: now,
     });
@@ -829,6 +915,10 @@ export async function refinePlan(
       reason: "Outreach plan refined.",
     },
   });
+
+  if (requiresRevisionApproval) {
+    await requestPlanRevisionApproval(ctx, updatedPlan);
+  }
 
   await markPlanBatchItemApplied(ctx, {
     planBatchItemId: updates.planBatchItemId,
