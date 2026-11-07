@@ -1,9 +1,9 @@
 import type { MentionEntitySearchResult } from "@/shared/lib/mentions/mentionEntities";
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
+/**
+ * Text the agent composer inserts for a picked entity (`@<mentionText> `),
+ * or null for attachments, which are attached rather than written inline.
+ */
 export function buildAgentMentionReplacementText(
   entity: MentionEntitySearchResult
 ) {
@@ -15,24 +15,53 @@ export function buildAgentMentionReplacementText(
   return visibleText ? `@${visibleText} ` : null;
 }
 
-export function filterSelectedMentionEntitiesByInput(args: {
-  input: string;
-  entities: MentionEntitySearchResult[];
-}) {
-  if (!args.input.trim()) {
-    return [];
-  }
+/**
+ * Returns the entity ids of the `MentionNode` chips in a serialized Lexical
+ * editor state. A chip is atomic and stores the id of the entity the user
+ * picked, so it is the source of truth for which entity a visible `@name`
+ * refers to; two chips with the same name still carry different ids.
+ */
+export function collectComposerMentionIds(editorState: unknown): Set<string> {
+  const mentionIds = new Set<string>();
 
-  return args.entities.filter((entity) => {
-    const visibleText = entity.mentionText.trim();
-    if (!visibleText) {
-      return false;
+  /** Depth-first walk that records the id of every mention chip. */
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== "object") {
+      return;
     }
 
-    const mentionPattern = new RegExp(
-      `(^|[\\s(])@${escapeRegExp(visibleText)}(?=$|[\\s),.!?:;\\]])`
-    );
+    const current = node as {
+      type?: unknown;
+      mentionId?: unknown;
+      children?: unknown;
+    };
 
-    return mentionPattern.test(args.input);
-  });
+    if (current.type === "MentionNode") {
+      if (typeof current.mentionId === "string" && current.mentionId) {
+        mentionIds.add(current.mentionId);
+      }
+      return;
+    }
+
+    if (Array.isArray(current.children)) {
+      for (const child of current.children) {
+        visit(child);
+      }
+    }
+  };
+
+  visit((editorState as { root?: unknown } | null | undefined)?.root);
+  return mentionIds;
+}
+
+/**
+ * Keeps the selected entities whose mention chip is still in the composer.
+ * Selection is bound to chip ids only: deleting a chip detaches exactly its
+ * entity, and `@name` text typed or pasted by hand never re-links one.
+ */
+export function filterSelectedMentionEntitiesByMentionIds(args: {
+  entities: MentionEntitySearchResult[];
+  mentionIds: ReadonlySet<string>;
+}) {
+  return args.entities.filter((entity) => args.mentionIds.has(entity.id));
 }

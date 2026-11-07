@@ -7,16 +7,13 @@ import {
   normalizeMentionEntitySearchResult,
   type MentionEntitySearchResult,
 } from "../shared/lib/mentions/mentionEntities";
-import {
-  buildAgentMentionReplacementText,
-  filterSelectedMentionEntitiesByInput,
-} from "../features/agent/lib/entityMentions";
+import { buildAgentMentionReplacementText } from "../features/agent/lib/entityMentions";
 import {
   buildComposerMentionInsertionText,
   buildInitialMediaUploadFromMentionEntity,
 } from "../features/composer/lib/entityMentions";
 
-test("agent mention helpers keep visible inline text and drop partial false positives", () => {
+test("agent mention helpers insert the visible mention text", () => {
   const personEntity: MentionEntitySearchResult = {
     id: "prospect:john",
     entityId: "john",
@@ -44,22 +41,7 @@ test("agent mention helpers keep visible inline text and drop partial false posi
     buildAgentMentionReplacementText(planEntity),
     "@Plan for Jane Doe "
   );
-
-  assert.deepEqual(
-    filterSelectedMentionEntitiesByInput({
-      input: "Review this with @John Doe and @Plan for Jane Doe tomorrow.",
-      entities: [personEntity, planEntity],
-    }).map((entity) => entity.id),
-    [personEntity.id, planEntity.id]
-  );
-
-  assert.deepEqual(
-    filterSelectedMentionEntitiesByInput({
-      input: "Review this with @Johnny tomorrow.",
-      entities: [personEntity],
-    }),
-    []
-  );
+  assert.equal(buildAgentMentionReplacementText(personEntity), "@John Doe ");
 });
 
 test("compactMentionText keeps short mentions and clamps long ones to one line", () => {

@@ -222,7 +222,8 @@ import { buildAgentComposerSubmission } from "@/features/agent/lib/buildAgentCom
 import { getLatestUserMessageScrollAnchorKey } from "@/features/agent/lib/agentMessageScrollHelpers";
 import {
   buildAgentMentionReplacementText,
-  filterSelectedMentionEntitiesByInput,
+  collectComposerMentionIds,
+  filterSelectedMentionEntitiesByMentionIds,
 } from "@/features/agent/lib/entityMentions";
 import { OnboardingProgressCard } from "./components/OnboardingProgressCard";
 import { SetupOnboardingInlineCard } from "./components/SetupOnboardingInlineCard";
@@ -2707,7 +2708,27 @@ export function AgentChat({
     setAgentComposerContent(buildSerializedTextState(""));
   }, [mentionScopeKey]);
 
+  // Mention chips carry the id of the entity the user picked, so tagged
+  // entities are kept by chip id rather than by re-matching `@name` text:
+  // same-named entities stay distinct and typed text never re-links one.
+  // The editor state is only read while it agrees with `input`; for the one
+  // render where an external setInput has not reached the editor yet, this is
+  // null and the selection is left as it is.
+  const composerMentionIds = useMemo(() => {
+    if (!agentComposerContent) {
+      return input ? null : new Set<string>();
+    }
+    if (extractTextFromEditorState(agentComposerContent) !== input) {
+      return null;
+    }
+    return collectComposerMentionIds(agentComposerContent);
+  }, [agentComposerContent, input]);
+
   useEffect(() => {
+    if (!composerMentionIds) {
+      return;
+    }
+
     setMentionComposerState((current) => {
       const inlineEntities = current.selectedEntities.filter(
         (entity) => entity.kind !== "attachment"
@@ -2715,9 +2736,9 @@ export function AgentChat({
       const attachmentEntities = current.selectedEntities.filter(
         (entity) => entity.kind === "attachment"
       );
-      const filteredInlineEntities = filterSelectedMentionEntitiesByInput({
-        input,
+      const filteredInlineEntities = filterSelectedMentionEntitiesByMentionIds({
         entities: inlineEntities,
+        mentionIds: composerMentionIds,
       });
       const nextSelectedEntities = [
         ...filteredInlineEntities,
@@ -2738,7 +2759,7 @@ export function AgentChat({
         selectedEntities: nextSelectedEntities,
       };
     });
-  }, [input]);
+  }, [composerMentionIds]);
 
   useEffect(() => {
     const editorText = agentComposerContent
