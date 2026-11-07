@@ -58,6 +58,10 @@ LABELS = {
 TRACK_NAMES = {"public": "Job or company lookup", "intent": "Asking for help right now", "intent_short": "Short version of an intent question"}
 
 
+def web_url(u: str | None) -> bool:
+    return bool(u) and u.startswith("http") and "@" not in u
+
+
 def first_link(p: dict[str, Any]) -> str | None:
     for u in [p.get("linkedin_url"), *(p.get("profile_urls") or [])]:
         if u and "@" not in u and u.startswith("http"):
@@ -150,7 +154,10 @@ def build(judge_key: str) -> dict[str, list[dict[str, Any]]]:
                 vp = DATA_DIR / "verdicts" / slug(model) / tool / qid / f"{int(p['rank']):02d}.json"
                 if not vp.exists():
                     continue
-                ev = read_json(vp)["evaluation"]
+                verdict = read_json(vp)
+                ev = verdict["evaluation"]
+                post = next((e.get("url") for e in (p.get("evidence") or []) if web_url(e.get("url"))), None)
+                checked = list(dict.fromkeys(u for s in verdict.get("searches") or [] for u in s.get("urls") or [] if web_url(u)))[:3]
                 raw = p.get("raw") if isinstance(p.get("raw"), dict) else {}
                 is_rx = tool.startswith("reacherx")
                 people.append(
@@ -166,6 +173,8 @@ def build(judge_key: str) -> dict[str, list[dict[str, Any]]]:
                         "verdict": scrub((ev.get("verification_summary") or "")[:400]) or "",
                         "rx_fit": float(p["tool_score"]) if is_rx and p.get("tool_score") is not None else None,
                         "rx_reason": scrub((raw.get("qualificationReasoning") or "")[:400]) if is_rx else "",
+                        "post_url": post or "",
+                        "checker_urls": " ".join(checked),
                     }
                 )
 
