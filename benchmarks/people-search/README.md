@@ -68,7 +68,7 @@ them, a full-scale run is worth doing.
 
 | Item                                                              | Status                                              |
 | ----------------------------------------------------------------- | --------------------------------------------------- |
-| 10 questions on every API tool                                    | Done, scored                                        |
+| 10 questions on every API tool (context.dev: 7 of 10, see below)  | Done, scored                                        |
 | ReacherX on the 6 "asking for help" questions and 1 lookup        | Done, scored                                        |
 | ReacherX on the other 3 lookups                                   | Not run (see [Limits](#limits))                     |
 | context.dev on 3 of the newest questions                          | Waiting for its free credits to reset on December 4 |
@@ -183,9 +183,14 @@ Every answer, web search and verdict is cached under `data/`, so a rerun never p
   a creation time inside the run window).
 - If stopping fails or a monitor can't be deleted, the runner keeps the workspace, prints a
   warning and exits with code 3. Monitors may then still be live at SocialAPI. Before restoring
-  the SocialAPI key, rerun the stop with
-  `npx convex run benchmarkPeopleSearch:stopRun '{"workspaceId":"<id>"}'` until it reports no
-  monitor failures, then delete the workspace from the app.
+  the SocialAPI key, rerun the stop from `benchmarks/people-search` until it reports no monitor
+  failures, then delete the workspace from the app. This goes through the runner's helper, so it
+  only ever targets the validated dev deployment:
+
+  ```bash
+  uv run python -c 'import json; from harness.core import convex_cli; print(convex_cli("run", "benchmarkPeopleSearch:stopRun", json.dumps({"workspaceId": "<id>"})).stdout)'
+  ```
+
 - It stops early at a LinkdAPI credit cap (`--credit-cap`). A failed status read is retried on the
   next poll, and the run is given up after 3 failed reads in a row. If the spend, the account
   balance or the credit count can't be read, the run stops at once, since an unread cap can't be

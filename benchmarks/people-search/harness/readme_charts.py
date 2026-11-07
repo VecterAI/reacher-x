@@ -143,13 +143,17 @@ def main() -> int:
             counts = read_json(run).get("counts") or {}
             found += counts.get("discovered") or 0
             shown += counts.get("qualified") or 0
-    real = (res["summary"].get("intent", {}).get("reacherx") or {}).get("intent_verified") or 0
+    rx = res["summary"].get("intent", {}).get("reacherx")
+    real = rx.get("intent_verified") if rx else None  # None until ReacherX's people are scored
     OUT.mkdir(exist_ok=True)
     for name, t in THEMES.items():
         (OUT / f"scores-{name}.svg").write_text(scores_chart(res["summary"], t))
         (OUT / f"questions-{name}.svg").write_text(grid_chart(res["rows"], queries, t))
-        (OUT / f"funnel-{name}.svg").write_text(funnel_chart(found, shown, real, t))
-    print(f"wrote {len(THEMES) * 3} charts to {OUT} (found {found}, shown {shown}, real {real})")
+        if real is not None:
+            (OUT / f"funnel-{name}.svg").write_text(funnel_chart(found, shown, real, t))
+    if real is None:
+        print("ReacherX help results not scored yet: funnel chart not written (collect and score them first)")
+    print(f"wrote charts to {OUT} (found {found}, shown {shown}, real {real})")
     return 0
 
 
