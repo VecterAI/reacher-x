@@ -11,9 +11,9 @@ import json
 from typing import Any, Callable
 
 from .core import (
-    BudgetStop,
     CONFIG,
     DATA_DIR,
+    BudgetStop,
     Person,
     clean,
     guard,
@@ -24,7 +24,7 @@ from .core import (
     secret,
     write_json,
 )
-from .llm import chat, parse_json, parse_reply
+from .llm import chat, parse_reply
 
 TREG_URL = "https://treg.to/call/"
 
@@ -410,7 +410,7 @@ APOLLO_ENRICH_USD = 0.026
 
 
 def _apollo_enrich_token(needed_usd: float) -> str:
-    """Use Khalid's Treg team first, then Salman's backup team."""
+    """Use the primary Treg team first, then the backup team."""
     for var in ("TREG_TOKEN", "TREG_TOKEN_REACHERX"):
         bal = treg_balance(var)
         if bal is not None and bal >= needed_usd + 0.05:

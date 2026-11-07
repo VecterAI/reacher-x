@@ -300,7 +300,7 @@ def guard(estimate_usd: float = 0.0, *, label: str = "", balance_need: float | N
         raise BudgetStop(f"[{label}] hard stop: spent ${total:.3f} + est ${estimate_usd:.3f} >= ${HARD_STOP_USD}")
     if or_usage + estimate_usd >= OPENROUTER_WARN_USD and os.environ.get("BENCH_ALLOW_OVER_WARN") != "1":
         raise BudgetStop(
-            f"[{label}] OpenRouter warning: ${or_usage:.3f} + est ${estimate_usd:.3f} >= ${OPENROUTER_WARN_USD}. Ask Khalid, then rerun with BENCH_ALLOW_OVER_WARN=1"
+            f"[{label}] OpenRouter warning: ${or_usage:.3f} + est ${estimate_usd:.3f} >= ${OPENROUTER_WARN_USD}. Get approval from the budget owner, then rerun with BENCH_ALLOW_OVER_WARN=1"
         )
     return total
 

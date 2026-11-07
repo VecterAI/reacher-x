@@ -92,12 +92,12 @@
     "reacherx": {
       "rec_0020": "not run: LinkdAPI free credits ran out mid-run (diagnostic kept); re-running needed ~600-950 LinkedIn credits for a database-style recruiting lookup",
       "inf_0028": "not run: asks for Instagram creators; ReacherX searches X and LinkedIn only (out of scope)",
-      "det_0010": "not run: limited borrowed LinkedIn credits were kept for intent queries (Khalid's call after int_0002)"
+      "det_0010": "not run: limited borrowed LinkedIn credits were kept for intent queries (maintainer's call after int_0002)"
     },
     "reacherx_topfit": {
       "rec_0020": "not run: LinkdAPI free credits ran out mid-run (diagnostic kept); re-running needed ~600-950 LinkedIn credits for a database-style recruiting lookup",
       "inf_0028": "not run: asks for Instagram creators; ReacherX searches X and LinkedIn only (out of scope)",
-      "det_0010": "not run: limited borrowed LinkedIn credits were kept for intent queries (Khalid's call after int_0002)"
+      "det_0010": "not run: limited borrowed LinkedIn credits were kept for intent queries (maintainer's call after int_0002)"
     }
   },
   "not_run_rule": "A not-run query is excluded from that tool's averages (it is not scored as zero). Empty or failed answers from a run that happened still count as zero."

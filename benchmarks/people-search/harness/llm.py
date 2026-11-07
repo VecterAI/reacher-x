@@ -7,7 +7,19 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .core import CONFIG, DATA_DIR, guard, http_json, now_iso, read_json, record_spend, secret, sha256_text, stable_json, write_json
+from .core import (
+    CONFIG,
+    DATA_DIR,
+    guard,
+    http_json,
+    now_iso,
+    read_json,
+    record_spend,
+    secret,
+    sha256_text,
+    stable_json,
+    write_json,
+)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 

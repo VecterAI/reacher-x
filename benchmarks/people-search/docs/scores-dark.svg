@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="882" height="306" viewBox="0 0 882 306" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img">
+<rect width="100%" height="100%" fill="#0d1117" rx="8"/>
+<text x="20.0" y="24.0" font-size="15" fill="#e6edf3" text-anchor="start" font-weight="600" dominant-baseline="middle">Score by tool, out of 100</text>
+<text x="116.0" y="44.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="600" dominant-baseline="middle">Asking for help</text>
+<line x1="116.0" x2="116.0" y1="56" y2="272" stroke="#3d444d" stroke-width="1"/>
+<text x="116.0" y="286.0" font-size="11" fill="#9198a1" text-anchor="middle" font-weight="400" dominant-baseline="middle">0</text>
+<line x1="266.0" x2="266.0" y1="56" y2="272" stroke="#3d444d" stroke-width="1"/>
+<text x="266.0" y="286.0" font-size="11" fill="#9198a1" text-anchor="middle" font-weight="400" dominant-baseline="middle">50</text>
+<line x1="416.0" x2="416.0" y1="56" y2="272" stroke="#3d444d" stroke-width="1"/>
+<text x="416.0" y="286.0" font-size="11" fill="#9198a1" text-anchor="middle" font-weight="400" dominant-baseline="middle">100</text>
+<text x="106.0" y="77.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Exa</text>
+<rect x="116.0" y="68" width="145.4" height="18" rx="3" fill="#d95926"/>
+<text x="267.4" y="77.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">48</text>
+<text x="106.0" y="107.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Apollo</text>
+<rect x="116.0" y="98" width="143.2" height="18" rx="3" fill="#c98500"/>
+<text x="265.2" y="107.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">48</text>
+<text x="106.0" y="137.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Clay</text>
+<rect x="116.0" y="128" width="140.7" height="18" rx="3" fill="#d55181"/>
+<text x="262.7" y="137.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">47</text>
+<text x="106.0" y="167.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Treg</text>
+<rect x="116.0" y="158" width="136.7" height="18" rx="3" fill="#199e70"/>
+<text x="258.7" y="167.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">46</text>
+<text x="106.0" y="197.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">context.dev</text>
+<rect x="116.0" y="188" width="118.8" height="18" rx="3" fill="#008300"/>
+<text x="240.8" y="197.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">40</text>
+<text x="106.0" y="227.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="600" dominant-baseline="middle">ReacherX</text>
+<rect x="116.0" y="218" width="98.9" height="18" rx="3" fill="#3987e5"/>
+<text x="220.9" y="227.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">33</text>
+<text x="106.0" y="257.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Firecrawl</text>
+<rect x="116.0" y="248" width="2.0" height="18" rx="3" fill="#9085e9"/>
+<text x="124.0" y="257.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">0</text>
+<text x="552.0" y="44.0" font-size="13" fill="#9198a1" text-anchor="start" font-weight="600" dominant-baseline="middle">Job or company lookup</text>
+<line x1="552.0" x2="552.0" y1="56" y2="272" stroke="#3d444d" stroke-width="1"/>
+<text x="552.0" y="286.0" font-size="11" fill="#9198a1" text-anchor="middle" font-weight="400" dominant-baseline="middle">0</text>
+<line x1="702.0" x2="702.0" y1="56" y2="272" stroke="#3d444d" stroke-width="1"/>
+<text x="702.0" y="286.0" font-size="11" fill="#9198a1" text-anchor="middle" font-weight="400" dominant-baseline="middle">50</text>
+<line x1="852.0" x2="852.0" y1="56" y2="272" stroke="#3d444d" stroke-width="1"/>
+<text x="852.0" y="286.0" font-size="11" fill="#9198a1" text-anchor="middle" font-weight="400" dominant-baseline="middle">100</text>
+<text x="542.0" y="77.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Exa</text>
+<rect x="552.0" y="68" width="274.8" height="18" rx="3" fill="#d95926"/>
+<text x="832.8" y="77.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">92</text>
+<text x="542.0" y="107.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Apollo</text>
+<rect x="552.0" y="98" width="159.0" height="18" rx="3" fill="#c98500"/>
+<text x="717.0" y="107.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">53</text>
+<text x="542.0" y="137.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Clay</text>
+<rect x="552.0" y="128" width="204.2" height="18" rx="3" fill="#d55181"/>
+<text x="762.2" y="137.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">68</text>
+<text x="542.0" y="167.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Treg</text>
+<rect x="552.0" y="158" width="265.1" height="18" rx="3" fill="#199e70"/>
+<text x="823.0" y="167.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">88</text>
+<text x="542.0" y="197.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">context.dev</text>
+<rect x="552.0" y="188" width="183.2" height="18" rx="3" fill="#008300"/>
+<text x="741.2" y="197.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">61</text>
+<text x="542.0" y="227.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="600" dominant-baseline="middle">ReacherX</text>
+<rect x="552.0" y="218" width="2.0" height="18" rx="3" fill="#3987e5"/>
+<text x="560.0" y="227.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">0</text>
+<text x="542.0" y="257.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Firecrawl</text>
+<rect x="552.0" y="248" width="116.3" height="18" rx="3" fill="#9085e9"/>
+<text x="674.3" y="257.0" font-size="12" fill="#9198a1" text-anchor="start" font-weight="400" dominant-baseline="middle">39</text>
+</svg>

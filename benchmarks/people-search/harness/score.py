@@ -14,12 +14,12 @@ import asyncio
 import contextvars
 import json
 import sys
-from pathlib import Path
 from typing import Any
 
 from .core import (
     CONFIG,
     DATA_DIR,
+    TAVILY_CREDIT_STOP,
     BudgetStop,
     ensure_upstream,
     grading_query,
@@ -31,7 +31,6 @@ from .core import (
     secret,
     sha256_text,
     stable_json,
-    TAVILY_CREDIT_STOP,
     write_json,
 )
 

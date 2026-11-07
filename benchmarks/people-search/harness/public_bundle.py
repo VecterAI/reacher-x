@@ -16,12 +16,27 @@ import re
 import sys
 from typing import Any
 
-from .core import CONFIG, DATA_DIR, ensure_upstream, grading_query, load_queries, now_iso, read_json, sha256_text, stable_json, write_json
+from .core import (
+    CONFIG,
+    DATA_DIR,
+    ensure_upstream,
+    grading_query,
+    load_queries,
+    now_iso,
+    read_json,
+    sha256_text,
+    stable_json,
+    write_json,
+)
 from .report import build as build_report
 
 ensure_upstream()
 
-from benchmark.metrics import PersonEvaluation, compute_platform_scores, compute_query_metrics  # noqa: E402
+from benchmark.metrics import (  # noqa: E402
+    PersonEvaluation,
+    compute_platform_scores,
+    compute_query_metrics,
+)
 
 BUNDLE = DATA_DIR / "public" / "bundle.json"  # stays out of git until publishing is decided
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")

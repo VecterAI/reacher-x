@@ -19,7 +19,23 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from .core import CONFIG, DATA_DIR, OPENROUTER_LEDGER_SERVICES, BudgetStop, convex_cli, dev_deployment, guard, ledger_window, now_iso, openrouter_balance, openrouter_usage, query_by_id, read_json, record_spend, write_json
+from .core import (
+    CONFIG,
+    DATA_DIR,
+    OPENROUTER_LEDGER_SERVICES,
+    BudgetStop,
+    convex_cli,
+    dev_deployment,
+    guard,
+    ledger_window,
+    now_iso,
+    openrouter_balance,
+    openrouter_usage,
+    query_by_id,
+    read_json,
+    record_spend,
+    write_json,
+)
 
 POLL_S = 30
 TIMEOUT_S = 60 * 60
@@ -27,6 +43,7 @@ PER_RUN_CAP_USD = 1.5  # abort a single query's run past this OpenRouter spend
 RUN_BALANCE_NEED_USD = 0.6  # about twice the OpenRouter cost of one intent run so far
 MIN_BALANCE_USD = 0.1  # stop a run cleanly before the account runs dry
 STABLE_POLLS = 2
+MAX_POLL_FAILURES = 3  # consecutive failed reads before a still-running run is given up
 
 
 def convex_run(fn: str, payload: dict[str, Any]) -> Any:
@@ -190,14 +207,30 @@ def main() -> int:
         print(f"workspace {workspace_id} started ({use_case})")
         stable = 0
         last_key = None
+        poll_failures = 0
+
+        def read_failed(exc: Exception) -> bool:
+            """Count a failed read; True once it has failed too many times in a row to keep going."""
+            nonlocal poll_failures, aborted
+            poll_failures += 1
+            print(f"  read failed ({poll_failures}/{MAX_POLL_FAILURES}): {type(exc).__name__}: {exc}"[:200])
+            if poll_failures >= MAX_POLL_FAILURES:
+                aborted = f"polling failed {poll_failures} times in a row: {type(exc).__name__}: {exc}"[:300]
+                return True
+            return False
+
         while time.monotonic() - started < TIMEOUT_S:
             time.sleep(POLL_S)
             try:
                 status = convex_run("runStatus", {"workspaceId": workspace_id})
                 spent = openrouter_usage() - or_before - ledger_window(OPENROUTER_LEDGER_SERVICES, started_at, now_iso())
-            except Exception as exc:  # keep the run recoverable instead of crashing
-                aborted = f"polling failed: {type(exc).__name__}: {exc}"[:300]
+            except BudgetStop as exc:  # an unreadable budget is fatal, not transient
+                aborted = str(exc)[:300]
                 break
+            except Exception as exc:  # often transient (network, CLI timeout): retry before giving up
+                if read_failed(exc):
+                    break
+                continue
             log.append({"t": round(time.monotonic() - started), "status": status, "openrouter_delta": round(spent, 4)})
             c = status["counts"]
             print(f"  t={log[-1]['t']}s wf={status['workflowState']} total={c['total']} pending={c['pending']} qualified={c['qualified']} spent=${spent:.3f}")
@@ -216,7 +249,12 @@ def main() -> int:
                 aborted = f"OpenRouter account balance down to ${balance:.2f}; stopped cleanly"
                 break
             if args.credit_cap:
-                used = convex_run("linkdApiUnitsSince", {"since": since_ms})
+                try:
+                    used = convex_run("linkdApiUnitsSince", {"since": since_ms})
+                except Exception as exc:  # the cap is checked again on the next poll
+                    if read_failed(exc):
+                        break
+                    continue
                 units = used["billableUnits"]
                 log[-1]["linkdapi_units"] = units
                 print(f"    linkdapi credits used this run: {units} / cap {args.credit_cap}")
@@ -226,6 +264,7 @@ def main() -> int:
                 if units > args.credit_cap:
                     aborted = f"LinkdAPI credit cap {args.credit_cap} exceeded ({units})"
                     break
+            poll_failures = 0
             done = status["workflowState"] in ("completed", "failed", "canceled") and c["pending"] == 0
             key = (status["workflowState"], c["total"], c["pending"], c["qualified"])
             stable = stable + 1 if done and key == last_key else (1 if done else 0)

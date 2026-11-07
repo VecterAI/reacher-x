@@ -13,7 +13,17 @@ import sys
 import traceback
 
 from .connectors import CONNECTORS
-from .core import CONFIG, DATA_DIR, BudgetStop, load_queries, now_iso, read_json, sha256_text, stable_json, write_json
+from .core import (
+    CONFIG,
+    DATA_DIR,
+    BudgetStop,
+    load_queries,
+    now_iso,
+    read_json,
+    sha256_text,
+    stable_json,
+    write_json,
+)
 
 
 def raw_path(tool: str, query_id: str):

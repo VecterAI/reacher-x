@@ -17,11 +17,25 @@ from datetime import datetime, timedelta
 from statistics import median
 from typing import Any
 
-from .core import CONFIG, DATA_DIR, ensure_upstream, grading_query, is_intent_track, load_queries, now_iso, read_json, write_json
+from .core import (
+    CONFIG,
+    DATA_DIR,
+    ensure_upstream,
+    grading_query,
+    is_intent_track,
+    load_queries,
+    now_iso,
+    read_json,
+    write_json,
+)
 
 ensure_upstream()
 
-from benchmark.metrics import PersonEvaluation, compute_platform_scores, compute_query_metrics  # noqa: E402
+from benchmark.metrics import (  # noqa: E402
+    PersonEvaluation,
+    compute_platform_scores,
+    compute_query_metrics,
+)
 
 STALE_AFTER_DAYS = 180
 # Extra views of a tool's run that must never be read as a separate primary result.
