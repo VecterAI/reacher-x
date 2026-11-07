@@ -52,7 +52,8 @@ What the results show:
 1. **Job and company lookups:** Exa and Treg are far ahead. ReacherX scored 0 on the one lookup it
    ran; it searches posts, not staff directories.
 2. **People asking for help:** no tool does this reliably. Across all tools, one person had a real
-   post, and ReacherX found them. But ReacherX showed nobody on 5 of the 6 questions.
+   post, and ReacherX found them. But ReacherX showed nobody on 5 of the 6 questions, so its
+   score of 33 comes almost entirely from that one person (see step 5 of How it works).
 3. **The other tools' help scores come from job titles.** The standard score gives partial credit
    for a matching profile even without a post, so most tools reach 40 to 48 with no real posts.
 4. **ReacherX's filter agreed with the checker.** The checker did not confirm a real post for any
@@ -112,7 +113,10 @@ flowchart LR
    0.5 or more. On top of that we count **real posts**: a person counts only if the checker
    confirmed every part about the post (posted publicly, on or after the date, about the need).
 5. **Reporting.** A question a tool hasn't been run on is left out of that tool's score, not
-   counted as zero. A run that returned nobody still counts as zero.
+   counted as zero. A run that returned nobody scores 0 on that question, and counts as 0 for
+   ranking and coverage in the tool's overall score. People Search Bench averages usefulness
+   only over questions where the tool returned someone, so ReacherX's help score of 33 rests on
+   the one person it showed: ranking 3.7, coverage 0.3, usefulness 95.
 
 `config.json` records the full method: models, per-tool settings, questions not run with the
 reason, and every change from the standard benchmark.
