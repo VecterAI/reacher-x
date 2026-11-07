@@ -7,7 +7,8 @@
   "queries": {
     "file": "queries.jsonl",
     "public_draw": "random.Random(122).choice over each upstream category file sorted by query_id, in order b2b, recruiting, influencer, deterministic",
-    "intent": "2 queries written for ReacherX's use case (public posts showing a need), reported as a separate track"
+    "intent": "6 queries written for ReacherX's use case (public posts showing a need), reported as a separate track: int_0001-0002 from the first round, int_0003-0006 detailed prompts added after it (int_0005 is a prompt a ReacherX maintainer uses)",
+    "intent_short": "int_0007-0010: one-line versions of int_0003-0006, graded against their detailed twin's criteria (grade_as) so a vague prompt is judged on what the user really wanted"
   },
   "top_k": 10,
   "relevance_threshold": 0.5,

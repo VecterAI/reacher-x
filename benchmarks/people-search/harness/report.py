@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from statistics import median
 from typing import Any
 
-from .core import CONFIG, DATA_DIR, ensure_upstream, load_queries, now_iso, read_json, write_json
+from .core import CONFIG, DATA_DIR, ensure_upstream, grading_query, is_intent_track, load_queries, now_iso, read_json, write_json
 
 ensure_upstream()
 
@@ -109,7 +109,8 @@ def build(judge_key: str, top_k: int) -> dict[str, Any]:
                 v = read_json(vp)
                 verdicts.append(v)
                 evals.append(PersonEvaluation(**v["evaluation"]))
-            intent_ids = intent_criteria_ids(model, q["query_id"]) if q["track"] == "intent" else set()
+            intent = is_intent_track(q["track"])
+            intent_ids = intent_criteria_ids(model, grading_query(q)["query_id"]) if intent else set()
             qm = compute_query_metrics(q["query_id"], tool, q["category"], evals, requested_k=CONFIG["top_k"])
             metrics_by_tool_track.setdefault((tool, q["track"]), []).append(qm)
 
@@ -117,7 +118,7 @@ def build(judge_key: str, top_k: int) -> dict[str, Any]:
             stale_unknown = 0
             for p in persons:
                 d = parse_date(p.get("activity_date"))
-                limit = parse_date(INTENT_SINCE) if q["track"] == "intent" else run_at - timedelta(days=STALE_AFTER_DAYS)
+                limit = parse_date(INTENT_SINCE) if intent else run_at - timedelta(days=STALE_AFTER_DAYS)
                 if d is None or d < limit:
                     stale_unknown += 1
             qualified = qm.num_qualified
@@ -133,8 +134,9 @@ def build(judge_key: str, top_k: int) -> dict[str, Any]:
                     "unique": len({identity(p) for p in persons}),
                     "criteria_passing": qualified,
                     "verifiable": sum(1 for v in verdicts if is_verifiable(v["evaluation"])),
-                    "intent_verified": sum(1 for v in verdicts if is_intent_hit(v["evaluation"], intent_ids)) if q["track"] == "intent" else None,
+                    "intent_verified": sum(1 for v in verdicts if is_intent_hit(v["evaluation"], intent_ids)) if intent else None,
                     "stale_or_unknown": stale_unknown,
+                    "overall": round(compute_platform_scores(tool, [qm], total_queries=1).overall, 2),
                     "ndcg_10": round(qm.ndcg_10, 4),
                     "utility": round(qm.utility_score, 4),
                     "latency_s": res.get("latency_s"),
@@ -152,11 +154,16 @@ def build(judge_key: str, top_k: int) -> dict[str, Any]:
 
     summary: dict[str, dict[str, Any]] = {}
     for (tool, track), qms in sorted(metrics_by_tool_track.items()):
-        # Queries the tool was never run on are excluded, not scored as zero (see config not_run).
+        # Only questions with collected results count. Never run (config not_run) or not run yet
+        # (no raw file) is left out, not scored as zero; a run that returned nobody still counts.
         not_run = set((CONFIG.get("not_run") or {}).get(tool, {}))
-        n_track = sum(1 for q in queries if q["track"] == track and q["query_id"] not in not_run)
+        n_track = len(qms)
         s = compute_platform_scores(tool, qms, total_queries=n_track).model_dump()
         s["queries_scored"] = n_track
+        s["pending"] = sorted(
+            q["query_id"] for q in queries
+            if q["track"] == track and q["query_id"] not in not_run and not (DATA_DIR / "raw" / tool / f"{q['query_id']}.json").exists()
+        )
         s["role"] = "secondary" if tool in SECONDARY_VIEWS else "primary"
         s["not_run"] = sorted(q["query_id"] for q in queries if q["track"] == track and q["query_id"] in not_run)
         mine = [r for r in rows if r["tool"] == tool and r["track"] == track]
@@ -165,7 +172,7 @@ def build(judge_key: str, top_k: int) -> dict[str, Any]:
         s["total_cost_usd"] = round(sum(r["cost_usd"] for r in mine), 4)
         usable = sum(r["criteria_passing"] for r in mine)
         s["cost_per_usable_usd"] = round(s["total_cost_usd"] / usable, 4) if usable else None
-        if track == "intent":
+        if is_intent_track(track):
             hits = sum(r["intent_verified"] or 0 for r in mine)
             s["intent_verified"] = hits
             s["intent_precision"] = round(100 * hits / max(sum(r["returned"] for r in mine), 1), 1)

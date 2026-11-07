@@ -239,13 +239,14 @@ def _clay_reference() -> str:
 BROADEN_NOTE = "That query returned 0 people. Write one broader query that still matches the request's core intent."
 
 
-def _clay_translate(query: dict, attempt: int, previous: str | None) -> tuple[str, dict]:
+def _clay_translate(query: dict, attempt: int, previous: str | None, rejected: str | None = None) -> tuple[str, dict]:
     user = (
         "Do not ask follow-up questions. Write the best Clay search query that returns PEOPLE for this request, "
         "then reply with only the query inside one ```clay code block.\n\nRequest: " + query["prompt"]
     )
     if previous:
-        user += f"\n\nPrevious query:\n```clay\n{previous}\n```\n{BROADEN_NOTE}"
+        note = f"Clay rejected it: {rejected}\nFix only the invalid part and keep the rest." if rejected else BROADEN_NOTE
+        user += f"\n\nPrevious query:\n```clay\n{previous}\n```\n{note}"
     tr = chat(_clay_reference(), user, purpose=f"clay-translate {query['query_id']} #{attempt}", max_tokens=3000, estimate_usd=0.03)
     content = tr["content"]
     q = content.split("```clay", 1)[1].split("```", 1)[0].strip() if "```clay" in content else parse_fenced(content)
@@ -253,18 +254,23 @@ def _clay_translate(query: dict, attempt: int, previous: str | None) -> tuple[st
 
 
 def clay(query: dict, top_k: int) -> dict[str, Any]:
-    """Filter-based tool: one automatic broadening retry when the first query finds nobody."""
+    """Filter-based tool: one automatic retry when the first query finds nobody (broaden) or Clay
+    rejects a filter value (fix it, passing Clay's error message back)."""
     headers = {"clay-api-key": secret("CLAY_API_KEY")}
     res = _result("clay", query, input=[], translation=[])
     previous: str | None = None
+    rejected: str | None = None
     page: dict = {}
     for attempt in (1, 2):
-        clay_query, tr = _clay_translate(query, attempt, previous)
+        clay_query, tr = _clay_translate(query, attempt, previous, rejected)
         res["translation"].append(tr)
         res["input"].append({"query": clay_query, "limit": top_k})
         st, created, _, lat1 = http_json("POST", f"{CLAY_BASE}/search/query-mode", headers=headers, json_body={"query": clay_query}, retries=0)
         res["raw"].append({"step": f"create#{attempt}", "status": st, "body": created})
         res["latency_s"] = round(res["latency_s"] + lat1, 2)
+        if st == 400 and attempt == 1 and isinstance(created, dict) and created.get("message"):
+            previous, rejected = clay_query, str(created["message"])[:500]
+            continue
         if st != 200:
             res.update(status="error", error=f"create HTTP {st}: {str(created)[:300]}")
             return res
@@ -276,7 +282,7 @@ def clay(query: dict, top_k: int) -> dict[str, Any]:
             return res
         if page.get("data"):
             break
-        previous = clay_query
+        previous, rejected = clay_query, None
     res["credits"] = {"clay_period_quota": page.get("period_quota")}
     if page.get("source_type") != "people":
         res.update(status="error", error=f"Clay returned {page.get('source_type')}, not people")

@@ -92,6 +92,17 @@ def load_queries() -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def is_intent_track(track: str) -> bool:
+    """Intent questions: detailed ("intent") and their short twins ("intent_short")."""
+    return track.startswith("intent")
+
+
+def grading_query(q: dict[str, Any]) -> dict[str, Any]:
+    """The question a person is graded against. A short prompt is graded against its detailed
+    twin (`grade_as`), because the detailed one says what the user really wants."""
+    return query_by_id(q["grade_as"]) if q.get("grade_as") else q
+
+
 def query_by_id(query_id: str) -> dict[str, Any]:
     for q in load_queries():
         if q["query_id"] == query_id:
@@ -237,6 +248,17 @@ def openrouter_usage() -> float:
     return float(body["data"]["usage"])
 
 
+def openrouter_balance() -> float:
+    """Money left on the OpenRouter account. Every key draws from it, whatever its own limit."""
+    status, body, _, _ = http_json(
+        "GET", "https://openrouter.ai/api/v1/credits", headers={"Authorization": f"Bearer {secret('OPENROUTER_API_KEY')}"}, timeout=30
+    )
+    if status != 200:
+        raise BudgetStop(f"Cannot read OpenRouter balance (HTTP {status}); refusing paid step")
+    data = body["data"]
+    return float(data["total_credits"]) - float(data["total_usage"])
+
+
 def tavily_usage() -> int:
     # The usage endpoint is strictly rate limited; honour retry-after instead of failing.
     for _ in range(3):
@@ -260,12 +282,17 @@ def tavily_guard(credits_needed: int = 2) -> int:
     return used
 
 
-def guard(estimate_usd: float = 0.0, *, label: str = "") -> float:
+def guard(estimate_usd: float = 0.0, *, label: str = "", balance_need: float | None = None) -> float:
     """Stop before a paid step if it could break the budget rules. Returns total spend so far.
 
     OpenRouter usage is read live (it covers ReacherX on Convex and the judge, same key).
-    Every other provider is summed from the local ledger.
+    Every other provider is summed from the local ledger. The account balance must also cover
+    `balance_need` (default: the estimate), so a step never starts that the account cannot pay for.
     """
+    need = estimate_usd if balance_need is None else balance_need
+    balance = openrouter_balance()
+    if balance < need:
+        raise BudgetStop(f"[{label}] OpenRouter account balance ${balance:.2f} < ${need:.2f} needed; top up first")
     or_usage = openrouter_usage()
     others = ledger_total(exclude=OPENROUTER_LEDGER_SERVICES)
     total = or_usage + others

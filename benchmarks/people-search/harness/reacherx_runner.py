@@ -19,11 +19,13 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from .core import CONFIG, DATA_DIR, OPENROUTER_LEDGER_SERVICES, BudgetStop, convex_cli, dev_deployment, guard, ledger_window, now_iso, openrouter_usage, query_by_id, read_json, record_spend, write_json
+from .core import CONFIG, DATA_DIR, OPENROUTER_LEDGER_SERVICES, BudgetStop, convex_cli, dev_deployment, guard, ledger_window, now_iso, openrouter_balance, openrouter_usage, query_by_id, read_json, record_spend, write_json
 
 POLL_S = 30
 TIMEOUT_S = 60 * 60
 PER_RUN_CAP_USD = 1.5  # abort a single query's run past this OpenRouter spend
+RUN_BALANCE_NEED_USD = 0.6  # about twice the OpenRouter cost of one intent run so far
+MIN_BALANCE_USD = 0.1  # stop a run cleanly before the account runs dry
 STABLE_POLLS = 2
 
 
@@ -156,7 +158,7 @@ def main() -> int:
     if run_file.exists():
         raise SystemExit(f"A paid run for {q['query_id']} already happened without an export. Recover it with --export-only; a second paid run is refused.")
 
-    guard(PER_RUN_CAP_USD, label=f"reacherx {q['query_id']}")
+    guard(PER_RUN_CAP_USD, label=f"reacherx {q['query_id']}", balance_need=RUN_BALANCE_NEED_USD)
     or_before = openrouter_usage()
     started = time.monotonic()
     started_at = now_iso()
@@ -204,6 +206,14 @@ def main() -> int:
                 break
             if spent > PER_RUN_CAP_USD:
                 aborted = f"per-run cap ${PER_RUN_CAP_USD} exceeded"
+                break
+            try:
+                balance = openrouter_balance()
+            except BudgetStop as exc:
+                aborted = str(exc)[:300]
+                break
+            if balance < MIN_BALANCE_USD:
+                aborted = f"OpenRouter account balance down to ${balance:.2f}; stopped cleanly"
                 break
             if args.credit_cap:
                 used = convex_run("linkdApiUnitsSince", {"since": since_ms})

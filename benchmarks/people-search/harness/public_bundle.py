@@ -16,7 +16,7 @@ import re
 import sys
 from typing import Any
 
-from .core import CONFIG, DATA_DIR, ensure_upstream, load_queries, now_iso, read_json, sha256_text, stable_json, write_json
+from .core import CONFIG, DATA_DIR, ensure_upstream, grading_query, load_queries, now_iso, read_json, sha256_text, stable_json, write_json
 from .report import build as build_report
 
 ensure_upstream()
@@ -94,7 +94,7 @@ def build(judge_key: str) -> dict[str, Any]:
                 )
     criteria = {}
     for q in queries:
-        cp = DATA_DIR / "cache" / "criteria" / slug(model) / f"{q['query_id']}.json"
+        cp = DATA_DIR / "cache" / "criteria" / slug(model) / f"{grading_query(q)['query_id']}.json"
         if cp.exists():
             criteria[q["query_id"]] = read_json(cp)["criteria"]
     bundle = {
@@ -120,7 +120,7 @@ def check_scores(b: dict[str, Any]) -> bool:
     for p in b["people"]:
         by_q.setdefault((p["tool"], p["query_id"]), []).append(p)
     ok = True
-    for track in ("public", "intent"):
+    for track in dict.fromkeys(q["track"] for q in b["queries"]):
         qids = [q for q in b["queries"] if q["track"] == track]
         tools = sorted({r["tool"] for r in b["query_rows"] if r["track"] == track})
         for tool in tools:
@@ -133,7 +133,7 @@ def check_scores(b: dict[str, Any]) -> bool:
                 evals = [PersonEvaluation(person_name=r["name"] or "", relevance_grade=r["evaluation"]["relevance_grade"], structural_score=r["evaluation"]["structural_score"], contextual_score=r["evaluation"]["contextual_score"], utility_score=r["evaluation"]["utility_score"], error=r["evaluation"]["error"]) for r in rows]
                 if any(r["tool"] == tool and r["query_id"] == q["query_id"] for r in b["query_rows"]):
                     qms.append(compute_query_metrics(q["query_id"], tool, q["category"], evals, requested_k=top_k))
-            s = compute_platform_scores(tool, qms, total_queries=len([q for q in qids if q["query_id"] not in not_run]))
+            s = compute_platform_scores(tool, qms, total_queries=len(qms))  # same rule as the report
             got = s.model_dump()
             published = b["summary"][track][tool]
             bad = [f"{f} {got[f]:.2f} vs {published[f]:.2f}" for f in SCORE_FIELDS if abs(got[f] - published[f]) >= 0.01]

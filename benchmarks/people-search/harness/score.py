@@ -22,6 +22,7 @@ from .core import (
     DATA_DIR,
     BudgetStop,
     ensure_upstream,
+    grading_query,
     guard,
     load_queries,
     now_iso,
@@ -167,7 +168,8 @@ def to_person_result(p: dict[str, Any]) -> PersonResult:
 
 
 async def score_one(ev: BenchEvaluator, model: str, tool_name: str, q: dict, persons: list[dict], sem: asyncio.Semaphore, retry_errors: bool, paid: bool):
-    query = Query(query_id=q["query_id"], prompt=q["prompt"], category=q["category"])
+    gq = grading_query(q)  # short prompts share their detailed twin's criteria
+    query = Query(query_id=gq["query_id"], prompt=gq["prompt"], category=gq["category"])
     criteria = await ev.extract_criteria(query)
     if not criteria.criteria:
         raise RuntimeError(f"criteria extraction failed for {q['query_id']}")
