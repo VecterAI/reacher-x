@@ -135,6 +135,8 @@ class BenchEvaluator(CriteriaEvaluator):
         path = DATA_DIR / "cache" / "criteria" / slug(self.model_name) / f"{query.id}.json"
         if path.exists():
             return QueryCriteria(**read_json(path))
+        if not self.model_name.endswith(":free"):  # a paid call, so it passes the same guard as each person
+            guard(0.01, label=f"criteria {query.id}")
         crit = await super().extract_criteria(query)
         if crit.criteria:  # never cache a failed extraction
             write_json(path, crit.model_dump())

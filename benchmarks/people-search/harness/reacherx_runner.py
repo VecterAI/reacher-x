@@ -43,7 +43,7 @@ PER_RUN_CAP_USD = 1.5  # abort a single query's run past this OpenRouter spend
 RUN_BALANCE_NEED_USD = 0.6  # about twice the OpenRouter cost of one intent run so far
 MIN_BALANCE_USD = 0.1  # stop a run cleanly before the account runs dry
 STABLE_POLLS = 2
-MAX_POLL_FAILURES = 3  # consecutive failed reads before a still-running run is given up
+MAX_POLL_FAILURES = 3  # consecutive failed status reads before a still-running run is given up
 
 
 def convex_run(fn: str, payload: dict[str, Any]) -> Any:
@@ -208,29 +208,24 @@ def main() -> int:
         stable = 0
         last_key = None
         poll_failures = 0
-
-        def read_failed(exc: Exception) -> bool:
-            """Count a failed read; True once it has failed too many times in a row to keep going."""
-            nonlocal poll_failures, aborted
-            poll_failures += 1
-            print(f"  read failed ({poll_failures}/{MAX_POLL_FAILURES}): {type(exc).__name__}: {exc}"[:200])
-            if poll_failures >= MAX_POLL_FAILURES:
-                aborted = f"polling failed {poll_failures} times in a row: {type(exc).__name__}: {exc}"[:300]
-                return True
-            return False
-
         while time.monotonic() - started < TIMEOUT_S:
             time.sleep(POLL_S)
             try:
                 status = convex_run("runStatus", {"workspaceId": workspace_id})
-                spent = openrouter_usage() - or_before - ledger_window(OPENROUTER_LEDGER_SERVICES, started_at, now_iso())
-            except BudgetStop as exc:  # an unreadable budget is fatal, not transient
-                aborted = str(exc)[:300]
-                break
-            except Exception as exc:  # often transient (network, CLI timeout): retry before giving up
-                if read_failed(exc):
+            except Exception as exc:  # often transient (network, CLI timeout): retry on the next poll
+                poll_failures += 1
+                print(f"  status read failed ({poll_failures}/{MAX_POLL_FAILURES}): {type(exc).__name__}: {exc}"[:200])
+                if poll_failures >= MAX_POLL_FAILURES:
+                    aborted = f"status read failed {poll_failures} times in a row: {type(exc).__name__}: {exc}"[:300]
                     break
                 continue
+            poll_failures = 0
+            try:  # spend that can't be read can't be capped: stop instead of running on unchecked
+                spent = openrouter_usage() - or_before - ledger_window(OPENROUTER_LEDGER_SERVICES, started_at, now_iso())
+                balance = openrouter_balance()
+            except Exception as exc:
+                aborted = f"could not read OpenRouter spend: {type(exc).__name__}: {exc}"[:300]
+                break
             log.append({"t": round(time.monotonic() - started), "status": status, "openrouter_delta": round(spent, 4)})
             c = status["counts"]
             print(f"  t={log[-1]['t']}s wf={status['workflowState']} total={c['total']} pending={c['pending']} qualified={c['qualified']} spent=${spent:.3f}")
@@ -240,21 +235,15 @@ def main() -> int:
             if spent > PER_RUN_CAP_USD:
                 aborted = f"per-run cap ${PER_RUN_CAP_USD} exceeded"
                 break
-            try:
-                balance = openrouter_balance()
-            except BudgetStop as exc:
-                aborted = str(exc)[:300]
-                break
             if balance < MIN_BALANCE_USD:
                 aborted = f"OpenRouter account balance down to ${balance:.2f}; stopped cleanly"
                 break
             if args.credit_cap:
                 try:
                     used = convex_run("linkdApiUnitsSince", {"since": since_ms})
-                except Exception as exc:  # the cap is checked again on the next poll
-                    if read_failed(exc):
-                        break
-                    continue
+                except Exception as exc:  # a cap that can't be checked can't be enforced: stop
+                    aborted = f"could not read LinkdAPI credits: {type(exc).__name__}: {exc}"[:300]
+                    break
                 units = used["billableUnits"]
                 log[-1]["linkdapi_units"] = units
                 print(f"    linkdapi credits used this run: {units} / cap {args.credit_cap}")
@@ -264,7 +253,6 @@ def main() -> int:
                 if units > args.credit_cap:
                     aborted = f"LinkdAPI credit cap {args.credit_cap} exceeded ({units})"
                     break
-            poll_failures = 0
             done = status["workflowState"] in ("completed", "failed", "canceled") and c["pending"] == 0
             key = (status["workflowState"], c["total"], c["pending"], c["qualified"])
             stable = stable + 1 if done and key == last_key else (1 if done else 0)

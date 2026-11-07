@@ -143,7 +143,7 @@ def main() -> int:
             counts = read_json(run).get("counts") or {}
             found += counts.get("discovered") or 0
             shown += counts.get("qualified") or 0
-    real = res["summary"]["intent"]["reacherx"]["intent_verified"]
+    real = (res["summary"].get("intent", {}).get("reacherx") or {}).get("intent_verified") or 0
     OUT.mkdir(exist_ok=True)
     for name, t in THEMES.items():
         (OUT / f"scores-{name}.svg").write_text(scores_chart(res["summary"], t))

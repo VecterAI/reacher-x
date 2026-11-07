@@ -24,15 +24,15 @@ People Search Bench.
   <img alt="Score by tool, out of 100. Asking for help: Exa 48, Apollo 48, Clay 47, Treg 46, context.dev 40, ReacherX 33, Firecrawl 0. Job or company lookup: Exa 92, Treg 88, Clay 68, context.dev 61, Apollo 53, Firecrawl 39, ReacherX 0." src="docs/scores-light.svg">
 </picture>
 
-| Tool | Questions answered (help / lookup) | People with a real post | Cost per question | Time per question |
-|---|---|---|---|---|
-| Exa | 6 / 4 | 0 | under 1 cent | 3 sec |
-| Apollo (via Treg) | 6 / 4 | 0 | $0.16 | 9 sec |
-| Clay | 6 / 4 | 0 | free plan | 19 sec |
-| Treg | 6 / 4 | 0 | under 1 cent | 3 sec |
-| context.dev | 3 / 4 | 0 | free plan | 14 sec |
-| **ReacherX** | **6 / 1** | **1** | $0.39 | 10 min |
-| Firecrawl | 6 / 4 | 0 | free plan | 10 sec |
+| Tool              | Questions answered (help / lookup) | People with a real post | Cost per question | Time per question |
+| ----------------- | ---------------------------------- | ----------------------- | ----------------- | ----------------- |
+| Exa               | 6 / 4                              | 0                       | under 1 cent      | 3 sec             |
+| Apollo (via Treg) | 6 / 4                              | 0                       | $0.16             | 9 sec             |
+| Clay              | 6 / 4                              | 0                       | free plan         | 19 sec            |
+| Treg              | 6 / 4                              | 0                       | under 1 cent      | 3 sec             |
+| context.dev       | 3 / 4                              | 0                       | free plan         | 14 sec            |
+| **ReacherX**      | **6 / 1**                          | **1**                   | $0.39             | 10 min            |
+| Firecrawl         | 6 / 4                              | 0                       | free plan         | 10 sec            |
 
 "People with a real post" counts people whose public post about the need the checker could
 confirm. ReacherX's time comes from a development copy, which is slower than the live app.
@@ -55,8 +55,9 @@ What the results show:
    post, and ReacherX found them. But ReacherX showed nobody on 5 of the 6 questions.
 3. **The other tools' help scores come from job titles.** The standard score gives partial credit
    for a matching profile even without a post, so most tools reach 40 to 48 with no real posts.
-4. **ReacherX's filter agreed with the checker.** None of the 59 top-ranked people it held back
-   had a real post. The open question is whether it can reach people who did post.
+4. **ReacherX's filter agreed with the checker.** The checker did not confirm a real post for any
+   of the 59 top-ranked people ReacherX held back. The open question is whether it can reach
+   people who did post.
 
 **Recommendation:** pause before a full-scale benchmark. First improve how ReacherX finds people
 who posted a need, then re-run these same 6 questions. If it then shows real people on most of
@@ -64,14 +65,14 @@ them, a full-scale run is worth doing.
 
 ## Current state
 
-| Item | Status |
-|---|---|
-| 10 questions on every API tool | Done, scored |
-| ReacherX on the 6 "asking for help" questions and 1 lookup | Done, scored |
-| ReacherX on the other 3 lookups | Not run (see [Limits](#limits)) |
-| context.dev on 3 of the newest questions | Waiting for its free credits to reset on December 4 |
-| Short one-line versions of 4 questions (`int_0007` to `int_0010`) | Written, not run yet |
-| Hand-check of a sample of the checker's grades | Not done yet |
+| Item                                                              | Status                                              |
+| ----------------------------------------------------------------- | --------------------------------------------------- |
+| 10 questions on every API tool                                    | Done, scored                                        |
+| ReacherX on the 6 "asking for help" questions and 1 lookup        | Done, scored                                        |
+| ReacherX on the other 3 lookups                                   | Not run (see [Limits](#limits))                     |
+| context.dev on 3 of the newest questions                          | Waiting for its free credits to reset on December 4 |
+| Short one-line versions of 4 questions (`int_0007` to `int_0010`) | Written, not run yet                                |
+| Hand-check of a sample of the checker's grades                    | Not done yet                                        |
 
 ## How it works
 
@@ -151,7 +152,9 @@ keys you need: `OPENROUTER_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`, `FIRECRAWL
 
 ```bash
 cd benchmarks/people-search
-uv run python -m harness.collect --queries all          # top 10 from each API tool
+# The 10 published questions. Add int_0007,int_0008,int_0009,int_0010 to also run the short prompts.
+QUERIES=b2b_0014,rec_0020,inf_0028,det_0010,int_0001,int_0002,int_0003,int_0004,int_0005,int_0006
+uv run python -m harness.collect --queries $QUERIES     # top 10 from each API tool
 # ReacherX: one paid run per question (see "ReacherX runs" below)
 uv run python -m harness.reacherx_runner --query int_0005 --user-id <dev users _id> --credit-cap 100
 uv run python -m harness.collect --tools reacherx,reacherx_topfit
@@ -174,8 +177,15 @@ Every answer, web search and verdict is cached under `data/`, so a rerun never p
 - When the run ends it stops the run, deletes the SocialAPI monitors it created and deletes the
   benchmark workspace. Deletion only goes ahead for the workspace this run created (exact name and
   a creation time inside the run window).
+- If stopping fails or a monitor can't be deleted, the runner keeps the workspace, prints a
+  warning and exits with code 3. Monitors may then still be live at SocialAPI. Before restoring
+  the SocialAPI key, rerun the stop with
+  `npx convex run benchmarkPeopleSearch:stopRun '{"workspaceId":"<id>"}'` until it reports no
+  monitor failures, then delete the workspace from the app.
 - It stops early at a LinkdAPI credit cap (`--credit-cap`). A failed status read is retried on the
-  next poll; the run is given up only after 3 failed reads in a row.
+  next poll, and the run is given up after 3 failed reads in a row. If the spend, the account
+  balance or the credit count can't be read, the run stops at once, since an unread cap can't be
+  enforced.
 - `harness.provider_key` swaps the dev LinkdAPI or SocialAPI key for a run and restores it:
   `uv run python -m harness.provider_key <linkdapi|socialapi|all> <status|use-prod|restore>`.
   It prints key fingerprints, never keys. Restore SocialAPI only after the run has deleted its
@@ -193,18 +203,18 @@ A ReacherX run also stops cleanly if the OpenRouter balance drops below $0.10 wh
 
 ## Files
 
-| Path | What it does |
-|---|---|
-| `queries.jsonl` | The frozen questions |
-| `config.json` | The locked method, settings, questions not run and deviations from upstream |
-| `harness/collect.py` | Runs the API tools and saves their top 10 |
-| `harness/connectors.py` | One adapter per tool, including the prompt-to-filter translation |
-| `harness/reacherx_runner.py` | Runs ReacherX on the dev deployment and exports its results |
-| `harness/provider_key.py` | Swaps and restores the dev LinkdAPI and SocialAPI keys |
-| `harness/score.py` | Web check for every person, with caching |
-| `harness/report.py` | Scores per tool, per track and per question |
-| `harness/public_bundle.py` | Shareable bundle and a key-free rescore check |
-| `harness/dashboard_data.py` | Data files for the results dashboard |
-| `harness/readme_charts.py` | The charts in this README (`docs/*.svg`, light and dark) |
-| `harness/core.py` | Shared helpers: config, cache, HTTP, spend ledger and guards |
-| `harness/llm.py` | OpenRouter calls with cost capture and a disk cache |
+| Path                         | What it does                                                                |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| `queries.jsonl`              | The frozen questions                                                        |
+| `config.json`                | The locked method, settings, questions not run and deviations from upstream |
+| `harness/collect.py`         | Runs the API tools and saves their top 10                                   |
+| `harness/connectors.py`      | One adapter per tool, including the prompt-to-filter translation            |
+| `harness/reacherx_runner.py` | Runs ReacherX on the dev deployment and exports its results                 |
+| `harness/provider_key.py`    | Swaps and restores the dev LinkdAPI and SocialAPI keys                      |
+| `harness/score.py`           | Web check for every person, with caching                                    |
+| `harness/report.py`          | Scores per tool, per track and per question                                 |
+| `harness/public_bundle.py`   | Shareable bundle and a key-free rescore check                               |
+| `harness/dashboard_data.py`  | Data files for the results dashboard                                        |
+| `harness/readme_charts.py`   | The charts in this README (`docs/*.svg`, light and dark)                    |
+| `harness/core.py`            | Shared helpers: config, cache, HTTP, spend ledger and guards                |
+| `harness/llm.py`             | OpenRouter calls with cost capture and a disk cache                         |
