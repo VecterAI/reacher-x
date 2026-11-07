@@ -1,9 +1,9 @@
 import type { MentionEntitySearchResult } from "@/shared/lib/mentions/mentionEntities";
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
+/**
+ * Text the agent composer inserts for a picked entity (`@<mentionText> `),
+ * or null for attachments, which are attached rather than written inline.
+ */
 export function buildAgentMentionReplacementText(
   entity: MentionEntitySearchResult
 ) {
@@ -15,25 +15,16 @@ export function buildAgentMentionReplacementText(
   return visibleText ? `@${visibleText} ` : null;
 }
 
-export type ComposerMentionState = {
-  /** Entity ids carried by mention chips still present in the composer. */
-  mentionIds: Set<string>;
-  /** Composer text with every mention chip removed (typed/pasted text only). */
-  textWithoutMentions: string;
-};
-
 /**
- * Walks a serialized Lexical editor state and collects the entity ids of the
- * `MentionNode` chips it holds, plus the text that is not part of any chip.
- * A chip is atomic and stores the id of the entity the user picked, so it is
- * the source of truth for which entity a visible `@name` refers to.
+ * Returns the entity ids of the `MentionNode` chips in a serialized Lexical
+ * editor state. A chip is atomic and stores the id of the entity the user
+ * picked, so it is the source of truth for which entity a visible `@name`
+ * refers to; two chips with the same name still carry different ids.
  */
-export function collectComposerMentionState(
-  editorState: unknown
-): ComposerMentionState {
+export function collectComposerMentionIds(editorState: unknown): Set<string> {
   const mentionIds = new Set<string>();
-  const textParts: string[] = [];
 
+  /** Depth-first walk that records the id of every mention chip. */
   const visit = (node: unknown) => {
     if (!node || typeof node !== "object") {
       return;
@@ -41,7 +32,6 @@ export function collectComposerMentionState(
 
     const current = node as {
       type?: unknown;
-      text?: unknown;
       mentionId?: unknown;
       children?: unknown;
     };
@@ -50,64 +40,28 @@ export function collectComposerMentionState(
       if (typeof current.mentionId === "string" && current.mentionId) {
         mentionIds.add(current.mentionId);
       }
-      // Keep a separator so text on both sides of a chip never merges.
-      textParts.push(" ");
       return;
-    }
-
-    if (typeof current.text === "string") {
-      textParts.push(current.text);
     }
 
     if (Array.isArray(current.children)) {
       for (const child of current.children) {
         visit(child);
       }
-      // Block boundaries (paragraphs, list items) behave like line breaks.
-      textParts.push("\n");
     }
   };
 
-  const root = (editorState as { root?: unknown } | null | undefined)?.root;
-  visit(root);
-
-  return { mentionIds, textWithoutMentions: textParts.join("") };
+  visit((editorState as { root?: unknown } | null | undefined)?.root);
+  return mentionIds;
 }
 
-export function filterSelectedMentionEntitiesByInput(args: {
-  input: string;
+/**
+ * Keeps the selected entities whose mention chip is still in the composer.
+ * Selection is bound to chip ids only: deleting a chip detaches exactly its
+ * entity, and `@name` text typed or pasted by hand never re-links one.
+ */
+export function filterSelectedMentionEntitiesByMentionIds(args: {
   entities: MentionEntitySearchResult[];
-  /**
-   * Mention chips in the composer. When given, an entity stays selected only
-   * if its own chip (matched by id) is still present, or if its `@name` was
-   * typed or pasted as plain text outside any chip. Without it, selection
-   * falls back to matching `@name` anywhere in `input`.
-   */
-  composerMentions?: ComposerMentionState | null;
+  mentionIds: ReadonlySet<string>;
 }) {
-  if (!args.input.trim()) {
-    return [];
-  }
-
-  const composerMentions = args.composerMentions ?? null;
-  const fallbackText = composerMentions
-    ? composerMentions.textWithoutMentions
-    : args.input;
-
-  return args.entities.filter((entity) => {
-    if (composerMentions?.mentionIds.has(entity.id)) {
-      return true;
-    }
-
-    const visibleText = entity.mentionText.trim();
-    if (!visibleText) {
-      return false;
-    }
-
-    const mentionPattern = new RegExp(
-      `(^|[\\s(])@${escapeRegExp(visibleText)}(?=$|[\\s),.!?:;\\]])`
-    );
-
-    return mentionPattern.test(fallbackText);
-  });
+  return args.entities.filter((entity) => args.mentionIds.has(entity.id));
 }
