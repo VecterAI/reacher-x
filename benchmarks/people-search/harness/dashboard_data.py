@@ -55,6 +55,12 @@ LABELS = {
     "int_0009": "Short: need help with paid ads",
     "int_0010": "Short: looking for a bookkeeper",
 }
+# Plain-language versions of config["not_run"]["reacherx"], shown where ReacherX has no result.
+SKIP_REASONS = {
+    "rec_0020": "LinkedIn credits ran out mid-run",
+    "inf_0028": "it doesn't search Instagram",
+    "det_0010": "credits saved for help questions",
+}
 TRACK_NAMES = {"public": "Job or company lookup", "intent": "Asking for help right now", "intent_short": "Short version of an intent question"}
 
 
@@ -134,6 +140,7 @@ def build(judge_key: str) -> dict[str, list[dict[str, Any]]]:
                 "prompt": q["prompt"],
                 "graded_as": q.get("grade_as"),
                 "rx_run": bool(rx),
+                "rx_skip_reason": "" if rx else SKIP_REASONS.get(qid, (CONFIG.get("not_run") or {}).get("reacherx", {}).get(qid, "")),
                 "rx_found": (rx.get("counts") or {}).get("discovered"),
                 "rx_shown": (rx.get("counts") or {}).get("qualified"),
                 "rx_best_fit": max(fits) if fits else None,
