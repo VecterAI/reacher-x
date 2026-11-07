@@ -143,8 +143,45 @@ class BenchEvaluator(CriteriaEvaluator):
         return crit
 
 
+# The checker must judge each person blind: facts and cited posts only, never a tool's own
+# opinion of the person (its score, verdict, reasoning, or which search matched them).
+TOOL_OPINION_KEYS = frozenset(
+    {
+        "qualificationScore",
+        "qualificationReasoning",
+        "qualificationStatus",
+        "qualificationSources",  # its cited quotes stay, as evidence below
+        "qualifiedAt",
+        "matchReason",
+        "matchedReason",
+        "matchedQueries",
+        "match",  # context.dev's own relevance confidence
+    }
+)
+TOOL_OPINION_EVIDENCE = ("ReacherX fit reasoning:", "Matched search:")
+
+
+def blind(value: Any) -> Any:
+    """Drop every tool-opinion field, at any depth."""
+    if isinstance(value, dict):
+        return {k: blind(v) for k, v in value.items() if k not in TOOL_OPINION_KEYS}
+    if isinstance(value, list):
+        return [blind(v) for v in value]
+    return value
+
+
+def blind_evidence(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for ev in evidence:
+        text = ev.get("text") or ""
+        if text.startswith(TOOL_OPINION_EVIDENCE):
+            continue
+        out.append({**ev, "text": text.removeprefix("Matched post: ")})
+    return out
+
+
 def to_person_result(p: dict[str, Any]) -> PersonResult:
-    raw_text = json.dumps(p.get("raw"), ensure_ascii=False, default=str)
+    raw_text = json.dumps(blind(p.get("raw")), ensure_ascii=False, default=str)
     if len(raw_text) > RAW_TEXT_LIMIT:
         raw_text = raw_text[:RAW_TEXT_LIMIT] + " ...(truncated)"
     extra: dict[str, Any] = {}
@@ -152,7 +189,7 @@ def to_person_result(p: dict[str, Any]) -> PersonResult:
         extra["profile_urls"] = ", ".join(p["profile_urls"][:5])
     if p.get("activity_date"):
         extra["activity_date"] = p["activity_date"]
-    for i, ev in enumerate((p.get("evidence") or [])[:3], 1):
+    for i, ev in enumerate(blind_evidence(p.get("evidence") or [])[:3], 1):
         txt = (ev.get("text") or "")[:800]
         extra[f"evidence_{i}"] = f"{ev.get('url') or ''} {('(' + ev['published_at'] + ')') if ev.get('published_at') else ''} {txt}".strip()
     return PersonResult(

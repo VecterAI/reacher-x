@@ -57,12 +57,21 @@ What the results show:
 3. **The other tools' help scores come from job titles.** The standard score gives partial credit
    for a matching profile even without a post, so most tools reach 40 to 48 with no real posts.
 4. **ReacherX's filter agreed with the checker.** The checker did not confirm a real post for any
-   of the 59 top-ranked people ReacherX held back. The open question is whether it can reach
-   people who did post.
+   of the 59 top-ranked people ReacherX held back. But in round 1 the checker also saw
+   ReacherX's own reasoning for these people (see [Limits](#limits)), so this is being re-checked
+   blind. The open question is whether ReacherX can reach people who did post.
 
-**Recommendation:** pause before a full-scale benchmark. First improve how ReacherX finds people
-who posted a need, then re-run these same 6 questions. If it then shows real people on most of
-them, a full-scale run is worth doing.
+**What round 1 can't show.** ReacherX was measured on one search cycle. In production it runs in a
+loop: after setup it runs up to 8 cycles 2 minutes apart, then a new cycle 60 minutes after each
+one ends, widening its searches as it goes
+([cycle timing](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/runtimeConfigHelpers.ts),
+[widening](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/targetingSpecCore.ts)). The
+test copy had that loop switched off.
+
+**Next:** a one-question pilot on the live site, run for 24 hours under a plan locked publicly in
+advance, scored by a blind checker whose grades are compared with human labels. It decides
+whether a full run is worth doing. The draft plan is in the Current state tab of the results
+dashboard.
 
 ## Current state
 
@@ -74,6 +83,8 @@ them, a full-scale run is worth doing.
 | context.dev on 3 of the newest questions                          | Waiting for its free credits to reset on December 4 |
 | Short one-line versions of 4 questions (`int_0007` to `int_0010`) | Written, not run yet                                |
 | Hand-check of a sample of the checker's grades                    | Not done yet                                        |
+| Blind checker (no tool's own score or reasoning)                  | Fixed in code; re-check of 131 people pending       |
+| 24-hour pilot on the live site                                    | Proposed, waiting on approval                       |
 
 ## How it works
 
@@ -107,7 +118,8 @@ flowchart LR
      the people it chose to show.
 3. **Web check.** Gemini 3.1 Flash-Lite checks each person with up to 2 Tavily web searches and
    marks each part of the prompt as met, partly met or not met, with evidence. Each prompt is split
-   into parts once, and every tool is judged against the same parts.
+   into parts once, and every tool is judged against the same parts. The checker sees who the
+   person is and the posts each tool cites, never a tool's own score or reasoning.
 4. **Scoring.** People Search Bench's code at a pinned commit: the average of ranking (padded
    nDCG@10), coverage and usefulness, out of 100. A person counts as a good fit at a web check of
    0.5 or more. On top of that we count **real posts**: a person counts only if the checker
@@ -133,6 +145,12 @@ reason, and every change from the standard benchmark.
 
 ## Limits
 
+- ReacherX was measured on one search cycle, its strictest. In production it keeps searching
+  about every hour.
+- In round 1 the checker wasn't fully blind: for ReacherX's people it also saw ReacherX's own
+  match score and reasoning, and for context.dev's people that tool's own confidence score. The
+  code now hides them. Those 131 people haven't been re-checked yet, so round 1's numbers for
+  ReacherX and context.dev may still move.
 - Small test. A gap of a few points between two tools doesn't mean much.
 - The checker is an AI model and can be wrong. Its grades haven't been hand-checked yet.
 - Two basic web searches per person can miss a real post, so real posts may be undercounted for
