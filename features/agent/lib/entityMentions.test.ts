@@ -17,6 +17,8 @@ import { extractTextFromEditorState } from "@/shared/lib/utils/url/urlDetection"
 import {
   collectComposerMentionIds,
   filterSelectedMentionEntitiesByMentionIds,
+  syncMentionSelectionWithComposer,
+  type AgentMentionSelection,
 } from "./entityMentions";
 
 function buildPersonEntity(
@@ -145,31 +147,89 @@ describe("agent mention selection by chip id", () => {
     expect(selectedIds(editor, [johnA, jane])).toEqual([]);
   });
 
-  it("undo restores the deleted chip together with its entity id", () => {
+  it("cutting a chip and pasting it back tags its entity again", () => {
     const editor = createComposerEditor();
+    // Both entities were picked from the menu, as handleSelectMentionEntity records.
+    let selection: AgentMentionSelection = {
+      pickedEntities: [johnA, johnB],
+      selectedEntities: [johnA, johnB],
+    };
+    /** Runs the same sync AgentChat runs on every composer change. */
+    const syncFromEditor = () => {
+      const mentionIds = collectComposerMentionIds(
+        editor.getEditorState().toJSON()
+      );
+      selection = {
+        ...selection,
+        selectedEntities: syncMentionSelectionWithComposer(
+          selection,
+          mentionIds
+        ),
+      };
+      return selection.selectedEntities.map((entity) => entity.id);
+    };
+
     setComposerContent(editor, [
       { mention: johnA },
       { text: " " },
       { mention: johnB },
     ]);
-    // HistoryPlugin undo re-applies a previous EditorState.
-    const beforeDelete = editor.getEditorState();
+    expect(syncFromEditor()).toEqual([johnA.id, johnB.id]);
 
+    // Cut: RichTextPlugin's clipboard keeps the chip's exportJSON and removes it.
+    let clipboard: ReturnType<MentionNode["exportJSON"]> | null = null;
     editor.update(
       () => {
-        $getRoot()
+        const chip = $getRoot()
           .getFirstChildOrThrow<ReturnType<typeof $createParagraphNode>>()
           .getChildren()
           .filter($isMentionNode)
-          .find((chip) => chip.getMentionId() === johnB.id)
-          ?.remove();
+          .find((node) => node.getMentionId() === johnB.id);
+        if (!chip) {
+          throw new Error("chip missing");
+        }
+        clipboard = chip.exportJSON();
+        chip.remove();
       },
       { discrete: true }
     );
-    expect(selectedIds(editor, [johnA, johnB])).toEqual([johnA.id]);
+    expect(syncFromEditor()).toEqual([johnA.id]);
 
-    editor.setEditorState(beforeDelete);
-    expect(selectedIds(editor, [johnA, johnB])).toEqual([johnA.id, johnB.id]);
+    // Paste rebuilds the chip from that JSON, with the same entity id.
+    editor.update(
+      () => {
+        if (!clipboard) {
+          throw new Error("clipboard empty");
+        }
+        $getRoot()
+          .getFirstChildOrThrow<ReturnType<typeof $createParagraphNode>>()
+          .append($parseSerializedNode(clipboard));
+      },
+      { discrete: true }
+    );
+    expect(syncFromEditor()).toEqual([johnA.id, johnB.id]);
+  });
+
+  it("sync keeps attachments and returns the same array when nothing changed", () => {
+    const attachment: MentionEntitySearchResult = {
+      ...buildPersonEntity("file", "brief.pdf"),
+      id: "attachment:file",
+      kind: "attachment",
+    };
+    const selectedEntities = [johnA, attachment];
+    const selection: AgentMentionSelection = {
+      pickedEntities: [johnA, johnB],
+      selectedEntities,
+    };
+
+    expect(
+      syncMentionSelectionWithComposer(selection, new Set([johnA.id]))
+    ).toBe(selectedEntities);
+    expect(
+      syncMentionSelectionWithComposer(selection, new Set<string>()).map(
+        (entity) => entity.id
+      )
+    ).toEqual([attachment.id]);
   });
 
   it("copy-paste of a chip keeps the entity id it was created with", () => {

@@ -65,3 +65,39 @@ export function filterSelectedMentionEntitiesByMentionIds(args: {
 }) {
   return args.entities.filter((entity) => args.mentionIds.has(entity.id));
 }
+
+export type AgentMentionSelection = {
+  /**
+   * Every inline entity picked from the mention menu in this composer scope,
+   * in pick order. Never pruned when a chip is removed, so a chip that is cut
+   * and pasted back re-tags its entity.
+   */
+  pickedEntities: MentionEntitySearchResult[];
+  /** Entities currently tagged: inline ones with a chip, plus attachments. */
+  selectedEntities: MentionEntitySearchResult[];
+};
+
+/**
+ * Recomputes the tagged entities after the composer's chips change. Inline
+ * entities are rebuilt from `pickedEntities` (not from the current selection),
+ * so a chip brought back by paste is tagged again. Attachments are not
+ * chips and are kept as they are. Returns the same array when nothing changed.
+ */
+export function syncMentionSelectionWithComposer(
+  selection: AgentMentionSelection,
+  mentionIds: ReadonlySet<string>
+): MentionEntitySearchResult[] {
+  const current = selection.selectedEntities;
+  const next = [
+    ...filterSelectedMentionEntitiesByMentionIds({
+      entities: selection.pickedEntities,
+      mentionIds,
+    }),
+    ...current.filter((entity) => entity.kind === "attachment"),
+  ];
+
+  const unchanged =
+    next.length === current.length &&
+    next.every((entity, index) => entity.id === current[index]?.id);
+  return unchanged ? current : next;
+}
