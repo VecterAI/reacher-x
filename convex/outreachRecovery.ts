@@ -486,7 +486,8 @@ export const resumeRecoveredLinkedInDmPlan = internalMutation({
   returns: v.object({ resumed: v.boolean() }),
   handler: async (ctx, args) => {
     const plan = await ctx.db.get("outreachPlans", args.planId);
-    if (!plan || plan.status !== "paused") return { resumed: false };
+    if (!plan || plan.status !== "paused" || plan.revisionApprovalPending)
+      return { resumed: false };
     const prospect = await ctx.db.get("prospects", plan.prospectId);
     if (!prospect || prospect.status === "archived" || plan.archiveHold) {
       return { resumed: false };
@@ -1037,16 +1038,18 @@ async function resumeDmAfterLinkedInConnection(
     statusBridgeState: undefined,
     statusBridgeSentAt: undefined,
   });
-  await ctx.db.patch("outreachPlans", plan._id, {
-    status: "approved",
-    workflowId: undefined,
-    updatedAt: now,
-  });
-  await ctx.scheduler.runAfter(
-    1_000,
-    internal.workflows.outreach.startOutreachWorkflow,
-    { planId: plan._id }
-  );
+  if (!plan.revisionApprovalPending) {
+    await ctx.db.patch("outreachPlans", plan._id, {
+      status: "approved",
+      workflowId: undefined,
+      updatedAt: now,
+    });
+    await ctx.scheduler.runAfter(
+      1_000,
+      internal.workflows.outreach.startOutreachWorkflow,
+      { planId: plan._id }
+    );
+  }
 
   const prospect = await ctx.db.get("prospects", plan.prospectId);
   await upsertNotificationByKey(ctx, {
@@ -1055,7 +1058,9 @@ async function resumeDmAfterLinkedInConnection(
     type: "outreach_sent",
     notificationKey: `linkedin-connection-resumed:${task._id}`,
     title: "LinkedIn connection accepted",
-    message: "ReacherX is sending the approved DM automatically.",
+    message: plan.revisionApprovalPending
+      ? "Approve the revised plan to send the DM."
+      : "ReacherX is sending the approved DM automatically.",
     prospectId: plan.prospectId,
     planId: plan._id,
     taskId: task._id,
@@ -2166,11 +2171,14 @@ export const confirmTwitterManualReply = internalMutation({
       lastErrorMessage: undefined,
       nextCheckAt: now + 5 * 60 * 1000,
     });
-    await ctx.db.patch("outreachPlans", plan._id, {
-      status: "approved",
-      workflowId: undefined,
-      updatedAt: now,
-    });
+    const resumePlanNow = !plan.revisionApprovalPending;
+    if (resumePlanNow) {
+      await ctx.db.patch("outreachPlans", plan._id, {
+        status: "approved",
+        workflowId: undefined,
+        updatedAt: now,
+      });
+    }
 
     const prospect = await ctx.db.get("prospects", monitor.prospectId);
     const display = getProspectDisplayFields(prospect);
@@ -2205,11 +2213,13 @@ export const confirmTwitterManualReply = internalMutation({
           "Posted a reply manually on X/Twitter after an API policy block.",
       }
     );
-    await ctx.scheduler.runAfter(
-      0,
-      internal.workflows.outreach.startOutreachWorkflow,
-      { planId: plan._id }
-    );
+    if (resumePlanNow) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.outreach.startOutreachWorkflow,
+        { planId: plan._id }
+      );
+    }
     await ctx.scheduler.runAfter(
       5 * 60 * 1000,
       internalRecovery.checkRecoveryMonitor,

@@ -3063,6 +3063,7 @@ export const memoryWorkflowEventTypeValidator = v.union(
   v.literal("qualification_completed"),
   v.literal("enrichment_completed"),
   v.literal("outreach_plan_approved"),
+  v.literal("outreach_plan_revision_pending"),
   v.literal("outreach_plan_abandoned"),
   v.literal("outreach_task_approved"),
   v.literal("outreach_task_completed"),

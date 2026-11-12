@@ -25,6 +25,7 @@ import {
   createOutreachPlan,
   deleteOutreachPlanCascade,
   stopActiveOutreachRecoveryMonitorsForPlan,
+  planRevisionNotificationKey,
   refinePlan as refinePlanCore,
   getProspectActivityLog,
   logProspectActivity,
@@ -1873,7 +1874,13 @@ export const resumePlan = mutation({
 
     await ctx.db.patch(planId, {
       status: "approved",
+      revisionApprovalPending: undefined,
       updatedAt: getCurrentUTCTimestamp(),
+    });
+    await dismissNotificationsByKey(ctx, {
+      userId: plan.userId,
+      workspaceId: plan.workspaceId,
+      notificationKey: planRevisionNotificationKey(planId),
     });
 
     await ctx.scheduler.runAfter(
@@ -2030,6 +2037,11 @@ export const setPlanLifecycleInternal = internalMutation({
     if (action === "resume") {
       if (plan.status !== "paused" && plan.status !== "blocked_auth") {
         throw new Error("Can only resume paused or blocked plans");
+      }
+      if (plan.revisionApprovalPending) {
+        throw new Error(
+          "This plan has a revision waiting for the user's approval"
+        );
       }
       const waitingManualTask = await ctx.db
         .query("outreachTasks")
@@ -2459,8 +2471,12 @@ export const updatePlanStatus = internalMutation({
     planId: v.id("outreachPlans"),
     status: outreachPlanStatusValidator,
     expectedExecutionGeneration: v.optional(v.number()),
+    expectedStatus: v.optional(outreachPlanStatusValidator),
   },
-  handler: async (ctx, { planId, status, expectedExecutionGeneration }) => {
+  handler: async (
+    ctx,
+    { planId, status, expectedExecutionGeneration, expectedStatus }
+  ) => {
     const plan = await ctx.db.get(planId);
     if (!plan) {
       throw new Error("Plan not found");
@@ -2469,6 +2485,9 @@ export const updatePlanStatus = internalMutation({
       expectedExecutionGeneration !== undefined &&
       (plan.executionGeneration ?? 0) !== expectedExecutionGeneration
     ) {
+      return false;
+    }
+    if (expectedStatus !== undefined && plan.status !== expectedStatus) {
       return false;
     }
     await ctx.db.patch(planId, {
@@ -2487,11 +2506,19 @@ export const updateTaskStatus = internalMutation({
   args: {
     taskId: v.id("outreachTasks"),
     status: outreachTaskStatusValidator,
+    expectedExecutionGeneration: v.optional(v.number()),
   },
-  handler: async (ctx, { taskId, status }) => {
+  handler: async (ctx, { taskId, status, expectedExecutionGeneration }) => {
     const task = await ctx.db.get(taskId);
     if (!task) {
       throw new Error("Task not found");
+    }
+    if (expectedExecutionGeneration !== undefined) {
+      // An invalidated workflow must not write task state.
+      const owner = await ctx.db.get(task.planId);
+      if ((owner?.executionGeneration ?? 0) !== expectedExecutionGeneration) {
+        return false;
+      }
     }
 
     await ctx.db.patch(taskId, {

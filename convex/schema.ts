@@ -3048,6 +3048,9 @@ export default defineSchema({
     // Invalidates delayed work from an older execution without changing the
     // content version used for immutable plan revisions.
     executionGeneration: v.optional(v.number()),
+    // Set while an agent revision waits for plan-level approval; automatic
+    // recovery must not resume the plan until resumePlan clears it.
+    revisionApprovalPending: v.optional(v.boolean()),
     // Plan versioning
     version: v.number(),
     currentRevisionId: v.optional(v.id("outreachPlanRevisions")),
