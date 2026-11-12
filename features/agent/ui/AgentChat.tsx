@@ -222,7 +222,9 @@ import { buildAgentComposerSubmission } from "@/features/agent/lib/buildAgentCom
 import { getLatestUserMessageScrollAnchorKey } from "@/features/agent/lib/agentMessageScrollHelpers";
 import {
   buildAgentMentionReplacementText,
-  filterSelectedMentionEntitiesByInput,
+  collectComposerMentionIds,
+  syncMentionSelectionWithComposer,
+  type AgentMentionSelection,
 } from "@/features/agent/lib/entityMentions";
 import { OnboardingProgressCard } from "./components/OnboardingProgressCard";
 import { SetupOnboardingInlineCard } from "./components/SetupOnboardingInlineCard";
@@ -2609,11 +2611,11 @@ export function AgentChat({
     [chatAttachments]
   );
   const mentionScopeKey = `${effectiveThreadId ?? "new"}:${prospectId ?? "workspace"}`;
-  const [mentionComposerState, setMentionComposerState] = useState<{
-    scopeKey: string;
-    selectedEntities: MentionEntitySearchResult[];
-  }>({
+  const [mentionComposerState, setMentionComposerState] = useState<
+    AgentMentionSelection & { scopeKey: string }
+  >({
     scopeKey: mentionScopeKey,
+    pickedEntities: [],
     selectedEntities: [],
   });
   const [agentComposerContent, setAgentComposerContent] = useState<
@@ -2701,44 +2703,45 @@ export function AgentChat({
         ? current
         : {
             scopeKey: mentionScopeKey,
+            pickedEntities: [],
             selectedEntities: [],
           }
     );
     setAgentComposerContent(buildSerializedTextState(""));
   }, [mentionScopeKey]);
 
+  // Mention chips carry the id of the entity the user picked, so tagged
+  // entities are kept by chip id rather than by re-matching `@name` text:
+  // same-named entities stay distinct and typed text never re-links one, and
+  // a chip that is cut and pasted back is tagged again from `pickedEntities`.
+  // The editor state is only read while it agrees with `input`; for the one
+  // render where an external setInput has not reached the editor yet, this is
+  // null and the selection is left as it is.
+  const composerMentionIds = useMemo(() => {
+    if (!agentComposerContent) {
+      return input ? null : new Set<string>();
+    }
+    if (extractTextFromEditorState(agentComposerContent) !== input) {
+      return null;
+    }
+    return collectComposerMentionIds(agentComposerContent);
+  }, [agentComposerContent, input]);
+
   useEffect(() => {
+    if (!composerMentionIds) {
+      return;
+    }
+
     setMentionComposerState((current) => {
-      const inlineEntities = current.selectedEntities.filter(
-        (entity) => entity.kind !== "attachment"
+      const selectedEntities = syncMentionSelectionWithComposer(
+        current,
+        composerMentionIds
       );
-      const attachmentEntities = current.selectedEntities.filter(
-        (entity) => entity.kind === "attachment"
-      );
-      const filteredInlineEntities = filterSelectedMentionEntitiesByInput({
-        input,
-        entities: inlineEntities,
-      });
-      const nextSelectedEntities = [
-        ...filteredInlineEntities,
-        ...attachmentEntities,
-      ];
-
-      if (
-        nextSelectedEntities.length === current.selectedEntities.length &&
-        nextSelectedEntities.every(
-          (entity, index) => entity.id === current.selectedEntities[index]?.id
-        )
-      ) {
-        return current;
-      }
-
-      return {
-        ...current,
-        selectedEntities: nextSelectedEntities,
-      };
+      return selectedEntities === current.selectedEntities
+        ? current
+        : { ...current, selectedEntities };
     });
-  }, [input]);
+  }, [composerMentionIds]);
 
   useEffect(() => {
     const editorText = agentComposerContent
@@ -2929,12 +2932,23 @@ export function AgentChat({
   const handleSelectMentionEntity = useCallback(
     (entity: MentionEntitySearchResult) => {
       setMentionComposerState((current) => {
-        if (current.selectedEntities.some((item) => item.id === entity.id)) {
+        const isPicked =
+          entity.kind === "attachment" ||
+          current.pickedEntities.some((item) => item.id === entity.id);
+        const isSelected = current.selectedEntities.some(
+          (item) => item.id === entity.id
+        );
+        if (isPicked && isSelected) {
           return current;
         }
         return {
           ...current,
-          selectedEntities: [...current.selectedEntities, entity],
+          pickedEntities: isPicked
+            ? current.pickedEntities
+            : [...current.pickedEntities, entity],
+          selectedEntities: isSelected
+            ? current.selectedEntities
+            : [...current.selectedEntities, entity],
         };
       });
     },
@@ -3002,6 +3016,7 @@ export function AgentChat({
     setChatAttachments([]);
     setMentionComposerState((current) => ({
       ...current,
+      pickedEntities: [],
       selectedEntities: [],
     }));
     agentComposerApi?.clearContent();
