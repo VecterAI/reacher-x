@@ -438,7 +438,7 @@ describe("outreach reaction persistence and adaptive planning", () => {
 });
 
 describe("reaction approval workflow", () => {
-  test("stops before provider execution in review mode", async () => {
+  test("runs tasks without per-task approval in review mode after plan approval", async () => {
     vi.useFakeTimers();
     const t = createReactionTest();
     const seeded = await seedEntities(t, "linkedin", "approval");
@@ -463,6 +463,20 @@ describe("reaction approval workflow", () => {
           },
         ],
       });
+      // A completed twin (planning rejects duplicates, so insert it directly)
+      // makes the task take the duplicate path and finish without calling
+      // LinkedIn.
+      await ctx.db.insert("outreachTasks", {
+        planId: createdPlanId,
+        order: 0,
+        type: "react",
+        description: "Earlier identical reaction.",
+        timing: { type: "immediate" },
+        targetTweetId: "linkedin-post-approval",
+        targetCommentId: "linkedin-comment-approval",
+        reactionType: "support",
+        status: "completed",
+      });
       await ctx.db.patch(createdPlanId, { status: "approved" });
       return createdPlanId;
     });
@@ -473,10 +487,12 @@ describe("reaction approval workflow", () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     const state = await t.run(async (ctx) => {
-      const [task] = await ctx.db
-        .query("outreachTasks")
-        .withIndex("by_plan_order", (q) => q.eq("planId", planId))
-        .collect();
+      const task = (
+        await ctx.db
+          .query("outreachTasks")
+          .withIndex("by_plan_order", (q) => q.eq("planId", planId))
+          .collect()
+      )[1];
       const notifications = await ctx.db
         .query("outreachNotifications")
         .withIndex("by_workspace", (q) =>
@@ -486,18 +502,13 @@ describe("reaction approval workflow", () => {
       return { notifications, plan: await ctx.db.get(planId), task };
     });
 
-    expect(state.plan?.status).toBe("executing");
     expect(state.task).toMatchObject({
-      type: "react",
-      status: "executing",
+      status: "completed",
+      resultData: { duplicate: true },
     });
-    expect(state.task.resultData).toBeUndefined();
-    expect(state.task.approvalEventId).toEqual(expect.any(String));
-    expect(state.notifications).toHaveLength(1);
-    expect(state.notifications[0]).toMatchObject({
-      type: "ask_human",
-      taskId: state.task._id,
-      status: "pending",
-    });
+    expect(state.task.approvalEventId).toBeUndefined();
+    expect(
+      state.notifications.filter((n) => n.type === "ask_human")
+    ).toHaveLength(0);
   });
 });
