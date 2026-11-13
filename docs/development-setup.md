@@ -138,7 +138,7 @@ CI runs the same checks on your PR. Review bots such as CodeRabbit comment on ev
 
 ## Deploy your own instance
 
-The README deploy button copies this repository into your own GitHub account as a standalone repo. It is not a GitHub fork linked to the main repository, so contributing changes still starts with a proper fork. The button also creates a Vercel project and prompts you for the listed environment variables. The deploy button gets the app built and running; it does not fill in your service keys.
+The README deploy button copies this repository into your own GitHub account and creates a Vercel project. That copy is for running your own instance, not for contributing: to contribute code, start with a proper fork as shown in the README's [Contribute in minutes](../README.md#contribute-in-minutes) section. The button also prompts you for the listed environment variables and gets the app built and running; it does not fill in your service keys.
 
 After the import, per [configuration.md](./configuration.md#vercel-setup):
 
