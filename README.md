@@ -7,6 +7,7 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 [![Live site](https://img.shields.io/badge/Live-reacherx.com-000000?style=for-the-badge&logo=googlechrome&logoColor=white)](https://reacherx.com)
 [![Interactive demo](https://img.shields.io/badge/Interactive_demo-reacherx--demos.vercel.app-000000?style=for-the-badge&logo=v&logoColor=white)](https://reacherx-demos.vercel.app/)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-000000?style=for-the-badge&logo=gnu&logoColor=white)](./LICENSE)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FVecterAI%2Freacher-x&env=CONVEX_DEPLOY_KEY,WORKOS_CLIENT_ID,WORKOS_API_KEY,WORKOS_COOKIE_PASSWORD,NEXT_PUBLIC_WORKOS_REDIRECT_URI,NEXT_PUBLIC_SITE_URL,NEXT_PUBLIC_CONVEX_URL,NEXT_PUBLIC_BLOG_DEMO_ORIGIN,NEXT_PUBLIC_POSTHOG_KEY,NEXT_PUBLIC_POSTHOG_HOST&project-name=reacher-x&repository-name=reacher-x)
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
@@ -91,8 +92,51 @@ Fastest way to reach me is a DM on [X/Twitter](https://x.com/ReacherXfounder) or
 
 Start with [CONTRIBUTING.md](./CONTRIBUTING.md). For features, roadmap items, or architectural changes, talk to me first. Most contributions here touch product direction, agent behavior, or workflow design, and a short conversation saves rework.
 
+The complete setup guide for humans and coding agents is [docs/development-setup.md](./docs/development-setup.md). It covers services and keys, dev vs production environments, MCP servers, and deploying your own instance.
+
 - [Code of Conduct](./CODE_OF_CONDUCT.md)
 - [Security Policy](./SECURITY.md)
+
+## Contribute in minutes
+
+Fork the repository on GitHub first. You have no push access to the main repo, so the flow starts with your fork:
+
+```bash
+# Fork https://github.com/VecterAI/reacher-x on GitHub, then clone your fork
+git clone https://github.com/YOUR-USERNAME/reacher-x.git
+cd reacher-x
+git remote add upstream https://github.com/VecterAI/reacher-x.git
+git fetch upstream
+corepack enable pnpm
+pnpm install
+cp .env.example .env.local
+npx convex dev --once
+```
+
+Create a branch, work on one focused change, run the checks, and open a pull request against `VecterAI/reacher-x:main`. The full flow is in [CONTRIBUTING.md](./CONTRIBUTING.md#submitting-changes) and [docs/development-setup.md](./docs/development-setup.md).
+
+### Hand this prompt to a coding agent
+
+Paste this into Claude Code, Codex, Cursor, Antigravity, or any coding agent. It follows the repository rules and does the setup the standard way:
+
+```text
+Set up ReacherX for local development and open a pull request.
+
+Follow CONTRIBUTING.md and docs/development-setup.md. Summary:
+
+1. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm.
+2. I have no push access to VecterAI/reacher-x, so fork it on GitHub before cloning.
+3. Clone my fork, add the upstream remote, and update main from upstream:
+   git remote add upstream https://github.com/VecterAI/reacher-x.git
+   git fetch upstream
+4. Create a branch for one focused change: git switch -c fix/short-description
+5. Install dependencies with pnpm install, then copy .env.example to .env.local.
+6. Read docs/configuration.md. Configure only the services for my change area and ask me for missing keys. Special cases: SocialAPI.me access comes from the maintainer, and Renidly signup needs a work email address.
+7. Select a dev Convex deployment with npx convex dev --once. Set backend-only values with npx convex env set. Never commit .env.local and never upload it to Convex.
+8. Run npx convex dev and pnpm dev in separate terminals. The site is at http://localhost:3000.
+9. Before committing, run: pnpm exec tsc --noEmit, pnpm lint:strict, pnpm test:convex, and pnpm exec prettier --check on changed files.
+10. Push to my fork and open a PR against VecterAI/reacher-x:main. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
+```
 
 ## Roadmap
 
@@ -101,6 +145,8 @@ Full roadmap in [ROADMAP.md](./ROADMAP.md). Reliability and evaluations now, ema
 ## Self-hosting
 
 Requirements: Node.js 22+ and pnpm 11.x.
+
+To deploy your fork, use the Deploy with Vercel badge above. The button imports the repository into your GitHub account, creates a Vercel project, and prompts you for the listed settings. Two steps remain manual: set the build command to `npx convex deploy --cmd 'npm run build'` so the Convex backend deploys with the build, and configure your service keys per [docs/development-setup.md](./docs/development-setup.md#deploy-your-own-instance).
 
 ```bash
 git clone https://github.com/VecterAI/reacher-x.git

@@ -45,6 +45,8 @@ Small bug fixes, typo fixes, and focused polish PRs are fine without a long pre-
 
 ## Local setup
 
+The complete guide for humans and coding agents is [docs/development-setup.md](./docs/development-setup.md). It covers every service and where its key goes, dev vs production environments, the system diagram, agent tools such as the Convex MCP server, and the ready-made agent prompt shown in the [README](./README.md#hand-this-prompt-to-a-coding-agent).
+
 Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned.
 
 Contributors do not have push access to the main repo, so start by forking it on GitHub. Clone your fork and add the main repo as a second remote so you can stay in sync:
