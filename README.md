@@ -42,7 +42,7 @@ ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-sou
 ## Demo
 
 <a href="https://www.youtube.com/watch?v=xlyUWC-Uwr8" target="_blank" rel="noopener noreferrer">
-  <img alt="Watch the ReacherX demo" src="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N6SKY8w7ndv6kw8X5GeFZSYDmhQxRE0ztyUfC">
+  <img alt="Watch the ReacherX demo" src="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N6SKY8w7ndv6kw8X5GeFZSYDmhQxRE0ztyUfC" width="100%">
 </a>
 
 [Watch the demo on YouTube](https://www.youtube.com/watch?v=xlyUWC-Uwr8)
