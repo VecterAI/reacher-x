@@ -16,7 +16,11 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 
 [Configuration](./docs/configuration.md) · [Contributing](./CONTRIBUTING.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/BQttyr8jY) · [X/Twitter](https://x.com/ReacherXfounder)
 
-> **Want to make ReacherX better?** [Fork it in one click](https://github.com/VecterAI/reacher-x/fork), then follow [Contribute in minutes](#contribute-in-minutes).
+## Contribute
+
+[![Fork ReacherX on GitHub](https://img.shields.io/badge/FORK_REACHERX-000000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/VecterAI/reacher-x/fork)
+
+The button opens GitHub's fork form: one click copies the repository into your GitHub account and changes nothing in the main repository. Then follow [Contribute in minutes](#contribute-in-minutes), or hand the agent prompt below to your coding agent.
 
 ## Vision
 
