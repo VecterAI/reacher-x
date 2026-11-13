@@ -95,6 +95,8 @@ Optional helpers (Exa, Bishopi, GitHub token) are listed in [configuration.md](.
 
 ## The system in one picture
 
+The full architecture walkthrough with the pipeline details lives in [docs/architecture.md](./architecture.md).
+
 ```text
               your browser
                    │

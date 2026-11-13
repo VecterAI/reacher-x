@@ -48,7 +48,7 @@ async function highlightBlogCode(code: string, language: string) {
   cacheLife("max");
   return codeToHtml(code, {
     lang: language,
-    themes: { light: "github-light", dark: "github-dark" },
+    themes: { light: "min-light", dark: "min-dark" },
   });
 }
 

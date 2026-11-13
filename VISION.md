@@ -45,3 +45,5 @@ That is the reason this repository, every public page, and every blog post serve
 ## The long horizon
 
 At scale, and with user consent, ReacherX can become its own social platform: the network effect problem solved by porting what users already built elsewhere. That is far away, but it is the direction.
+
+The public version of this mission lives on the blog: [A world where everyone has access to the right network of people](https://reacherx.com/blog/our-vision).

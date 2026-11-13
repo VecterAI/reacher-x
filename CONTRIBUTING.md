@@ -103,6 +103,9 @@ You only need the provider credentials for the feature area you are developing. 
 ## How the codebase is organized
 
 - `app/`: route structure and page-level entry points.
+
+The complete architecture walkthrough with the pipeline, workflows, memory, and reporting lives in [docs/architecture.md](./docs/architecture.md).
+
 - `features/`: product features and UI modules.
 - `shared/`: shared UI, hooks, types, and utilities.
 - `convex/agents/tools/`: thin tool wrappers exposed to agents.
