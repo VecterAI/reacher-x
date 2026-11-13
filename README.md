@@ -4,6 +4,7 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 
 <div align="left">
 
+[![Contribute](https://img.shields.io/badge/CONTRIBUTE-2da44e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/VecterAI/reacher-x/fork)
 [![Live site](https://img.shields.io/badge/REACHERX.COM-000000?style=for-the-badge)](https://reacherx.com)
 [![Interactive demo](https://img.shields.io/badge/REACHERX--DEMOS.VERCEL.APP-000000?style=for-the-badge)](https://reacherx-demos.vercel.app/)
 [![License](https://img.shields.io/badge/AGPL--3.0-000000?style=for-the-badge)](./LICENSE)
