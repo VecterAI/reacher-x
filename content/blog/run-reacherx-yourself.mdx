@@ -76,14 +76,16 @@ Paste the prompt into Claude Code, Codex, Cursor, Antigravity, or any coding age
 ```text
 Set up ReacherX for local development and open a pull request.
 
+My change: <describe the fix or feature>
+
 Follow CONTRIBUTING.md, docs/development-setup.md, and agents.md. Summary:
 
-1. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm.
-2. I have no push access to VecterAI/reacher-x, so fork it on GitHub before cloning.
-3. Clone my fork, add the upstream remote, and update main from upstream:
+1. Check before starting: search the open issues and pull requests at github.com/VecterAI/reacher-x for anything about my change. If an issue covers it, note the number and reference it in the PR. If an open PR already fixes it, stop and tell me. If nothing covers it and the change is bigger than a small fix, ask me whether to open an issue first.
+2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm.
+3. I have no push access to VecterAI/reacher-x, so fork it on GitHub before cloning.
+4. Clone my fork, add the upstream remote, and update main from upstream:
    git remote add upstream https://github.com/VecterAI/reacher-x.git
    git fetch upstream
-4. Before writing code, check the open issues at github.com/VecterAI/reacher-x/issues. If my change matches an issue, reference its number in the PR. If not, ask me whether to open one.
 5. Create a branch for one focused change: git switch -c fix/short-description
 6. Install dependencies with pnpm install, then copy .env.example to .env.local.
 7. Install agent tooling for this repo: the Convex plugin for Claude Code, Codex, or Cursor (or npx -y convex@latest mcp start), the Vercel MCP with vercel mcp, and npx convex ai-files install for repo AI files. The repo already ships Convex skills under skills/.
@@ -91,7 +93,7 @@ Follow CONTRIBUTING.md, docs/development-setup.md, and agents.md. Summary:
 9. Select a dev Convex deployment with npx convex dev --once. Set backend-only values with npx convex env set. Never commit .env.local and never upload it to Convex.
 10. Run npx convex dev and pnpm dev in separate terminals. The site is at http://localhost:3000.
 11. Before committing, run: pnpm exec tsc --noEmit, pnpm lint:strict, pnpm test:convex, and pnpm exec prettier --check on changed files.
-12. Push to my fork and open a PR against VecterAI/reacher-x:main, linking any related issue. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
+12. Push to my fork and open a PR against VecterAI/reacher-x:main, referencing the issue from step 1 when there is one. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
 ```
 
 ## Make one useful change
