@@ -41,11 +41,11 @@ There is also an [interactive demo](https://reacherx-demos.vercel.app/). It is a
 
 ## Deploy your own instance
 
-Skip the setup steps and put your own fork live. One click imports the repository into your GitHub account and creates a Vercel project:
+Skip the setup steps and put your own copy live. One click copies the repository into your GitHub account and creates a Vercel project:
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FVecterAI%2Freacher-x&env=CONVEX_DEPLOY_KEY,WORKOS_CLIENT_ID,WORKOS_API_KEY,WORKOS_COOKIE_PASSWORD,NEXT_PUBLIC_WORKOS_REDIRECT_URI,NEXT_PUBLIC_SITE_URL,NEXT_PUBLIC_CONVEX_URL,NEXT_PUBLIC_BLOG_DEMO_ORIGIN,NEXT_PUBLIC_POSTHOG_KEY,NEXT_PUBLIC_POSTHOG_HOST&project-name=reacher-x&repository-name=reacher-x)
 
-The button creates the project and prompts you for the settings it needs. Before it goes live, set the build command to `npx convex deploy --cmd 'npm run build'` so the Convex backend deploys with the build, and add your service keys. What the button does and does not do is explained in [docs/development-setup.md](./docs/development-setup.md#deploy-your-own-instance).
+The button creates the project and prompts you for the settings it needs. The copy is standalone: it is not a GitHub fork linked to `VecterAI/reacher-x`, so contributing changes still starts with a fork (see [Contribute in minutes](#contribute-in-minutes)). Before it goes live, set the build command to `npx convex deploy --cmd 'npm run build'` so the Convex backend deploys with the build, and add your service keys. What the button does and does not do is explained in [docs/development-setup.md](./docs/development-setup.md#deploy-your-own-instance).
 
 ## Who it is for
 
