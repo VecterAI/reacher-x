@@ -76,20 +76,22 @@ Paste the prompt into Claude Code, Codex, Cursor, Antigravity, or any coding age
 ```text
 Set up ReacherX for local development and open a pull request.
 
-Follow CONTRIBUTING.md and docs/development-setup.md. Summary:
+Follow CONTRIBUTING.md, docs/development-setup.md, and agents.md. Summary:
 
 1. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm.
 2. I have no push access to VecterAI/reacher-x, so fork it on GitHub before cloning.
 3. Clone my fork, add the upstream remote, and update main from upstream:
    git remote add upstream https://github.com/VecterAI/reacher-x.git
    git fetch upstream
-4. Create a branch for one focused change: git switch -c fix/short-description
-5. Install dependencies with pnpm install, then copy .env.example to .env.local.
-6. Read docs/configuration.md. Configure only the services for my change area and ask me for missing keys. Special cases: SocialAPI.me access comes from the maintainer, and Renidly signup needs a work email address.
-7. Select a dev Convex deployment with npx convex dev --once. Set backend-only values with npx convex env set. Never commit .env.local and never upload it to Convex.
-8. Run npx convex dev and pnpm dev in separate terminals. The site is at http://localhost:3000.
-9. Before committing, run: pnpm exec tsc --noEmit, pnpm lint:strict, pnpm test:convex, and pnpm exec prettier --check on changed files.
-10. Push to my fork and open a PR against VecterAI/reacher-x:main. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
+4. Before writing code, check the open issues at github.com/VecterAI/reacher-x/issues. If my change matches an issue, reference its number in the PR. If not, ask me whether to open one.
+5. Create a branch for one focused change: git switch -c fix/short-description
+6. Install dependencies with pnpm install, then copy .env.example to .env.local.
+7. Install agent tooling for this repo: the Convex plugin for Claude Code, Codex, or Cursor (or npx -y convex@latest mcp start), the Vercel MCP with vercel mcp, and npx convex ai-files install for repo AI files. The repo already ships Convex skills under skills/.
+8. Read docs/configuration.md. Configure only the services for my change area and ask me for missing keys. Special cases: SocialAPI.me access comes from the maintainer, and Renidly signup needs a work email address.
+9. Select a dev Convex deployment with npx convex dev --once. Set backend-only values with npx convex env set. Never commit .env.local and never upload it to Convex.
+10. Run npx convex dev and pnpm dev in separate terminals. The site is at http://localhost:3000.
+11. Before committing, run: pnpm exec tsc --noEmit, pnpm lint:strict, pnpm test:convex, and pnpm exec prettier --check on changed files.
+12. Push to my fork and open a PR against VecterAI/reacher-x:main, linking any related issue. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
 ```
 
 ## Make one useful change
