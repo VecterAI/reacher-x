@@ -146,7 +146,7 @@ After the import, per [configuration.md](./configuration.md#vercel-setup):
 
 - Set the build command to `npx convex deploy --cmd 'npm run build'` and add `CONVEX_DEPLOY_KEY` as a hosting secret so backend functions deploy with the build.
 - Set the Convex backend variables with `npx convex env set --prod` on your own production deployment.
-- Allow your new origin as a WorkOS redirect URI and set it in `NEXT_PUBLIC_WORKOS_REDIRECT_URI` and `NEXT_PUBLIC_SITE_URL`.
+- Allow your new callback URL (`https://your-domain/callback`) in the WorkOS dashboard and set it as `NEXT_PUBLIC_WORKOS_REDIRECT_URI`. Set `NEXT_PUBLIC_SITE_URL` to the bare origin.
 - Set `NEXT_PUBLIC_BLOG_DEMO_ORIGIN` to the HTTPS origin of your deployed demo app (see [Interactive Demos](./configuration.md#interactive-demos)).
 
 Your copy then runs live on Vercel and your own Convex deployment, under the AGPL-3.0 license.
