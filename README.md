@@ -16,6 +16,14 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 
 [Configuration](./docs/configuration.md) · [Contributing](./CONTRIBUTING.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/BQttyr8jY) · [X/Twitter](https://x.com/ReacherXfounder)
 
+## Vision
+
+Mission: a world where everyone has access to the right network of people. ReacherX is a network intelligence platform.
+
+Almost everything is tied to the network: hiring, fundraising, clients, customers. Existing tools solve it for sales teams, in funnels, sequences, and campaigns. ReacherX thinks in networks: describe who you need in plain words, and the agent searches the platforms where people already are and brings you the right ones. It is not a sales tool and never will be. It starts with finding customers and expands horizontally to any use case: one connection layer that adapts to everyone.
+
+Read the full vision in [VISION.md](./VISION.md).
+
 ## Built with Convex
 
 ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-source-program) program and runs on [Convex](https://convex.link/coss).
