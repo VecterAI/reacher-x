@@ -4,9 +4,9 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 
 <div align="left">
 
-[![Live site](https://img.shields.io/badge/REACHERX.COM-000000?style=for-the-badge&logo=googlechrome&logoColor=white)](https://reacherx.com)
-[![Interactive demo](https://img.shields.io/badge/REACHERX--DEMOS.VERCEL.APP-000000?style=for-the-badge&logo=v&logoColor=white)](https://reacherx-demos.vercel.app/)
-[![License](https://img.shields.io/badge/AGPL--3.0-000000?style=for-the-badge&logo=gnu&logoColor=white)](./LICENSE)
+[![Live site](https://img.shields.io/badge/REACHERX.COM-000000?style=for-the-badge)](https://reacherx.com)
+[![Interactive demo](https://img.shields.io/badge/REACHERX--DEMOS.VERCEL.APP-000000?style=for-the-badge)](https://reacherx-demos.vercel.app/)
+[![License](https://img.shields.io/badge/AGPL--3.0-000000?style=for-the-badge)](./LICENSE)
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
