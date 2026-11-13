@@ -15,6 +15,8 @@ Supporting repo policies:
 
 ## Before you start
 
+Read [VISION.md](./VISION.md) first. It explains what ReacherX is for, what it is not, and where it is going, so product decisions make sense.
+
 Please talk to me before working on:
 
 - new features

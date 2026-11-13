@@ -2,6 +2,8 @@
 
 The one guide for contributors and coding agents. It covers the full path from zero to an open pull request: fork the repository, set up services with the right environment, accelerate your coding agent with tools, and ship.
 
+Read [VISION.md](../VISION.md) first to understand what the product is for and why it is built the way it is.
+
 The ready-made agent prompt referenced below is shown in the [README](../README.md#hand-this-prompt-to-a-coding-agent). Copy it from there into Claude Code, Codex, Cursor, Antigravity, or any coding agent.
 
 For a complete variable reference, see [configuration.md](./configuration.md). This page explains how to get started; that page documents every variable in detail.

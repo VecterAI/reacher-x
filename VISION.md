@@ -34,6 +34,14 @@ ReacherX starts with finding customers, because that is where it began in 2023. 
 
 Eventually everyone, through a system that adapts to each person's needs. The first users are founders, small teams, agencies, and early-stage startups who do not have time to learn complex tools or pay for expensive ones. It is B2B and B2C: a product as simple and as powerful as a consumer app.
 
+## Infrastructure for humans and agents
+
+Humans are not the only users. AI agents are users too, and they are first class.
+
+When someone asks ChatGPT, or any AI, something like "find technical co-founder for me", that AI looks for a service that can fulfill the request. The goal is simple: the AI discovers ReacherX, identifies that it can complete the request, and uses the platform and infrastructure to do it. Nothing for the user to set up: no MCP server to connect, no API key to configure, no onboarding to learn.
+
+That is the reason this repository, every public page, and every blog post serves Markdown and advertises an agent reading index at /llms.txt. For an AI platform, discovery is the integration.
+
 ## The long horizon
 
 At scale, and with user consent, ReacherX can become its own social platform: the network effect problem solved by porting what users already built elsewhere. That is far away, but it is the direction.
