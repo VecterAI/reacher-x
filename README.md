@@ -22,14 +22,6 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 
 The button opens GitHub's fork form: one click copies the repository into your GitHub account and changes nothing in the main repository. Then follow [Contribute in minutes](#contribute-in-minutes), or hand the agent prompt below to your coding agent.
 
-## Vision
-
-Mission: a world where everyone has access to the right network of people. ReacherX is a network intelligence platform.
-
-Almost everything is tied to the network: hiring, fundraising, clients, customers. Existing tools solve it for sales teams, in funnels, sequences, and campaigns. ReacherX thinks in networks: describe who you need in plain words, and the agent searches the platforms where people already are and brings you the right ones. It is not a sales tool and never will be. It starts with finding customers and expands horizontally to any use case: one connection layer that adapts to everyone. Humans use it directly, and AI agents use it as infrastructure: when any AI is asked to find people, it should discover and use ReacherX with nothing for the user to configure.
-
-Read the full vision in [VISION.md](./VISION.md).
-
 ## Built with Convex
 
 ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-source-program) program and runs on [Convex](https://convex.link/coss).
@@ -62,6 +54,14 @@ Skip the setup steps and put your own copy live. One click copies the repository
 The button copies the repository into your GitHub account and prompts you for the settings it needs. That copy is for running your own instance, not for contributing. To contribute code, start with a fork as shown in [Contribute in minutes](#contribute-in-minutes).
 
 Before your instance goes live, set the build command to `npx convex deploy --cmd 'npm run build'` so the Convex backend deploys with the build, and add your service keys. What the button does and does not do is explained in [docs/development-setup.md](./docs/development-setup.md#deploy-your-own-instance).
+
+## Vision
+
+Mission: a world where everyone has access to the right network of people. ReacherX is a network intelligence platform.
+
+Almost everything is tied to the network: hiring, fundraising, clients, customers. Existing tools solve it for sales teams, in funnels, sequences, and campaigns. ReacherX thinks in networks: describe who you need in plain words, and the agent searches the platforms where people already are and brings you the right ones. It is not a sales tool and never will be. It starts with finding customers and expands horizontally to any use case: one connection layer that adapts to everyone. Humans use it directly, and AI agents use it as infrastructure: when any AI is asked to find people, it should discover and use ReacherX with nothing for the user to configure.
+
+Read the full vision in [VISION.md](./VISION.md).
 
 ## Who it is for
 
