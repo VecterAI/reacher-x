@@ -1,22 +1,20 @@
 ---
 title: "How ReacherX adapts its CRM to different use cases"
-description: "Follow a workspace use case from shared definitions to profile stages, △ Agent prompts, and reporting."
+description: "How one shared definition changes labels, agent context, and reporting for every use case, and what to check when you change it."
 category: "engineering"
 date: "2026-07-17"
-updated: "2026-09-11"
+updated: "2026-11-13"
 related: ["how-reacherx-memory-works", "how-reacherx-agent-works"]
 tags: ["CRM", "architecture", "use cases", "contributing", "pipeline"]
 ---
 
-Open a candidate who has been marked Hired, then look at the stored status. You'll find `converted`, not `hired`. A customer can have that same value. The workspace tells the app what the value means to the person using it.
+Open a candidate who was marked Hired and look at the stored status. You will find `converted`, not `hired`. A customer can carry that same stored value. The workspace tells the app what the value means to the person using it.
 
-That is the first thing to understand before changing a use case in ReacherX. You don't need a new table for every kind of person the user wants to find. The shared definition changes the labels and gives △ Agent context about the job.
+That is the first thing to understand before you change a use case in ReacherX. The app does not need a new table for every kind of person a user might look for. One shared definition supplies the labels and gives the agent its context for the job.
 
-This walkthrough follows v4 beta at commit `8ea2662`.
+## One definition, many meanings
 
-## Start with the recruiting definition
-
-In [shared/lib/workspaceUseCases.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/shared/lib/workspaceUseCases.ts), find `recruiting`. Here are its stage labels:
+[shared/lib/workspaceUseCases.ts](https://github.com/VecterAI/reacher-x/blob/main/shared/lib/workspaceUseCases.ts) holds the definitions. The `recruiting` entry carries these stage labels:
 
 ```ts
 stageLabels: {
@@ -28,30 +26,32 @@ stageLabels: {
 },
 ```
 
-Suppose you want a different word for Interviewing. Change the label, then check the places that show it. Keep `in_progress` as the key. Replacing that stored value would involve the schema and the code that reads and writes it.
+Suppose you want a different word for Interviewing. Change the label, then check the places that display it. Keep `in_progress` as the key. Replacing a stored value would touch the schema and every reader and writer of that field.
 
-Look below the labels for `promptContext`. It includes `searchIntent`, `qualificationLens`, `outreachGoal`, and `successDefinition`. Those tell △ Agent what this use case is for. Finding someone to hire calls for different evidence from finding someone who might buy a product.
+The same entry also defines entity names, route slugs, and page labels, plus a `promptContext` with `searchIntent`, `qualificationLens`, `outreachGoal`, and `successDefinition`. Those lines tell the agent what this use case is for. Looking for someone to hire calls for different evidence than looking for someone who might buy a product.
 
-The same entry contains entity names, routes, and page labels. This command will help you find code that uses the labels and prompt context:
+This command finds the code that reads the labels and the prompt context:
 
 ```sh
 rg 'stageLabels|promptContext' shared features convex
 ```
 
-## Follow the label onto the screen
+## From definition to screen to mutation
 
-[useActiveUseCaseLabels.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/shared/hooks/useActiveUseCaseLabels.ts) resolves the active definition. The loaded workspace takes priority. While it is loading, the hook can use a cached value, then the server-provided value or product default. Setup has its own draft choice.
+[shared/hooks/useActiveUseCaseLabels.ts](https://github.com/VecterAI/reacher-x/blob/main/shared/hooks/useActiveUseCaseLabels.ts) resolves the active definition. A loaded workspace wins. While it loads, the hook falls back to a cached value, then to the server-provided value, then to the product default. Workspace setup keeps its own draft choice.
 
-If a hiring workspace shows customer labels, inspect that resolved key first. Don't fix it by hard-coding “Candidates” into a component. `PipelineTimeline.tsx`, profiles, and card menus need to agree about the active use case.
+If a hiring workspace shows customer labels, check that resolved key first. Do not fix it by hard-coding "Candidates" into a component. `PipelineTimeline.tsx`, the profiles, and the card menus all need to agree on the active use case.
 
-Now change a candidate's stage. The action reaches `updateProspectStatus` in `convex/prospects.ts`. That mutation checks ownership, writes `status` and `pipelineStage`, and records the stage timestamp. Archiving also schedules a pause of automated work. You must unarchive the person before moving them to a later stage.
+Stages change through `updateProspectStatus` in [convex/prospects.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/prospects.ts). The mutation checks ownership, writes `status` and `pipelineStage`, and records a timestamp for the new stage. Archiving schedules a pause of automated work, and unarchiving resumes it. You must unarchive a person before you can move them to a later stage.
 
-## Follow the instructions into the agent
+## From definition to agent instructions
 
-[convex/agents/prompts.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/agents/prompts.ts) builds prompts from the definition. `convex/agents/internal.ts` and `convex/agents/outreach/index.ts` use it when preparing context too.
+[convex/agents/prompts.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/agents/prompts.ts) turns the definition into agent instructions. The planning and qualification paths in [convex/agents/internal.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/agents/internal.ts) read the same use case context directly, and [convex/agents/outreach/index.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/agents/outreach/index.ts) builds the outreach prompt from it.
 
-The audience supplies the user's particular requirements. Saved memories add instructions, and `convex/lib/learningCore.ts` includes the use case in learning context. Changing that context doesn't retrain the model. The [memory article](/blog/how-reacherx-memory-works) explains what is stored and retrieved.
+Your workspace description supplies the specific requirements. Saved memories add standing instructions, and [convex/lib/learningCore.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/learningCore.ts) includes the use case in its learning context. Changing context does not retrain the model. The [memory article](/blog/how-reacherx-memory-works) explains what is stored and retrieved.
 
-After a change, read the resulting prompt. Does △ Agent still ask for buying intent in a recruiting workspace? Check a hiring workspace, then a partnership workspace, then a new setup draft. Check the list, profile, stage menu, success page, and Analytics.
+## What to check after a change
 
-The workspace-use-case and prospect-status tests cover nearby behavior. Include an older workspace with no use-case key and an archived person when those paths are affected. Read the [generated Convex guidelines](https://github.com/VecterAI/reacher-x/blob/main/convex/_generated/ai/guidelines.md) before changing the mutation. The [architecture overview](/blog/how-reacherx-agent-works) connects this path to the rest of the app.
+Ask for a plan in a hiring workspace, a partnership workspace, and a fresh setup draft. Does the agent still ask for buying intent in a recruiting workspace? Then check the list, the profile, the stage menu, the success page, and Analytics for label mix-ups.
+
+The use-case label coverage in [tests/ui-consistency-regressions.test.ts](https://github.com/VecterAI/reacher-x/blob/main/tests/ui-consistency-regressions.test.ts) and the prospect status coverage in [convex/readModelStripes.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/readModelStripes.integration.test.ts) protect nearby behavior. Include an older workspace with no use-case key and an archived person when your change touches those paths. Read the [generated Convex guidelines](https://github.com/VecterAI/reacher-x/blob/main/convex/_generated/ai/guidelines.md) before changing the mutation. The [architecture overview](/blog/how-reacherx-agent-works) connects this path to the rest of the app.
