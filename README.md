@@ -4,9 +4,9 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 
 <div align="left">
 
-[![Live site](https://img.shields.io/badge/Live-reacherx.com-000000?style=for-the-badge&logo=googlechrome&logoColor=white)](https://reacherx.com)
-[![Interactive demo](https://img.shields.io/badge/Interactive_demo-reacherx--demos.vercel.app-000000?style=for-the-badge&logo=v&logoColor=white)](https://reacherx-demos.vercel.app/)
-[![License](https://img.shields.io/badge/License-AGPL--3.0-000000?style=for-the-badge&logo=gnu&logoColor=white)](./LICENSE)
+[![Live site](https://img.shields.io/badge/REACHERX.COM-000000?style=for-the-badge&logo=googlechrome&logoColor=white)](https://reacherx.com)
+[![Interactive demo](https://img.shields.io/badge/REACHERX--DEMOS.VERCEL.APP-000000?style=for-the-badge&logo=v&logoColor=white)](https://reacherx-demos.vercel.app/)
+[![License](https://img.shields.io/badge/AGPL--3.0-000000?style=for-the-badge&logo=gnu&logoColor=white)](./LICENSE)
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
@@ -97,9 +97,9 @@ I went full time on ReacherX in 2026 and I am funding it myself. If the project 
 
 <div align="left">
 
-[![Patreon](https://img.shields.io/badge/Patreon-Support_the_project-000000?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/cw/ReacherX)
-[![Discord](https://img.shields.io/badge/Discord-Join_the_community-000000?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/BQttyr8jY)
-[![X/Twitter](https://img.shields.io/badge/X/Twitter-DM_@ReacherXfounder-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/ReacherXfounder)
+[![Patreon](https://img.shields.io/badge/SUPPORT_THE_PROJECT-000000?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/cw/ReacherX)
+[![Discord](https://img.shields.io/badge/JOIN_THE_COMMUNITY-000000?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/BQttyr8jY)
+[![X/Twitter](https://img.shields.io/badge/DM_@REACHERXFOUNDER-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/ReacherXfounder)
 
 </div>
 
