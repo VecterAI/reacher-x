@@ -4,9 +4,9 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 
 <div align="left">
 
-[![Live site](https://img.shields.io/badge/Live-reacherx.com-000000?style=for-the-badge&logo=googlechrome&logoColor=white)](https://reacherx.com)
-[![Interactive demo](https://img.shields.io/badge/Interactive_demo-reacherx--demos.vercel.app-000000?style=for-the-badge&logo=v&logoColor=white)](https://reacherx-demos.vercel.app/)
-[![License](https://img.shields.io/badge/License-AGPL--3.0-000000?style=for-the-badge&logo=gnu&logoColor=white)](./LICENSE)
+[![Live site](https://img.shields.io/badge/REACHERX.COM-000000?style=for-the-badge)](https://reacherx.com)
+[![Interactive demo](https://img.shields.io/badge/REACHERX--DEMOS.VERCEL.APP-000000?style=for-the-badge)](https://reacherx-demos.vercel.app/)
+[![License](https://img.shields.io/badge/AGPL--3.0-000000?style=for-the-badge)](./LICENSE)
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
@@ -15,6 +15,12 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 </div>
 
 [Configuration](./docs/configuration.md) · [Contributing](./CONTRIBUTING.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/BQttyr8jY) · [X/Twitter](https://x.com/ReacherXfounder)
+
+## Contribute
+
+[![Fork ReacherX on GitHub](https://img.shields.io/badge/FORK_REACHERX-000000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/VecterAI/reacher-x/fork)
+
+The button opens GitHub's fork form: one click copies the repository into your GitHub account and changes nothing in the main repository. Then follow [Contribute in minutes](#contribute-in-minutes), or hand the agent prompt below to your coding agent.
 
 ## Built with Convex
 
@@ -32,12 +38,30 @@ ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-sou
 ## Demo
 
 <a href="https://www.youtube.com/watch?v=xlyUWC-Uwr8" target="_blank" rel="noopener noreferrer">
-  <img alt="Watch the ReacherX demo" src="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NQHHwCka4qAIrfoSx2BgCKNLtujOXE63PUeG1">
+  <img alt="Watch the ReacherX demo" src="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N6SKY8w7ndv6kw8X5GeFZSYDmhQxRE0ztyUfC" width="100%">
 </a>
 
 [Watch the demo on YouTube](https://www.youtube.com/watch?v=xlyUWC-Uwr8)
 
 There is also an [interactive demo](https://reacherx-demos.vercel.app/). It is a dashboard prepopulated with fictional data, so you can click around and get a general understanding of the product. It is not a walkthrough, and nothing sends from it.
+
+## Deploy your own instance
+
+Skip the setup steps and put your own copy live. One click copies the repository into your GitHub account and creates a Vercel project:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FVecterAI%2Freacher-x&env=CONVEX_DEPLOY_KEY,WORKOS_CLIENT_ID,WORKOS_API_KEY,WORKOS_COOKIE_PASSWORD,NEXT_PUBLIC_WORKOS_REDIRECT_URI,NEXT_PUBLIC_SITE_URL,NEXT_PUBLIC_CONVEX_URL,NEXT_PUBLIC_BLOG_DEMO_ORIGIN,NEXT_PUBLIC_POSTHOG_KEY,NEXT_PUBLIC_POSTHOG_HOST&project-name=reacher-x&repository-name=reacher-x)
+
+The button copies the repository into your GitHub account and prompts you for the settings it needs. That copy is for running your own instance, not for contributing. To contribute code, start with a fork as shown in [Contribute in minutes](#contribute-in-minutes).
+
+Before your instance goes live, set the build command to `npx convex deploy --cmd 'npm run build'` so the Convex backend deploys with the build, and add your service keys. What the button does and does not do is explained in [docs/development-setup.md](./docs/development-setup.md#deploy-your-own-instance).
+
+## Vision
+
+Mission: a world where everyone has access to the right network of people. ReacherX is a network intelligence platform.
+
+Almost everything is tied to the network: hiring, fundraising, clients, customers. Existing tools solve it for sales teams, in funnels, sequences, and campaigns. ReacherX thinks in networks: describe who you need in plain words, and the agent searches the platforms where people already are and brings you the right ones. It is not a sales tool and never will be. It starts with finding customers and expands horizontally to any use case: one connection layer that adapts to everyone. Humans use it directly, and AI agents use it as infrastructure: when any AI is asked to find people, it should discover and use ReacherX with nothing for the user to configure.
+
+Read the full vision in [VISION.md](./VISION.md).
 
 ## Who it is for
 
@@ -79,9 +103,9 @@ I went full time on ReacherX in 2026 and I am funding it myself. If the project 
 
 <div align="left">
 
-[![Patreon](https://img.shields.io/badge/Patreon-Support_the_project-000000?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/cw/ReacherX)
-[![Discord](https://img.shields.io/badge/Discord-Join_the_community-000000?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/BQttyr8jY)
-[![X/Twitter](https://img.shields.io/badge/X/Twitter-DM_@ReacherXfounder-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/ReacherXfounder)
+[![Patreon](https://img.shields.io/badge/SUPPORT_THE_PROJECT-000000?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/cw/ReacherX)
+[![Discord](https://img.shields.io/badge/JOIN_THE_COMMUNITY-000000?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/BQttyr8jY)
+[![X/Twitter](https://img.shields.io/badge/DM_@REACHERXFOUNDER-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/ReacherXfounder)
 
 </div>
 
@@ -91,8 +115,55 @@ Fastest way to reach me is a DM on [X/Twitter](https://x.com/ReacherXfounder) or
 
 Start with [CONTRIBUTING.md](./CONTRIBUTING.md). For features, roadmap items, or architectural changes, talk to me first. Most contributions here touch product direction, agent behavior, or workflow design, and a short conversation saves rework.
 
+The complete setup guide for humans and coding agents is [docs/development-setup.md](./docs/development-setup.md). It covers services and keys, dev vs production environments, MCP servers, and deploying your own instance.
+
 - [Code of Conduct](./CODE_OF_CONDUCT.md)
 - [Security Policy](./SECURITY.md)
+
+## Contribute in minutes
+
+Fork the repository on GitHub first. You have no push access to the main repo, so the flow starts with your fork:
+
+```bash
+# Fork https://github.com/VecterAI/reacher-x on GitHub, then clone your fork
+git clone https://github.com/YOUR-USERNAME/reacher-x.git
+cd reacher-x
+git remote add upstream https://github.com/VecterAI/reacher-x.git
+git fetch upstream
+corepack enable pnpm
+pnpm install
+cp .env.example .env.local
+npx convex dev --once
+```
+
+Create a branch, work on one focused change, run the checks, and open a pull request against `VecterAI/reacher-x:main`. The full flow is in [CONTRIBUTING.md](./CONTRIBUTING.md#submitting-changes) and [docs/development-setup.md](./docs/development-setup.md).
+
+### Hand this prompt to a coding agent
+
+Paste this into Claude Code, Codex, Cursor, Antigravity, or any coding agent. It follows the repository rules and does the setup the standard way:
+
+```text
+Set up ReacherX for local development and open a pull request.
+
+My change: <describe the fix or feature>
+
+Read VISION.md first so the product vision is clear, then follow CONTRIBUTING.md, docs/development-setup.md, and agents.md. Summary:
+
+1. Check before starting: search the open issues and pull requests at github.com/VecterAI/reacher-x for anything about my change. If an issue covers it, note the number and reference it in the PR. If an open PR already fixes it, stop and tell me. If nothing covers it and the change is bigger than a small fix, ask me whether to open an issue first.
+2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm.
+3. I have no push access to VecterAI/reacher-x, so fork it on GitHub before cloning.
+4. Clone my fork, add the upstream remote, and update main from upstream:
+   git remote add upstream https://github.com/VecterAI/reacher-x.git
+   git fetch upstream
+5. Create a branch for one focused change: git switch -c fix/short-description
+6. Install dependencies with pnpm install, then copy .env.example to .env.local.
+7. Install agent tooling for this repo: the Convex plugin for Claude Code, Codex, or Cursor (or npx -y convex@latest mcp start), the Vercel MCP with vercel mcp, and npx convex ai-files install for repo AI files. The repo already ships Convex skills under skills/.
+8. Read docs/configuration.md. Configure only the services for my change area and ask me for missing keys. Special cases: SocialAPI.me access comes from the maintainer, and Renidly signup needs a work email address.
+9. Select a dev Convex deployment with npx convex dev --once. Set backend-only values with npx convex env set. Never commit .env.local and never upload it to Convex.
+10. Run npx convex dev and pnpm dev in separate terminals. The site is at http://localhost:3000.
+11. Before committing, run: pnpm exec tsc --noEmit, pnpm lint:strict, pnpm test:convex, and pnpm exec prettier --check on changed files.
+12. Push to my fork and open a PR against VecterAI/reacher-x:main, referencing the issue from step 1 when there is one. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
+```
 
 ## Roadmap
 
@@ -101,6 +172,8 @@ Full roadmap in [ROADMAP.md](./ROADMAP.md). Reliability and evaluations now, ema
 ## Self-hosting
 
 Requirements: Node.js 22+ and pnpm 11.x.
+
+Prefer one click? The [Deploy your own instance](#deploy-your-own-instance) section covers what the button imports and what stays manual.
 
 ```bash
 git clone https://github.com/VecterAI/reacher-x.git

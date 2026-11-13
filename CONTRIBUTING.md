@@ -15,6 +15,8 @@ Supporting repo policies:
 
 ## Before you start
 
+Read [VISION.md](./VISION.md) first. It explains what ReacherX is for, what it is not, and where it is going, so product decisions make sense.
+
 Please talk to me before working on:
 
 - new features
@@ -44,6 +46,8 @@ Small bug fixes, typo fixes, and focused polish PRs are fine without a long pre-
 - Work on a roadmap item after checking in first.
 
 ## Local setup
+
+The complete guide for humans and coding agents is [docs/development-setup.md](./docs/development-setup.md). It covers every service and where its key goes, dev vs production environments, the system diagram, agent tools such as the Convex MCP server, and the ready-made agent prompt shown in the [README](./README.md#hand-this-prompt-to-a-coding-agent).
 
 Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned.
 
