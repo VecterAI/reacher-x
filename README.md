@@ -7,7 +7,6 @@ Open-source `△` Agentic platform and infrastructure that works 24/7 across X/T
 [![Live site](https://img.shields.io/badge/Live-reacherx.com-000000?style=for-the-badge&logo=googlechrome&logoColor=white)](https://reacherx.com)
 [![Interactive demo](https://img.shields.io/badge/Interactive_demo-reacherx--demos.vercel.app-000000?style=for-the-badge&logo=v&logoColor=white)](https://reacherx-demos.vercel.app/)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-000000?style=for-the-badge&logo=gnu&logoColor=white)](./LICENSE)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FVecterAI%2Freacher-x&env=CONVEX_DEPLOY_KEY,WORKOS_CLIENT_ID,WORKOS_API_KEY,WORKOS_COOKIE_PASSWORD,NEXT_PUBLIC_WORKOS_REDIRECT_URI,NEXT_PUBLIC_SITE_URL,NEXT_PUBLIC_CONVEX_URL,NEXT_PUBLIC_BLOG_DEMO_ORIGIN,NEXT_PUBLIC_POSTHOG_KEY,NEXT_PUBLIC_POSTHOG_HOST&project-name=reacher-x&repository-name=reacher-x)
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
@@ -39,6 +38,14 @@ ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-sou
 [Watch the demo on YouTube](https://www.youtube.com/watch?v=xlyUWC-Uwr8)
 
 There is also an [interactive demo](https://reacherx-demos.vercel.app/). It is a dashboard prepopulated with fictional data, so you can click around and get a general understanding of the product. It is not a walkthrough, and nothing sends from it.
+
+## Deploy your own instance
+
+Skip the setup steps and put your own fork live. One click imports the repository into your GitHub account and creates a Vercel project:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FVecterAI%2Freacher-x&env=CONVEX_DEPLOY_KEY,WORKOS_CLIENT_ID,WORKOS_API_KEY,WORKOS_COOKIE_PASSWORD,NEXT_PUBLIC_WORKOS_REDIRECT_URI,NEXT_PUBLIC_SITE_URL,NEXT_PUBLIC_CONVEX_URL,NEXT_PUBLIC_BLOG_DEMO_ORIGIN,NEXT_PUBLIC_POSTHOG_KEY,NEXT_PUBLIC_POSTHOG_HOST&project-name=reacher-x&repository-name=reacher-x)
+
+The button creates the project and prompts you for the settings it needs. Before it goes live, set the build command to `npx convex deploy --cmd 'npm run build'` so the Convex backend deploys with the build, and add your service keys. What the button does and does not do is explained in [docs/development-setup.md](./docs/development-setup.md#deploy-your-own-instance).
 
 ## Who it is for
 
@@ -146,7 +153,7 @@ Full roadmap in [ROADMAP.md](./ROADMAP.md). Reliability and evaluations now, ema
 
 Requirements: Node.js 22+ and pnpm 11.x.
 
-To deploy your fork, use the Deploy with Vercel badge above. The button imports the repository into your GitHub account, creates a Vercel project, and prompts you for the listed settings. Two steps remain manual: set the build command to `npx convex deploy --cmd 'npm run build'` so the Convex backend deploys with the build, and configure your service keys per [docs/development-setup.md](./docs/development-setup.md#deploy-your-own-instance).
+Prefer one click? The [Deploy your own instance](#deploy-your-own-instance) section covers what the button imports and what stays manual.
 
 ```bash
 git clone https://github.com/VecterAI/reacher-x.git
