@@ -3,7 +3,7 @@ title: "Teach ReacherX how you want to work"
 description: "Save useful instructions, correct the audience, and understand what △ Agent can learn from later work."
 category: tutorials
 date: "2026-07-04"
-updated: "2026-09-11"
+updated: "2026-11-13"
 related: ["what-reacherx-does-automatically", "understand-agent-observability"]
 tags:
   ["workspace", "memory", "preferences", "instructions", "adapt", "learning"]
@@ -11,13 +11,15 @@ tags:
 
 You shouldn't have to make the same correction every time you use ReacherX. If you always want the first message to be short, tell it to remember that. If your workshop is free, make sure it knows that too.
 
-You can do this by talking to △ Agent. There isn't any code to write.
+The mechanism is memory. In ReacherX, memory is an instruction or lesson that △ Agent saves for a workspace and reuses when it drafts plans and runs later work. A workspace is the container for one search and everything belonging to it, and △ Agent is the assistant that does that work. If you want the fuller picture first, [How ReacherX works](/blog/how-reacherx-works) explains how the pieces fit together.
+
+You can teach it by talking to △ Agent. There isn't any code to write.
 
 ## Tell it what to remember
 
 Try a request like this in the workspace where you want it used:
 
-> Remember this for outreach: keep the first message under 80 words. Ask one question. Don't ask for a meeting in the first message.
+> Remember this for outreach. Keep the first message under 80 words. Ask one question. Don't ask for a meeting in the first message.
 
 Wait for confirmation that it saved the instruction. If it only says it understands, ask it to save it as workspace memory. That makes it available for later work in this workspace.
 
@@ -35,7 +37,7 @@ That's an audience problem. Changing the writing style won't fix it.
 
 Say you want independent designers doing client work, but it keeps finding people who sell design courses. Explain the difference and ask it to update the audience requirements. Review the proposed change before applying it.
 
-When a requirement has changed, say which old one it replaces. Otherwise △ Agent may be trying to satisfy both. You can be direct: “We no longer need workshop speakers. We need people who want to attend.”
+When a requirement has changed, say which old one it replaces. Otherwise △ Agent may be trying to satisfy both. You can be direct. "We no longer need workshop speakers. We need people who want to attend."
 
 ## Does it learn by itself too?
 

@@ -1,57 +1,55 @@
 ---
-title: "How ReacherX turns activity into Analytics and Agent observability"
-description: "Follow recorded activity into reporting data, reactive dashboards, detail views, and tests of metric meaning."
+title: "How ReacherX turns activity into dashboards"
+description: "How recorded activity becomes Analytics and Agent observability, why a chart can look right and still be wrong, and what to check before adding a metric."
 category: engineering
 date: "2026-07-14"
-updated: "2026-09-10"
+updated: "2026-11-13"
 related: ["help-build-reacherx", "how-reacherx-discovery-works"]
 tags: ["engineering", "reporting", "contributors"]
 ---
 
-A number on a dashboard has a history. Something happened, the application recorded it, reporting code grouped it into a time window, and the UI gave it a label.
+Every number on a dashboard has a history. Something happened, the app recorded it, reporting code grouped the record into a time window, and the interface gave the result a label. If any layer disagrees with the others, the chart can look perfectly healthy while saying the wrong thing.
 
-If any part disagrees with the others, a chart can look correct while saying the wrong thing. This article follows the reporting path in v4 beta at commit `8ea2662`.
+That risk is why the reporting path is worth understanding before you add a metric to it.
 
-## Separate outcomes from agent operations
+## Two dashboards count different things
 
-[features/analytics/ui/AnalyticsDashboard.tsx](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/features/analytics/ui/AnalyticsDashboard.tsx) is the user-outcome view. It shows new people, response rate, pending approvals, outreach issues, processing states, and other breakdowns.
+[features/analytics/ui/AnalyticsDashboard.tsx](https://github.com/VecterAI/reacher-x/blob/main/features/analytics/ui/AnalyticsDashboard.tsx) is the outcome view. It reports new people found, response rate, pending approvals, outreach issues such as paused plans and failed tasks, and processing states.
 
-[features/agent-ops/ui/AgentOpsDashboard.tsx](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/features/agent-ops/ui/AgentOpsDashboard.tsx) is △ Agent-operation view. Its tabs include overview, discovery, quality, memory, and activity. Users can inspect queries, memories, events, evaluator runs, and suggestions through detail views.
+[features/agent-ops/ui/AgentOpsDashboard.tsx](https://github.com/VecterAI/reacher-x/blob/main/features/agent-ops/ui/AgentOpsDashboard.tsx) is the agent operations view. Its tabs cover overview, discovery, quality, memory, and activity, and its detail views let you open individual queries, memories, events, evaluator runs, and suggestions.
 
-These are related views, not interchangeable counts. A memory event is not a new prospect. A generated query is not necessarily an activated query. Keep those meanings intact when adding a metric.
+The two are related, not interchangeable. A memory event is not a new prospect. A generated query is not an activated query. When you add a metric, keep the original meaning intact instead of reusing whichever count is convenient.
 
-## Follow a value through the backend
+## Follow one number through the backend
 
-Start with [convex/analytics.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/analytics.ts) for dashboard assembly and [convex/lib/analyticsCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/analyticsCore.ts) for shared calculations. The current response-rate calculation uses recorded responded and contacted events in the chosen window:
+[convex/analytics.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/analytics.ts) assembles the dashboard, and [convex/lib/analyticsCore.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/analyticsCore.ts) holds the shared calculations. The response rate comes from recorded contacted and responded events inside the chosen window:
 
 ```ts
 currentValue: calculateRate(respondedCurrent, contactedCurrent),
 ```
 
-Read the numerator and denominator definitions around that line before changing the label. This is an event-window calculation. It is not automatically a cohort study following the exact same contacted people until every reply arrives.
+Read the numerator and the denominator before you change the label above that line. The rate is an event-window calculation. It is not a cohort study that follows the same contacted people until every possible reply has arrived, so describe it that way to users.
 
-Daily reporting rows contain hourly information used for windowed calculations:
+Daily rows back the windowed reads.
 
-| File | Layer | What it does |
-| --- | --- | --- |
-| [convex/workspaceAnalyticsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAnalyticsDaily.ts) | Function module | Lists and rebuilds the workspace analytics daily rows. |
-| [convex/workspaceAgentOpsDaily.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceAgentOpsDaily.ts) | Function module | Serves the △ Agent-operations daily rows. |
-| [convex/lib/workspaceReportingAggregate.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/workspaceReportingAggregate.ts) | Shared library | Maintains the aggregate backing the windowed metric reads. |
+| File                                                                                                                                   | Layer           | What it does                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------- | --------------- | --------------------------------------------------------- |
+| [convex/workspaceAnalyticsDaily.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/workspaceAnalyticsDaily.ts)                 | Function module | Lists and rebuilds the workspace analytics daily rows.    |
+| [convex/workspaceAgentOpsDaily.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/workspaceAgentOpsDaily.ts)                   | Function module | Serves the agent operations daily rows.                   |
+| [convex/lib/workspaceReportingAggregate.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/workspaceReportingAggregate.ts) | Shared library  | Maintains the aggregate behind the windowed metric reads. |
 
-## Account for readiness and time
+## Readiness and time both matter
 
-The frontend checks reporting readiness through [convex/workspaceReporting.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceReporting.ts). When reporting is ready, it uses reactive queries. When it is not, the dashboards have snapshot-action paths rather than assuming empty results mean zero activity.
+The frontend asks [convex/workspaceReporting.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/workspaceReporting.ts) whether reporting is ready. When it is, the dashboards use reactive queries that stay live. When it is not, they fall back to snapshot actions instead of showing zeros, because an empty result is not proof that nothing happened.
 
-Time windows use the workspace reporting time zone. Check both the visible range and the normalized backend window when a count differs around midnight. The UTC event timestamp keeps event ordering and hour buckets consistent across the system; the local reporting day decides which day the dashboard shows as today.
+Time windows follow the workspace's reporting time zone. Event timestamps are stored in UTC, which keeps ordering and hour buckets consistent across the system, while the reporting time zone decides which day the dashboard calls today. If a count changes oddly around midnight, compare the visible range with the normalized backend window.
 
-The UI also changes labels for the workspace use case. A recruiting view can say candidates while the underlying record remains a prospect. Keep presentation names separate from the data semantics.
+Labels adapt to the workspace use case. A recruiting workspace can read candidates where the stored record is still a prospect. Presentation names and data meanings have to stay separate.
 
-## Make a detail view explain the summary
+## Make the detail view explain the summary
 
-[features/agent-ops/ui/AgentOpsPanel.tsx](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/features/agent-ops/ui/AgentOpsPanel.tsx) opens records behind the dashboard. A memory detail can show source, confidence, canonical instruction, status, and indexing state. An evaluator run can show what it produced.
+[features/agent-ops/ui/AgentOpsPanel.tsx](https://github.com/VecterAI/reacher-x/blob/main/features/agent-ops/ui/AgentOpsPanel.tsx) opens the records behind the numbers. A memory detail can show its source, confidence, canonical instruction, status, and indexing state. An evaluator run can show what it produced. Moving from "something happened" to the record that explains it is the whole point of this view.
 
-That is useful observability: a reader can move from “something happened” to the record that explains it. New summary metrics should have a clear definition and a sensible investigation path.
+New summary metrics need a clear definition and a sensible investigation path. Start from [convex/agentOpsDashboard.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/agentOpsDashboard.integration.test.ts), [convex/agentOpsInventory.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/agentOpsInventory.integration.test.ts), and [convex/workspaceReportingAggregate.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/workspaceReportingAggregate.integration.test.ts). Cover empty data, time boundaries, repeated events, paging, and a workspace whose reporting is not ready yet.
 
-For tests, start with [convex/agentOpsDashboard.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/agentOpsDashboard.integration.test.ts), [convex/agentOpsInventory.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/agentOpsInventory.integration.test.ts), and [convex/workspaceReportingAggregate.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workspaceReportingAggregate.integration.test.ts). Include empty data, time boundaries, repeated events, paging, and a workspace with reporting not yet ready.
-
-Before contributing a chart, write down exactly what one count means. Then prove it with a small fixture and inspect the rendered label. The [contributor guide](/blog/help-build-reacherx) explains how to turn that focused change into a useful contribution.
+Before you contribute a chart, write down exactly what one count means, prove it with a small fixture, and inspect the rendered label. The [contributor guide](/blog/help-build-reacherx) explains how to turn that change into a useful contribution.

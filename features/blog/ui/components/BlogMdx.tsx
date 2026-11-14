@@ -4,6 +4,7 @@ import { cacheLife } from "next/cache";
 import { isValidElement, type ComponentProps, type ReactNode } from "react";
 import { codeToHtml, bundledLanguages } from "shiki";
 import { InlineCode } from "@/shared/ui/components/InlineCode";
+import { neutralShikiThemes } from "@/shared/ui/components/shikiNeutralTheme";
 import { BlogCopyButton } from "./BlogCopyButton";
 
 export async function BlogPre({ children }: { children?: ReactNode }) {
@@ -48,7 +49,7 @@ async function highlightBlogCode(code: string, language: string) {
   cacheLife("max");
   return codeToHtml(code, {
     lang: language,
-    themes: { light: "github-light", dark: "github-dark" },
+    themes: neutralShikiThemes,
   });
 }
 
