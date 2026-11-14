@@ -9,7 +9,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "what-is-reacherx",
     question: "What is ReacherX?",
     answer:
-      "ReacherX is an open-source △ Agent that combines real-time prospecting, a light CRM, and outreach in one product. It finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
+      "ReacherX is an open-source △ Agent that combines real-time people search, a light CRM, and outreach in one product. It finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
   },
   {
     id: "why-not-diy",

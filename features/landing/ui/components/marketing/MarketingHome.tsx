@@ -65,14 +65,17 @@ function HeroTagline() {
         href={GITHUB_REPO_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="whitespace-nowrap hover:underline"
+        className="text-muted-foreground whitespace-nowrap hover:underline"
       >
         <GitHubIcon
           className="mr-1 inline size-4 fill-current align-[-2px]"
           aria-hidden="true"
         />
         {phrase}
-        <span aria-hidden="true"> ↗</span>
+        <span aria-hidden="true" className="text-foreground">
+          {" "}
+          ↗
+        </span>
       </a>
       <span>{inlinePlatformIcons(rest.slice(index + phrase.length))}</span>
     </>
