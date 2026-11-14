@@ -33,7 +33,7 @@ export type CycleMeasurement = Readonly<{
   costUsd: number | null;
   // From cycle start to the last qualification and lesson write.
   activeMs: number | null;
-  // Scheduled gap before the next cycle.
+  // From the cycle's start until the next cycle started, or for the last cycle was due to.
   gapMs: number | null;
 }>;
 

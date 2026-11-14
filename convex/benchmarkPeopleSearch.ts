@@ -34,6 +34,10 @@ const MAX_COST_EVENTS_READ = 5000;
 const EVIDENCE_POSTS_KEPT = 3;
 const EVIDENCE_TEXT_CHARS = 1500;
 const DELETE_WINDOW_MS = 10 * 60 * 1000;
+const MAX_SCHEDULED_SCAN = 1000;
+// workflows/prospecting:startNextCycle; the backend may include the module's extension.
+const NEXT_CYCLE_FUNCTION = /^workflows\/prospecting(?:\.js)?:startNextCycle$/;
+const MAX_ACTIVITY_ROWS = 500;
 
 function benchmarkWorkspaceName(label: string) {
   if (!LABEL_PATTERN.test(label)) {
@@ -384,6 +388,77 @@ export const stopRun = internalAction({
       cancelFailed,
       monitorsDeleted,
       monitorFailures,
+    };
+  },
+});
+
+/**
+ * Cancels next-cycle starts already scheduled for a benchmark workspace, so a
+ * run ends after its planned cycles. The workspace keeps running, so
+ * qualification and lesson writing finish before the runner stops it.
+ */
+export const cancelScheduledCycles = internalMutation({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, { workspaceId }) => {
+    const workspace = await ctx.db.get(workspaceId);
+    if (!workspace?.name.startsWith(BENCHMARK_NAME_PREFIX)) {
+      throw new Error("Only benchmark workspaces can be held here");
+    }
+    // A next cycle is scheduled as the previous one completes, so it is among the newest entries.
+    const recent = await ctx.db.system
+      .query("_scheduled_functions")
+      .order("desc")
+      .take(MAX_SCHEDULED_SCAN);
+    let canceled = 0;
+    for (const job of recent) {
+      const [jobArgs] = job.args as [{ workspaceId?: unknown } | undefined];
+      if (
+        job.state.kind === "pending" &&
+        NEXT_CYCLE_FUNCTION.test(job.name) &&
+        jobArgs?.workspaceId === workspaceId
+      ) {
+        await ctx.scheduler.cancel(job._id);
+        canceled += 1;
+      }
+    }
+    if (canceled > 0) {
+      await ctx.db.patch(workspaceId, { prospectingNextRunAt: undefined });
+    }
+    return { canceled, truncated: recent.length === MAX_SCHEDULED_SCAN };
+  },
+});
+
+/**
+ * Workspaces that could spend while jobs are unpaused for a run: any running
+ * workspace, and any stopped one with an automatic restart pending. A run
+ * starts only when nothing but its own workspace is listed.
+ */
+export const deploymentActivity = internalQuery({
+  args: { exceptWorkspaceId: v.optional(v.id("workspaces")) },
+  handler: async (ctx, { exceptWorkspaceId }) => {
+    const [running, stopped] = await Promise.all(
+      (["running", "stopped"] as const).map((status) =>
+        ctx.db
+          .query("workspaces")
+          .withIndex("by_prospecting_status_last_activity", (q) =>
+            q.eq("prospectingWorkflowStatus", status)
+          )
+          .take(MAX_ACTIVITY_ROWS + 1)
+      )
+    );
+    const active = [
+      ...running.slice(0, MAX_ACTIVITY_ROWS),
+      ...stopped
+        .slice(0, MAX_ACTIVITY_ROWS)
+        .filter(
+          (workspace) => workspace.prospectingNextRecoveryAt !== undefined
+        ),
+    ].filter((workspace) => workspace._id !== exceptWorkspaceId);
+    return {
+      workspaceIds: active.map((workspace) => workspace._id),
+      truncated:
+        running.length > MAX_ACTIVITY_ROWS ||
+        stopped.length > MAX_ACTIVITY_ROWS,
     };
   },
 });

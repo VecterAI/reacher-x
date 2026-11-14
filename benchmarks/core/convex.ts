@@ -99,6 +99,13 @@ export const RUNTIME_SETTINGS = [
 export type RuntimeSetting = (typeof RUNTIME_SETTINGS)[number];
 export const LEARNING_OFF_SETTING = "BENCHMARK_LEARNING_OFF_WORKSPACE_IDS";
 
+/** Development provider keys replaced by funded keys during a live step, then restored. */
+export const PROVIDER_KEYS = ["SOCIALAPI_API_KEY", "LINKDAPI_API_KEY"] as const;
+export type ProviderKey = (typeof PROVIDER_KEYS)[number];
+// Secrets the runner may read: provider keys to restore, and the deployment's
+// OpenRouter key to confirm it is the key whose spend is measured.
+type SecretSetting = ProviderKey | "OPENROUTER_API_KEY";
+
 export type DevelopmentRuntimeSnapshot = Readonly<{
   deployment: `dev:${string}`;
   recordedAt: string;
@@ -194,6 +201,35 @@ const stopResultSchema = z.object({
   monitorsDeleted: z.number(),
   monitorFailures: z.array(z.string()),
 });
+export type StopResult = z.infer<typeof stopResultSchema>;
+
+const activitySchema = z.object({
+  workspaceIds: z.array(idSchema),
+  truncated: z.boolean(),
+});
+
+const runCostsSchema = z.object({
+  providers: z.record(
+    z.string(),
+    z.object({
+      usd: z.number(),
+      requests: z.number(),
+      billableUnits: z.number(),
+    })
+  ),
+  llmUsdRecorded: z.number(),
+  llmCallsRecorded: z.number(),
+  capped: z.boolean(),
+});
+export type RecordedRunCosts = z.infer<typeof runCostsSchema>;
+
+const linkdApiUnitsSchema = z.object({
+  billableUnits: z.number(),
+  successes: z.number(),
+  events: z.number(),
+  capped: z.boolean(),
+});
+export type LinkdApiUnits = z.infer<typeof linkdApiUnitsSchema>;
 
 export class ConvexCommandError extends Error {}
 
@@ -222,10 +258,25 @@ export class ConvexReacherXDriver {
     return result.stdout;
   }
 
-  /** The exact value of one setting, or null when unset (the CLI prints nothing on stdout). */
-  async getSetting(name: RuntimeSetting): Promise<string | null> {
+  /** The exact value of one variable, or null when unset (the CLI prints nothing on stdout). */
+  private async read(name: string): Promise<string | null> {
     const output = await this.env(["get", name]);
     return output === "" ? null : output.replace(/\n$/, "");
+  }
+
+  getSetting(name: RuntimeSetting): Promise<string | null> {
+    return this.read(name);
+  }
+
+  /** A secret's raw value for the caller to hold in memory or private storage; never log it. */
+  readSecret(name: SecretSetting): Promise<string | null> {
+    return this.read(name);
+  }
+
+  /** Installs or removes a provider key; the value travels on stdin only. */
+  async setProviderKey(name: ProviderKey, value: string | null) {
+    if (value !== null) await this.env(["set", name], `${value}\n`);
+    else if ((await this.read(name)) !== null) await this.env(["remove", name]);
   }
 
   /** Reads allowlisted settings one by one, so no other value is loaded and multiline values stay exact. */
@@ -363,12 +414,59 @@ export class ConvexReacherXDriver {
     }
   }
 
-  /** Stops monitors and pauses jobs before funded keys are restored. Never deletes. */
-  stop(workspace: BenchmarkWorkspace) {
+  /** Pauses the workspace, cancels its workflow and deletes its SocialAPI monitors. Never deletes data. */
+  stop(
+    workspace: Pick<BenchmarkWorkspace, "workspaceId">
+  ): Promise<StopResult> {
     return this.call(
       "benchmarkPeopleSearch:stopRun",
       { workspaceId: workspace.workspaceId },
       stopResultSchema
+    );
+  }
+
+  /** Cancels next cycles already scheduled for the workspace; it keeps running so qualification finishes. */
+  cancelScheduledCycles(workspace: BenchmarkWorkspace) {
+    return this.call(
+      "benchmarkPeopleSearch:cancelScheduledCycles",
+      { workspaceId: workspace.workspaceId },
+      z.object({ canceled: z.number(), truncated: z.boolean() })
+    );
+  }
+
+  /** Other workspaces that could spend while jobs are unpaused. */
+  activity(except?: BenchmarkWorkspace) {
+    return this.call(
+      "benchmarkPeopleSearch:deploymentActivity",
+      except ? { exceptWorkspaceId: except.workspaceId } : {},
+      activitySchema
+    );
+  }
+
+  /** Provider usage and model cost the app recorded for the workspace since a time. */
+  runCosts(workspace: BenchmarkWorkspace, since: number) {
+    return this.call(
+      "benchmarkPeopleSearch:runCosts",
+      { workspaceId: workspace.workspaceId, since },
+      runCostsSchema
+    );
+  }
+
+  /** LinkedIn data units since a time; only the active benchmark runs while jobs are unpaused. */
+  linkdApiUnitsSince(since: number) {
+    return this.call(
+      "benchmarkPeopleSearch:linkdApiUnitsSince",
+      { since },
+      linkdApiUnitsSchema
+    );
+  }
+
+  /** Closes a LinkedIn circuit breaker an earlier run left open. */
+  resetLinkdApiCircuit() {
+    return this.call(
+      "benchmarkPeopleSearch:resetLinkdApiCircuit",
+      {},
+      z.object({ reset: z.boolean(), previousStatus: z.string().optional() })
     );
   }
 }

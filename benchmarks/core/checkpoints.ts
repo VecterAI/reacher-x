@@ -141,6 +141,20 @@ export class FileCheckpointStore {
     }
   }
 
+  /** A private file kept outside any run, such as the live session record; null when absent. */
+  async readPrivate(path: string): Promise<string | null> {
+    try {
+      return await readFile(await this.path(path), "utf8");
+    } catch (error) {
+      if (isMissing(error)) return null;
+      throw error;
+    }
+  }
+
+  async writePrivate(path: string, data: string) {
+    await this.atomicWrite(path, data);
+  }
+
   async readArtifact(reference: ArtifactReference): Promise<JsonValue> {
     const bytes = await readFile(await this.path(reference.path));
     if (hashBytes(bytes) !== reference.sha256)
