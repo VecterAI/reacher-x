@@ -3,29 +3,26 @@ title: "Use Analytics to decide what to do next"
 description: "Read the numbers in context, spot work waiting for you, and find where your outreach is getting stuck."
 category: tutorials
 date: "2026-07-06"
-updated: "2026-09-10"
+updated: "2026-11-13"
 related: ["understand-agent-observability", "teach-reacherx-what-you-want"]
 tags: ["analytics", "reporting", "response rate", "metrics", "dashboard"]
 ---
 
-A dashboard is useful when it changes what you do next. If it only tells you △ Agent has been busy, it hasn't told you enough.
+A dashboard is useful when it changes what you do next. If it only tells you △ Agent has been busy, it hasn't told you enough. This post explains how to read Analytics in ReacherX, which reports what the work achieved and what is waiting for you.
 
-Open Analytics in ReacherX and start with the active workspace and date range. A hiring workspace and a customer workspace have different goals. Last week's activity and today's activity are different sets of work.
+Two terms set the scene. A workspace is the container for one purpose, such as hiring or finding customers, and it holds its own people, plans, and results. A person is anyone the system saved as a possible match. If those words are new, [How ReacherX works](/blog/how-reacherx-works) explains them and the steps a person passes through.
+
+Open Analytics and start with the active workspace and date range. A hiring workspace and a customer workspace have different goals. Last week's activity and today's activity are different sets of work.
 
 ## Check whether people are getting through
 
-The overview includes new people found, response rate, pending approvals, and outreach issues. It also shows processing states such as pending, qualified, ready, and disqualified.
-
-- **Pending**: found, but not yet checked for fit.
-- **Qualified**: passed the system's fit checks for your audience. It doesn't mean they have agreed to talk, buy, or join.
-- **Ready**: qualified, with background gathered, so a plan can be prepared.
-- **Disqualified**: didn't pass the fit checks and has been ruled out.
+The overview includes new people found, response rate, pending approvals, and outreach issues. It also shows the processing states each person passes through. Pending means found but not yet checked for fit. Qualified means they passed the system's fit checks for your audience, which doesn't mean they have agreed to talk, buy, or join. Ready means qualified, with background gathered, so a plan can be prepared. Disqualified means they didn't pass the fit checks and have been ruled out.
 
 Read the count under a rate. One reply from two people and fifty replies from a hundred people can produce the same percentage, but give you very different amounts of evidence.
 
 <BlogAppDemo
   scenario="read-your-reacherx-analytics"
-  title="Read a workspace’s analytics"
+  title="Read a workspace's analytics"
   caption="See who replied and which outreach led to a conversation."
 />
 
@@ -44,14 +41,14 @@ A count alone doesn't tell you the cause. Too few qualified people could mean th
 
 Use the same workspace and a comparable time range when checking progress. Reporting uses the workspace's time zone, so day boundaries may differ from a teammate's local clock.
 
-Some cards describe activity during a period; others describe the current state of people found in that period. Read the labels. Don't add different cards together and assume they are consecutive steps taken by exactly the same people.
+Some cards describe activity during a period. Others describe the current state of people found in that period. Read the labels. Don't add different cards together and assume they are consecutive steps taken by exactly the same people.
 
 Keep progress stages accurate when you learn something from a conversation. The app can only report the events and states it has recorded. A phone conversation outside ReacherX won't explain itself to the dashboard.
 
 ## Look behind the numbers when needed
 
-Analytics helps answer “What is happening with my work?” [Agent observability](/blog/understand-agent-observability) helps answer “What has △ Agent been doing?”
+Analytics helps answer "What is happening with my work?" [Agent observability](/blog/understand-agent-observability) helps answer "What has △ Agent been doing?"
 
 Use it when you want to inspect searches, evaluated lessons, or a particular processing event. It gives you a way to investigate instead of repeatedly changing your prompt without knowing what went wrong.
 
-Try one change at a time: improve an audience requirement, clear waiting approvals, or make your invitation clearer. Then review actual people and conversations alongside the numbers. A busier △ Agent is only useful if it is helping with the job you came to do.
+Try one change at a time. Improve an audience requirement, clear waiting approvals, or make your invitation clearer. Then review actual people and conversations alongside the numbers. A busier △ Agent is only useful if it is helping with the job you came to do.
