@@ -48,6 +48,7 @@ import {
   stringifyUnknownError,
 } from "./lib/errorHelpers";
 import { persistRawModelResponse } from "./lib/modelTelemetry";
+import { hasValidTaggedEntityIds } from "./lib/agentThreadContextCore";
 import { getProspectDisplayFields } from "./lib/notificationHelpers";
 import {
   createPlanBatchAgentContinuationContextHandler,
@@ -2670,10 +2671,23 @@ export const getMediaUploadInternal = internalQuery({
 export const getAgentMessageContextInternal = internalQuery({
   args: { messageId: v.string() },
   handler: async (ctx, { messageId }) => {
-    return await ctx.db
+    const context = await ctx.db
       .query("agentMessageContexts")
       .withIndex("by_message", (q) => q.eq("messageId", messageId))
       .first();
+    if (!context) {
+      return null;
+    }
+
+    return {
+      ...context,
+      taggedEntities: context.taggedEntities.filter((entity) =>
+        hasValidTaggedEntityIds(
+          entity,
+          (table, id) => ctx.db.normalizeId(table, id) !== null
+        )
+      ),
+    };
   },
 });
 

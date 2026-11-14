@@ -4,7 +4,10 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery } from "./lib/functionBuilders";
 import { getProspectThreadContextByThreadId } from "./lib/relationshipHelpers";
 import { parseSetupThreadState } from "./lib/setupThreadHelpers";
-import { resolveAgentThreadSelection } from "./lib/agentThreadContextCore";
+import {
+  hasValidTaggedEntityIds,
+  resolveAgentThreadSelection,
+} from "./lib/agentThreadContextCore";
 import { getWorkspaceThreadContextByThreadId } from "./lib/workspaceThreadHelpers";
 import { logger } from "../shared/lib/logger";
 import type { MentionEntitySearchResult } from "../shared/lib/mentions/mentionEntities";
@@ -123,7 +126,12 @@ export const resolveSelectedContextForThread = internalQuery({
         prospectId: prospectId ? String(prospectId) : null,
       },
       contextRows: contextRows.map((row) => ({
-        taggedEntities: row.taggedEntities as MentionEntitySearchResult[],
+        taggedEntities: row.taggedEntities.filter((entity) =>
+          hasValidTaggedEntityIds(
+            entity,
+            (table, id) => ctx.db.normalizeId(table, id) !== null
+          )
+        ) as MentionEntitySearchResult[],
       })),
       persistentTargetSelection,
     });
