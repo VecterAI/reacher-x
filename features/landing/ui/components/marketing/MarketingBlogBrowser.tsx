@@ -18,25 +18,10 @@ import { marketingButton, marketingSectionTitle } from "./MarketingLayout";
 
 type CategoryTab = { slug: string; label: string };
 
-/** Surfaced first on the All tab; the rest follows in publish order. */
-const CURATED_SLUGS = [
-  "think-in-networks",
-  "what-reacherx-is-for",
-  "reach-out-and-get-replies",
-  "getting-started-with-reacherx",
-  "find-potential-customers",
-];
-
 const ALL_TAB = "all";
+// Posts arrive in /blog publish order (newest first), so every new post
+// surfaces here automatically.
 const MAX_ALL_POSTS = 12;
-
-function orderAllPosts(posts: BlogPostSummary[]) {
-  const curated = CURATED_SLUGS.map((slug) =>
-    posts.find((post) => post.slug === slug)
-  ).filter((post) => post !== undefined);
-  const rest = posts.filter((post) => !CURATED_SLUGS.includes(post.slug));
-  return [...curated, ...rest].slice(0, MAX_ALL_POSTS);
-}
 
 /** Homepage blog slice: the /blog tabs above a carousel of /blog cards. */
 export function MarketingBlogBrowser({
@@ -62,7 +47,7 @@ export function MarketingBlogBrowser({
 
   const visible =
     active === ALL_TAB
-      ? orderAllPosts(posts)
+      ? posts.slice(0, MAX_ALL_POSTS)
       : posts.filter((post) => post.category === active);
 
   useEffect(() => {
