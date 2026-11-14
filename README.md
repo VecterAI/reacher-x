@@ -150,7 +150,7 @@ My change: <describe the fix or feature>
 Read VISION.md first so the product vision is clear, then follow CONTRIBUTING.md, docs/architecture.md, docs/development-setup.md, and agents.md. Summary:
 
 1. Check before starting: search the open issues and pull requests at github.com/VecterAI/reacher-x for anything about my change. If an issue covers it, note the number and reference it in the PR. If an open PR already fixes it, stop and tell me. If nothing covers it and the change is bigger than a small fix, ask me whether to open an issue first.
-2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm.
+2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm. If that fails, your Node.js may be 25 or later without bundled Corepack: run npm install -g corepack first.
 3. I have no push access to VecterAI/reacher-x, so fork it on GitHub before cloning.
 4. Clone my fork, add the upstream remote, and update main from upstream:
    git remote add upstream https://github.com/VecterAI/reacher-x.git
@@ -171,7 +171,7 @@ Full roadmap in [ROADMAP.md](./ROADMAP.md). Reliability and evaluations now, ema
 
 ## Self-hosting
 
-Requirements: Node.js 22+ and pnpm 11.x.
+Requirements: Node.js 22+ and pnpm 11.x. The repository pins pnpm in `package.json`, so `corepack enable pnpm` keeps you aligned; on Node.js 25 or later, install Corepack first with `npm install -g corepack`.
 
 Prefer one click? The [Deploy your own instance](#deploy-your-own-instance) section covers what the button imports and what stays manual.
 

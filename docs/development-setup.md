@@ -10,7 +10,7 @@ For a complete variable reference, see [configuration.md](./configuration.md). T
 
 ## What you need
 
-- Node.js 22+ and pnpm 11.x. The repository pins pnpm in `package.json`, so `corepack enable pnpm` keeps you aligned.
+- Node.js 22+ and pnpm 11.x. The repository pins pnpm in `package.json`, so `corepack enable pnpm` keeps you aligned. Node.js 25 and later no longer bundle Corepack, so if that command fails, run `npm install -g corepack` first.
 - A GitHub account.
 - Accounts for the services in the area you work on. The code is free; the services are not bundled.
 
