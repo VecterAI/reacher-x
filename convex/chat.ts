@@ -15,7 +15,7 @@ import {
 } from "./lib/functionBuilders";
 import { internal } from "./_generated/api";
 import { components } from "./_generated/api";
-import { Doc, Id } from "./_generated/dataModel";
+import { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import {
   createThread,
@@ -2667,13 +2667,45 @@ export const getMediaUploadInternal = internalQuery({
   },
 });
 
+/** The document `buildResolvedTaggedEntityLine` loads a tag by; posts have none. */
+function getTaggedEntityDocumentId(
+  entity: Doc<"agentMessageContexts">["taggedEntities"][number]
+): { table: TableNames; id: string } | null {
+  switch (entity.kind) {
+    case "prospect":
+      return { table: "prospects", id: entity.prospectId ?? entity.entityId };
+    case "plan":
+      return { table: "outreachPlans", id: entity.planId ?? entity.entityId };
+    case "task":
+      return { table: "outreachTasks", id: entity.taskId ?? entity.entityId };
+    case "attachment":
+      return { table: "mediaUploads", id: entity.entityId };
+    default:
+      return null;
+  }
+}
+
 export const getAgentMessageContextInternal = internalQuery({
   args: { messageId: v.string() },
   handler: async (ctx, { messageId }) => {
-    return await ctx.db
+    const context = await ctx.db
       .query("agentMessageContexts")
       .withIndex("by_message", (q) => q.eq("messageId", messageId))
       .first();
+    if (!context) {
+      return null;
+    }
+
+    // Skip tags with malformed ids, e.g. a mention pasted from another deployment.
+    return {
+      ...context,
+      taggedEntities: context.taggedEntities.filter((entity) => {
+        const document = getTaggedEntityDocumentId(entity);
+        return (
+          !document || ctx.db.normalizeId(document.table, document.id) !== null
+        );
+      }),
+    };
   },
 });
 

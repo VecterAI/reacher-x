@@ -17,6 +17,7 @@ import { extractTextFromEditorState } from "@/shared/lib/utils/url/urlDetection"
 import {
   collectComposerMentionIds,
   filterSelectedMentionEntitiesByMentionIds,
+  hasUntaggedMentionText,
   syncMentionSelectionWithComposer,
   type AgentMentionSelection,
 } from "./entityMentions";
@@ -281,5 +282,23 @@ describe("agent mention selection by chip id", () => {
     expect(collectComposerMentionIds({ root: { children: [] } })).toEqual(
       new Set()
     );
+  });
+});
+
+describe("untagged @name text (issue #141)", () => {
+  const jane = buildPersonEntity("jane", "Jane Roe");
+
+  it("flags @name text without a chip, but not chips or emails", () => {
+    const editor = createComposerEditor();
+    setComposerContent(editor, [
+      { text: "Email a@b.com about " },
+      { mention: jane },
+    ]);
+    expect(hasUntaggedMentionText(editor.getEditorState().toJSON())).toBe(
+      false
+    );
+
+    setComposerContent(editor, [{ text: "Tell me about @Jane Roe" }]);
+    expect(hasUntaggedMentionText(editor.getEditorState().toJSON())).toBe(true);
   });
 });

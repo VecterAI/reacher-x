@@ -134,12 +134,15 @@ export const resolveSelectedContextForThread = internalQuery({
     let resolvedTaskId = selection.taskId;
 
     if (!resolvedProspectId && isNonEmptyString(resolvedTaskId)) {
-      const task: Doc<"outreachTasks"> | null = await ctx.runQuery(
-        internal.outreach.getTaskInternal,
-        {
-          taskId: resolvedTaskId as Id<"outreachTasks">,
-        }
+      const normalizedTaskId = ctx.db.normalizeId(
+        "outreachTasks",
+        resolvedTaskId
       );
+      const task: Doc<"outreachTasks"> | null = normalizedTaskId
+        ? await ctx.runQuery(internal.outreach.getTaskInternal, {
+            taskId: normalizedTaskId,
+          })
+        : null;
       if (task) {
         const planData: {
           plan: Doc<"outreachPlans">;
@@ -158,12 +161,18 @@ export const resolveSelectedContextForThread = internalQuery({
     }
 
     if (!resolvedProspectId && isNonEmptyString(resolvedPlanId)) {
+      const normalizedPlanId = ctx.db.normalizeId(
+        "outreachPlans",
+        resolvedPlanId
+      );
       const planData: {
         plan: Doc<"outreachPlans">;
         tasks: Doc<"outreachTasks">[];
-      } | null = await ctx.runQuery(internal.outreach.getPlanInternal, {
-        planId: resolvedPlanId as Id<"outreachPlans">,
-      });
+      } | null = normalizedPlanId
+        ? await ctx.runQuery(internal.outreach.getPlanInternal, {
+            planId: normalizedPlanId,
+          })
+        : null;
       if (planData?.plan) {
         resolvedPlanId = String(planData.plan._id);
         resolvedProspectId = String(planData.plan.prospectId);
@@ -173,12 +182,15 @@ export const resolveSelectedContextForThread = internalQuery({
     }
 
     if (isNonEmptyString(resolvedProspectId)) {
-      const prospect: Doc<"prospects"> | null = await ctx.runQuery(
-        internal.prospects.getProspectInternal,
-        {
-          prospectId: resolvedProspectId as Id<"prospects">,
-        }
+      const normalizedProspectId = ctx.db.normalizeId(
+        "prospects",
+        resolvedProspectId
       );
+      const prospect: Doc<"prospects"> | null = normalizedProspectId
+        ? await ctx.runQuery(internal.prospects.getProspectInternal, {
+            prospectId: normalizedProspectId,
+          })
+        : null;
 
       if (!prospect) {
         agentThreadContextLogger.warn("Selected prospect no longer exists", {

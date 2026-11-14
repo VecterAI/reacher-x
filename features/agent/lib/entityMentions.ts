@@ -1,4 +1,7 @@
-import type { MentionEntitySearchResult } from "@/shared/lib/mentions/mentionEntities";
+import {
+  normalizeMentionEntitySearchResult,
+  type MentionEntitySearchResult,
+} from "@/shared/lib/mentions/mentionEntities";
 
 /**
  * Text the agent composer inserts for a picked entity (`@<mentionText> `),
@@ -100,4 +103,71 @@ export function syncMentionSelectionWithComposer(
     next.length === current.length &&
     next.every((entity, index) => entity.id === current[index]?.id);
   return unchanged ? current : next;
+}
+
+/** `@` at the start of a word. */
+const MENTION_TEXT_PATTERN = /(^|\s)@[\p{L}\p{N}_]/u;
+
+/** True when the composer has `@name` text that is not a chip, so tags no one. */
+export function hasUntaggedMentionText(editorState: unknown): boolean {
+  const visit = (node: unknown): boolean => {
+    if (!node || typeof node !== "object") {
+      return false;
+    }
+
+    const current = node as {
+      type?: unknown;
+      text?: unknown;
+      children?: unknown;
+    };
+    if (current.type === "text") {
+      return (
+        typeof current.text === "string" &&
+        MENTION_TEXT_PATTERN.test(current.text)
+      );
+    }
+
+    return Array.isArray(current.children) && current.children.some(visit);
+  };
+
+  return visit((editorState as { root?: unknown } | null | undefined)?.root);
+}
+
+/** Inline entities whose name no other entity shares. */
+export function getUnambiguousMentionEntities(
+  entities: MentionEntitySearchResult[]
+): MentionEntitySearchResult[] {
+  const inline = entities.filter(
+    (entity) => entity.kind !== "attachment" && entity.mentionText.trim()
+  );
+  const nameOf = (entity: MentionEntitySearchResult) =>
+    entity.mentionText.trim();
+
+  return inline.filter(
+    (entity) =>
+      inline.filter((other) => nameOf(other) === nameOf(entity)).length === 1
+  );
+}
+
+/** Entities carried by mentions copied from a sent message (`data-mention-entity`). */
+export function readMentionEntitiesFromHtml(
+  html: string
+): MentionEntitySearchResult[] {
+  if (!html.includes("data-mention-entity")) {
+    return [];
+  }
+
+  const document = new DOMParser().parseFromString(html, "text/html");
+  return [...document.querySelectorAll("[data-mention-entity]")].flatMap(
+    (element) => {
+      try {
+        const entity = normalizeMentionEntitySearchResult(
+          JSON.parse(element.getAttribute("data-mention-entity") ?? "")
+        );
+        return entity ? [entity] : [];
+      } catch {
+        return [];
+      }
+    }
+  );
 }

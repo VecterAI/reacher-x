@@ -4,7 +4,8 @@ import agentTest from "@convex-dev/agent/test";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildAgentComposerSubmission } from "../features/agent/lib/buildAgentComposerMessage";
-import { api } from "./_generated/api";
+import { createThread } from "@convex-dev/agent";
+import { api, components, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -118,5 +119,57 @@ describe("Agent message tagged entities", () => {
       expect(entity.attachmentDisabled).toBe(false);
       expect(entity.attachmentDisabledReason).toBeNull();
     }
+  });
+
+  test("skips a stored tag with a malformed id instead of throwing", async () => {
+    const t = convexTest(schema, modules);
+    agentTest.register(t);
+    const messageId = "malformed-tag-message";
+    const threadId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "malformed-tag-user",
+        email: "malformed-tag@example.com",
+      });
+      const threadId = await createThread(ctx, components.agent, {
+        userId: String(userId),
+      });
+      await ctx.db.insert("agentMessageContexts", {
+        threadId,
+        messageId,
+        userId,
+        promptTextSource: "user",
+        // A mention pasted from another deployment carries a foreign id.
+        taggedEntities: [
+          {
+            id: "prospect:not-a-real-id",
+            entityId: "not-a-real-id",
+            prospectId: "not-a-real-id",
+            kind: "prospect",
+            label: "Ghost",
+            mentionText: "Ghost",
+            secondaryLabel: "",
+            avatarUrl: null,
+            verified: false,
+          },
+        ],
+        attachments: [],
+        createdAt: 1,
+      });
+      return threadId;
+    });
+
+    const context = await t.query(
+      internal.chat.getAgentMessageContextInternal,
+      {
+        messageId,
+      }
+    );
+    expect(context?.taggedEntities).toEqual([]);
+
+    const selected = await t.query(
+      internal.agentThreadContext.resolveSelectedContextForThread,
+      { threadId }
+    );
+    expect(selected.prospectId).toBeNull();
   });
 });
