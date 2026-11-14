@@ -121,14 +121,46 @@ describe("Agent message tagged entities", () => {
     }
   });
 
-  test("skips a stored tag with a malformed id instead of throwing", async () => {
+  test("skips tags with malformed ids and keeps the valid ones", async () => {
     const t = convexTest(schema, modules);
     agentTest.register(t);
     const messageId = "malformed-tag-message";
-    const threadId = await t.run(async (ctx) => {
+    const tag = (
+      kind: "prospect" | "plan",
+      label: string,
+      entityId: string
+    ) => ({
+      id: `${kind}:${entityId}`,
+      entityId,
+      kind,
+      label,
+      mentionText: label,
+      secondaryLabel: "",
+      avatarUrl: null,
+      verified: false,
+    });
+    const { threadId, prospectId } = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         workosUserId: "malformed-tag-user",
         email: "malformed-tag@example.com",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Malformed tag workspace",
+        description: "Malformed tag regression",
+        isDefault: true,
+        updatedAt: 1,
+      });
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "malformed-tag-prospect",
+        data: {},
+        status: "new",
+        displayName: "Jane Roe",
+        updatedAt: 1,
       });
       const threadId = await createThread(ctx, components.agent, {
         userId: String(userId),
@@ -138,38 +170,31 @@ describe("Agent message tagged entities", () => {
         messageId,
         userId,
         promptTextSource: "user",
-        // A mention pasted from another deployment carries a foreign id.
+        // Ids pasted from another deployment are malformed here.
         taggedEntities: [
-          {
-            id: "prospect:not-a-real-id",
-            entityId: "not-a-real-id",
-            prospectId: "not-a-real-id",
-            kind: "prospect",
-            label: "Ghost",
-            mentionText: "Ghost",
-            secondaryLabel: "",
-            avatarUrl: null,
-            verified: false,
-          },
+          tag("prospect", "Jane Roe", String(prospectId)),
+          tag("prospect", "Ghost", "not-a-real-id"),
+          tag("plan", "Ghost plan", "not-a-real-id"),
         ],
         attachments: [],
         createdAt: 1,
       });
-      return threadId;
+      return { threadId, prospectId };
     });
 
     const context = await t.query(
       internal.chat.getAgentMessageContextInternal,
-      {
-        messageId,
-      }
+      { messageId }
     );
-    expect(context?.taggedEntities).toEqual([]);
+    expect(context?.taggedEntities.map((entity) => entity.label)).toEqual([
+      "Jane Roe",
+    ]);
 
     const selected = await t.query(
       internal.agentThreadContext.resolveSelectedContextForThread,
       { threadId }
     );
-    expect(selected.prospectId).toBeNull();
+    expect(selected.prospectId).toBe(prospectId);
+    expect(selected.planId).toBeNull();
   });
 });

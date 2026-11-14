@@ -288,17 +288,46 @@ describe("agent mention selection by chip id", () => {
 describe("untagged @name text (issue #141)", () => {
   const jane = buildPersonEntity("jane", "Jane Roe");
 
-  it("flags @name text without a chip, but not chips or emails", () => {
+  /** One paragraph whose text pieces differ in format, so they stay separate nodes. */
+  function setSplitText(editor: LexicalEditor, pieces: string[]) {
+    editor.update(
+      () => {
+        const paragraph = $createParagraphNode();
+        pieces.forEach((piece, index) =>
+          paragraph.append(
+            $createTextNode(piece).setFormat(index % 2 ? "bold" : 0)
+          )
+        );
+        $getRoot().clear().append(paragraph);
+      },
+      { discrete: true }
+    );
+  }
+
+  const isUntagged = (editor: LexicalEditor) =>
+    hasUntaggedMentionText(editor.getEditorState().toJSON());
+
+  it("flags @name text without a chip, including after ( or split by formatting", () => {
+    const editor = createComposerEditor();
+    setComposerContent(editor, [{ text: "Tell me about @Jane Roe" }]);
+    expect(isUntagged(editor)).toBe(true);
+
+    setComposerContent(editor, [{ text: "Compare (@Jane Roe)" }]);
+    expect(isUntagged(editor)).toBe(true);
+
+    setSplitText(editor, ["Tell me about @", "Jane Roe"]);
+    expect(isUntagged(editor)).toBe(true);
+  });
+
+  it("does not flag chips or email addresses, even when split", () => {
     const editor = createComposerEditor();
     setComposerContent(editor, [
       { text: "Email a@b.com about " },
       { mention: jane },
     ]);
-    expect(hasUntaggedMentionText(editor.getEditorState().toJSON())).toBe(
-      false
-    );
+    expect(isUntagged(editor)).toBe(false);
 
-    setComposerContent(editor, [{ text: "Tell me about @Jane Roe" }]);
-    expect(hasUntaggedMentionText(editor.getEditorState().toJSON())).toBe(true);
+    setSplitText(editor, ["Email a@", "b.com"]);
+    expect(isUntagged(editor)).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import type { TableNames } from "../_generated/dataModel";
 import type {
   MentionEntitySearchResult,
   MentionPostPlatform,
@@ -37,6 +38,41 @@ export type AgentThreadSelection = {
   source: "thread" | "tagged" | "none";
   ambiguousProspectIds: string[];
 };
+
+/** Table of each kind's own `entityId`; posts are not documents. */
+const ENTITY_TABLE_BY_KIND: Partial<
+  Record<MentionEntitySearchResult["kind"], TableNames>
+> = {
+  prospect: "prospects",
+  plan: "outreachPlans",
+  task: "outreachTasks",
+  attachment: "mediaUploads",
+};
+
+/**
+ * True when every document id a tag carries is valid for its table. Tags are
+ * client data (e.g. pasted from another deployment), and the id-typed lookups
+ * that read them throw on a malformed id.
+ */
+export function hasValidTaggedEntityIds(
+  entity: Pick<
+    MentionEntitySearchResult,
+    "kind" | "entityId" | "prospectId" | "planId" | "taskId" | "workspaceId"
+  >,
+  isValidId: (table: TableNames, id: string) => boolean
+): boolean {
+  const kindTable = ENTITY_TABLE_BY_KIND[entity.kind];
+  const ids: [TableNames, string | undefined][] = [
+    ["prospects", entity.prospectId],
+    ["outreachPlans", entity.planId],
+    ["outreachTasks", entity.taskId],
+    ["workspaces", entity.workspaceId],
+  ];
+  if (kindTable) {
+    ids.push([kindTable, entity.entityId]);
+  }
+  return ids.every(([table, id]) => !id || isValidId(table, id));
+}
 
 function normalizeId(value: string | null | undefined): string | null {
   if (typeof value !== "string") {

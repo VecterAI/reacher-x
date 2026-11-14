@@ -105,14 +105,16 @@ export function syncMentionSelectionWithComposer(
   return unchanged ? current : next;
 }
 
-/** `@` at the start of a word. */
-const MENTION_TEXT_PATTERN = /(^|\s)@[\p{L}\p{N}_]/u;
+/** `@` starting a word: at the start, or after whitespace or "(". */
+const MENTION_TEXT_PATTERN = /(^|[\s(])@[\p{L}\p{N}_]/u;
 
 /** True when the composer has `@name` text that is not a chip, so tags no one. */
 export function hasUntaggedMentionText(editorState: unknown): boolean {
-  const visit = (node: unknown): boolean => {
+  // Join each paragraph's text so formatting that splits "@Jane" still counts;
+  // chips and other inline nodes become a space.
+  const textOf = (node: unknown): string => {
     if (!node || typeof node !== "object") {
-      return false;
+      return "";
     }
 
     const current = node as {
@@ -121,16 +123,17 @@ export function hasUntaggedMentionText(editorState: unknown): boolean {
       children?: unknown;
     };
     if (current.type === "text") {
-      return (
-        typeof current.text === "string" &&
-        MENTION_TEXT_PATTERN.test(current.text)
-      );
+      return typeof current.text === "string" ? current.text : "";
     }
 
-    return Array.isArray(current.children) && current.children.some(visit);
+    return Array.isArray(current.children)
+      ? `${current.children.map(textOf).join("")}\n`
+      : " ";
   };
 
-  return visit((editorState as { root?: unknown } | null | undefined)?.root);
+  return MENTION_TEXT_PATTERN.test(
+    textOf((editorState as { root?: unknown } | null | undefined)?.root)
+  );
 }
 
 /** Inline entities whose name no other entity shares. */
