@@ -183,6 +183,9 @@ export function registerAgentServices(
   return {
     threads,
     append,
+    seedThreadContext: (threadId: string) => {
+      contexts.set(threadId, { workspaceId: state.selectedWorkspaceId });
+    },
     setRoute: (
       threadId: string,
       route: FunctionReturnType<typeof api.chat.getThreadRouteContext>

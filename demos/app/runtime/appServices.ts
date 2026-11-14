@@ -23,6 +23,7 @@ import { registerAccountServices } from "./accountServices";
 import { registerNotificationServices } from "./notificationServices";
 import { registerProfileServices } from "./profileServices";
 import { registerOutreachStory } from "./scenarios/outreach";
+import { seedAgentHistory } from "./agentHistorySeeds";
 
 /** One local service graph per mounted app; stories vary only their seed data. */
 export function createAppServices(scenario?: BlogDemoId) {
@@ -55,5 +56,6 @@ export function createAppServices(scenario?: BlogDemoId) {
   registerSetupStory(client, state, agent, workspaceServices);
   registerBatchStory(client, state, agent);
   registerOutreachStory(agent, state);
+  seedAgentHistory(agent, state);
   return { ...services, state, agent, reporting, planLifecycle };
 }

@@ -180,17 +180,25 @@ export function createAppFixtures(
         editorial,
         "linkedin"
       );
-      return dataset.prospects.slice(0, 8).map((prospect) =>
-        applyDemoPortrait({
-          ...prospect,
-          workspaceId: workspace._id,
-          userId: viewer._id,
-          enrichmentStatus: "enriched" as const,
-          qualifiedAt: prospect._creationTime,
-          enrichedAt: prospect._creationTime,
-          readyAt: prospect._creationTime,
-        })
-      );
+      // find-candidates keeps the clean-start contract: a fresh workspace has
+      // no converted people yet.
+      return dataset.prospects
+        .filter(
+          (prospect) =>
+            scenario !== "find-candidates" || prospect.status !== "converted"
+        )
+        .slice(0, scenario === "read-your-reacherx-analytics" ? 8 : 37)
+        .map((prospect) =>
+          applyDemoPortrait({
+            ...prospect,
+            workspaceId: workspace._id,
+            userId: viewer._id,
+            enrichmentStatus: "enriched" as const,
+            qualifiedAt: prospect._creationTime,
+            enrichedAt: prospect._creationTime,
+            readyAt: prospect._creationTime,
+          })
+        );
     }
   );
   Object.assign(workspaces[1], {

@@ -411,6 +411,112 @@ function buildDemoThreads(
       ],
     },
     {
+      id: "demo-thread-engage",
+      firstMessage: "Engage with the latest posts first",
+      createdAt: BASE_TIME - 26 * HOUR_MS,
+      messages: [
+        {
+          id: "demo-msg-15",
+          role: "user",
+          segments: [
+            "Like and comment on ",
+            { mention: p1.displayName ?? "" },
+            "'s latest post. Keep the comment about their work, not about us.",
+          ],
+        },
+        {
+          id: "demo-msg-16",
+          role: "agent",
+          parts: [
+            {
+              type: "tools",
+              toolNames: ["getSocialContext", "likePost", "postReply"],
+            },
+            {
+              type: "text",
+              text: `Done. I liked the post and left a comment about their approach, no product mention: "The way you separated signal from noise here is rare. Curious what you do next."\n\nThe like is live and the comment is posted from your account. I left the DM out of this step, as you asked.`,
+            },
+          ],
+        },
+        {
+          id: "demo-msg-17",
+          role: "user",
+          segments: [
+            "Good. Do the same for the other two people from that thread.",
+          ],
+        },
+        {
+          id: "demo-msg-18",
+          role: "agent",
+          parts: [
+            {
+              type: "tools",
+              toolNames: ["getSocialContext", "likePost", "postReply"],
+            },
+            {
+              type: "progress",
+              title: "2 of 2 posts engaged",
+              status: "Liked and commented on both posts",
+            },
+            {
+              type: "text",
+              text: "Both done. Each comment references the person's own work, so the engagement reads as genuine. When you are ready, I can draft the first DMs while the posts are still fresh in their notifications.",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "demo-thread-web-media",
+      firstMessage: "Send her a relevant image with the DM",
+      createdAt: BASE_TIME - 4 * DAY_MS,
+      messages: [
+        {
+          id: "demo-msg-19",
+          role: "user",
+          segments: [
+            "For ",
+            { mention: p2.displayName ?? "" },
+            ": find a screenshot or image online that fits their post and send it with a short DM.",
+          ],
+        },
+        {
+          id: "demo-msg-20",
+          role: "agent",
+          parts: [
+            { type: "tools", toolNames: ["webSearch", "displayEntity"] },
+            {
+              type: "text",
+              text: `I found a public screenshot from ${firstName(p2.displayName)}'s own thread showing the exact workflow problem they described. Draft below: the image goes first so the context is visible before my line.`,
+            },
+            {
+              type: "plan",
+            },
+          ],
+        },
+        {
+          id: "demo-msg-21",
+          role: "user",
+          segments: ["Looks right. Send it once I approve."],
+        },
+        {
+          id: "demo-msg-22",
+          role: "agent",
+          parts: [
+            {
+              type: "text",
+              text: "Saved. The DM waits for your approval with the image attached, and your media preference applies: media only when it makes the message clearer, never as decoration.",
+            },
+            {
+              type: "memory",
+              title:
+                "Attach web-found media only when it clarifies the message",
+            },
+          ],
+        },
+      ],
+    },
+    {
       id: "demo-thread-review",
       firstMessage: "Give me a weekly progress update",
       createdAt: BASE_TIME - 5 * DAY_MS,

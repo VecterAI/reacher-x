@@ -82,14 +82,9 @@ export function getEditorialDemoDataset(
           : ["keyboard navigation", "frontend", "accessibility"],
         location: "Paris, France",
       }),
-      ...dataset.prospects
-        .slice(1)
-        .filter((p) =>
-          (designer
-            ? /design/i
-            : /frontend|front-end|full-stack|product engineer/i
-          ).test(p.title ?? "")
-        ),
+      ...dataset.prospects.filter(
+        (prospect) => prospect._id !== "use_case_demo_candidates_1"
+      ),
     ],
   };
 }
