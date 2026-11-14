@@ -7,6 +7,8 @@
     "pnpm": ">=11 <12"
   },
   "scripts": {
+    "benchmark": "tsx benchmarks/cli.ts",
+    "test:benchmark": "tsx --test benchmarks/core/*.test.ts",
     "dev": "next dev",
     "build": "tsx scripts/validate-blog-assets.ts && BROWSERSLIST_IGNORE_OLD_DATA=true BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true next build",
     "start": "next start",

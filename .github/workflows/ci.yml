@@ -43,3 +43,6 @@ jobs:
 
       - name: Convex tests
         run: pnpm test:convex
+
+      - name: Benchmark tests
+        run: pnpm test:benchmark
