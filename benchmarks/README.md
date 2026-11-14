@@ -33,7 +33,7 @@ benchmarks/
     manifest.ts                Frozen plan and work-unit validation, stable digests
     checkpoints.ts             Private atomic storage and process exclusion
     runner.ts                  Sequential offline execution and safe resumption
-    convex.ts                  Development driver and runtime snapshot contract
+    convex.ts                  Convex CLI driver, learning switch, settings snapshot/restore
     spend.ts                   Usage/funding types and cost summary
     evidence.ts                Evidence provider and cache contracts
     judges.ts                  Blind inputs and judgment validation
@@ -68,7 +68,17 @@ State lives under `benchmarks/.local/runs/<run-id>/`: `frozen-run.json`, `checkp
 
 On resume, the original manifest and work order must match, and input/result hashes are rechecked. Completed units are reused; only pending units execute. A `started` or `needs-review` checkpoint, missing state, changed artifact or corrupt record stops the run. A crash can leave a lock file; inspect the recorded process and outstanding work before removing it. The runner never expires locks, resets uncertain work, or deletes results automatically. These are deliberate stopping points, not an exactly-once guarantee for future remote services.
 
-Backend entry points from proposal section 5.2 are still to be built: `convex/benchmarkPeopleSearch.ts` and `convex/benchmarkReplay.ts`. Use internal functions through the authenticated CLI, not public client actions. Preparation must allow the learning condition to be set before discovery starts. Replay inputs stay aligned with the production qualification parameter type and exclude runtime telemetry. Freeze the time/reference context as well as profile, post, linked-page and learning inputs before replay is enabled.
+## Development hooks
+
+The backend entry points from proposal section 5.2 are internal Convex functions, called through the authenticated CLI by `core/convex.ts`:
+
+- `convex/benchmarkPeopleSearch.ts`: `prepareWorkspace` creates a workspace from the prompt with production setup models but does not start it; `startWorkspace` starts discovery afterwards, so the learning condition is applied first. `runStatus`, paginated `exportCandidates` (factual fields, no contact details), `runCosts`, `linkdApiUnitsSince`, `stopRun` (pause, cancel, remove SocialAPI monitors) and `resetLinkdApiCircuit` support the run. `deleteBenchmarkWorkspace` is for approved manual cleanup only; the runner never deletes.
+- `convex/benchmarkReplay.ts`: `replayQualification` passes frozen cases from dev file storage to `qualifyProspectCore`, at most 25 per call, sequentially. Each case carries its capture time (`now`), so post ages and "today" match the original run. Learning-off replay uses the case's operator-only policy and no lessons or similar cases. `replayUsageSince` lists the models recorded for a replay's calls.
+- The learning switch is the development setting `BENCHMARK_LEARNING_OFF_WORKSPACE_IDS` (`convex/lib/benchmarkLearningControl.ts`). For the named workspaces only, discovery receives no learned lessons, query scores or recent winners; qualification receives operator instructions only and no similar past cases; social queries rotate by oldest use without ranking or the cold-query pause. Operator instructions, deduplication, newer-post fetching and scheduled broadening are unchanged. It is never set in production. The driver names only the active control workspace, because one workspace runs at a time.
+
+The driver records and restores an allowlist of non-secret settings (`RUNTIME_SETTINGS`) and passes values on stdin.
+
+Starter runs at most 8 scheduled jobs at once, while production asks for 64 workflow slots plus 10 qualification and 10 enrichment workers. `BENCHMARK_POOL_LIMITS` (development only, `convex/lib/benchmarkConcurrency.ts`) sets the workflow manager and every legacy worker pool together from one JSON value. The workflow manager reads it on each start; `tenantScheduler.reconcilePoolConfigurationInternal` applies it to the pools. The workpool component has no read API, so `poolLimitsStatus` reports the limits from the same resolver both use, and `applyPoolLimits` in the driver stops unless the deployment confirms exactly the requested values. An invalid value never changes behaviour; it reports an error instead. Reconciliation is skipped while autonomous jobs are paused, so the runner applies limits after unpausing and clears them before pausing again. The smoke test measures the resulting runtime; the limits themselves are a D1 decision, not fixed here.
 
 The eventual runner must keep one workspace active, wait for qualification and lesson writing, and restore the development settings after success or failure. Checkpoints with uncertain billing stop for review instead of automatically repeating a request. Read actual effective workflow and worker limits; setting a single concurrency env variable is insufficient. Persist private outputs under `benchmarks/.local/people-search/`. Create `people-search/results/` only when reviewed aggregate results exist.
 

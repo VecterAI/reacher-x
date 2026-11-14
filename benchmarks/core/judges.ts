@@ -91,10 +91,78 @@ export function validateJudgment(input: BlindInput, output: unknown): Judgment {
   return judgment;
 }
 
-export interface JudgePanel {
-  evaluate(input: BlindInput): Promise<{
-    primary: readonly [Judgment, Judgment];
-    tieBreaker: Judgment | null;
-    modelsObserved: readonly string[];
-  }>;
+/** One model call returning raw output plus the model the provider reports serving. */
+export type JudgeCaller = (
+  model: string,
+  input: BlindInput
+) => Promise<{
+  output: unknown;
+  modelObserved: string;
+  costUsd: number | null;
+}>;
+
+export type PanelModels = Readonly<{
+  primary: readonly [string, string];
+  tieBreaker: string;
+}>;
+
+export type PanelResult = Readonly<{
+  primary: readonly [Judgment, Judgment];
+  tieBreaker: Judgment | null;
+  // Final verdict per criterion: the shared primary verdict, or the tie-breaker's.
+  verdicts: Readonly<Record<string, Judgment["criteria"][number]["verdict"]>>;
+  verifiedMatch: boolean;
+  modelsObserved: readonly string[];
+  costUsd: number | null;
+}>;
+
+const verdictsOf = (judgment: Judgment) =>
+  new Map(
+    judgment.criteria.map((criterion) => [
+      criterion.criterionId,
+      criterion.verdict,
+    ])
+  );
+
+/**
+ * Two primary judges grade every criterion; the tie-breaker grades the case
+ * only when they disagree on any criterion, and decides those criteria. A
+ * verified match has every required criterion met.
+ */
+export async function evaluateWithPanel(
+  input: BlindInput,
+  models: PanelModels,
+  call: JudgeCaller
+): Promise<PanelResult> {
+  const judge = async (model: string) => {
+    const response = await call(model, input);
+    return { judgment: validateJudgment(input, response.output), ...response };
+  };
+  const [first, second] = await Promise.all(models.primary.map(judge));
+  const a = verdictsOf(first.judgment);
+  const b = verdictsOf(second.judgment);
+  const disputed = input.criteria.filter(
+    (criterion) => a.get(criterion.id) !== b.get(criterion.id)
+  );
+  const third = disputed.length ? await judge(models.tieBreaker) : null;
+  const c = third ? verdictsOf(third.judgment) : null;
+  const verdicts = Object.fromEntries(
+    input.criteria.map((criterion) => [
+      criterion.id,
+      (a.get(criterion.id) === b.get(criterion.id) ? a : c!).get(criterion.id)!,
+    ])
+  );
+  const responses = [first, second, ...(third ? [third] : [])];
+  return {
+    primary: [first.judgment, second.judgment],
+    tieBreaker: third?.judgment ?? null,
+    verdicts,
+    verifiedMatch: input.criteria.every(
+      (criterion) => !criterion.required || verdicts[criterion.id] === "met"
+    ),
+    modelsObserved: responses.map((response) => response.modelObserved),
+    costUsd: responses.every((response) => response.costUsd !== null)
+      ? responses.reduce((sum, response) => sum + response.costUsd!, 0)
+      : null,
+  };
 }

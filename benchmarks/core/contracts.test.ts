@@ -4,7 +4,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildBlindInput, validateJudgment } from "./judges";
+import {
+  buildBlindInput,
+  evaluateWithPanel,
+  validateJudgment,
+  type JudgeCaller,
+} from "./judges";
 import { verifyProposal } from "./proposal";
 import { summarizeUsage } from "./spend";
 import {
@@ -167,4 +172,49 @@ test("changed proposal bytes invalidate the plan's source reference", async (t) 
   await verifyProposal(root, reference);
   await writeFile(join(root, reference.path), "changed fixture");
   await assert.rejects(verifyProposal(root, reference), /proposal changed/);
+});
+
+test("the tie-breaker runs only on disagreement and decides the match", async () => {
+  const input = buildBlindInput(task, candidate);
+  const verdictBy: Record<string, "met" | "not_met"> = {
+    a: "met",
+    b: "not_met",
+    c: "met",
+  };
+  const called: string[] = [];
+  const call: JudgeCaller = async (model) => {
+    called.push(model);
+    return {
+      output: {
+        caseId: input.caseId,
+        criteria: [
+          {
+            criterionId: "location",
+            verdict: verdictBy[model],
+            evidenceIds: [],
+            explanation: "synthetic",
+          },
+        ],
+      },
+      modelObserved: model,
+      costUsd: 0.001,
+    };
+  };
+  const disputed = await evaluateWithPanel(
+    input,
+    { primary: ["a", "b"], tieBreaker: "c" },
+    call
+  );
+  assert.deepEqual(called.sort(), ["a", "b", "c"]);
+  assert.equal(disputed.verifiedMatch, true);
+  assert.equal(disputed.costUsd, 0.003);
+
+  called.length = 0;
+  const agreed = await evaluateWithPanel(
+    input,
+    { primary: ["a", "c"], tieBreaker: "b" },
+    call
+  );
+  assert.deepEqual(called.sort(), ["a", "c"]);
+  assert.equal(agreed.tieBreaker, null);
 });

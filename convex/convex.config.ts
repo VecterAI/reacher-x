@@ -31,6 +31,12 @@ const app = defineApp({
     // Emergency brake: stops recovery/retry crons and the tenant dispatcher
     // from starting autonomous background work without a redeploy.
     PAUSE_AUTONOMOUS_JOBS: v.optional(v.string()),
+    // Development benchmark only: comma-separated workspace IDs whose learned
+    // context is withheld (see lib/benchmarkLearningControl.ts).
+    BENCHMARK_LEARNING_OFF_WORKSPACE_IDS: v.optional(v.string()),
+    // Development benchmark only: JSON workflow and worker pool limits for the
+    // Starter plan (see lib/benchmarkConcurrency.ts).
+    BENCHMARK_POOL_LIMITS: v.optional(v.string()),
     OPENROUTER_ROUTING_PRESET: v.optional(
       v.union(v.literal("current"), v.literal("cost_optimized"))
     ),

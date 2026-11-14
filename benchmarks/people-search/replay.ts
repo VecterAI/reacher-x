@@ -4,11 +4,12 @@ import type {
 } from "../../convex/lib/qualificationCore";
 import type { ArtifactReference, LearningCondition } from "../core/types";
 
-// Keep inputs aligned with the production function; telemetry belongs to execution, not fixtures.
+// Aligned with the production function. Telemetry and routing belong to execution;
+// `now` is required so the replay sees the same "today" as the original run.
 export type FrozenQualificationInput = Omit<
   QualificationCoreParams,
-  "telemetry"
->;
+  "telemetry" | "routing" | "now"
+> & { now: number };
 
 export type ReplayCase = Readonly<{
   caseId: string;
@@ -16,9 +17,11 @@ export type ReplayCase = Readonly<{
   referenceDate: string;
   expectedMatch: boolean;
   input: FrozenQualificationInput;
+  // The policy built from operator instructions only, for the learning-off replay.
+  operatorOnlyMemoryPolicy?: string;
 }>;
 
-/** Implement with convex/benchmarkReplay.ts and private dev file storage, not live re-fetching. */
+/** Implemented by convex/benchmarkReplay.ts over private dev file storage, never live re-fetching. */
 export interface QualificationReplay {
   evaluate(args: {
     frozenDataset: ArtifactReference;
@@ -27,7 +30,7 @@ export interface QualificationReplay {
   }): Promise<
     readonly {
       caseId: string;
-      result: QualificationResult;
+      result: Pick<QualificationResult, "qualified" | "score" | "reasoning">;
       modelObserved: string;
     }[]
   >;

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { timestampSchema } from "./types";
 
@@ -79,8 +80,104 @@ export function summarizeUsage(charges: readonly UsageCharge[]) {
   return { pricedUsageUsd, unpricedUsage, knownCashUsd, cashComplete };
 }
 
-export interface SpendController {
-  snapshot(accountId: string): Promise<KeySpendSnapshot>;
-  applyLimits(approval: StepSpendApproval): Promise<void>;
-  restoreLimits(): Promise<void>;
+/** Raised when a step must stop: spend unreadable, or past its approved amount. */
+export class BudgetStop extends Error {}
+
+export type SpendReader = Readonly<{
+  accountId: string;
+  read(): Promise<KeySpendSnapshot>;
+}>;
+
+const openRouterKeySchema = z.object({
+  data: z.object({ usage: z.number().finite().nonnegative() }),
+});
+
+/** Identifies a key by a short hash, so aliases sharing one key share one limit and no value is logged. */
+export function keyFingerprint(key: string) {
+  return createHash("sha256").update(key.trim()).digest("hex").slice(0, 10);
+}
+
+/** Cumulative spend of one OpenRouter key, from GET /api/v1/key. */
+export function openRouterKeySpend(
+  apiKey: string,
+  fetcher: typeof fetch = fetch
+): SpendReader {
+  const accountId = `openrouter:${keyFingerprint(apiKey)}`;
+  return {
+    accountId,
+    async read() {
+      let response: Response;
+      try {
+        response = await fetcher("https://openrouter.ai/api/v1/key", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(30_000),
+        });
+      } catch {
+        throw new BudgetStop(`Cannot read spend for ${accountId}.`);
+      }
+      const body = openRouterKeySchema.safeParse(
+        response.ok ? await response.json() : null
+      );
+      if (!body.success)
+        throw new BudgetStop(`Cannot read spend for ${accountId}.`);
+      return {
+        accountId,
+        recordedAt: new Date().toISOString(),
+        cumulativeUsd: body.data.data.usage,
+      };
+    },
+  };
+}
+
+/**
+ * Software limit for one approved step. Each account's spend is read at the
+ * start and before every unit of paid work; reaching the approved amount, or
+ * failing to read spend, stops the step. A key's own credit limit, set by its
+ * owner, remains the hard backstop.
+ */
+export class SpendGuard {
+  private readonly baselines = new Map<string, KeySpendSnapshot>();
+
+  constructor(
+    private readonly approval: StepSpendApproval,
+    private readonly readers: readonly SpendReader[]
+  ) {
+    const approved = new Set(
+      approval.accountLimits.map((limit) => limit.accountId)
+    );
+    if (
+      new Set(readers.map((reader) => reader.accountId)).size !==
+        readers.length ||
+      readers.length !== approved.size ||
+      readers.some((reader) => !approved.has(reader.accountId))
+    )
+      throw new BudgetStop(
+        "Every paid account needs exactly one approved limit."
+      );
+  }
+
+  async start() {
+    for (const reader of this.readers)
+      this.baselines.set(reader.accountId, await reader.read());
+  }
+
+  /** Call before each unit of paid work. Returns spend so far per account. */
+  async check() {
+    const spent: Record<string, number> = {};
+    for (const reader of this.readers) {
+      const baseline = this.baselines.get(reader.accountId);
+      if (!baseline) throw new BudgetStop("The spend guard was not started.");
+      const limit = this.approval.accountLimits.find(
+        (account) => account.accountId === reader.accountId
+      )!.maxAdditionalUsd;
+      const additional =
+        (await reader.read()).cumulativeUsd - baseline.cumulativeUsd;
+      spent[reader.accountId] = additional;
+      if (additional >= limit)
+        throw new BudgetStop(
+          `${reader.accountId} reached its approved amount for this step.`
+        );
+    }
+    return spent;
+  }
 }
