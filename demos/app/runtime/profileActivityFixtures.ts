@@ -33,6 +33,31 @@ const activity: Record<string, string[]> = {
     "I'm adding revision dates to each client review. Otherwise a comment on last week's screenshot looks like a new request.",
     "A shared document is easy for clients to open, but I still need to connect each comment to the right screen.",
   ],
+  "Erin Walsh": [
+    "A client sent revision notes on WhatsApp at midnight, then followed up by email this morning. Same change, two channels.",
+    "Started numbering client requests in the shared sheet. At least now I can see when the list grows after sign-off.",
+    "Freelance web designers: do you charge for revisions that arrive after approval? Mine keep resurfacing from old email threads.",
+  ],
+  "Helena Costa": [
+    "Drew up a one-page approval summary for each brand round. Clients still reply in three different places.",
+    "The wrong logo version nearly went to print because an old email thread looked newer than the chat. Reviewing my process tonight.",
+    "Solo studio question: how do you record who approved what, when the client's team keeps changing?",
+  ],
+  "Ibrahim Saleh": [
+    "Menu page launched, but the sign-off lived in chat and the change requests in a document. Reconciling them took an evening.",
+    "Trying a simple rule with restaurant clients: one thread per project. So far nobody reads it.",
+    "Independent designers: how do you protect a launch date when approvals keep moving between apps?",
+  ],
+  "Hannah Schmidt": [
+    "Assembled a client review timeline from Figma comments, email decisions, and a drive brief. Never again in one sitting.",
+    "Trialling a weekly feedback digest for my dashboard clients. Three sources in, one summary out.",
+    "Product design peers: how do you keep the reason behind each decision attached to the screen it changed?",
+  ],
+  "Chloe Dupont": [
+    "Two inboxes, one client, and a homepage revision nobody can find. Writing the approval down this time.",
+    "Boutique clients mean personal service, but the approval trail should not live in my memory.",
+    "Asking freelance designers: what do you send a client so approvals are clear, without another portal login?",
+  ],
   "Amelia Grant": [
     "Meeting UK pre-seed teams this month. For clinic software I want to understand the receptionist's workflow before seeing a pitch deck.",
     "A scheduling tool should account for cancellations and clinician availability. Small practices rarely have someone dedicated to operations software.",

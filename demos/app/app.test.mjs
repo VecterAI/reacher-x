@@ -40,7 +40,7 @@ test(
         "--fn",
         `document.querySelector('${candidate}') === null`
       );
-      await roleClick("tab", "Interviewing, 1 total");
+      await roleClick("tab", "Interviewing, 2 total");
       await browser("wait", candidate);
       await browser("click", candidate);
       await roleClick("button", "Profile menu");
