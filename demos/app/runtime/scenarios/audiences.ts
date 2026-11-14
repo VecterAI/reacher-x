@@ -8,12 +8,18 @@ import { makeProspect } from "@/features/landing/ui/components/use-case-demo/use
 type Person = Pick<
   Parameters<typeof makeProspect>[0],
   "title" | "briefIntro" | "signal" | "qualificationScore"
-> & { displayName: keyof typeof portraits };
+> & {
+  displayName: keyof typeof portraits;
+  status?: "new" | "contacted" | "in_progress";
+  platform?: "twitter" | "linkedin";
+  location?: string;
+  matchedKeywords?: string[];
+};
 export interface AudienceStory {
   useCaseKey: WorkspaceUseCaseKey;
   workspace: string;
   brief: string;
-  people: [Person, Person, Person];
+  people: Person[];
 }
 
 /** Fictional people, source posts and outreach; each story follows its article's premise. */
@@ -50,6 +56,66 @@ export const audienceStories: Record<AudienceDemoId, AudienceStory> = {
           "Builds websites for independent shops and wants an easier way to track client revisions.",
         signal:
           "Does anyone have a lightweight way to track website revisions? My client keeps adding requests to an old shared document after approving the page.",
+      },
+      {
+        displayName: "Erin Walsh",
+        title: "Freelance web designer",
+        qualificationScore: 91,
+        status: "contacted",
+        platform: "twitter",
+        location: "Dublin, Ireland",
+        briefIntro:
+          "Builds websites for small businesses and chases client feedback across WhatsApp, email, and shared documents.",
+        signal:
+          "Three clients this month, three feedback loops: WhatsApp voice notes, long email threads, and a shared sheet I gave up on. How do other freelance web designers keep revisions in one place?",
+        matchedKeywords: ["client feedback", "website revisions"],
+      },
+      {
+        displayName: "Helena Costa",
+        title: "Independent brand designer",
+        qualificationScore: 88,
+        status: "in_progress",
+        location: "Lisbon, Portugal",
+        briefIntro:
+          "Runs a solo brand studio and is comparing tools after a client approved an outdated logo version from an old email thread.",
+        signal:
+          "A client approved a logo direction from a two-week-old email while the current round lived in chat. I need one place where feedback and approvals stay in order. What works for your studio?",
+        matchedKeywords: ["client feedback", "brand approvals"],
+      },
+      {
+        displayName: "Ibrahim Saleh",
+        title: "Independent web designer",
+        qualificationScore: 83,
+        status: "contacted",
+        platform: "twitter",
+        location: "Amman, Jordan",
+        briefIntro:
+          "Designs and maintains websites for local restaurants and describes chasing sign-off across chat and shared documents.",
+        signal:
+          "Sign-off for a restaurant menu page happened in a chat message, but the change requests keep arriving in a shared document. Two sources of truth, one launch date.",
+        matchedKeywords: ["client feedback", "approvals"],
+      },
+      {
+        displayName: "Hannah Schmidt",
+        title: "Freelance product designer",
+        qualificationScore: 84,
+        location: "Hamburg, Germany",
+        briefIntro:
+          "Designs dashboards for small SaaS teams and recently described piecing client feedback together from Figma comments, email, and a shared drive.",
+        signal:
+          "This week's client review: comments in Figma, decisions in email, the final brief on a shared drive. Assembling the timeline took longer than the redesign itself.",
+        matchedKeywords: ["client feedback", "design reviews"],
+      },
+      {
+        displayName: "Chloe Dupont",
+        title: "Freelance brand and web designer",
+        qualificationScore: 76,
+        location: "Bordeaux, France",
+        briefIntro:
+          "Works with boutique clients on brand and web projects and wants a clearer approval trail after a revision round was lost between two inboxes.",
+        signal:
+          "Lost track of which homepage revision the client actually approved: one email said version two, a chat message mentioned version three. Client work needs a single approval trail.",
+        matchedKeywords: ["client feedback", "approval history"],
       },
     ],
   },
@@ -273,13 +339,13 @@ export function createAudienceProspect(
   const prospect = makeProspect({
     ...person,
     key: `audience_${index + 1}`,
-    platform,
+    platform: person.platform ?? platform,
     handle:
-      platform === "twitter"
+      (person.platform ?? platform) === "twitter"
         ? demoHandle(person.displayName)
         : `fictional-${person.displayName.toLowerCase().replaceAll(" ", "-")}`,
     hoursAgo: index + 1,
-    matchedKeywords: [],
+    matchedKeywords: person.matchedKeywords ?? [],
   });
   if (
     ["Alex Rivera", "Daniel Park", "Owen Clarke"].includes(person.displayName)

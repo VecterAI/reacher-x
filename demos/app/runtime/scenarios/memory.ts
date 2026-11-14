@@ -70,6 +70,13 @@ export function registerMemoryStory(
       (!questionFirst || person._id !== "use_case_demo_audience_1")
     )
       return false;
+    // The saved instruction must change the draft, so an earlier generic draft
+    // is replaced instead of re-presented by the repeated-draft guard.
+    if (
+      questionFirst &&
+      state.plans.get(person._id)?.tasks[0].content !== REACH_OUT_MEMORY_DRAFT
+    )
+      state.plans.delete(person._id);
     const { artifact } = createScenarioDraftPlan(state, person, {
       threadId,
       ...buildDemoIntroduction(person, workspace, state.scenario),

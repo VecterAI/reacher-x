@@ -151,9 +151,9 @@ test("saving an instruction precedes a later draft and does not leak into anothe
   assert.equal(other.reporting.memories.size, 0);
   await first.client.mutation(api.chat.initiateStreamingMessage, {
     threadId: result.threadId,
-    prompt: "Draft an introduction to Isabelle",
+    prompt: "Draft an introduction to Nora",
   });
-  const draft = first.state.plans.get("use_case_demo_candidates_1")!.tasks[0]
+  const draft = first.state.plans.get("use_case_demo_audience_1")!.tasks[0]
     .content!;
   assert.ok(draft.split(/\s+/).length < 80);
   assert.equal((draft.match(/\?/g) ?? []).length, 1);
