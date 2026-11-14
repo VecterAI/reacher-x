@@ -118,7 +118,9 @@ export function registerAgentServices(
             title: messages[0].text.slice(0, 80),
             firstMessage: messages[0].text,
           }))
-          .reverse(),
+          // The real backend sorts by _creationTime desc; seeded threads are
+          // created in a fixed order, so an explicit time sort is required.
+          .sort((a, b) => b._creationTime - a._creationTime),
         paginationOpts
       )
   );
