@@ -39,7 +39,7 @@ test("launch collection preserves history, removes samples, and has unique dates
   ])
     assert.ok(!files.includes(file), file);
   const real = all;
-  assert.equal(real.length, 61);
+  assert.equal(real.length, 62);
   assert.equal(new Set(real.map((post) => post.date)).size, real.length);
   assert.ok(real.every((post) => !post.draft));
   for (const [slug, date] of historical)
@@ -113,7 +113,7 @@ test("new prose is complete, contains no em dashes, and exposes readable placeho
   const posts = (await getBlogPosts()).filter(
     (post) => !historical.has(post.slug)
   );
-  assert.equal(posts.length, 59);
+  assert.equal(posts.length, 60);
   for (const post of posts) {
     assert.doesNotMatch(
       post.title + post.description + post.content,
@@ -192,6 +192,7 @@ test("reader and contributor Explore paths keep the intended next step", async (
       "how-reacherx-reporting-works",
     ],
     ["think-in-networks", "our-vision", "what-reacherx-is-for"],
+    ["how-reacherx-works", "how-reacherx-agent-works"],
   ];
   for (const path of paths) {
     for (let index = 0; index < path.length - 1; index++) {

@@ -1,0 +1,42 @@
+---
+title: "How ReacherX works, in plain words"
+description: "The foundation for everything else we write: what a workspace is, who a person is, what the agent does, and how one search becomes a conversation."
+category: engineering
+date: "2026-11-13"
+updated: "2026-11-13"
+related: ["how-reacherx-agent-works", "getting-started-with-reacherx"]
+
+tags: ["architecture", "explained", "start here", "contributors"]
+---
+
+Before any of our deeper guides make sense, four words need to mean the same thing to you as they mean to the system. Workspace, person, agent, and plan. This post explains those words, shows the path a person travels through ReacherX, and gives every other guide something to stand on.
+
+## A workspace is a goal
+
+A workspace is the container for one mission. You tell it what you are looking for in plain words, like "indie founders who launched in the last six months" or "engineering leaders who post about developer tools". The workspace turns that into structured requirements, including what would count as a good match, what would be nice to have, and what would disqualify someone.
+
+Everything in ReacherX belongs to a workspace. The people it finds, the messages it drafts, the lessons it learns. Workspaces are how one product serves a founder hunting customers, a recruiter hunting candidates, or a creator hunting collaborators without turning into four different tools.
+
+## A person is someone the system found
+
+When the searches run, the system saves people who might fit. At that moment they are only candidates. The system collects what it can see, such as posts, bios, and activity, and keeps it as evidence. Evidence matters because the agent is not allowed to guess. If a claim about a person has nothing behind it, the claim does not count.
+
+## The pipeline is a series of checks
+
+Each person moves through a fixed sequence of steps, and each step has one job.
+
+```text
+discovery -> qualification -> enrichment -> planning -> outreach
+```
+
+Discovery runs searches on X/Twitter and LinkedIn and saves possible matches. Qualification compares the evidence against the workspace's requirements and decides who is worth pursuing. Enrichment builds a fuller profile for the people who pass, with every detail tied to its source. Planning prepares the approach, grounded in what is actually known rather than invented. Outreach runs the plan, waits for the right moments, asks for approval when approval is required, and reacts to replies.
+
+You stay in control at every step. The agent proposes, and nothing goes out without the approval your workspace settings ask for.
+
+## Memory is how the agent gets better
+
+Every workspace accumulates memory. When you correct the agent, or a plan works well, or you teach it something about your voice, that lesson is saved, evaluated, and reused. Over time the agent stops making the mistakes you already corrected.
+
+## Where to go from here
+
+The engineering walkthroughs follow this pipeline step by step, starting with [how the agent itself works](/blog/how-reacherx-agent-works). If you want to see the product before the internals, start with [getting started](/blog/getting-started-with-reacherx). And if you want to run the code yourself, the [local setup guide](/blog/run-reacherx-yourself) takes you from fork to a running app.
