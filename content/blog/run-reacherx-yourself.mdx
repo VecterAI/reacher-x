@@ -16,7 +16,7 @@ You will need Node.js 22 or newer, pnpm 11, and accounts for the services in the
 
 ## Fork first, then clone
 
-You will not have push access to the main repository, so the standard open source flow starts with a fork. Fork `VecterAI/reacher-x` on GitHub, then clone your fork and keep the main repository as a second remote:
+You will not have push access to the main repository, so the standard open source flow starts with a fork. Fork `VecterAI/reacher-x` on GitHub, then clone your fork and keep the main repository as a second remote.
 
 ```bash title="Get ReacherX"
 git clone https://github.com/YOUR-USERNAME/reacher-x.git
@@ -34,7 +34,7 @@ Convex runs the backend. WorkOS handles sign-in. AI features need a model provid
 
 Some values belong in `.env.local`; others belong in your Convex deployment settings, set with `npx convex env set`. The [configuration guide](https://github.com/VecterAI/reacher-x/blob/main/docs/configuration.md) lists the right place for each. Don't commit your local settings or keys to Git.
 
-Three services have special access rules:
+Three services have special access rules.
 
 - **SocialAPI** covers X search, hydration, and monitoring. It is invite only, so ask the maintainer for access.
 - **Renidly**, formerly LinkdAPI, covers LinkedIn reads. Its signup requires a work email address.
@@ -44,7 +44,7 @@ Everything else follows the standard flow: Convex and WorkOS dashboards for the 
 
 ## Start the app
 
-Install dependencies and set up the backend once:
+Install dependencies and set up the backend once.
 
 ```bash title="Set up the backend"
 corepack enable pnpm
@@ -53,13 +53,13 @@ cp .env.example .env.local
 npx convex dev --once
 ```
 
-Then leave the backend running in one terminal:
+Then leave the backend running in one terminal.
 
 ```bash title="Run the backend"
 npx convex dev
 ```
 
-In a second terminal, start the website:
+In a second terminal, start the website.
 
 ```bash title="Run the website"
 pnpm dev
@@ -71,7 +71,7 @@ Open the localhost address printed in the terminal, usually `http://localhost:30
 
 Every step above is already written down for machines. The README shows a ready-made prompt, and [docs/development-setup.md](https://github.com/VecterAI/reacher-x/blob/main/docs/development-setup.md) is the full guide for humans and agents: the service table, dev versus production environments, an architecture diagram, and the recommended MCP servers and plugins, including the Convex MCP server and Vercel MCP.
 
-Paste the prompt into Claude Code, Codex, Cursor, Antigravity, or any coding agent. It forks first, clones the right remote, creates a branch, fills only the variables your change needs, runs the checks, and prepares a clean pull request:
+Paste the prompt into Claude Code, Codex, Cursor, Antigravity, or any coding agent. It forks first, clones the right remote, creates a branch, fills only the variables your change needs, runs the checks, and prepares a clean pull request.
 
 ```text
 Set up ReacherX for local development and open a pull request.
