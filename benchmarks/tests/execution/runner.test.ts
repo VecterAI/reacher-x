@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { FileCheckpointStore } from "./checkpoints";
+import { FileCheckpointStore } from "../../core/checkpoints";
 import {
   canonicalJson,
   getPlanDigest,
@@ -24,12 +24,12 @@ import {
   type JsonValue,
   type OfflineRunFile,
   type RunManifest,
-} from "./manifest";
-import { runOfflineUnits } from "./runner";
+} from "../../core/manifest";
+import { runOfflineUnits } from "../../core/runner";
 import {
   peopleSearchPlan,
   assertPeopleSearchManifest,
-} from "../people-search/plan";
+} from "../../people-search/plan";
 
 const referenceDate = "2026-11-14T00:00:00Z";
 
@@ -407,7 +407,7 @@ test("CLI offline execution validates the approved prompts and resumes without p
   run.manifest.planSha256 = getPlanDigest(run.manifest);
   const source = fileURLToPath(
     new URL(
-      "../../docs/benchmark/people-search-v2-proposal.pdf",
+      "../../../docs/benchmark/people-search-v2-proposal.pdf",
       import.meta.url
     )
   );
@@ -415,7 +415,7 @@ test("CLI offline execution validates the approved prompts and resumes without p
   const packet = join(root, "benchmarks/.local/offline-run.json");
   await writeFile(packet, JSON.stringify(run), { mode: 0o600 });
   const tsx = createRequire(import.meta.url).resolve("tsx/cli");
-  const cli = fileURLToPath(new URL("../cli.ts", import.meta.url));
+  const cli = fileURLToPath(new URL("../../cli.ts", import.meta.url));
   const execute = promisify(execFile);
   for (const [completed, reused] of [
     [2, 0],

@@ -1,23 +1,17 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import {
   buildBlindInput,
   evaluateWithPanel,
   validateJudgment,
   type JudgeCaller,
-} from "./judges";
-import { verifyProposal } from "./proposal";
-import { summarizeUsage } from "./spend";
+} from "../../core/judges";
 import {
   entitySchema,
   requireEntityType,
   type BenchmarkTask,
   type Candidate,
-} from "./types";
+} from "../../core/types";
 
 const task: BenchmarkTask = {
   id: "synthetic-company",
@@ -129,49 +123,6 @@ test("judgments reject missing criteria, duplicate criteria and invented evidenc
       }),
     /not supplied/
   );
-});
-
-test("grants do not erase comparable usage cost and missing prices remain unpriced", () => {
-  const report = summarizeUsage([
-    {
-      provider: "synthetic-priced",
-      quantity: 1,
-      unit: "request",
-      valuation: {
-        status: "priced",
-        normalUsd: 2,
-        rateReference: "frozen-rate",
-      },
-      funding: { grantUnitsUsed: 1, cashUsd: 0 },
-    },
-    {
-      provider: "synthetic-unpriced",
-      quantity: 43,
-      unit: "credit",
-      valuation: { status: "unpriced", reason: "No verified rate" },
-      funding: { grantUnitsUsed: 43, cashUsd: null },
-    },
-  ]);
-  assert.equal(report.pricedUsageUsd, 2);
-  assert.deepEqual(report.unpricedUsage, [
-    { provider: "synthetic-unpriced", quantity: 43, unit: "credit" },
-  ]);
-  assert.equal(report.knownCashUsd, 0);
-  assert.equal(report.cashComplete, false);
-});
-
-test("changed proposal bytes invalidate the plan's source reference", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "reacherx-proposal-contract-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const bytes = Buffer.from("synthetic proposal fixture");
-  const reference = {
-    path: "proposal.pdf",
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-  };
-  await writeFile(join(root, reference.path), bytes);
-  await verifyProposal(root, reference);
-  await writeFile(join(root, reference.path), "changed fixture");
-  await assert.rejects(verifyProposal(root, reference), /proposal changed/);
 });
 
 test("the tie-breaker runs only on disagreement and decides the match", async () => {

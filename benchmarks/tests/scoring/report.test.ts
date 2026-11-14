@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { renderMarkdown, type AggregateReport } from "./report";
-import { summarizeUsage } from "./spend";
-import { wilson } from "./stats";
+import { renderMarkdown, type AggregateReport } from "../../core/report";
+import { summarizeUsage } from "../../core/spend";
+import { wilson } from "../../core/stats";
 
 const speed = {
   requestLatencyMs: 1000,

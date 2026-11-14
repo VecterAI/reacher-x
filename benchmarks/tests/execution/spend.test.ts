@@ -5,8 +5,38 @@ import {
   SpendGuard,
   keyFingerprint,
   openRouterKeySpend,
+  summarizeUsage,
   type SpendReader,
-} from "./spend";
+} from "../../core/spend";
+
+test("grants do not erase comparable usage cost and missing prices remain unpriced", () => {
+  const report = summarizeUsage([
+    {
+      provider: "synthetic-priced",
+      quantity: 1,
+      unit: "request",
+      valuation: {
+        status: "priced",
+        normalUsd: 2,
+        rateReference: "frozen-rate",
+      },
+      funding: { grantUnitsUsed: 1, cashUsd: 0 },
+    },
+    {
+      provider: "synthetic-unpriced",
+      quantity: 43,
+      unit: "credit",
+      valuation: { status: "unpriced", reason: "No verified rate" },
+      funding: { grantUnitsUsed: 43, cashUsd: null },
+    },
+  ]);
+  assert.equal(report.pricedUsageUsd, 2);
+  assert.deepEqual(report.unpricedUsage, [
+    { provider: "synthetic-unpriced", quantity: 43, unit: "credit" },
+  ]);
+  assert.equal(report.knownCashUsd, 0);
+  assert.equal(report.cashComplete, false);
+});
 
 // A reader whose cumulative spend the test controls; nothing reaches a provider.
 function fakeReader(accountId: string, values: number[]): SpendReader {

@@ -34,21 +34,30 @@ benchmarks/
     checkpoints.ts             Private atomic storage and process exclusion
     runner.ts                  Sequential offline execution and safe resumption
     convex.ts                  Convex CLI driver, learning switch, settings snapshot/restore
-    spend.ts                   Usage/funding types and cost summary
+    spend.ts                   Usage/funding summary, OpenRouter key spend, step spend guard
     evidence.ts                Evidence provider and cache contracts
-    judges.ts                  Blind inputs and judgment validation
-    stats.ts                   Statistical method contracts
-    report.ts                  Public aggregate report contract
-    *.test.ts                  Offline contract tests with synthetic data
+    judges.ts                  Blind inputs, judgment validation, two-judge panel with tie-break
+    judgeModel.ts              OpenRouter judge calls on the separate judge key
+    stats.ts                   Wilson, paired bootstrap, Holm, Cohen's kappa
+    random.ts                  Seeded generator and shuffle for reproducible draws
+    report.ts                  Markdown and JSON aggregate reports
   people-search/
     plan.ts                    Approved prompts, categories, models and run policy
     replay.ts                  Frozen qualification input and replay contract
+    reacherx.ts                ReacherX top-K selection and rejected-person sampling
     tools/
       types.ts                 Adapter and documented capability contracts
       catalog.ts               Nine tools and their planned transports/top K
+  tests/                       Offline tests with synthetic data only
+    setup/                     Local credentials and proposal integrity
+    execution/                 Offline runner, Convex driver and spend guard
+    scoring/                   Judges, statistics and reports
+    people-search/             Plan rules and ReacherX result selection
 ```
 
-The offline runner and checkpoint storage are implemented. Spend-limit updates, live orchestration, evidence fetching, model calls, statistical algorithms and public report rendering are not implemented yet. The tool catalog marks every adapter as pending; it does not declare a task unsupported. Add each provider's implementation and documented capabilities when its endpoints are verified. Preserve native filter translations and the actual serving provider in private request receipts. Crustdata uses indexed search through Treg; optional enrichment is off by default.
+Tests sit apart from the code, grouped by purpose, and import it from `core/` and `people-search/`. Add a new test file to the group it checks; a new group needs no script change.
+
+Implemented: the offline runner and checkpoint storage, the Convex driver, the spend guard, the judge panel and its OpenRouter caller, statistics and report rendering. Not implemented yet: live orchestration, provider adapters, evidence fetching, replay capture and the `--dry-run` pipeline. Hard credit limits on the OpenRouter keys are set by the key owner; the spend guard stops a step in software before that. The tool catalog marks every adapter as pending; it does not declare a task unsupported. Add each provider's implementation and documented capabilities when its endpoints are verified. Preserve native filter translations and the actual serving provider in private request receipts. Crustdata uses indexed search through Treg; optional enrichment is off by default.
 
 ## Offline runner
 
@@ -60,7 +69,7 @@ pnpm benchmark --offline-run benchmarks/.local/people-search/offline-run.json
 
 The file shape is `{ "manifest": ..., "units": [...] }`, validated by `offlineRunFileSchema` in `core/manifest.ts`. The manifest records the proposal reference, all 20 approved tasks with fixed criteria, one reference date, the seed, reference-example artifacts mapped to each task, and rate/runtime snapshot references. Compute `planSha256` with `getPlanDigest` after freezing those fields. Use `execution: { "mode": "offline" }`; no spending approval is invented for an offline run. Live manifests require a separate explicit approval structure and are rejected by this runner even if one is supplied.
 
-Each work unit has an opaque ID, run/task/tool IDs, a saved JSON `input` artifact (`path` and SHA-256), and a cycle/learning condition or `null`. Artifact paths must stay under `benchmarks/.local/`. `core/runner.test.ts` includes synthetic examples of the complete format and a CLI integration test. They are storage tests, not benchmark findings or approved criteria.
+Each work unit has an opaque ID, run/task/tool IDs, a saved JSON `input` artifact (`path` and SHA-256), and a cycle/learning condition or `null`. Artifact paths must stay under `benchmarks/.local/`. `tests/execution/runner.test.ts` includes synthetic examples of the complete format and a CLI integration test. They are storage tests, not benchmark findings or approved criteria.
 
 The default CLI executor copies each verified saved JSON input into its own result artifact. Future offline pipeline stages can supply pure executors through `runOfflineUnits`; remote adapters must not be wired into this path. Output prints counts and a private checkpoint-report reference, never the raw response. This does not freeze or approve the still-incomplete research plan in `people-search/plan.ts`.
 
@@ -82,7 +91,7 @@ Starter runs at most 8 scheduled jobs at once, while production asks for 64 work
 
 The eventual runner must keep one workspace active, wait for qualification and lesson writing, and restore the development settings after success or failure. Checkpoints with uncertain billing stop for review instead of automatically repeating a request. Read actual effective workflow and worker limits; setting a single concurrency env variable is insufficient. Persist private outputs under `benchmarks/.local/people-search/`. Create `people-search/results/` only when reviewed aggregate results exist.
 
-Blind inputs are built from explicit factual fields with a new opaque case ID. Provider IDs, ranks, fit scores and generated verdicts stay outside the judging input. Statistical contracts reserve Wilson intervals for binary proportions and paired bootstrap for prompt-level comparisons within a category; single observations remain descriptive.
+Blind inputs are built from explicit factual fields with a new opaque case ID. Provider IDs, ranks, fit scores and generated verdicts stay outside the judging input. Statistics use Wilson intervals for binary proportions only and a seeded paired bootstrap over prompts within a category, with Holm correction across comparisons; single observations remain descriptive.
 
 Implementation references: [Convex internal functions](https://docs.convex.dev/functions/internal-functions), [Convex CLI](https://docs.convex.dev/cli/overview), and the installed `ai`/OpenRouter SDK documentation. Provider prices and quotas must be checked before live steps; historical proposal balances are not current balances.
 

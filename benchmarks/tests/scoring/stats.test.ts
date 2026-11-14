@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cohenKappa, holm, pairedBootstrap, wilson } from "./stats";
+import { cohenKappa, holm, pairedBootstrap, wilson } from "../../core/stats";
 
 const close = (actual: number, expected: number, tolerance = 1e-4) =>
   assert.ok(

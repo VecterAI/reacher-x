@@ -1,5 +1,6 @@
 import { toolCatalog } from "./tools/catalog";
 import type { RunManifest } from "../core/manifest";
+import { seededRandom, shuffled } from "../core/random";
 
 const categories = {
   "people-static": {
@@ -144,7 +145,9 @@ export const peopleSearchPlan = {
   qualificationThreshold: 70,
   execution: {
     maxConcurrentWorkspaces: 1,
+    // Production's first-hour bootstrap gap is 2 minutes (PROSPECTING_BOOTSTRAP_INTERVAL_MINUTES).
     initialCycleGapMinutes: 10,
+    statusPollSeconds: 30,
     waitForQualificationAndLessons: true,
     learningOff: {
       disable: [
@@ -170,6 +173,19 @@ export const peopleSearchPlan = {
     judges: ["z-ai/glm-5.3-flash", "deepseek/deepseek-v4.1-flash"],
     tieBreaker: "qwen/qwen3.8-flash",
   },
+  // Proposal 3.3 and 5.7.
+  judging: {
+    evidenceSearchesPerResult: 2,
+    rejectedSamplePerPromptCycle: 3,
+    minHumanAgreementKappa: 0.7,
+    pilotHumanLabels: 40,
+    mainHumanLabels: 60,
+  },
+  // Proposal 6.4: conditions checked before asking to continue.
+  decisionPoints: {
+    D1: { maxCycleCostUsd: 0.65 },
+    D2: { minHumanAgreementKappa: 0.7 },
+  },
   // Cycle allowances from the proposal, not instructions to start jobs.
   stage1: {
     companySmokeCycles: 1,
@@ -185,6 +201,42 @@ export const peopleSearchPlan = {
     useFreshWorkspaces: true,
   },
 } as const;
+
+// Proposal 3.3: judges never come from OpenAI, whose models ReacherX uses.
+type JudgeModel =
+  | (typeof peopleSearchPlan.models.judges)[number]
+  | typeof peopleSearchPlan.models.tieBreaker;
+/** `never` when any one of the listed models is an OpenAI model. */
+export type NoOpenAIModel<Model extends string> = [
+  Extract<Model, `openai/${string}`>,
+] extends [never]
+  ? true
+  : never;
+export const judgesAreIndependent: NoOpenAIModel<JudgeModel> = true;
+
+/** Proposal 3.2: a prompt's two runs go back to back, and the order alternates between prompts. */
+export function learningOrder(position: number) {
+  if (!Number.isInteger(position) || position < 0)
+    throw new Error("Positions start at 0.");
+  return position % 2 === 0
+    ? (["on", "off"] as const)
+    : (["off", "on"] as const);
+}
+
+/**
+ * Proposal 6.3: the people static prompts added to stage 2, drawn with the
+ * frozen seed before any results are seen. The count (2 to 5) is set at D3.
+ */
+export function drawStage2StaticPrompts(seed: number, count: number) {
+  if (!Number.isInteger(count) || count < 2 || count > 5)
+    throw new Error("Stage 2 adds 2 to 5 people static prompts.");
+  const staticIds: number[] = prompts
+    .filter((prompt) => prompt.category === "people-static")
+    .map((prompt) => prompt.id);
+  return shuffled(staticIds, seededRandom(seed))
+    .slice(0, count)
+    .sort((a, b) => a - b);
+}
 
 /** The local execution engine is reusable; this CLI remains bound to the approved people-search plan. */
 export function assertPeopleSearchManifest(manifest: RunManifest) {

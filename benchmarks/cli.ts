@@ -23,7 +23,11 @@ const help = `ReacherX benchmark setup
 
 All commands run offline. --offline-run exercises persistence using saved JSON;
 it is not the complete judged pipeline. Live runs, qualification replay and the
-full --dry-run pipeline are not enabled. No command changes remote settings.`;
+full --dry-run pipeline are not enabled. No command changes remote settings.
+
+Per the proposal, plain "pnpm benchmark" will run the quick check (replay) and
+"--model <id>", "--live <step>" and "--dry-run" will follow. Until the frozen
+replay set exists, plain "pnpm benchmark" prints this help.`;
 
 async function main() {
   let options;
