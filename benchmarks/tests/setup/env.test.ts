@@ -7,7 +7,7 @@ import {
   formatEnvironmentReport,
   inspectBenchmarkEnvironment,
   readBenchmarkEnvironment,
-} from "../../core/env";
+} from "../../core/setup/env";
 
 test("production and credential overrides cannot pass the dev preflight", () => {
   const prod = inspectBenchmarkEnvironment({

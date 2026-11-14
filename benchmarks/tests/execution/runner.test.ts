@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { FileCheckpointStore } from "../../core/checkpoints";
+import { FileCheckpointStore } from "../../core/execution/checkpoints";
 import {
   canonicalJson,
   getPlanDigest,
@@ -24,8 +24,8 @@ import {
   type JsonValue,
   type OfflineRunFile,
   type RunManifest,
-} from "../../core/manifest";
-import { runOfflineUnits } from "../../core/runner";
+} from "../../core/setup/manifest";
+import { runOfflineUnits } from "../../core/execution/runner";
 import {
   peopleSearchPlan,
   assertPeopleSearchManifest,

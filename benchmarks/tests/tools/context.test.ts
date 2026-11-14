@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseContextPeople } from "../../people-search/tools/context";
+import { parseContextPeople } from "../../people-search/tools/direct/context";
 
 // Shaped like context.dev people search; values are synthetic.
 test("context.dev people keep facts and drop the provider's own match confidence", () => {

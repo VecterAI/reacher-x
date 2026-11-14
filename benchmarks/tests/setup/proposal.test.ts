@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { verifyProposal } from "../../core/proposal";
+import { verifyProposal } from "../../core/setup/proposal";
 
 test("changed proposal bytes invalidate the plan's source reference", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reacherx-proposal-contract-"));

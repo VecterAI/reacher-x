@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { replayTransport, type Exchange } from "../../core/http";
+import { replayTransport, type Exchange } from "../../core/calls/http";
 import type { BenchmarkTask } from "../../core/types";
 import type { FilterSet } from "../../people-search/filters";
 import {
   apolloAdapter,
   apolloCompanyQuery,
   apolloPeopleFilters,
-} from "../../people-search/tools/apollo";
-import { crustdataBody } from "../../people-search/tools/crustdata";
-import { lushaBody, lushaLocation } from "../../people-search/tools/lusha";
+} from "../../people-search/tools/treg/apollo";
+import { crustdataBody } from "../../people-search/tools/treg/crustdata";
+import { lushaBody, lushaLocation } from "../../people-search/tools/treg/lusha";
 import {
   parseTregRows,
   tregAdapter,
   tregMetadata,
-} from "../../people-search/tools/treg";
+} from "../../people-search/tools/treg/treg";
 import { emptyFilters, fixtureContext } from "./fixtures";
 
 // Synthetic tasks, filters and responses only.

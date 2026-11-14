@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { ExportedProspect } from "../core/convex";
-import { domainKey } from "../core/identity";
+import type { ExportedProspect } from "../core/execution/convex";
+import { domainKey } from "../core/judging/identity";
 import { seededRandom, shuffled } from "../core/random";
 import {
   entitySchema,

@@ -4,23 +4,26 @@ import {
   formatEnvironmentReport,
   inspectBenchmarkEnvironment,
   readBenchmarkEnvironment,
-} from "./core/env";
+} from "./core/setup/env";
 import {
   assertPeopleSearchManifest,
   peopleSearchPlan,
 } from "./people-search/plan";
-import { verifyProposal } from "./core/proposal";
-import { offlineRunFileSchema } from "./core/manifest";
-import { runOfflineUnits } from "./core/runner";
-import { FileCheckpointStore, RunnerStateError } from "./core/checkpoints";
-import { ConvexReacherXDriver, npxConvexRunner } from "./core/convex";
+import { verifyProposal } from "./core/setup/proposal";
+import { offlineRunFileSchema } from "./core/setup/manifest";
+import { runOfflineUnits } from "./core/execution/runner";
+import {
+  FileCheckpointStore,
+  RunnerStateError,
+} from "./core/execution/checkpoints";
+import { ConvexReacherXDriver, npxConvexRunner } from "./core/execution/convex";
 import {
   LiveSessionError,
   ResetIncomplete,
   hasOpenSession,
   resetLiveSession,
   sessionFileIn,
-} from "./core/liveSession";
+} from "./core/execution/liveSession";
 
 const help = `ReacherX benchmark setup
 

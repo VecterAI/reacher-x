@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { StructuredCall } from "../../core/llm";
+import type { StructuredCall } from "../../core/calls/llm";
 import type { BenchmarkTask } from "../../core/types";
 import {
   translateTask,

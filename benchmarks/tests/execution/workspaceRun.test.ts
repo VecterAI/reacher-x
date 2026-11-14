@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { BenchmarkWorkspace, RunStatus } from "../../core/convex";
-import { BudgetStop } from "../../core/spend";
+import type {
+  BenchmarkWorkspace,
+  RunStatus,
+} from "../../core/execution/convex";
+import { BudgetStop } from "../../core/execution/spend";
 import {
   WorkspaceRunError,
   cycleMeasurements,
@@ -9,7 +12,7 @@ import {
   runWorkspace,
   type WorkspaceHooks,
   type WorkspacePlan,
-} from "../../core/workspaceRun";
+} from "../../core/execution/workspaceRun";
 import { fakeClock, fakeDeployment, status } from "./fakeDeployment";
 
 // Synthetic statuses and spend only.

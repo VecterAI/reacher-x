@@ -3,7 +3,7 @@ import {
   type CommandRunner,
   type PoolLimits,
   type RunStatus,
-} from "../../core/convex";
+} from "../../core/execution/convex";
 
 /**
  * An in-memory stand-in for the Convex CLI and the benchmark hooks. `env get`

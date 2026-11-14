@@ -1,5 +1,5 @@
-import type { Exchange } from "../../core/http";
-import { domainKey, linkedinKey } from "../../core/identity";
+import type { Exchange } from "../../core/calls/http";
+import { domainKey, linkedinKey } from "../../core/judging/identity";
 import {
   entitySchema,
   type BenchmarkEntity,

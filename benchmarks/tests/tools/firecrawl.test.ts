@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { replayTransport } from "../../core/http";
-import { replayCall } from "../../core/llm";
+import { replayTransport } from "../../core/calls/http";
+import { replayCall } from "../../core/calls/llm";
 import type { BenchmarkTask } from "../../core/types";
-import { firecrawlAdapter } from "../../people-search/tools/firecrawl";
+import { firecrawlAdapter } from "../../people-search/tools/direct/firecrawl";
 import { emptyFilters, fixtureContext } from "./fixtures";
 
 // Synthetic search page and extraction only.

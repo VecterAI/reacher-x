@@ -9,7 +9,7 @@ import {
   runSettingsSchema,
   withLiveSession,
   type LiveSessionConfig,
-} from "../../core/liveSession";
+} from "../../core/execution/liveSession";
 import { DEFAULT_POOLS, fakeDeployment, memoryFile } from "./fakeDeployment";
 
 // Synthetic values only.

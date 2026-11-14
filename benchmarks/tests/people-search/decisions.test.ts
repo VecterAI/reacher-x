@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgreementReport } from "../../core/labels";
+import type { AgreementReport } from "../../core/judging/labels";
 import {
   checkDecisionPoint,
   renderDecisionReport,

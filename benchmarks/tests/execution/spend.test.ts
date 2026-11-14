@@ -7,7 +7,7 @@ import {
   openRouterKeySpend,
   summarizeUsage,
   type SpendReader,
-} from "../../core/spend";
+} from "../../core/execution/spend";
 
 test("grants do not erase comparable usage cost and missing prices remain unpriced", () => {
   const report = summarizeUsage([

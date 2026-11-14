@@ -25,52 +25,62 @@ The harness will reuse ReacherX's setup, prospecting and qualification logic thr
 
 ```text
 benchmarks/
-  cli.ts                       Offline setup commands
+  cli.ts                         Setup, offline run and reset commands
   core/
-    types.ts                   People/company schemas, evidence and task types
-    proposal.ts                Proposal integrity check
-    env.ts                     Local credentials and dev-selection checks
-    manifest.ts                Frozen plan and work-unit validation, stable digests
-    checkpoints.ts             Private atomic storage and process exclusion
-    runner.ts                  Sequential offline execution and safe resumption
-    convex.ts                  Convex CLI driver, learning switch, settings snapshot/restore
-    liveSession.ts             Run settings on for one live step, always reset; key swap, parity
-    workspaceRun.ts            One workspace: cycles counted and capped, settle wait, timing, spend
-    http.ts                    Provider transport: live (one attempt), recording, exact replay
-    llm.ts                     Structured OpenRouter calls, recorded and replayable
-    rates.ts                   Frozen rates and funding applied to observed usage
-    spend.ts                   Usage/funding summary, OpenRouter key spend, step spend guard
-    identity.ts                Person/company identity keys and cross-tool repeat flags
-    evidence.ts                Tavily web evidence, two searches per result, shared cache
-    judges.ts                  Blind inputs, judgment validation, two-judge panel with tie-break
-    judgeModel.ts              OpenRouter judge calls on the separate judge key
-    judging.ts                 Evidence plus panel for one result, private case record
-    labels.ts                  Human label sample, booklet, sheet and kappa gate
-    metrics.ts                 Section 4 measures
-    stats.ts                   Wilson, paired bootstrap, Holm, Cohen's kappa
-    random.ts                  Seeded generator and shuffle for reproducible draws
-    report.ts                  Markdown and JSON aggregate reports
+    types.ts                     People/company schemas, evidence and task types
+    random.ts                    Seeded generator and shuffle for reproducible draws
+    setup/
+      proposal.ts                Proposal integrity check
+      env.ts                     Local credentials and dev-selection checks
+      manifest.ts                Frozen plan and work-unit validation, stable digests
+    execution/
+      checkpoints.ts             Private atomic storage and process exclusion
+      runner.ts                  Sequential offline execution and safe resumption
+      convex.ts                  Convex CLI driver, learning switch, settings snapshot/restore
+      liveSession.ts             Run settings on for one live step, always reset; key swap, parity
+      workspaceRun.ts            One workspace: cycles counted and capped, settle wait, timing, spend
+      spend.ts                   Usage/funding summary, OpenRouter key spend, step spend guard
+    calls/
+      http.ts                    Provider transport: live (one attempt), recording, exact replay
+      llm.ts                     Structured OpenRouter calls, recorded and replayable
+      rates.ts                   Frozen rates and funding applied to observed usage
+    judging/
+      identity.ts                Person/company identity keys and cross-tool repeat flags
+      evidence.ts                Tavily web evidence, two searches per result, shared cache
+      judges.ts                  Blind inputs, judgment validation, two-judge panel with tie-break
+      judgeModel.ts              OpenRouter judge calls on the separate judge key
+      judgeCandidate.ts          Evidence plus panel for one result, private case record
+      labels.ts                  Human label sample, booklet, sheet and kappa gate
+    analysis/
+      metrics.ts                 Section 4 measures
+      stats.ts                   Wilson, paired bootstrap, Holm, Cohen's kappa
+      report.ts                  Markdown and JSON aggregate reports
   people-search/
-    plan.ts                    Approved prompts, categories, models and run policy
-    filters.ts                 Shared prompt-to-filter step and per-tool coverage
-    decisions.ts               D1-D4 conditions and the one-page checkpoint report
-    replay.ts                  Frozen qualification input and replay contract
-    reacherx.ts                ReacherX top-K, rejected sample, export-to-entity mapping
-    round1.ts                  Exact re-score of round one's saved verdicts
+    plan.ts                      Approved prompts, categories, models and run policy
+    filters.ts                   Shared prompt-to-filter step and per-tool coverage
+    decisions.ts                 D1-D4 conditions and the one-page checkpoint report
+    replay.ts                    Frozen qualification input and replay contract
+    reacherx.ts                  ReacherX top-K, rejected sample, export-to-entity mapping
+    round1.ts                    Exact re-score of round one's saved verdicts
     tools/
-      types.ts                 Adapter contract: search context in, typed results and receipt out
-      catalog.ts               Nine tools, transports and judged top K
-      registry.ts              One adapter per competitor
-      common.ts                Shared parsing helpers
-      exa.ts, firecrawl.ts, context.ts, clay.ts
-      treg.ts                  Treg calls (cost, served-by, ignored filters) and its own search
-      apollo.ts, lusha.ts, crustdata.ts   Called through Treg
-  tests/                       Offline tests with synthetic data only
-    setup/                     Local credentials and proposal integrity
-    execution/                 Runner, Convex driver, live session, workspace runs, spend guard
-    scoring/                   Judges, statistics and reports
-    people-search/             Plan rules and ReacherX result selection
+      types.ts                   Adapter contract: search context in, typed results and receipt out
+      catalog.ts                 Nine tools, transports and judged top K
+      registry.ts                One adapter per competitor
+      common.ts                  Shared parsing helpers
+      direct/                    exa.ts, firecrawl.ts, context.ts, clay.ts: called directly
+      treg/                      treg.ts (calls, cost, served-by, ignored filters, its own search);
+                                 apollo.ts, lusha.ts, crustdata.ts called through it
+  tests/                         Offline tests with synthetic data only, mirroring the code
+    setup/                       Local credentials and proposal integrity
+    execution/                   Runner, Convex driver, live session, workspace runs, spend guard
+    calls/                       Transport replay and rate pricing
+    judging/                     Identity, evidence, judges and human labels
+    analysis/                    Measures, statistics and reports
+    people-search/               Plan rules, filters, decisions, ReacherX results, round one
+    tools/                       Adapters against saved responses
 ```
+
+Each folder holds at most six files; a larger group is split into purpose-named subfolders.
 
 Tests sit apart from the code, grouped by purpose, and import it from `core/` and `people-search/`. Add a new test file to the group it checks; a new group needs no script change.
 
@@ -84,7 +94,7 @@ Once a frozen run file and its saved JSON artifacts exist, run or resume them wi
 pnpm benchmark --offline-run benchmarks/.local/people-search/offline-run.json
 ```
 
-The file shape is `{ "manifest": ..., "units": [...] }`, validated by `offlineRunFileSchema` in `core/manifest.ts`. The manifest records the proposal reference, all 20 approved tasks with fixed criteria, one reference date, the seed, reference-example artifacts mapped to each task, and rate/runtime snapshot references. Compute `planSha256` with `getPlanDigest` after freezing those fields. Use `execution: { "mode": "offline" }`; no spending approval is invented for an offline run. Live manifests require a separate explicit approval structure and are rejected by this runner even if one is supplied.
+The file shape is `{ "manifest": ..., "units": [...] }`, validated by `offlineRunFileSchema` in `core/setup/manifest.ts`. The manifest records the proposal reference, all 20 approved tasks with fixed criteria, one reference date, the seed, reference-example artifacts mapped to each task, and rate/runtime snapshot references. Compute `planSha256` with `getPlanDigest` after freezing those fields. Use `execution: { "mode": "offline" }`; no spending approval is invented for an offline run. Live manifests require a separate explicit approval structure and are rejected by this runner even if one is supplied.
 
 Each work unit has an opaque ID, run/task/tool IDs, a saved JSON `input` artifact (`path` and SHA-256), and a cycle/learning condition or `null`. Artifact paths must stay under `benchmarks/.local/`. `tests/execution/runner.test.ts` includes synthetic examples of the complete format and a CLI integration test. They are storage tests, not benchmark findings or approved criteria.
 
@@ -96,15 +106,15 @@ On resume, the original manifest and work order must match, and input/result has
 
 ## Live steps
 
-`core/liveSession.ts` wraps one live step (proposal 5.3 steps 1 and 6). It first checks, without changing anything, that the deployment is at rest (jobs paused, automatic cycles off, no learning switch or pool limits left set), that the deployment's OpenRouter key is the local `OPENROUTER_API_KEY` whose spend is measured, and that no other workspace is running or due to restart. It then writes a private session record (`benchmarks/.local/live-session.json`, mode 600) holding the recorded settings and the development SocialAPI and LinkdAPI keys, and only then installs the funded keys through stdin, sets the frozen production and run-only values, confirms each by reading it back, unpauses jobs and applies the pool limits.
+`core/execution/liveSession.ts` wraps one live step (proposal 5.3 steps 1 and 6). It first checks, without changing anything, that the deployment is at rest (jobs paused, automatic cycles off, no learning switch or pool limits left set), that the deployment's OpenRouter key is the local `OPENROUTER_API_KEY` whose spend is measured, and that no other workspace is running or due to restart. It then writes a private session record (`benchmarks/.local/live-session.json`, mode 600) holding the recorded settings and the development SocialAPI and LinkdAPI keys, and only then installs the funded keys through stdin, sets the frozen production and run-only values, confirms each by reading it back, unpauses jobs and applies the pool limits.
 
 The reset runs whether the step succeeds, fails or is interrupted: it stops the tracked workspace (deleting its SocialAPI monitors while the funded key that created them is installed), clears pool limits, pauses jobs, restores every recorded setting, then restores the development keys and confirms them. The SocialAPI key is restored only after the monitors are gone. Anything it cannot finish keeps the session open and is reported; after fixing the cause, `pnpm benchmark --reset` repeats it. Once complete, the record keeps no key.
 
-`core/workspaceRun.ts` runs one workspace (step 2). Automatic cycles are on only when another cycle must follow; once the last planned cycle starts they are turned off, and any next cycle the deployment scheduled anyway is canceled, so the workspace keeps running until qualification and lesson writing settle (two quiet polls). A cycle beyond the plan stops the workspace at once and is recorded. Each cycle records its start, the end of discovery, when it settled, when the next cycle started (for the last cycle, when it was due), and the deployment key's spend at its boundaries; the first cycle includes the workspace's setup cost. Failed cycles, halted workspaces, timeouts, budget stops and interruptions end the workspace with the reason recorded, and it is always stopped and exported.
+`core/execution/workspaceRun.ts` runs one workspace (step 2). Automatic cycles are on only when another cycle must follow; once the last planned cycle starts they are turned off, and any next cycle the deployment scheduled anyway is canceled, so the workspace keeps running until qualification and lesson writing settle (two quiet polls). A cycle beyond the plan stops the workspace at once and is recorded. Each cycle records its start, the end of discovery, when it settled, when the next cycle started (for the last cycle, when it was due), and the deployment key's spend at its boundaries; the first cycle includes the workspace's setup cost. Failed cycles, halted workspaces, timeouts, budget stops and interruptions end the workspace with the reason recorded, and it is always stopped and exported.
 
 ## Development hooks
 
-The backend entry points from proposal section 5.2 are internal Convex functions, called through the authenticated CLI by `core/convex.ts`:
+The backend entry points from proposal section 5.2 are internal Convex functions, called through the authenticated CLI by `core/execution/convex.ts`:
 
 - `convex/benchmarkPeopleSearch.ts`: `prepareWorkspace` creates a workspace from the prompt with production setup models but does not start it; `startWorkspace` starts discovery afterwards, so the learning condition is applied first. `runStatus`, paginated `exportCandidates` (factual fields, no contact details), `runCosts`, `linkdApiUnitsSince`, `stopRun` (pause, cancel, remove SocialAPI monitors), `cancelScheduledCycles` (cancels a benchmark workspace's scheduled next cycle without pausing it), `deploymentActivity` (running workspaces and pending restarts) and `resetLinkdApiCircuit` support the run. These functions must be pushed to the development deployment, with approval, before the smoke test. `deleteBenchmarkWorkspace` is for approved manual cleanup only; the runner never deletes.
 - `convex/benchmarkReplay.ts`: `replayQualification` passes frozen cases from dev file storage to `qualifyProspectCore`, at most 25 per call, sequentially. Each case carries its capture time (`now`), so post ages and "today" match the original run. Learning-off replay uses the case's operator-only policy and no lessons or similar cases. `replayUsageSince` lists the models recorded for a replay's calls.

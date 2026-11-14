@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { StructuredCall } from "../core/llm";
+import type { StructuredCall } from "../core/calls/llm";
 import { entityTypeSchema, type BenchmarkTask } from "../core/types";
 
 /**

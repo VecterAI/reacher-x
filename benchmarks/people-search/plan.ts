@@ -1,5 +1,5 @@
 import { toolCatalog } from "./tools/catalog";
-import type { RunManifest } from "../core/manifest";
+import type { RunManifest } from "../core/setup/manifest";
 import { seededRandom, shuffled } from "../core/random";
 
 const categories = {

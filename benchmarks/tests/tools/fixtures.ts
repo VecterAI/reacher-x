@@ -1,5 +1,5 @@
-import type { Transport } from "../../core/http";
-import type { StepCall } from "../../core/llm";
+import type { Transport } from "../../core/calls/http";
+import type { StepCall } from "../../core/calls/llm";
 import type { FilterSet } from "../../people-search/filters";
 import type { SearchContext } from "../../people-search/tools/types";
 

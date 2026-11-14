@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ExportedProspect } from "../../core/convex";
+import type { ExportedProspect } from "../../core/execution/convex";
 import {
   sampleRejected,
   selectReacherXTopK,

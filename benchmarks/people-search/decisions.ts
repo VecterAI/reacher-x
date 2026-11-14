@@ -1,5 +1,5 @@
-import type { AgreementReport } from "../core/labels";
-import type { DecisionPoint } from "../core/runner";
+import type { AgreementReport } from "../core/judging/labels";
+import type { DecisionPoint } from "../core/execution/runner";
 import { peopleSearchPlan } from "./plan";
 
 /**

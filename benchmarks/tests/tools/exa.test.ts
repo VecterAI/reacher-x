@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { replayTransport } from "../../core/http";
+import { replayTransport } from "../../core/calls/http";
 import type { BenchmarkTask } from "../../core/types";
-import { exaAdapter, parseExaPeople } from "../../people-search/tools/exa";
+import {
+  exaAdapter,
+  parseExaPeople,
+} from "../../people-search/tools/direct/exa";
 import { fixtureContext } from "./fixtures";
 
 // Response shaped like Exa's people search; every value is synthetic.

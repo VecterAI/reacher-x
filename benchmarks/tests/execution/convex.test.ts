@@ -4,7 +4,7 @@ import {
   ConvexReacherXDriver,
   LEARNING_OFF_SETTING,
   type CommandRunner,
-} from "../../core/convex";
+} from "../../core/execution/convex";
 
 // Mimics the CLI against an in-memory env; nothing reaches a deployment.
 // `env get` prints the raw value plus a newline, or nothing when unset.
