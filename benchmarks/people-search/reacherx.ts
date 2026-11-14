@@ -1,6 +1,126 @@
+import { z } from "zod";
 import type { ExportedProspect } from "../core/convex";
+import { domainKey } from "../core/identity";
 import { seededRandom, shuffled } from "../core/random";
-import type { EntityType } from "../core/types";
+import {
+  entitySchema,
+  type BenchmarkEntity,
+  type Candidate,
+  type EntityType,
+  type Evidence,
+} from "../core/types";
+
+// Evidence passed to judges per result: verified sources only, bounded in size.
+const MAX_EVIDENCE_ITEMS = 5;
+const MAX_EVIDENCE_CHARS = 2_000;
+
+const socialProfilesSchema = z
+  .object({
+    linkedin: z.object({ url: z.string() }).partial().optional(),
+    twitter: z.object({ url: z.string() }).partial().optional(),
+  })
+  .nullable()
+  .catch(null);
+
+const qualificationSourceSchema = z.object({
+  sourceUrl: z.string(),
+  evidenceUrl: z.string().optional(),
+  text: z.string(),
+  publishedAt: z.string().optional(),
+  verifiedAt: z.number(),
+});
+
+const isoOrNull = (value: string | number | undefined) => {
+  if (value === undefined) return null;
+  const time = typeof value === "number" ? value : Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toISOString() : null;
+};
+
+const httpUrl = (value: string | null | undefined) => {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Verified qualification sources as judge evidence. Scores and reasoning are left out. */
+function sourcesAsEvidence(sources: readonly unknown[]): Evidence[] {
+  return sources
+    .flatMap((source) => {
+      const parsed = qualificationSourceSchema.safeParse(source);
+      const url = parsed.success
+        ? (httpUrl(parsed.data.evidenceUrl) ?? httpUrl(parsed.data.sourceUrl))
+        : null;
+      if (!parsed.success || !url) return [];
+      return [
+        {
+          url,
+          text: Array.from(parsed.data.text)
+            .slice(0, MAX_EVIDENCE_CHARS)
+            .join(""),
+          publishedAt: isoOrNull(parsed.data.publishedAt),
+          retrievedAt: new Date(parsed.data.verifiedAt).toISOString(),
+        },
+      ];
+    })
+    .slice(0, MAX_EVIDENCE_ITEMS)
+    .map((item, index) => ({ id: `reacherx-${index + 1}`, ...item }));
+}
+
+/**
+ * Proposal 5.2: ReacherX results in the same typed shape as every other tool.
+ * Only factual fields are kept; returns null for a prospect that has no name or
+ * whose type was never resolved, since it cannot be graded as either.
+ */
+export function toCandidate(
+  prospect: ExportedProspect,
+  rank: number
+): Candidate | null {
+  const name = prospect.displayName?.trim();
+  if (
+    !name ||
+    (prospect.prospectType !== "individual" &&
+      prospect.prospectType !== "organization")
+  )
+    return null;
+  const profiles = socialProfilesSchema.parse(prospect.socialProfiles);
+  const profileUrl =
+    httpUrl(profiles?.linkedin?.url) ?? httpUrl(profiles?.twitter?.url);
+  const common = {
+    name,
+    location: prospect.location,
+    description: prospect.briefIntro,
+    evidence: sourcesAsEvidence(prospect.qualificationSources),
+  };
+  const entity: BenchmarkEntity =
+    prospect.prospectType === "individual"
+      ? {
+          ...common,
+          prospectType: "individual",
+          profileUrl,
+          title: prospect.title,
+          employer: prospect.company,
+        }
+      : {
+          ...common,
+          prospectType: "organization",
+          profileUrl: profileUrl ?? httpUrl(prospect.websiteUrl),
+          domain: domainKey(prospect.websiteUrl),
+          industry: null,
+          employeeCount: null,
+        };
+  return {
+    sourceId: prospect.id,
+    rank,
+    discoveredAt: new Date(prospect.createdAt).toISOString(),
+    entity: entitySchema.parse(entity),
+  };
+}
 
 /**
  * Proposal 5.7: ReacherX's judged results are its best-fit qualified entities

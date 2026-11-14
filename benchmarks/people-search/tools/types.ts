@@ -1,31 +1,56 @@
-import type { UsageCharge } from "../../core/spend";
-import type {
-  ArtifactReference,
-  BenchmarkTask,
-  Candidate,
-  EntityType,
-} from "../../core/types";
+import type { Exchange, Transport } from "../../core/http";
+import type { ModelExchange, StepCall } from "../../core/llm";
+import type { UsageUnits } from "../../core/rates";
+import type { BenchmarkTask, Candidate, EntityType } from "../../core/types";
+import type { FilterSet } from "../filters";
 
 export type TaskCapability =
   | { status: "unverified" }
   | { status: "supported"; documentationUrl: string }
   | { status: "unsupported"; documentationUrl: string; reason: string };
 
+/** Everything needed to review or replay a search; no secrets, no judging data. */
+export type RequestReceipt = Readonly<{
+  toolId: string;
+  taskId: string;
+  endpoints: readonly string[];
+  // Native filters sent, and the shared filter requirements this tool could not express.
+  nativeFilters: unknown;
+  unexpressed: readonly string[];
+  // Provider that actually served a routed call (Treg's served-by header), per step.
+  servedBy: Readonly<Record<string, string>>;
+  notes: readonly string[];
+}>;
+
 export type AdapterResult = Readonly<{
   candidates: readonly Candidate[];
-  charges: readonly UsageCharge[];
+  usage: readonly UsageUnits[];
+  // Sum of request latencies, and time until results were usable (including lookups).
   requestLatencyMs: number;
-  rawResponse: unknown;
-  // Includes native filter translation, endpoint/mode and x-treg-served-by where applicable.
-  requestReceipt: ArtifactReference;
+  completedAfterMs: number;
+  exchanges: readonly Exchange[];
+  modelCalls: readonly Pick<
+    ModelExchange,
+    "step" | "modelObserved" | "costUsd"
+  >[];
+  receipt: RequestReceipt;
+}>;
+
+export type SearchContext = Readonly<{
+  transport: Transport;
+  // Model calls some adapters need (Clay query writing, Firecrawl extraction),
+  // on the harness key, recorded and replayable like HTTP.
+  model: Readonly<{ id: string; call: StepCall }>;
+  // The prompt's frozen shared filter translation (proposal 2.2).
+  filters: FilterSet;
+  topK: 5 | 10;
+  secrets: Readonly<Record<string, string>>;
+  // When the prompt was submitted; replays reuse the recorded time.
+  submittedAt: string;
 }>;
 
 export interface SearchAdapter {
   readonly id: string;
   readonly capabilities: Readonly<Record<EntityType, TaskCapability>>;
-  search(
-    task: BenchmarkTask,
-    topK: 5 | 10,
-    signal: AbortSignal
-  ): Promise<AdapterResult>;
+  search(task: BenchmarkTask, context: SearchContext): Promise<AdapterResult>;
 }

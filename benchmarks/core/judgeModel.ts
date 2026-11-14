@@ -1,7 +1,6 @@
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { generateText, Output } from "ai";
 import { z } from "zod";
 import type { BlindInput, JudgeCaller } from "./judges";
+import { openRouterStructured } from "./llm";
 
 const criteriaOutputSchema = z.object({
   criteria: z.array(
@@ -39,24 +38,17 @@ function describe(input: BlindInput) {
  * run records which model actually served each grade.
  */
 export function openRouterJudgeCaller(apiKey: string): JudgeCaller {
-  const openrouter = createOpenRouter({ apiKey });
+  const call = openRouterStructured(apiKey);
   return async (model, input) => {
-    const result = await generateText({
-      model: openrouter(model, { usage: { include: true } }),
+    const result = await call(model, {
       system: SYSTEM,
       prompt: describe(input),
-      temperature: 0,
-      output: Output.object({ schema: criteriaOutputSchema }),
+      schema: criteriaOutputSchema,
     });
-    const cost = z
-      .object({
-        openrouter: z.object({ usage: z.object({ cost: z.number() }) }),
-      })
-      .safeParse(result.providerMetadata);
     return {
       output: { caseId: input.caseId, criteria: result.output.criteria },
-      modelObserved: result.response.modelId,
-      costUsd: cost.success ? cost.data.openrouter.usage.cost : null,
+      modelObserved: result.modelObserved,
+      costUsd: result.costUsd,
     };
   };
 }

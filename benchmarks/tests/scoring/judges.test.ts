@@ -75,6 +75,36 @@ test("blind inputs exclude provider identity, ranking, fit scores and provider v
   assert.notEqual(input.caseId, buildBlindInput(task, raw).caseId);
 });
 
+test("evidence IDs never name the tool, and web evidence repeating a URL is dropped", () => {
+  const input = buildBlindInput(
+    task,
+    {
+      ...candidate,
+      entity: {
+        ...candidate.entity,
+        evidence: [{ ...candidate.entity.evidence[0], id: "toolname-1" }],
+      },
+    },
+    [
+      { ...candidate.entity.evidence[0], id: "web-1" },
+      {
+        id: "web-2",
+        url: "https://example.org/news",
+        text: "Synthetic news item.",
+        publishedAt: "2026-11-01T00:00:00Z",
+        retrievedAt: "2026-11-14T00:00:00Z",
+      },
+    ]
+  );
+  assert.deepEqual(
+    input.entity.evidence.map((item) => [item.id, item.url]),
+    [
+      ["e1", "https://example.com/about"],
+      ["e2", "https://example.org/news"],
+    ]
+  );
+});
+
 test("organization tasks cannot silently grade an employee instead", () => {
   assert.throws(
     () => requireEntityType(candidate.entity, "individual"),
@@ -96,7 +126,7 @@ test("judgments reject missing criteria, duplicate criteria and invented evidenc
   const criterion = {
     criterionId: "location",
     verdict: "met",
-    evidenceIds: ["source-1"],
+    evidenceIds: ["e1"],
     explanation: "Headquarters confirmed.",
   };
   assert.equal(

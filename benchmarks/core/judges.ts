@@ -7,6 +7,7 @@ import {
   timestampSchema,
   type BenchmarkTask,
   type Candidate,
+  type Evidence,
 } from "./types";
 
 export const blindInputSchema = z.strictObject({
@@ -42,12 +43,25 @@ export const judgmentSchema = z.strictObject({
 });
 export type Judgment = z.infer<typeof judgmentSchema>;
 
-/** Allowlist the judging payload. Keep the caseId-to-source mapping in private storage. */
+/**
+ * Allowlist the judging payload. Keep the caseId-to-source mapping in private
+ * storage. The tool's own evidence and any web evidence are merged, repeated
+ * URLs dropped, and every item renumbered e1, e2, ... so no ID names a tool.
+ */
 export function buildBlindInput(
   task: BenchmarkTask,
-  candidate: Candidate
+  candidate: Candidate,
+  webEvidence: readonly Evidence[] = []
 ): BlindInput {
   requireEntityType(candidate.entity, task.entityType);
+  const seen = new Set<string>();
+  const evidence = [...candidate.entity.evidence, ...webEvidence]
+    // Only exact repeats are dropped; the same page can carry different excerpts.
+    .filter((item) => {
+      const key = JSON.stringify([item.url, item.text, item.publishedAt]);
+      return !seen.has(key) && Boolean(seen.add(key));
+    })
+    .map((item, index) => ({ ...item, id: `e${index + 1}` }));
   return blindInputSchema.parse({
     caseId: randomUUID(),
     prompt: task.prompt,
@@ -58,7 +72,7 @@ export function buildBlindInput(
       requirement,
       required,
     })),
-    entity: candidate.entity,
+    entity: { ...candidate.entity, evidence },
   });
 }
 

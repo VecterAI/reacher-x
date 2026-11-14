@@ -34,20 +34,35 @@ benchmarks/
     checkpoints.ts             Private atomic storage and process exclusion
     runner.ts                  Sequential offline execution and safe resumption
     convex.ts                  Convex CLI driver, learning switch, settings snapshot/restore
+    http.ts                    Provider transport: live (one attempt), recording, exact replay
+    llm.ts                     Structured OpenRouter calls, recorded and replayable
+    rates.ts                   Frozen rates and funding applied to observed usage
     spend.ts                   Usage/funding summary, OpenRouter key spend, step spend guard
-    evidence.ts                Evidence provider and cache contracts
+    identity.ts                Person/company identity keys and cross-tool repeat flags
+    evidence.ts                Tavily web evidence, two searches per result, shared cache
     judges.ts                  Blind inputs, judgment validation, two-judge panel with tie-break
     judgeModel.ts              OpenRouter judge calls on the separate judge key
+    judging.ts                 Evidence plus panel for one result, private case record
+    labels.ts                  Human label sample, booklet, sheet and kappa gate
+    metrics.ts                 Section 4 measures
     stats.ts                   Wilson, paired bootstrap, Holm, Cohen's kappa
     random.ts                  Seeded generator and shuffle for reproducible draws
     report.ts                  Markdown and JSON aggregate reports
   people-search/
     plan.ts                    Approved prompts, categories, models and run policy
+    filters.ts                 Shared prompt-to-filter step and per-tool coverage
+    decisions.ts               D1-D4 conditions and the one-page checkpoint report
     replay.ts                  Frozen qualification input and replay contract
-    reacherx.ts                ReacherX top-K selection and rejected-person sampling
+    reacherx.ts                ReacherX top-K, rejected sample, export-to-entity mapping
+    round1.ts                  Exact re-score of round one's saved verdicts
     tools/
-      types.ts                 Adapter and documented capability contracts
-      catalog.ts               Nine tools and their planned transports/top K
+      types.ts                 Adapter contract: search context in, typed results and receipt out
+      catalog.ts               Nine tools, transports and judged top K
+      registry.ts              One adapter per competitor
+      common.ts                Shared parsing helpers
+      exa.ts, firecrawl.ts, context.ts, clay.ts
+      treg.ts                  Treg calls (cost, served-by, ignored filters) and its own search
+      apollo.ts, lusha.ts, crustdata.ts   Called through Treg
   tests/                       Offline tests with synthetic data only
     setup/                     Local credentials and proposal integrity
     execution/                 Offline runner, Convex driver and spend guard
@@ -57,7 +72,7 @@ benchmarks/
 
 Tests sit apart from the code, grouped by purpose, and import it from `core/` and `people-search/`. Add a new test file to the group it checks; a new group needs no script change.
 
-Implemented: the offline runner and checkpoint storage, the Convex driver, the spend guard, the judge panel and its OpenRouter caller, statistics and report rendering. Not implemented yet: live orchestration, provider adapters, evidence fetching, replay capture and the `--dry-run` pipeline. Hard credit limits on the OpenRouter keys are set by the key owner; the spend guard stops a step in software before that. The tool catalog marks every adapter as pending; it does not declare a task unsupported. Add each provider's implementation and documented capabilities when its endpoints are verified. Preserve native filter translations and the actual serving provider in private request receipts. Crustdata uses indexed search through Treg; optional enrichment is off by default.
+Implemented: the offline runner and checkpoint storage, the Convex driver, the spend guard, all eight competitor adapters (people and company paths), the shared filter step, Tavily evidence, the judge panel and its orchestration, human labels and the kappa gate, every section 4 measure, the decision-point checks and report, statistics and report rendering. Not implemented yet: live orchestration (the runner for `--live`, provider key swap and always-reset), replay capture, and the `--dry-run` pipeline. Adapter endpoints and filter names come from public documentation; the smoke test confirms them, and anything a tool cannot express is recorded in its receipt as unexpressed rather than dropped. Treg-routed calls record the provider that served them. Crustdata uses indexed search through Treg with explicit response fields. Clay and Firecrawl use a recorded harness model call (Clay to write its query from Clay's reference, Firecrawl to extract one entity per page); every model and HTTP exchange can be replayed at $0. Hard credit limits on the OpenRouter keys are set by the key owner; the spend guard stops a step in software before that.
 
 ## Offline runner
 
