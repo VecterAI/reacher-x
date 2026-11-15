@@ -6,6 +6,7 @@ import {
   peopleSearchPlan,
   type NoOpenAIModel,
 } from "../../people-search/plan";
+import { runSettingsSchema } from "../../core/execution/liveSession";
 
 // The real assertion is the type check: typecheck fails if either line stops holding.
 test("an OpenAI model in any judge slot fails the independence check", () => {
@@ -35,4 +36,20 @@ test("stage 2 draws people static prompts reproducibly from the seed", () => {
   assert.equal(draw.length, 3);
   assert.ok(draw.every((id) => (staticIds as number[]).includes(id)));
   assert.throws(() => drawStage2StaticPrompts(42, 6));
+});
+
+test("run settings match production's models and the planned cycle gap", () => {
+  const { runSettings, initialCycleGapMinutes } = peopleSearchPlan.execution;
+  assert.ok(runSettingsSchema.safeParse(runSettings).success);
+  const { production, runOnly } = runSettings;
+  const { models } = peopleSearchPlan;
+  assert.equal(production.AI_ONBOARDING_MODEL, models.planningAndQualification);
+  assert.equal(production.AI_REASONING_MODEL, models.enrichment);
+  assert.equal(production.AI_TEXT_EMBEDDING_MODEL, models.embeddings);
+  assert.equal(production.PROSPECTING_TWITTER_SEARCH_LOOKBACK_DAYS, "90");
+  for (const gap of [
+    runOnly.PROSPECTING_BOOTSTRAP_INTERVAL_MINUTES,
+    runOnly.PROSPECTING_RESCHEDULE_INTERVAL_MINUTES,
+  ])
+    assert.equal(gap, String(initialCycleGapMinutes));
 });

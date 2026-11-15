@@ -1,5 +1,6 @@
 import { toolCatalog } from "./tools/catalog";
 import type { RunManifest } from "../core/setup/manifest";
+import type { RunSettings } from "../core/execution/liveSession";
 import { seededRandom, shuffled } from "../core/random";
 
 const categories = {
@@ -128,6 +129,44 @@ const prompts = [
   },
 ] as const satisfies readonly Prompt[];
 
+// Proposal 5.5. Production values were read from the production deployment by
+// the project lead on 15 Nov 2026 and are set explicitly for every live step.
+// Worker parallelism is left out on purpose: it is tuned to Starter limits in
+// the smoke test, identically for both learning groups.
+const runSettings = {
+  production: {
+    PROSPECTING_BOOTSTRAP_READY_TARGET: "12",
+    PROSPECTING_BOOTSTRAP_MAX_CYCLES: "8",
+    PROSPECTING_BOOTSTRAP_NO_PROGRESS_TIMEOUT_MINUTES: "20",
+    PROSPECTING_BOOTSTRAP_PENDING_QUALIFICATION_YIELD_PERCENT: "30",
+    PROSPECTING_SEED_KEYWORDS_PER_CYCLE: "10",
+    PROSPECTING_SOCIAL_QUERIES_PER_CYCLE: "15",
+    PROSPECTING_TWITTER_SEARCH_BATCH: "9",
+    PROSPECTING_TWITTER_SEARCH_PAGES_PER_QUERY: "3",
+    PROSPECTING_TWITTER_SEARCH_LOOKBACK_DAYS: "90",
+    PROSPECTING_LINKEDIN_POST_SEARCH_BATCH: "5",
+    PROSPECTING_LINKEDIN_PEOPLE_SEARCH_BATCH: "4",
+    PROVIDER_SEARCH_MAX_RUNTIME_MS: "30000",
+    AI_ONBOARDING_MODEL: "openai/gpt-6-luna-pro",
+    AI_REASONING_MODEL: "openai/gpt-oss-120b",
+    AI_FAST_MODEL: "openai/gpt-oss-120b",
+    AI_TEXT_EMBEDDING_MODEL: "openai/text-embedding-3-small",
+    OPENROUTER_ROUTING_PRESET: "cost_optimized",
+  },
+  productionSource:
+    "Production deployment env, read by the project lead on 2026-11-15",
+  // Production waits 2 minutes between bootstrap cycles, then 60 once 12
+  // people are ready or 8 cycles have run. Both gaps are 10 minutes in a run,
+  // so every cycle has time for qualification and lessons (the project lead
+  // agreed the hourly gap need not be kept).
+  runOnly: {
+    PROSPECTING_BOOTSTRAP_INTERVAL_MINUTES: "10",
+    PROSPECTING_RESCHEDULE_INTERVAL_MINUTES: "10",
+  },
+  // A D1 decision; null keeps the deployment's pool defaults.
+  poolLimits: null,
+} as const satisfies RunSettings;
+
 export const peopleSearchPlan = {
   id: "people-search-v2",
   sourceProposal: {
@@ -147,6 +186,7 @@ export const peopleSearchPlan = {
     maxConcurrentWorkspaces: 1,
     // Production's first-hour bootstrap gap is 2 minutes (PROSPECTING_BOOTSTRAP_INTERVAL_MINUTES).
     initialCycleGapMinutes: 10,
+    runSettings,
     statusPollSeconds: 30,
     waitForQualificationAndLessons: true,
     learningOff: {
