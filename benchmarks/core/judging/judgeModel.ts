@@ -33,9 +33,10 @@ function describe(input: BlindInput) {
 }
 
 /**
- * Judges through the separate judge key, never the deployment's key. The
- * reported model and the call's cost come from OpenRouter's response, so the
- * run records which model actually served each grade.
+ * Judges through the key from judgeOpenRouterKey: a separate judge key, or the
+ * deployment's key when one key is shared (never during a ReacherX workspace
+ * run). The reported model and the call's cost come from OpenRouter's
+ * response, so the run records which model served each grade and its cost.
  */
 export function openRouterJudgeCaller(apiKey: string): JudgeCaller {
   const call = openRouterStructured(apiKey);

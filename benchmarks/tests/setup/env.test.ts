@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   formatEnvironmentReport,
   inspectBenchmarkEnvironment,
+  judgeOpenRouterKey,
   readBenchmarkEnvironment,
 } from "../../core/setup/env";
 
@@ -38,9 +39,6 @@ test("reports never echo credentials, invalid deployment values or placeholder v
     BENCHMARK_JUDGE_OPENROUTER_API_KEY: credential,
     EXA_API_KEY: "your_api_key",
   });
-  assert.ok(
-    report.issues.some((issue) => issue.includes("distinct OpenRouter keys"))
-  );
   assert.ok(report.issues.includes("Missing EXA_API_KEY."));
   const output = formatEnvironmentReport(report);
   for (const value of [credential, "private-target-marker", "your_api_key"]) {
@@ -72,4 +70,27 @@ test("local env parsing honors shell precedence without changing process.env", a
       /file permissions/
     );
   }
+});
+
+test("judges use their own key when set, and otherwise share the deployment key", () => {
+  assert.deepEqual(
+    judgeOpenRouterKey({
+      OPENROUTER_API_KEY: "deployment-key",
+      BENCHMARK_JUDGE_OPENROUTER_API_KEY: "judge-key",
+    }),
+    { apiKey: "judge-key", sharesDeploymentKey: false }
+  );
+  assert.deepEqual(
+    judgeOpenRouterKey({
+      OPENROUTER_API_KEY: "deployment-key",
+      BENCHMARK_JUDGE_OPENROUTER_API_KEY: "",
+    }),
+    { apiKey: "deployment-key", sharesDeploymentKey: true }
+  );
+  assert.ok(
+    !inspectBenchmarkEnvironment({
+      OPENROUTER_API_KEY: "deployment-key",
+    }).issues.some((issue) => issue.includes("JUDGE"))
+  );
+  assert.throws(() => judgeOpenRouterKey({}), /OPENROUTER_API_KEY/);
 });

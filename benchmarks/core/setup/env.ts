@@ -22,8 +22,9 @@ const variables = [
   },
   {
     name: "BENCHMARK_JUDGE_OPENROUTER_API_KEY",
-    purpose: "Independent judges",
-    required: true,
+    purpose:
+      "Judges and harness model calls; optional, the deployment key is used when unset",
+    required: false,
   },
   {
     name: "SOCIALAPI_API_KEY",
@@ -137,16 +138,6 @@ export function inspectBenchmarkEnvironment(environment: Environment) {
       );
     }
   }
-  if (
-    hasValue(environment.OPENROUTER_API_KEY) &&
-    hasValue(environment.BENCHMARK_JUDGE_OPENROUTER_API_KEY) &&
-    environment.OPENROUTER_API_KEY.trim() ===
-      environment.BENCHMARK_JUDGE_OPENROUTER_API_KEY.trim()
-  ) {
-    issues.push(
-      "Use distinct OpenRouter keys for the deployment and the judges."
-    );
-  }
   return { entries, issues };
 }
 
@@ -164,4 +155,25 @@ export function formatEnvironmentReport(
     "",
     "Values are never printed. Key validity, credit balances, Convex login and remote configuration have not been checked.",
   ].join("\n");
+}
+
+/**
+ * The key for judges and the harness's own model calls. The project lead
+ * agreed on 15 Nov 2026 that one OpenRouter key may serve the deployment, the
+ * judges and the harness. ReacherX's cost is the key's spend before and after
+ * each workspace, so a shared key's calls must never overlap a running
+ * workspace (the live runner enforces this); judge and harness costs come from
+ * each call's reported cost instead.
+ */
+export function judgeOpenRouterKey(environment: Environment) {
+  const separate = environment.BENCHMARK_JUDGE_OPENROUTER_API_KEY;
+  const deployment = environment.OPENROUTER_API_KEY;
+  if (hasValue(separate))
+    return {
+      apiKey: separate.trim(),
+      sharesDeploymentKey: separate.trim() === deployment?.trim(),
+    };
+  if (!hasValue(deployment))
+    throw new Error("Set OPENROUTER_API_KEY before judging.");
+  return { apiKey: deployment.trim(), sharesDeploymentKey: true };
 }
