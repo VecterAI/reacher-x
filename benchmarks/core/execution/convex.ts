@@ -50,6 +50,10 @@ export function npxConvexRunner(
         cwd,
         env,
         stdio: ["pipe", "pipe", "pipe"],
+        // Its own process group, so a Ctrl+C in the terminal reaches only the
+        // runner, which then finishes this call and the reset instead of
+        // having a deployment command killed halfway.
+        detached: process.platform !== "win32",
       });
       let stdout = "";
       let stderr = "";
@@ -93,6 +97,7 @@ export const RUNTIME_SETTINGS = [
   "OPENROUTER_ROUTING_PRESET",
   "QUALIFICATION_MAX_PARALLELISM",
   "ENRICHMENT_MAX_PARALLELISM",
+  "JEV_PREFILTER_MODE",
   "BENCHMARK_LEARNING_OFF_WORKSPACE_IDS",
   "BENCHMARK_POOL_LIMITS",
 ] as const;
@@ -195,7 +200,7 @@ const poolStatusSchema = z.object({
   enforcedTenantScheduling: z.boolean(),
 });
 
-const stopResultSchema = z.object({
+export const stopResultSchema = z.object({
   cancelFailed: z.boolean(),
   stopped: z.boolean(),
   monitorsDeleted: z.number(),
@@ -208,7 +213,7 @@ const activitySchema = z.object({
   truncated: z.boolean(),
 });
 
-const runCostsSchema = z.object({
+export const runCostsSchema = z.object({
   providers: z.record(
     z.string(),
     z.object({
@@ -223,7 +228,7 @@ const runCostsSchema = z.object({
 });
 export type RecordedRunCosts = z.infer<typeof runCostsSchema>;
 
-const linkdApiUnitsSchema = z.object({
+export const linkdApiUnitsSchema = z.object({
   billableUnits: z.number(),
   successes: z.number(),
   events: z.number(),

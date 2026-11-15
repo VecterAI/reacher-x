@@ -17,7 +17,6 @@ import {
   jsonSchema,
   type Checkpoint,
   type JsonValue,
-  type OfflineRunFile,
 } from "../setup/manifest";
 import type { ArtifactReference } from "../types";
 
@@ -180,7 +179,17 @@ export class FileCheckpointStore {
     return jsonSchema.parse(JSON.parse(bytes.toString("utf8")));
   }
 
-  async freeze(run: OfflineRunFile) {
+  /** A private file in this run's folder, such as a live step's outcome. */
+  runFile(file: string) {
+    return this.runPath(file);
+  }
+
+  /**
+   * Records what a run executes (an offline run file, or a live step's
+   * schedule) the first time; later calls must match it exactly. Returns true
+   * for a new run.
+   */
+  async freeze(run: JsonValue) {
     this.assertLocked();
     const path = this.runPath("frozen-run.json");
     const expected = canonicalJson(run);

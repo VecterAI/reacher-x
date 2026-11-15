@@ -8,6 +8,7 @@ import {
   summarizeUsage,
   type SpendReader,
 } from "../../core/execution/spend";
+import type { HttpRequest, Transport } from "../../core/calls/http";
 
 test("grants do not erase comparable usage cost and missing prices remain unpriced", () => {
   const report = summarizeUsage([
@@ -90,19 +91,62 @@ test("every paid account needs exactly one approved limit", () => {
   );
 });
 
+// Answers like the provider would; the key only ever travels in secret headers.
+const answering =
+  (status: number, body: unknown, seen: HttpRequest[] = []): Transport =>
+  async (request) => {
+    seen.push(request);
+    return {
+      step: request.step,
+      request: { method: request.method, url: request.url },
+      response: { status, body, headers: {} },
+      latencyMs: 1,
+    };
+  };
+
 test("unreadable spend stops the step without exposing the key", async () => {
   const key = "sk-test-not-a-real-key";
-  const failing = openRouterKeySpend(key, async () =>
-    Response.json({ error: "unauthorized" }, { status: 401 })
+  const failing = openRouterKeySpend(
+    key,
+    answering(401, { error: "unauthorized" })
   );
   await assert.rejects(failing.read(), (error: Error) => {
     assert.ok(error instanceof BudgetStop);
     assert.ok(!error.message.includes(key));
     return true;
   });
-  const working = openRouterKeySpend(key, async () =>
-    Response.json({ data: { usage: 2.5 } })
+  const seen: HttpRequest[] = [];
+  const working = openRouterKeySpend(
+    key,
+    answering(200, { data: { usage: 2.5 } }, seen)
   );
   assert.equal((await working.read()).cumulativeUsd, 2.5);
   assert.equal(working.accountId, `openrouter:${keyFingerprint(key)}`);
+  assert.equal(seen[0].url, "https://openrouter.ai/api/v1/key");
+  assert.equal(seen[0].headers, undefined);
+});
+
+test("a resumed step keeps its first baseline, and a check can cover some accounts only", async () => {
+  const twoAccounts = {
+    ...approval(1),
+    accountLimits: [
+      { accountId: "openrouter:a", maxAdditionalUsd: 1 },
+      { accountId: "socialapi:b", maxAdditionalUsd: 1 },
+    ],
+  };
+  const first = new SpendGuard(twoAccounts, [
+    fakeReader("openrouter:a", [10]),
+    fakeReader("socialapi:b", [-50]),
+  ]);
+  const baselines = await first.start();
+  // The second attempt starts later, after 0.6 was already spent.
+  const resumed = new SpendGuard(twoAccounts, [
+    fakeReader("openrouter:a", [10.6, 11.2]),
+    fakeReader("socialapi:b", []),
+  ]);
+  await resumed.start(baselines);
+  assert.deepEqual(Object.keys(await resumed.check(["openrouter:a"])), [
+    "openrouter:a",
+  ]);
+  await assert.rejects(resumed.check(["openrouter:a"]), BudgetStop);
 });

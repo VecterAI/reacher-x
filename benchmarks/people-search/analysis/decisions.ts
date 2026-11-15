@@ -7,7 +7,14 @@ import { peopleSearchPlan } from "../setup/plan";
  * never assumed; a condition that needs the project lead stays open until
  * they decide, and the run stops there either way.
  */
-export type ConditionStatus = "pass" | "fail" | "needs-approval";
+// "waiting": work the decision needs is not done yet, such as human labels.
+// "unknown": the measurement it needs could not be read, such as final spend.
+export type ConditionStatus =
+  | "pass"
+  | "fail"
+  | "needs-approval"
+  | "waiting"
+  | "unknown";
 export type DecisionRow = Readonly<{
   condition: string;
   status: ConditionStatus;
@@ -24,7 +31,16 @@ const approval = (condition: string, detail: string): DecisionRow => ({
   status: "needs-approval",
   detail,
 });
+const waiting = (condition: string, detail: string): DecisionRow => ({
+  condition,
+  status: "waiting",
+  detail,
+});
 const usd = (value: number) => `$${value.toFixed(3)}`;
+const estimate = (value: number | null) =>
+  value === null
+    ? "unknown, because a cost it needs has no measurement yet"
+    : usd(value);
 
 export type CycleMeasurement = Readonly<{
   taskId: string;
@@ -45,15 +61,21 @@ export type DecisionInputs =
     }
   | {
       point: "D2";
-      agreement: AgreementReport;
+      // Null until both people have labelled the sample.
+      agreement: AgreementReport | null;
+      labelSheet: string;
       cycles: readonly CycleMeasurement[];
-      projectedRemainingUsd: number;
+      // Null when a cost it needs has no measurement yet.
+      projectedRemainingUsd: number | null;
     }
   | {
       point: "D3";
       failedChecks: readonly string[];
       pilotMatches: readonly { taskId: string; verifiedMatches: number }[];
-      stage2EstimateUsd: number;
+      // Null when no cycle cost was measured.
+      stage2EstimateUsd: number | null;
+      // Work D3 still needs, such as the quick check or the main run's labels.
+      outstanding: readonly string[];
     }
   | {
       point: "D4";
@@ -80,19 +102,32 @@ function cycleCost(
   );
 }
 
-export function checkDecisionPoint(inputs: DecisionInputs): {
+export function checkDecisionPoint(
+  inputs: DecisionInputs,
+  // Set when the step's final spend could not be read: cost conditions are
+  // then unknown, and budget decisions say so.
+  spendIncomplete: string | null = null
+): {
   point: DecisionPoint;
   rows: DecisionRow[];
   canContinue: boolean;
 } {
   const rows: DecisionRow[] = [];
+  const costRow = (item: DecisionRow): DecisionRow =>
+    !spendIncomplete
+      ? item
+      : item.status === "needs-approval"
+        ? { ...item, detail: `${item.detail} ${spendIncomplete}` }
+        : { ...item, status: "unknown", detail: spendIncomplete };
   switch (inputs.point) {
     case "D1": {
       rows.push(
-        cycleCost(
-          inputs.cycles,
-          peopleSearchPlan.decisionPoints.D1.maxCycleCostUsd,
-          "A cycle's cost"
+        costRow(
+          cycleCost(
+            inputs.cycles,
+            peopleSearchPlan.decisionPoints.D1.maxCycleCostUsd,
+            "A cycle's cost"
+          )
         )
       );
       const timed = inputs.cycles.filter((cycle) => cycle.activeMs !== null);
@@ -114,12 +149,19 @@ export function checkDecisionPoint(inputs: DecisionInputs): {
     }
     case "D2": {
       const minimum = peopleSearchPlan.decisionPoints.D2.minHumanAgreementKappa;
+      const agreementCondition = `Judges agree with people (kappa ${minimum} or more)`;
       rows.push(
-        row(
-          `Judges agree with people (kappa ${minimum} or more)`,
-          inputs.agreement.passes && inputs.agreement.minimumKappa === minimum,
-          `Kappa ${inputs.agreement.kappa?.toFixed(2) ?? "undefined"} over ${inputs.agreement.labels} label(s).`
-        )
+        inputs.agreement
+          ? row(
+              agreementCondition,
+              inputs.agreement.passes &&
+                inputs.agreement.minimumKappa === minimum,
+              `Kappa ${inputs.agreement.kappa?.toFixed(2) ?? "undefined"} over ${inputs.agreement.labels} label(s).`
+            )
+          : waiting(
+              agreementCondition,
+              `Both people label every row of ${inputs.labelSheet}; running the pilot again then reads it.`
+            )
       );
       // Learning needs the last cycle's qualification and lessons done before the next starts.
       const tight = inputs.cycles.filter(
@@ -138,9 +180,11 @@ export function checkDecisionPoint(inputs: DecisionInputs): {
         )
       );
       rows.push(
-        approval(
-          "Remaining stage 1 budget and timing approved",
-          `Projected from the pilot: ${usd(inputs.projectedRemainingUsd)}.`
+        costRow(
+          approval(
+            "Remaining stage 1 budget and timing approved",
+            `Projected from the pilot: ${estimate(inputs.projectedRemainingUsd)}.`
+          )
         )
       );
       break;
@@ -165,20 +209,26 @@ export function checkDecisionPoint(inputs: DecisionInputs): {
             : `${inputs.pilotMatches.length} pilot prompt(s) found matches.`
         )
       );
+      if (inputs.outstanding.length)
+        rows.push(waiting("Outstanding work", inputs.outstanding.join("; ")));
       rows.push(
-        approval(
-          "Stage 2 budget approved",
-          `Estimate from measured cost: ${usd(inputs.stage2EstimateUsd)}.`
+        costRow(
+          approval(
+            "Stage 2 budget approved",
+            `Estimate from measured cost: ${estimate(inputs.stage2EstimateUsd)}.`
+          )
         )
       );
       break;
     }
     case "D4": {
       rows.push(
-        cycleCost(
-          inputs.cycles,
-          inputs.approvedCycleCostUsd,
-          "Cost per cycle on plan"
+        costRow(
+          cycleCost(
+            inputs.cycles,
+            inputs.approvedCycleCostUsd,
+            "Cost per cycle on plan"
+          )
         )
       );
       rows.push(
@@ -195,24 +245,36 @@ export function checkDecisionPoint(inputs: DecisionInputs): {
     point: inputs.point,
     rows,
     // Even when every row passes, the run pauses for the project lead's decision.
-    canContinue: rows.every((item) => item.status !== "fail"),
+    canContinue: rows.every(
+      (item) => item.status === "pass" || item.status === "needs-approval"
+    ),
   };
 }
 
 /** The one-page checkpoint report sent to the project lead at a decision point. */
 export function renderDecisionReport(
   result: ReturnType<typeof checkDecisionPoint>,
-  spend: { stepUsd: number; cumulativeUsd: number; unpriced: readonly string[] }
+  // Null when the step's final spend could not be read.
+  spend: {
+    stepUsd: number | null;
+    cumulativeUsd: number | null;
+    unpriced: readonly string[];
+  }
 ) {
   const mark = {
     pass: "pass",
     fail: "FAIL",
     "needs-approval": "your decision",
+    waiting: "waiting",
+    unknown: "unknown",
   } as const;
+  const spent = (value: number | null) =>
+    value === null ? "unknown (a spend reading failed)" : usd(value);
+  const failed = result.rows.some((item) => item.status === "fail");
   return `${[
     `# ${result.point} checkpoint`,
     "",
-    `Spend this step: ${usd(spend.stepUsd)}. Total so far: ${usd(spend.cumulativeUsd)}.`,
+    `Spend this step: ${spent(spend.stepUsd)}. Total so far: ${spent(spend.cumulativeUsd)}.`,
     ...(spend.unpriced.length
       ? [`Unpriced usage: ${spend.unpriced.join(", ")}.`]
       : []),
@@ -226,6 +288,8 @@ export function renderDecisionReport(
     "",
     result.canContinue
       ? "No condition failed. The run is paused until you decide to continue, adjust or stop."
-      : "A condition failed. The run is paused; see section 6.4 for the options.",
+      : failed
+        ? "A condition failed. The run is paused; see section 6.4 for the options."
+        : "Some work or a measurement is still outstanding (marked waiting or unknown). The run is paused until it is done and you decide.",
   ].join("\n")}\n`;
 }

@@ -60,6 +60,7 @@ test("D2 needs the kappa threshold, time to learn and an explicit budget decisio
   const result = checkDecisionPoint({
     point: "D2",
     agreement,
+    labelSheet: "labels/pilot/sheet.csv",
     cycles: [cycle(0.4, 700_000)],
     projectedRemainingUsd: 20,
   });
@@ -86,7 +87,38 @@ test("D3 names the pilot prompts that found nothing", () => {
       { taskId: "11", verifiedMatches: 0 },
     ],
     stage2EstimateUsd: 60,
+    outstanding: [],
   });
   assert.match(result.rows[1].detail, /prompt\(s\) 11/);
   assert.equal(result.canContinue, false);
+});
+
+test("missing labels and outstanding work wait rather than fail", () => {
+  const d2 = checkDecisionPoint({
+    point: "D2",
+    agreement: null,
+    labelSheet: "labels/pilot/sheet.csv",
+    cycles: [cycle(0.4, 300_000)],
+    projectedRemainingUsd: 20,
+  });
+  assert.deepEqual(
+    d2.rows.map((row) => row.status),
+    ["waiting", "pass", "needs-approval"]
+  );
+  assert.equal(d2.canContinue, false);
+  assert.match(
+    renderDecisionReport(d2, { stepUsd: 1, cumulativeUsd: 2, unpriced: [] }),
+    /still outstanding/
+  );
+  const d3 = checkDecisionPoint({
+    point: "D3",
+    failedChecks: [],
+    pilotMatches: [{ taskId: "6", verifiedMatches: 3 }],
+    stage2EstimateUsd: 60,
+    outstanding: ["The quick check"],
+  });
+  assert.deepEqual(
+    d3.rows.map((row) => row.status),
+    ["pass", "pass", "waiting", "needs-approval"]
+  );
 });

@@ -162,6 +162,10 @@ const runSettings = {
   runOnly: {
     PROSPECTING_BOOTSTRAP_INTERVAL_MINUTES: "10",
     PROSPECTING_RESCHEDULE_INTERVAL_MINUTES: "10",
+    // Production runs the Jev pre-filter in shadow mode only to collect eval
+    // data; it never changes a qualification. It stays off in runs, so the
+    // measured cost is the product's own.
+    JEV_PREFILTER_MODE: "off",
   },
   // A D1 decision; null keeps the deployment's pool defaults.
   poolLimits: null,
@@ -212,6 +216,11 @@ export const peopleSearchPlan = {
     embeddings: "openai/text-embedding-3-small",
     judges: ["z-ai/glm-5.3-flash", "deepseek/deepseek-v4.1-flash"],
     tieBreaker: "qwen/qwen3.8-flash",
+    // The harness's own calls: the shared filter step, Clay query writing and
+    // Firecrawl extraction. The proposal names no model; production's cheap
+    // enrichment model is used, deliberately not a judge's model, so judges
+    // never grade entities their own model extracted.
+    harness: "openai/gpt-oss-120b",
   },
   // Proposal 3.3 and 5.7.
   judging: {

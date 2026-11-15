@@ -4,6 +4,7 @@ import type { FileCheckpointStore } from "../../core/execution/checkpoints";
 import {
   frozenPlanSchema,
   getPlanDigest,
+  sha256Schema,
   type FrozenPlan,
 } from "../../core/setup/manifest";
 import { entitySchema, timestampSchema } from "../../core/types";
@@ -31,6 +32,53 @@ export const freezeInputSchema = z.strictObject({
 export type FreezeInput = z.infer<typeof freezeInputSchema>;
 
 export type FrozenPlanRecord = FrozenPlan & { planSha256: string };
+
+const frozenRecordSchema = frozenPlanSchema.extend({
+  planSha256: sha256Schema,
+});
+
+/**
+ * The frozen plan for a live step: its digest and every frozen artifact are
+ * rechecked, and it must name the approved proposal and prompts with the
+ * criteria in force when it was frozen.
+ */
+export async function loadFrozenPlan(
+  store: FileCheckpointStore
+): Promise<FrozenPlanRecord> {
+  const text = await store.readPrivate(FROZEN_PLAN_PATH);
+  if (text === null)
+    throw new RunnerStateError(
+      "No frozen plan. Freeze it first with pnpm benchmark --freeze <file>."
+    );
+  const plan = frozenRecordSchema.parse(JSON.parse(text));
+  if (getPlanDigest(plan) !== plan.planSha256)
+    throw new RunnerStateError(
+      "The frozen plan's digest does not match its contents."
+    );
+  const approved = buildTasks(plan.referenceDate);
+  if (
+    plan.planId !== peopleSearchPlan.id ||
+    plan.sourceProposal.sha256 !== peopleSearchPlan.sourceProposal.sha256 ||
+    plan.tasks.length !== approved.length ||
+    plan.tasks.some(
+      (task, index) =>
+        task.id !== approved[index].id ||
+        task.prompt !== approved[index].prompt ||
+        task.entityType !== approved[index].entityType
+    )
+  )
+    throw new RunnerStateError(
+      "The frozen plan does not match the approved proposal and prompts."
+    );
+  for (const artifact of [
+    plan.rateSnapshot,
+    plan.runtimeSnapshot,
+    ...plan.referenceExamples.map((example) => example.artifact),
+  ])
+    await store.readArtifact(artifact);
+  // The frozen criteria are used even if the draft in code changes later.
+  return plan;
+}
 
 /**
  * Writes the reference examples, rates and run settings as private artifacts,

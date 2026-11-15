@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { liveTransport, type Exchange, type Transport } from "../calls/http";
 import { timestampSchema } from "../types";
 
 export type UsageCharge = Readonly<{
@@ -97,26 +98,29 @@ export function keyFingerprint(key: string) {
   return createHash("sha256").update(key.trim()).digest("hex").slice(0, 10);
 }
 
-/** Cumulative spend of one OpenRouter key, from GET /api/v1/key. */
+/** Cumulative spend of one OpenRouter key, from GET /api/v1/key (free). */
 export function openRouterKeySpend(
   apiKey: string,
-  fetcher: typeof fetch = fetch
+  transport: Transport = liveTransport()
 ): SpendReader {
   const accountId = `openrouter:${keyFingerprint(apiKey)}`;
   return {
     accountId,
     async read() {
-      let response: Response;
+      let exchange: Exchange;
       try {
-        response = await fetcher("https://openrouter.ai/api/v1/key", {
-          headers: { Authorization: `Bearer ${apiKey}` },
-          signal: AbortSignal.timeout(30_000),
+        exchange = await transport({
+          step: "spend:openrouter-key",
+          method: "GET",
+          url: "https://openrouter.ai/api/v1/key",
+          secretHeaders: { Authorization: `Bearer ${apiKey}` },
+          timeoutMs: 30_000,
         });
       } catch {
         throw new BudgetStop(`Cannot read spend for ${accountId}.`);
       }
       const body = openRouterKeySchema.safeParse(
-        response.ok ? await response.json() : null
+        exchange.response.status === 200 ? exchange.response.body : null
       );
       if (!body.success)
         throw new BudgetStop(`Cannot read spend for ${accountId}.`);
@@ -156,15 +160,30 @@ export class SpendGuard {
       );
   }
 
-  async start() {
+  /**
+   * Reads each account's starting spend. A resumed step passes the baselines
+   * its first start returned, so the approved amount covers the whole step,
+   * not each attempt.
+   */
+  async start(saved: readonly KeySpendSnapshot[] = []) {
     for (const reader of this.readers)
-      this.baselines.set(reader.accountId, await reader.read());
+      this.baselines.set(
+        reader.accountId,
+        saved.find((snapshot) => snapshot.accountId === reader.accountId) ??
+          (await reader.read())
+      );
+    return [...this.baselines.values()];
   }
 
-  /** Call before each unit of paid work. Returns spend so far per account. */
-  async check() {
+  /**
+   * Call before each unit of paid work, optionally for some accounts only
+   * (for example the key a workspace spends on, between its status polls).
+   * Returns spend so far per account read.
+   */
+  async check(only?: readonly string[]) {
     const spent: Record<string, number> = {};
     for (const reader of this.readers) {
+      if (only && !only.includes(reader.accountId)) continue;
       const baseline = this.baselines.get(reader.accountId);
       if (!baseline) throw new BudgetStop("The spend guard was not started.");
       const limit = this.approval.accountLimits.find(

@@ -83,16 +83,18 @@ export type CycleRecord = Readonly<{
 }>;
 type MutableCycle = { -readonly [K in keyof CycleRecord]: CycleRecord[K] };
 
-export type WorkspaceEnding =
-  | "planned-cycles"
-  | "cycle-failed"
-  | "extra-cycle"
-  | "workspace-halted"
-  | "timed-out"
-  | "status-unreadable"
-  | "workspace-missing"
-  | "budget-stop"
-  | "interrupted";
+export const WORKSPACE_ENDINGS = [
+  "planned-cycles",
+  "cycle-failed",
+  "extra-cycle",
+  "workspace-halted",
+  "timed-out",
+  "status-unreadable",
+  "workspace-missing",
+  "budget-stop",
+  "interrupted",
+] as const;
+export type WorkspaceEnding = (typeof WORKSPACE_ENDINGS)[number];
 
 export type WorkspaceRunRecord = Readonly<{
   label: string;
