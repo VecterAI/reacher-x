@@ -13,7 +13,7 @@ export const MARKETING_COPY = {
       "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. People search, CRM, outreach, plus X/Twitter and LinkedIn built right in. Open source",
     description:
       "Describe who you want to reach. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who match, and helps you start real conversations.",
-    guaranteeNote: "30-day money-back guarantee.",
+    guaranteeNote: "Full refund in 30 days.",
     setupTimeNote: "Set up in under 5 minutes.",
   },
   /**

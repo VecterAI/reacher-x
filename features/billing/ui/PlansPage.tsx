@@ -157,7 +157,7 @@ export function PlansPage() {
           id="plans-upgrade-heading"
           className="text-xl font-semibold tracking-tight"
         >
-          Pick a plan. Every plan comes with a 30-day money-back guarantee.
+          Pick a plan. Every plan comes with a full refund in the first 30 days.
         </h2>
       </header>
       <PlanSelector

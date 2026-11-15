@@ -461,7 +461,7 @@ export function PricingSection({
           Pricing.
         </h1>
         <p className="text-foreground mt-4 text-sm font-medium">
-          Every plan comes with a 30-day money-back guarantee.
+          Every plan comes with a full refund in the first 30 days.
         </p>
       </header>
 

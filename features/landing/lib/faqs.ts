@@ -96,7 +96,7 @@ export const pricingFaqItems: FaqItem[] = [
     id: "credit-card",
     question: "Do I need a credit card to get started?",
     answer:
-      "Yes. A paid plan is required to start △ Agent during launch. Every plan comes with a 30-day money-back guarantee.",
+      "Yes. A paid plan is required to start △ Agent during launch. Every plan comes with a full refund in the first 30 days.",
   },
   {
     id: "plan-limits",

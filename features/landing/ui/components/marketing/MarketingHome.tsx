@@ -94,7 +94,7 @@ export function MarketingHome() {
           <p className="text-foreground flex flex-wrap items-center justify-center gap-2 text-center text-sm font-medium">
             <span>
               {highlightTerms(MARKETING_COPY.home.guaranteeNote, [
-                "30-day money-back guarantee",
+                "Full refund in 30 days",
               ])}
             </span>
             <Link
