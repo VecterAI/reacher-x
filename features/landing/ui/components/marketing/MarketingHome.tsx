@@ -63,6 +63,8 @@ function HeroTagline() {
   return (
     <>
       <span>{inlinePlatformIcons(rest.slice(0, index))}</span>
+      {/* The repo link always sits on its own line below the tagline. */}
+      <br />
       <a
         href={GITHUB_REPO_URL}
         target="_blank"

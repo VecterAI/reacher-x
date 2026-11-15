@@ -7,8 +7,8 @@ export const MARKETING_COPY = {
     revealLine: "for everyone.",
     /** Plain-text form of the hero for the OG image and Markdown title. */
     headline: "The Go-To-Market stack, for everyone.",
-    /** Hero sub text; rendered with inline brand logos and repo link.
-     * Ends without a period so the "Open source" link closes the line. */
+    /** Hero sub text; rendered with inline brand logos. Ends without a
+     * period so the "Open source" repo link closes it on its own line. */
     tagline:
       "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. People search, CRM, outreach, plus X/Twitter and LinkedIn built right in. Open source",
     description:
