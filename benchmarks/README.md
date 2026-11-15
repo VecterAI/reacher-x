@@ -15,9 +15,9 @@ pnpm test:benchmark
 
 Fill `.env.benchmark.local` using your own approved development credentials. Exported shell variables take precedence. The environment check only reads local values. It does not validate keys, balances, Convex login or remote settings. Keep deployment keys and self-hosted overrides out of this shell; `CONVEX_DEPLOYMENT` must be `dev:<name>`.
 
-The approved 20 prompts, categories and model choices are in `people-search/setup/plan.ts`. This is the setup scaffold, not a frozen run manifest. Criteria, source examples, reference dates, prices and per-step spend approval must be recorded before live execution. Model choices have no effect on the app until explicitly configured on the development deployment.
+The approved 20 prompts, categories, model choices and production run settings are in `people-search/setup/plan.ts`, and each prompt's requirements are in `people-search/setup/criteria.ts` (a draft until the project lead and the proposal's author agree them). `pnpm benchmark --freeze <file>` then freezes the criteria, the reference date, one private qualifying example per prompt, the competitor rates and the run settings into `benchmarks/.local/people-search/frozen/plan.json` with its digest. It refuses draft criteria, a missing or wrong-type example, and any change to a plan already frozen. Per-step spend approval is recorded separately. Model choices have no effect on the app until explicitly configured on the development deployment.
 
-The CLI supports `--help`, `--plan`, `--check-env`, `--offline-run <file>` and `--reset`. With no options it prints help. Offline execution validates frozen inputs and exercises checkpoint storage using saved JSON. It is not the complete adapter/judging pipeline described by `--dry-run` in the PDF. Live runs, qualification replay and the full dry-run pipeline still need implementation. Only `--reset` contacts the deployment, and only when a live step was left open (see Live steps); no command calls a paid API, deploys code or starts a workspace.
+The CLI supports `--help`, `--plan`, `--check-env`, `--freeze <file>`, `--offline-run <file>` and `--reset`. With no options it prints help. Offline execution validates frozen inputs and exercises checkpoint storage using saved JSON. It is not the complete adapter/judging pipeline described by `--dry-run` in the PDF. Live runs, qualification replay and the full dry-run pipeline still need implementation. Only `--reset` contacts the deployment, and only when a live step was left open (see Live steps); no command calls a paid API, deploys code or starts a workspace.
 
 The harness will reuse ReacherX's setup, prospecting and qualification logic through internal Convex hooks. Shared runner, spend, evidence, judging and statistics code belongs in `core/`; benchmark-specific plans and adapters belong in `people-search/`. People and organizations need distinct identities and grading. The learning-off condition must be scoped to benchmark workspaces and preserve ordinary deduplication, newer-post fetching and scheduled broadening.
 
@@ -59,6 +59,9 @@ benchmarks/
     setup/
       plan.ts                    Approved prompts, categories, models and run policy
       filters.ts                 Shared prompt-to-filter step and per-tool coverage
+      criteria.ts                Each prompt's requirements and definitions (draft until agreed)
+      rates.ts                   Frozen competitor rates; quota units stay unpriced
+      freeze.ts                  Frozen plan: criteria, reference date, examples, rates, settings
     run/
       reacherx.ts                ReacherX top-K, rejected sample, export-to-entity mapping
       replay.ts                  Frozen qualification input and replay contract

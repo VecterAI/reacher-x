@@ -10,6 +10,7 @@ import {
   peopleSearchPlan,
 } from "./people-search/setup/plan";
 import { verifyProposal } from "./core/setup/proposal";
+import { freezeInputSchema, freezePlan } from "./people-search/setup/freeze";
 import { offlineRunFileSchema } from "./core/setup/manifest";
 import { runOfflineUnits } from "./core/execution/runner";
 import {
@@ -29,6 +30,8 @@ const help = `ReacherX benchmark setup
 
   pnpm benchmark --plan        Print the approved prompt plan as JSON
   pnpm benchmark --check-env   Check local variable presence and dev selection
+  pnpm benchmark --freeze <file>  Freeze criteria, reference date and examples
+                               (the file must be under benchmarks/.local/)
   pnpm benchmark --offline-run <file>  Checkpoint saved JSON work from a frozen manifest
   pnpm benchmark --reset       Reset the development deployment after an interrupted live step
   pnpm benchmark --help        Show this help
@@ -52,6 +55,7 @@ async function main() {
         plan: { type: "boolean" },
         "check-env": { type: "boolean" },
         "offline-run": { type: "string" },
+        freeze: { type: "string" },
         reset: { type: "boolean" },
       },
     }).values;
@@ -69,6 +73,23 @@ async function main() {
     assertPeopleSearchManifest(run.manifest);
     const summary = await runOfflineUnits(process.cwd(), run);
     console.log(JSON.stringify(summary, null, 2));
+  } else if (options.freeze) {
+    // Reference examples are real people and companies, so the input must be
+    // a private file; the store rejects paths outside benchmarks/.local/,
+    // parent-directory steps and symlinks.
+    await verifyProposal(process.cwd(), peopleSearchPlan.sourceProposal);
+    const store = new FileCheckpointStore(process.cwd(), "freeze");
+    const text = await store.readPrivate(options.freeze);
+    if (text === null) {
+      console.error("The freeze input file was not found.");
+      process.exitCode = 1;
+      return;
+    }
+    const input = freezeInputSchema.parse(JSON.parse(text));
+    const plan = await store.withLock(() => freezePlan(store, input));
+    console.log(
+      `Plan frozen: ${plan.tasks.length} prompts, reference date ${plan.referenceDate}, digest ${plan.planSha256}.`
+    );
   } else if (options.reset) {
     const environment = await readBenchmarkEnvironment(process.cwd());
     const deployment = environment.CONVEX_DEPLOYMENT;

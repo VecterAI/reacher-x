@@ -42,7 +42,7 @@ const taskSchema = z
     "Criterion IDs must be unique."
   );
 
-const frozenPlanSchema = z.strictObject({
+export const frozenPlanSchema = z.strictObject({
   planId: identifierSchema,
   sourceProposal: z.strictObject({
     path: z.string().regex(/^docs\/benchmark\/[a-z0-9-]+\.pdf$/),
@@ -59,7 +59,7 @@ const frozenPlanSchema = z.strictObject({
   rateSnapshot: artifactSchema,
   runtimeSnapshot: artifactSchema,
 });
-type FrozenPlan = z.infer<typeof frozenPlanSchema>;
+export type FrozenPlan = z.infer<typeof frozenPlanSchema>;
 
 export const runManifestSchema = frozenPlanSchema
   .extend({

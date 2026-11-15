@@ -155,6 +155,22 @@ export class FileCheckpointStore {
     await this.atomicWrite(path, data);
   }
 
+  /** A private JSON file that is written once; writing the same content again is a no-op. */
+  async saveFrozenJson(
+    path: string,
+    value: JsonValue
+  ): Promise<ArtifactReference> {
+    this.assertLocked();
+    const data = canonicalJson(jsonSchema.parse(value));
+    const existing = await this.readPrivate(path);
+    if (existing !== null && existing !== data)
+      throw new RunnerStateError(
+        "A frozen file already exists with different content."
+      );
+    if (existing === null) await this.atomicWrite(path, data);
+    return { path, sha256: hashBytes(data) };
+  }
+
   async readArtifact(reference: ArtifactReference): Promise<JsonValue> {
     const bytes = await readFile(await this.path(reference.path));
     if (hashBytes(bytes) !== reference.sha256)
