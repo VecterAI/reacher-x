@@ -41,6 +41,9 @@ export type InlineIconTerm = {
   /** Text shown after the icon; defaults to `term`. Use when the copy's
    * glyph (e.g. "△ Agent") is replaced by the icon itself. */
   display?: string;
+  /** Renders the glyph inside a small neutral bordered square. Brand logos
+   * (Clay, Apollo) ship full-bleed colored artwork and render bare. */
+  chip?: boolean;
 };
 
 export type InlineIconSegment =
@@ -50,14 +53,13 @@ export type InlineIconSegment =
       term: string;
       display: string;
       Icon: InlineIconTerm["Icon"];
+      chip: boolean;
     };
 
-// Platform glyphs render bare at glyph size in currentColor, matching
-// PlatformSearchRow and the scroll-fill narrative. Brand logos (Clay,
-// Apollo) ship full-bleed colored artwork and render the same way.
+// Platform glyphs sit in a small bordered square, neutral in both themes.
 const PLATFORM_TERMS: InlineIconTerm[] = [
-  { term: "X/Twitter", Icon: FilledTwitterIcon },
-  { term: "LinkedIn", Icon: FilledLinkedinIcon },
+  { term: "X/Twitter", Icon: FilledTwitterIcon, chip: true },
+  { term: "LinkedIn", Icon: FilledLinkedinIcon, chip: true },
   { term: "Clay", Icon: ClayIcon },
   { term: "Apollo", Icon: ApolloIcon },
 ];
@@ -94,6 +96,7 @@ export function getInlineIconSegments(
       term: match.term,
       display: match.display ?? match.term,
       Icon: match.Icon,
+      chip: match.chip ?? false,
     });
     rest = rest.slice(match.index + match.term.length);
   }
@@ -113,10 +116,16 @@ export function inlinePlatformIcons(
     if (segment.kind === "text") return segment.text;
     return (
       <span key={index} className="whitespace-nowrap">
-        <segment.Icon
-          className="mr-1 inline size-4 align-[-2px]"
-          aria-hidden="true"
-        />
+        {segment.chip ? (
+          <span className="border-border mr-1 inline-flex size-4 items-center justify-center rounded-[4px] border align-[-2px]">
+            <segment.Icon className="size-3.5 shrink-0" aria-hidden="true" />
+          </span>
+        ) : (
+          <segment.Icon
+            className="mr-1 inline size-4 align-[-2px]"
+            aria-hidden="true"
+          />
+        )}
         {segment.display}
       </span>
     );
