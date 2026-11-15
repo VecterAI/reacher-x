@@ -1,14 +1,14 @@
 import { z } from "zod";
-import type { ExportedProspect } from "../core/execution/convex";
-import { domainKey } from "../core/judging/identity";
-import { seededRandom, shuffled } from "../core/random";
+import type { ExportedProspect } from "../../core/execution/convex";
+import { domainKey } from "../../core/judging/identity";
+import { seededRandom, shuffled } from "../../core/random";
 import {
   entitySchema,
   type BenchmarkEntity,
   type Candidate,
   type EntityType,
   type Evidence,
-} from "../core/types";
+} from "../../core/types";
 
 // Evidence passed to judges per result: verified sources only, bounded in size.
 const MAX_EVIDENCE_ITEMS = 5;

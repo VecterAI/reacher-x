@@ -10,7 +10,7 @@ import {
   pyRound,
   pySum,
   rescoreRound1,
-} from "../../people-search/round1";
+} from "../../people-search/analysis/round1";
 
 // Synthetic round-one data only: real query IDs, made-up people and verdicts.
 const MODEL = "test/judge";

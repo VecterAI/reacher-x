@@ -29,7 +29,7 @@ import { runOfflineUnits } from "../../core/execution/runner";
 import {
   peopleSearchPlan,
   assertPeopleSearchManifest,
-} from "../../people-search/plan";
+} from "../../people-search/setup/plan";
 
 const referenceDate = "2026-11-14T00:00:00Z";
 

@@ -5,7 +5,7 @@ import {
   sampleRejected,
   selectReacherXTopK,
   toCandidate,
-} from "../../people-search/reacherx";
+} from "../../people-search/run/reacherx";
 
 // Synthetic prospects; not benchmark data.
 const prospect = (

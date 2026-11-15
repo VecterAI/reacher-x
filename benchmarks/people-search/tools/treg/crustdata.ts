@@ -4,7 +4,7 @@ import {
   type FilterField,
   type FilterSet,
   unexpressedFields,
-} from "../../filters";
+} from "../../setup/filters";
 import { companyEntity, personEntity, rankCandidates, text } from "../common";
 import { callTreg, tregOutput } from "./treg";
 import type { AdapterResult, SearchAdapter } from "../types";

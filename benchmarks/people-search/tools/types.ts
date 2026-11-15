@@ -2,7 +2,7 @@ import type { Exchange, Transport } from "../../core/calls/http";
 import type { ModelExchange, StepCall } from "../../core/calls/llm";
 import type { UsageUnits } from "../../core/calls/rates";
 import type { BenchmarkTask, Candidate, EntityType } from "../../core/types";
-import type { FilterSet } from "../filters";
+import type { FilterSet } from "../setup/filters";
 
 export type TaskCapability =
   | { status: "unverified" }

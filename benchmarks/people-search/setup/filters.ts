@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { StructuredCall } from "../core/calls/llm";
-import { entityTypeSchema, type BenchmarkTask } from "../core/types";
+import type { StructuredCall } from "../../core/calls/llm";
+import { entityTypeSchema, type BenchmarkTask } from "../../core/types";
 
 /**
  * Proposal 2.2: one shared, logged step turns each prompt into filters that

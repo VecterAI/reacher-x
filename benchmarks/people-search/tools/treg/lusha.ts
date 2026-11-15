@@ -4,7 +4,7 @@ import {
   type FilterField,
   type FilterSet,
   unexpressedFields,
-} from "../../filters";
+} from "../../setup/filters";
 import {
   companyEntity,
   joinText,

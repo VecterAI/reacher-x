@@ -1,6 +1,6 @@
 # Benchmark development
 
-The [final people search v2 proposal](../docs/benchmark/people-search-v2-proposal.pdf) is the design reference. `people-search/plan.ts` records its path and SHA-256; `--plan` verifies the PDF before printing the plan. When an approved proposal changes, review the plan and update the source hash together. Do not silently change the methodology to match an implementation shortcut.
+The [final people search v2 proposal](../docs/benchmark/people-search-v2-proposal.pdf) is the design reference. `people-search/setup/plan.ts` records its path and SHA-256; `--plan` verifies the PDF before printing the plan. When an approved proposal changes, review the plan and update the source hash together. Do not silently change the methodology to match an implementation shortcut.
 
 Requires Node.js 22 or later and the repository's pinned pnpm version.
 
@@ -15,7 +15,7 @@ pnpm test:benchmark
 
 Fill `.env.benchmark.local` using your own approved development credentials. Exported shell variables take precedence. The environment check only reads local values. It does not validate keys, balances, Convex login or remote settings. Keep deployment keys and self-hosted overrides out of this shell; `CONVEX_DEPLOYMENT` must be `dev:<name>`.
 
-The approved 20 prompts, categories and model choices are in `people-search/plan.ts`. This is the setup scaffold, not a frozen run manifest. Criteria, source examples, reference dates, prices and per-step spend approval must be recorded before live execution. Model choices have no effect on the app until explicitly configured on the development deployment.
+The approved 20 prompts, categories and model choices are in `people-search/setup/plan.ts`. This is the setup scaffold, not a frozen run manifest. Criteria, source examples, reference dates, prices and per-step spend approval must be recorded before live execution. Model choices have no effect on the app until explicitly configured on the development deployment.
 
 The CLI supports `--help`, `--plan`, `--check-env`, `--offline-run <file>` and `--reset`. With no options it prints help. Offline execution validates frozen inputs and exercises checkpoint storage using saved JSON. It is not the complete adapter/judging pipeline described by `--dry-run` in the PDF. Live runs, qualification replay and the full dry-run pipeline still need implementation. Only `--reset` contacts the deployment, and only when a live step was left open (see Live steps); no command calls a paid API, deploys code or starts a workspace.
 
@@ -56,12 +56,15 @@ benchmarks/
       stats.ts                   Wilson, paired bootstrap, Holm, Cohen's kappa
       report.ts                  Markdown and JSON aggregate reports
   people-search/
-    plan.ts                      Approved prompts, categories, models and run policy
-    filters.ts                   Shared prompt-to-filter step and per-tool coverage
-    decisions.ts                 D1-D4 conditions and the one-page checkpoint report
-    replay.ts                    Frozen qualification input and replay contract
-    reacherx.ts                  ReacherX top-K, rejected sample, export-to-entity mapping
-    round1.ts                    Exact re-score of round one's saved verdicts
+    setup/
+      plan.ts                    Approved prompts, categories, models and run policy
+      filters.ts                 Shared prompt-to-filter step and per-tool coverage
+    run/
+      reacherx.ts                ReacherX top-K, rejected sample, export-to-entity mapping
+      replay.ts                  Frozen qualification input and replay contract
+    analysis/
+      decisions.ts               D1-D4 conditions and the one-page checkpoint report
+      round1.ts                  Exact re-score of round one's saved verdicts
     tools/
       types.ts                   Adapter contract: search context in, typed results and receipt out
       catalog.ts                 Nine tools, transports and judged top K
@@ -98,7 +101,7 @@ The file shape is `{ "manifest": ..., "units": [...] }`, validated by `offlineRu
 
 Each work unit has an opaque ID, run/task/tool IDs, a saved JSON `input` artifact (`path` and SHA-256), and a cycle/learning condition or `null`. Artifact paths must stay under `benchmarks/.local/`. `tests/execution/runner.test.ts` includes synthetic examples of the complete format and a CLI integration test. They are storage tests, not benchmark findings or approved criteria.
 
-The default CLI executor copies each verified saved JSON input into its own result artifact. Future offline pipeline stages can supply pure executors through `runOfflineUnits`; remote adapters must not be wired into this path. Output prints counts and a private checkpoint-report reference, never the raw response. This does not freeze or approve the still-incomplete research plan in `people-search/plan.ts`.
+The default CLI executor copies each verified saved JSON input into its own result artifact. Future offline pipeline stages can supply pure executors through `runOfflineUnits`; remote adapters must not be wired into this path. Output prints counts and a private checkpoint-report reference, never the raw response. This does not freeze or approve the still-incomplete research plan in `people-search/setup/plan.ts`.
 
 State lives under `benchmarks/.local/runs/<run-id>/`: `frozen-run.json`, `checkpoints/`, `results/`, and `checkpoint-report.json`. Directories use mode `700`; written files use `600`. Writes flush to disk and replace a complete checkpoint atomically. One exclusive `benchmarks/.local/runner.lock` excludes other runs in this checkout. Use a local filesystem, not a shared/network drive.
 

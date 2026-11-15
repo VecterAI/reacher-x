@@ -8,7 +8,7 @@ import {
 import {
   assertPeopleSearchManifest,
   peopleSearchPlan,
-} from "./people-search/plan";
+} from "./people-search/setup/plan";
 import { verifyProposal } from "./core/setup/proposal";
 import { offlineRunFileSchema } from "./core/setup/manifest";
 import { runOfflineUnits } from "./core/execution/runner";

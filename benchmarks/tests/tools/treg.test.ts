@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { replayTransport, type Exchange } from "../../core/calls/http";
 import type { BenchmarkTask } from "../../core/types";
-import type { FilterSet } from "../../people-search/filters";
+import type { FilterSet } from "../../people-search/setup/filters";
 import {
   apolloAdapter,
   apolloCompanyQuery,

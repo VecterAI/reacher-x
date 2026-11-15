@@ -1,6 +1,6 @@
 import type { Transport } from "../../core/calls/http";
 import type { StepCall } from "../../core/calls/llm";
-import type { FilterSet } from "../../people-search/filters";
+import type { FilterSet } from "../../people-search/setup/filters";
 import type { SearchContext } from "../../people-search/tools/types";
 
 /** An empty synthetic filter set for adapter tests. */

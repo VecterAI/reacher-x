@@ -8,7 +8,7 @@ import {
   usedFields,
   validateFilterSet,
   type FilterSet,
-} from "../../people-search/filters";
+} from "../../people-search/setup/filters";
 
 // Synthetic task and criteria; the real ones are frozen separately.
 const task: BenchmarkTask = {

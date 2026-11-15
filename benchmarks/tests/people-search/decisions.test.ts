@@ -4,7 +4,7 @@ import type { AgreementReport } from "../../core/judging/labels";
 import {
   checkDecisionPoint,
   renderDecisionReport,
-} from "../../people-search/decisions";
+} from "../../people-search/analysis/decisions";
 
 // Synthetic measurements only.
 const cycle = (

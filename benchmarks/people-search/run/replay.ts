@@ -1,8 +1,8 @@
 import type {
   QualificationCoreParams,
   QualificationResult,
-} from "../../convex/lib/qualificationCore";
-import type { ArtifactReference, LearningCondition } from "../core/types";
+} from "../../../convex/lib/qualificationCore";
+import type { ArtifactReference, LearningCondition } from "../../core/types";
 
 // Aligned with the production function. Telemetry and routing belong to execution;
 // `now` is required so the replay sees the same "today" as the original run.

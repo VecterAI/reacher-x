@@ -1,6 +1,6 @@
-import type { AgreementReport } from "../core/judging/labels";
-import type { DecisionPoint } from "../core/execution/runner";
-import { peopleSearchPlan } from "./plan";
+import type { AgreementReport } from "../../core/judging/labels";
+import type { DecisionPoint } from "../../core/execution/runner";
+import { peopleSearchPlan } from "../setup/plan";
 
 /**
  * Proposal 6.4: the conditions checked at each decision point. Approvals are

@@ -5,7 +5,7 @@ import {
   learningOrder,
   peopleSearchPlan,
   type NoOpenAIModel,
-} from "../../people-search/plan";
+} from "../../people-search/setup/plan";
 import { runSettingsSchema } from "../../core/execution/liveSession";
 
 // The real assertion is the type check: typecheck fails if either line stops holding.

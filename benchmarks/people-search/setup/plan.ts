@@ -1,7 +1,7 @@
-import { toolCatalog } from "./tools/catalog";
-import type { RunManifest } from "../core/setup/manifest";
-import type { RunSettings } from "../core/execution/liveSession";
-import { seededRandom, shuffled } from "../core/random";
+import { toolCatalog } from "../tools/catalog";
+import type { RunManifest } from "../../core/setup/manifest";
+import type { RunSettings } from "../../core/execution/liveSession";
+import { seededRandom, shuffled } from "../../core/random";
 
 const categories = {
   "people-static": {
