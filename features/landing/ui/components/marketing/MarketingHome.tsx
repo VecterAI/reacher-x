@@ -43,7 +43,9 @@ function HeroReveal() {
       ))}
       <span className="block">
         {"for "}
-        <span className="font-pixel-square">everyone</span>
+        {/* The pixel face ships only weight 400, so 600 relies on the
+        browser's synthetic bold to keep up with the medium Geist around it. */}
+        <span className="font-pixel-square font-semibold">everyone</span>
         {"."}
       </span>
     </>
