@@ -221,7 +221,7 @@ export function MarketingHero({
         )}
       >
         <div className={cn(!hasSideColumn && "text-center")}>
-          <h1 className="text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl">
+          <h1 className="text-4xl leading-[1.05] font-medium tracking-tight text-balance sm:text-6xl lg:text-7xl">
             {title}
           </h1>
           {lede && (
