@@ -3604,7 +3604,7 @@ export const USE_CASE_DEMO_DATASETS: UseCaseDemoDataset[] =
       ...buildSeedProspects(
         dataset.key,
         VOLUME_SEEDS_BY_USE_CASE[dataset.key],
-        21
+        22
       ),
     ],
   }));
@@ -4558,8 +4558,8 @@ const BASE_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
 /** Build the summary read-model record the real list pages feed to cards. */
 const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
   // customers: volume rows
-  use_case_demo_customers_21: contactedPlan({
-    id: "customers_21",
+  use_case_demo_customers_22: contactedPlan({
+    id: "customers_22",
     rationale:
       "Britt loses sign-off across three inboxes and already asked for a fix; lead with the approval trail, not features.",
     commentDescription: "Reply to her WhatsApp-to-PDF thread",
@@ -4567,8 +4567,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Britt, your three-tools-one-approval post is exactly the problem we built for. Client feedback, sign-off, and the approved version stay in one trail. Want ten minutes to see it on one of your live projects?",
   }),
-  use_case_demo_customers_22: inProgressPlan({
-    id: "customers_22",
+  use_case_demo_customers_23: inProgressPlan({
+    id: "customers_23",
     rationale:
       "Alba is comparing tools after shipping the wrong version; nudge with the approval history angle.",
     commentDescription: "Reply to her version-two-versus-three post",
@@ -4577,8 +4577,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Alba, any project with a messy history is a good test. Bring the messiest one and we will put the whole trail in order in twenty minutes.",
   }),
-  use_case_demo_customers_23: contactedPlan({
-    id: "customers_23",
+  use_case_demo_customers_24: contactedPlan({
+    id: "customers_24",
     rationale:
       "Declan collects feedback by voice note at midnight; position the app as the single list he types into today.",
     commentDescription: "Reply to his midnight voice-note post",
@@ -4586,8 +4586,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hey Declan, midnight voice notes and breakfast texts belong in one list. We collect every request with the client, page, and date attached. Worth a try on your next restaurant build?",
   }),
-  use_case_demo_customers_24: inProgressPlan({
-    id: "customers_24",
+  use_case_demo_customers_25: inProgressPlan({
+    id: "customers_25",
     rationale:
       "Yara's Friday timeline rebuild is the pain to reference; offer the timeline before her next two-client week.",
     commentDescription: "Reply to her four-tools post",
@@ -4596,8 +4596,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Yara, before the next two-client week: one timeline per project, in order, with the latest decision on top. Fifteen minutes to set up?",
   }),
-  use_case_demo_customers_25: contactedPlan({
-    id: "customers_25",
+  use_case_demo_customers_26: contactedPlan({
+    id: "customers_26",
     rationale:
       "Piotr tracks change requests in named email folders; per-page tracking removes the folder system entirely.",
     commentDescription: "Reply to his final_v2_really_final post",
@@ -4605,8 +4605,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Piotr, a folder named final_v2_really_final made me smile and wince. We track every post-launch request per page with status. Want to park one real project in it?",
   }),
-  use_case_demo_customers_26: inProgressPlan({
-    id: "customers_26",
+  use_case_demo_customers_27: inProgressPlan({
+    id: "customers_27",
     rationale:
       "Sanna's three-approver story got engagement; follow up while the rebrand memory is fresh.",
     commentDescription: "Reply to her three-approvals post",
@@ -4615,8 +4615,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Sanna, how is the bakery rebrand going? If another three-approver round is coming, the shared record keeps every family verdict in order.",
   }),
-  use_case_demo_customers_27: contactedPlan({
-    id: "customers_27",
+  use_case_demo_customers_28: contactedPlan({
+    id: "customers_28",
     rationale:
       "Marcus assembles change lists by hand; the collected list saves him the Friday scramble.",
     commentDescription: "Reply to his page-comments post",
@@ -4624,8 +4624,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hey Marcus, screenshots by text and comments on the page, all one list with status. You build the fix, we keep the list. Up for a quick test on a live site?",
   }),
-  use_case_demo_customers_33: contactedPlan({
-    id: "customers_33",
+  use_case_demo_customers_34: contactedPlan({
+    id: "customers_34",
     rationale:
       "Ingrid moderates stakeholder arguments herself; the thread of record removes the referee job.",
     commentDescription: "Reply to her screenshots post",
@@ -4633,8 +4633,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Ingrid, feedback should not need a referee. One thread of record per decision, screenshots attached, and the argument settles itself. Want to try it on your next test?",
   }),
-  use_case_demo_customers_34: inProgressPlan({
-    id: "customers_34",
+  use_case_demo_customers_35: inProgressPlan({
+    id: "customers_35",
     rationale:
       "Theo's spreadsheet is confused; offer to retire it before the next course launch.",
     commentDescription: "Reply to his approval-chaos post",
@@ -4643,8 +4643,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hey Theo, retire the confused spreadsheet before the next launch: every voice note and email becomes a structured entry automatically. Setup takes an afternoon.",
   }),
-  use_case_demo_customers_35: contactedPlan({
-    id: "customers_35",
+  use_case_demo_customers_36: contactedPlan({
+    id: "customers_36",
     rationale:
       "Camilla's round-two question is the exact gap; offer the round-by-round history.",
     commentDescription: "Reply to her round-four post",
@@ -4652,8 +4652,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Camille, round-by-round history answers the which-was-approved question instantly. Bring revision four and we will reconstruct the first three in twenty minutes.",
   }),
-  use_case_demo_customers_36: inProgressPlan({
-    id: "customers_36",
+  use_case_demo_customers_37: inProgressPlan({
+    id: "customers_37",
     rationale:
       "Ayla lost a change list between chat groups; follow up with the merged-list offer.",
     commentDescription: "Reply to her two-chat-groups post",
@@ -4663,8 +4663,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
       "Hi Ayla, one list, both chat groups merged, duplicates collapsed. The school's content and tech requests finally in order. Test it on the current course?",
   }),
   // investors: volume rows
-  use_case_demo_investors_21: contactedPlan({
-    id: "investors_21",
+  use_case_demo_investors_22: contactedPlan({
+    id: "investors_22",
     rationale:
       "Omar asks for live demos over decks; offer exactly that in the first line.",
     commentDescription: "Reply to his MENA vehicle post",
@@ -4672,8 +4672,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Omar, you asked for live demos before decks. Ten minutes, the product running on real data, no slides. When suits you this week?",
   }),
-  use_case_demo_investors_22: inProgressPlan({
-    id: "investors_22",
+  use_case_demo_investors_23: inProgressPlan({
+    id: "investors_23",
     rationale:
       "Ingrid responded positively to the churn number; follow up with the cohort detail.",
     commentDescription: "Reply to her churn post",
@@ -4682,8 +4682,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Ingrid, as promised: the cohort view behind the 4.1%, including the March dip and what fixed it. Coffee when you are in Oslo?",
   }),
-  use_case_demo_investors_23: contactedPlan({
-    id: "investors_23",
+  use_case_demo_investors_24: contactedPlan({
+    id: "investors_24",
     rationale:
       "Diego wants activation evidence before an intro call; send week-over-week activation numbers.",
     commentDescription: "Reply to his traction post",
@@ -4691,8 +4691,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hola Diego, week-over-week activation is up four weeks straight, from 31% to 48%. Happy to share the cohort view before we ever book a call.",
   }),
-  use_case_demo_investors_24: inProgressPlan({
-    id: "investors_24",
+  use_case_demo_investors_25: inProgressPlan({
+    id: "investors_25",
     rationale:
       "Charlotte responded to the numbers format; follow up with the fintech operator ask.",
     commentDescription: "Reply to her founder-update post",
@@ -4701,8 +4701,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Charlotte, following up on the one ask: intros to UK fintech operators who run onboarding. The lesson from trying alone is in the update.",
   }),
-  use_case_demo_investors_25: contactedPlan({
-    id: "investors_25",
+  use_case_demo_investors_26: contactedPlan({
+    id: "investors_26",
     rationale:
       "Vikram wants the first-ten-customers story; tell it in one paragraph.",
     commentDescription: "Reply to his distribution post",
@@ -4710,8 +4710,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Vikram, first ten paying customers came from replying to founder pain threads on X within an hour of posting. Happy to walk you through the playbook and the numbers.",
   }),
-  use_case_demo_investors_26: inProgressPlan({
-    id: "investors_26",
+  use_case_demo_investors_27: inProgressPlan({
+    id: "investors_27",
     rationale:
       "Elena asked about the raise size; follow up with the concrete plan.",
     commentDescription: "Reply to her dev-tools post",
@@ -4720,8 +4720,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Elena, the plan: 600k pre-seed, 14 months runway, shipping weekly. The ICP memo we narrowed in week six is attached.",
   }),
-  use_case_demo_investors_27: contactedPlan({
-    id: "investors_27",
+  use_case_demo_investors_28: contactedPlan({
+    id: "investors_28",
     rationale:
       "Andrei asked for a live dashboard plus the worst month; send both.",
     commentDescription: "Reply to his scouting post",
@@ -4729,16 +4729,16 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Andrei, live dashboard: link in bio, real data. Worst month was March: churn spike from a pricing change, fixed in April, retention recovered. Both in the deck you will not need.",
   }),
-  use_case_demo_investors_33: contactedPlan({
-    id: "investors_33",
+  use_case_demo_investors_34: contactedPlan({
+    id: "investors_34",
     rationale: "Hugo reads migration stories first; open the DM with yours.",
     commentDescription: "Reply to his migration-story post",
     dmDescription: "Send the migration-story note",
     dmContent:
       "Hi Hugo, the rebuild story first: we rewrote discovery from keyword soup to an agent pipeline and kept the receipts. Market slide comes last, if you still want it.",
   }),
-  use_case_demo_investors_34: inProgressPlan({
-    id: "investors_34",
+  use_case_demo_investors_35: inProgressPlan({
+    id: "investors_35",
     rationale:
       "Valentina asked how CAC payback is measured; answer with the exact method.",
     commentDescription: "Reply to her CAC post",
@@ -4747,8 +4747,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Valentina, payback measured as blended CAC over gross-margin-adjusted MRR cohorts, 9.2 months and falling. The spreadsheet is yours to poke at.",
   }),
-  use_case_demo_investors_35: contactedPlan({
-    id: "investors_35",
+  use_case_demo_investors_36: contactedPlan({
+    id: "investors_36",
     rationale:
       "Kenan wants a two-minute video and one metric; send exactly that.",
     commentDescription: "Reply to his scouting post",
@@ -4756,8 +4756,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Kenan, two-minute product video linked here, and the one metric: 46% week-two retention. That is the whole application, as requested.",
   }),
-  use_case_demo_investors_36: inProgressPlan({
-    id: "investors_36",
+  use_case_demo_investors_37: inProgressPlan({
+    id: "investors_37",
     rationale:
       "Josephine wants the distribution plan; send the named-channel version.",
     commentDescription: "Reply to her distribution post",
@@ -4767,8 +4767,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
       "Hi Josephine, named channels with hypotheses: founder replies on X, designer communities, and agency partnerships. First-channel data attached.",
   }),
   // candidates: volume rows
-  use_case_demo_candidates_21: contactedPlan({
-    id: "candidates_21",
+  use_case_demo_candidates_22: contactedPlan({
+    id: "candidates_22",
     rationale:
       "Leo wants engineers close to users; open with how the team runs user calls.",
     commentDescription: "Reply to his user-calls post",
@@ -4776,8 +4776,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Leo, engineers join two user calls a week here, and the roadmap changes because of them. Your dashboard experience fits a problem we are facing now. Open to a chat?",
   }),
-  use_case_demo_candidates_22: inProgressPlan({
-    id: "candidates_22",
+  use_case_demo_candidates_23: inProgressPlan({
+    id: "candidates_23",
     rationale:
       "Nadia asked for the procurement brief; send it and propose a review session.",
     commentDescription: "Reply to her research post",
@@ -4786,8 +4786,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Nadia, the procurement brief is attached: problem, users, open questions. You would run the first five research calls yourself. Walk me through your read of it?",
   }),
-  use_case_demo_candidates_23: contactedPlan({
-    id: "candidates_23",
+  use_case_demo_candidates_24: contactedPlan({
+    id: "candidates_24",
     rationale:
       "Ryan's checkout rebuild is the closest match to our funnel problem; lead with that problem.",
     commentDescription: "Reply to his checkout post",
@@ -4795,8 +4795,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hey Ryan, our checkout loses people at the address step and we know it. A 14% conversion win like yours is exactly what we need. Remote-first, US-friendly hours. Chat?",
   }),
-  use_case_demo_candidates_24: inProgressPlan({
-    id: "candidates_24",
+  use_case_demo_candidates_25: inProgressPlan({
+    id: "candidates_25",
     rationale:
       "Maya wants the billing scope draft; send it with the schema sketch.",
     commentDescription: "Reply to her ownership post",
@@ -4805,8 +4805,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Maya, draft scope and a schema sketch attached. Legacy quirks marked in red. Your read on it is the next step: when can you tear it apart?",
   }),
-  use_case_demo_candidates_25: contactedPlan({
-    id: "candidates_25",
+  use_case_demo_candidates_26: contactedPlan({
+    id: "candidates_26",
     rationale:
       "Timo wants a platform team with real budgets; our module migration is starting now.",
     commentDescription: "Reply to his architecture post",
@@ -4814,8 +4814,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Timo, our module migration starts next month: 200k lines, budgets that leadership agreed to. Consulting background welcome. Timing works?",
   }),
-  use_case_demo_candidates_26: inProgressPlan({
-    id: "candidates_26",
+  use_case_demo_candidates_27: inProgressPlan({
+    id: "candidates_27",
     rationale:
       "Sade asked who owns the library today; answer honestly and propose the call.",
     commentDescription: "Reply to her component-library post",
@@ -4824,8 +4824,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Sade, honest answer: the library is owned by whoever screams loudest, which is me, and I am tired. You would be the first real owner. Call this week?",
   }),
-  use_case_demo_candidates_33: contactedPlan({
-    id: "candidates_33",
+  use_case_demo_candidates_34: contactedPlan({
+    id: "candidates_34",
     rationale:
       "Marcus misses a design partner; describe the pairing setup, not perks.",
     commentDescription: "Reply to his design-partner post",
@@ -4833,8 +4833,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Marcus, design sits next to engineering here: same standup, shared reviews, no ticket wall. Your React and Vue range covers two open problems. Talk this week?",
   }),
-  use_case_demo_candidates_34: inProgressPlan({
-    id: "candidates_34",
+  use_case_demo_candidates_35: inProgressPlan({
+    id: "candidates_35",
     rationale: "Ines asked about mentorship structure; answer concretely.",
     commentDescription: "Reply to her range post",
     dmDescription: "Send the range note",
@@ -4842,8 +4842,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Ines, the seniors around you: two staff engineers who review everything kindly, and me. Range stays yours. Next step is a pairing session on real code.",
   }),
-  use_case_demo_candidates_35: contactedPlan({
-    id: "candidates_35",
+  use_case_demo_candidates_36: contactedPlan({
+    id: "candidates_36",
     rationale:
       "Anton wants a11y as a requirement, not panic; state the current bar honestly.",
     commentDescription: "Reply to his audits post",
@@ -4851,8 +4851,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Anton, honest state: we meet AA on new surfaces and fail history elsewhere. The role exists to make that boring and permanent. Your ten-million-user fixes are the experience we want.",
   }),
-  use_case_demo_candidates_36: inProgressPlan({
-    id: "candidates_36",
+  use_case_demo_candidates_37: inProgressPlan({
+    id: "candidates_37",
     rationale: "Mila asked what polish means here; send the prototype example.",
     commentDescription: "Reply to her motion post",
     dmDescription: "Send the polish note",
@@ -4861,8 +4861,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
       "Hi Mila, polish here: motion specs ship as components, not Loom wishes. The 200-millisecond detail you mentioned is literally in our checklist. Prototype review?",
   }),
   // creators: volume rows
-  use_case_demo_creators_21: contactedPlan({
-    id: "creators_21",
+  use_case_demo_creators_22: contactedPlan({
+    id: "creators_22",
     rationale:
       "Derek shows tools that save creators time on camera; pitch the editing-time angle.",
     commentDescription: "Reply to his editing-time post",
@@ -4870,8 +4870,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Derek, if the tool saves you an hour on a video, that is an hour of editing back. Give it one week on a real video and judge on camera. Want a channel-specific setup?",
   }),
-  use_case_demo_creators_22: inProgressPlan({
-    id: "creators_22",
+  use_case_demo_creators_23: inProgressPlan({
+    id: "creators_23",
     rationale:
       "Priya is drafting the issue; follow up with the extra detail she asked for.",
     commentDescription: "Reply to her Tuesday newsletter post",
@@ -4880,8 +4880,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Priya, the pricing critique you asked about: you are right, and here is what we changed this week. Include it or not, your call.",
   }),
-  use_case_demo_creators_23: contactedPlan({
-    id: "creators_23",
+  use_case_demo_creators_24: contactedPlan({
+    id: "creators_24",
     rationale:
       "Tomás needs tools that survive live demos; offer a live segment on his stream.",
     commentDescription: "Reply to his stream post",
@@ -4889,8 +4889,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hey Tomás, put it on stream and let your chat judge. I will sit in for the whole segment and take the hard questions live. Which evening works?",
   }),
-  use_case_demo_creators_24: inProgressPlan({
-    id: "creators_24",
+  use_case_demo_creators_25: inProgressPlan({
+    id: "creators_25",
     rationale:
       "Zofia is booking the episode; follow up with two recording slots.",
     commentDescription: "Reply to her podcast post",
@@ -4899,8 +4899,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Zofia, two slots open on my side: Wednesday morning or Friday afternoon. The embarrassing churn month stays in the outline.",
   }),
-  use_case_demo_creators_25: contactedPlan({
-    id: "creators_25",
+  use_case_demo_creators_26: contactedPlan({
+    id: "creators_26",
     rationale:
       "Omar needs a fifteen-second wow moment; send exactly that clip idea.",
     commentDescription: "Reply to his wow-moment post",
@@ -4908,8 +4908,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hey Omar, the wow moment: describe who you need in one sentence and watch the matches appear with receipts. Fifteen seconds, screen recordable. Want the demo account to try it?",
   }),
-  use_case_demo_creators_26: inProgressPlan({
-    id: "creators_26",
+  use_case_demo_creators_27: inProgressPlan({
+    id: "creators_27",
     rationale:
       "Clara picked an issue slot; follow up with the final screenshots.",
     commentDescription: "Reply to her one-tool-per-issue post",
@@ -4918,8 +4918,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Clara, final screenshots attached, plus one bonus from last week that tells the approval story better. Edit freely, it is your issue.",
   }),
-  use_case_demo_creators_33: contactedPlan({
-    id: "creators_33",
+  use_case_demo_creators_34: contactedPlan({
+    id: "creators_34",
     rationale:
       "Anders features tools that change a daily habit; answer his habit question directly.",
     commentDescription: "Reply to his habit post",
@@ -4927,8 +4927,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Anders, the habit it replaces: checking three inboxes and two chats for client feedback. One morning check instead. Happy to prove it on your real workflow, on camera.",
   }),
-  use_case_demo_creators_34: inProgressPlan({
-    id: "creators_34",
+  use_case_demo_creators_35: inProgressPlan({
+    id: "creators_35",
     rationale:
       "Rania needs free-tier value in ten minutes; follow up on the beginner test.",
     commentDescription: "Reply to her free-tier post",
@@ -4937,8 +4937,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Rania, the free tier: one workspace, first matches in under ten minutes without a card. Did your test beginner get value? Be blunt.",
   }),
-  use_case_demo_creators_35: contactedPlan({
-    id: "creators_35",
+  use_case_demo_creators_36: contactedPlan({
+    id: "creators_36",
     rationale:
       "Peter's readers keep tools past the trial; offer honest usage data from day one.",
     commentDescription: "Reply to his career-switcher post",
@@ -4946,8 +4946,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Peter, here is our retention data from trial users, good and bad, for your honest-usage review. If they drop it after the trial, I would rather know with you.",
   }),
-  use_case_demo_creators_36: inProgressPlan({
-    id: "creators_36",
+  use_case_demo_creators_37: inProgressPlan({
+    id: "creators_37",
     rationale:
       "Talia is drafting the feedback episode; follow up with the failure list.",
     commentDescription: "Reply to her feedback post",
@@ -4957,8 +4957,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
       "Hi Talia, the failures list for the episode: the launch nobody shared, the onboarding we broke, and the month we nearly quit. Thick skin confirmed.",
   }),
   // job_seekers: volume rows
-  use_case_demo_job_seekers_21: contactedPlan({
-    id: "job_seekers_21",
+  use_case_demo_job_seekers_22: contactedPlan({
+    id: "job_seekers_22",
     rationale:
       "Adam wants backend depth to matter; open with the event-processing scale of the role.",
     commentDescription: "Reply to his open-to-work post",
@@ -4966,8 +4966,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Adam, our backend processes two million events a day and the team knows it is the hard part. Your distributed-systems years fit exactly. EU remote, one month notice works. Call this week?",
   }),
-  use_case_demo_job_seekers_22: inProgressPlan({
-    id: "job_seekers_22",
+  use_case_demo_job_seekers_23: inProgressPlan({
+    id: "job_seekers_23",
     rationale:
       "Leila asked who owns mobile design today; answer and propose the review.",
     commentDescription: "Reply to her top-100 apps post",
@@ -4976,8 +4976,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Leila, honest answer: mobile design is split between two people who also do web. You would be the first dedicated owner. Portfolio review Friday?",
   }),
-  use_case_demo_job_seekers_23: contactedPlan({
-    id: "job_seekers_23",
+  use_case_demo_job_seekers_24: contactedPlan({
+    id: "job_seekers_24",
     rationale:
       "Christian wants humane on-call with real automation; state the on-call facts plainly.",
     commentDescription: "Reply to his on-call post",
@@ -4985,8 +4985,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hey Christian, on-call facts: one week in six, zero pages in the last month, and the automation budget is real. Your fintech K8s years map directly. Want the architecture doc first?",
   }),
-  use_case_demo_job_seekers_24: inProgressPlan({
-    id: "job_seekers_24",
+  use_case_demo_job_seekers_25: inProgressPlan({
+    id: "job_seekers_25",
     rationale:
       "Amrita is interviewing elsewhere; follow up with the cold-start memo.",
     commentDescription: "Reply to her marketplace post",
@@ -4995,8 +4995,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Amrita, the cold-start memo attached: what we tried, what failed, what the data says. If your other processes move faster, I understand. But read the memo first.",
   }),
-  use_case_demo_job_seekers_25: contactedPlan({
-    id: "job_seekers_25",
+  use_case_demo_job_seekers_26: contactedPlan({
+    id: "job_seekers_26",
     rationale:
       "Stefan wants a platform to own, not feed; describe the rebuild mandate.",
     commentDescription: "Reply to his warehouse post",
@@ -5004,8 +5004,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Stefan, the warehouse is yours to rebuild, not feed: budget, team of two, and leadership agreed to the downtime plan you would write. Your zero-downtime rebuild is why I am writing.",
   }),
-  use_case_demo_job_seekers_26: inProgressPlan({
-    id: "job_seekers_26",
+  use_case_demo_job_seekers_27: inProgressPlan({
+    id: "job_seekers_27",
     rationale:
       "Freja sent a thank-you after the call; follow up with the decision timeline.",
     commentDescription: "Reply to her mentoring post",
@@ -5014,8 +5014,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Freja, glad the call felt honest. Decision by Thursday, reference checks before that. If another offer lands first, tell me and I will match the speed.",
   }),
-  use_case_demo_job_seekers_33: contactedPlan({
-    id: "job_seekers_33",
+  use_case_demo_job_seekers_34: contactedPlan({
+    id: "job_seekers_34",
     rationale:
       "Elena brings platform-team leadership; open with the three-squad structure.",
     commentDescription: "Reply to her platform post",
@@ -5023,8 +5023,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Elena, three squads with platform problems nobody owns end to end, which is the role. Your 14-engineer years are the seniority we lack. Senior EM scope, EU remote. Talk?",
   }),
-  use_case_demo_job_seekers_34: inProgressPlan({
-    id: "job_seekers_34",
+  use_case_demo_job_seekers_35: inProgressPlan({
+    id: "job_seekers_35",
     rationale:
       "Kofi asked about production ownership; answer with the deployment reality.",
     commentDescription: "Reply to his fraud post",
@@ -5033,8 +5033,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     followUpContent:
       "Hi Kofi, models ship to production weekly and the owner watches them live, which would be you. The false-decline work you described is our roadmap's first line.",
   }),
-  use_case_demo_job_seekers_35: contactedPlan({
-    id: "job_seekers_35",
+  use_case_demo_job_seekers_36: contactedPlan({
+    id: "job_seekers_36",
     rationale:
       "Astrid wants to be designer one; pitch the practice-building scope honestly.",
     commentDescription: "Reply to her designer-one post",
@@ -5042,8 +5042,8 @@ const VOLUME_USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
     dmContent:
       "Hi Astrid, designer one means you: the practice, the system, the terminal-to-site bar you mentioned. No inherited system exists yet. That is the job and the catch. Call?",
   }),
-  use_case_demo_job_seekers_36: inProgressPlan({
-    id: "job_seekers_36",
+  use_case_demo_job_seekers_37: inProgressPlan({
+    id: "job_seekers_37",
     rationale:
       "Rafa asked how reliability work is valued; send the promotion example.",
     commentDescription: "Reply to his reliability post",
@@ -5189,8 +5189,8 @@ export function getDemoNotifications(
       _id: `demo_notification_${dataset.key}_5`,
       _creationTime: BASE_TIME - DAY - 6 * HOUR,
       type: "plan_completed",
-      title: `Plan completed for ${converted.displayName}`,
-      message: `Outreach for ${converted.displayName} wrapped up with every task completed and logged on their profile.`,
+      title: `Outreach completed for ${converted.displayName}`,
+      message: `Outreach for ${converted.displayName} wrapped up. Reach out anytime to keep the relationship warm.`,
       status: "seen",
       prospectId: converted._id,
       prospectDisplayName: converted.displayName,

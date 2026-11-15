@@ -361,7 +361,7 @@ export function seedAgentHistory(
 ) {
   // Waiting-state workflows (pending approvals, live batch progress) resolve
   // through their own demo records so the inline controls work end to end.
-  registerHistoryWorkflowServices(client);
+  registerHistoryWorkflowServices(client, state);
 
   state.workspaces.forEach((workspace, workspaceIndex) => {
     seedWorkspaceHistory(agent, state, workspace, workspaceIndex);
@@ -385,7 +385,7 @@ function seedWorkspaceHistory(
   );
   const person =
     people.find((item) => item._id === "use_case_demo_audience_30") ??
-    people.find((item) => item._id === "use_case_demo_candidates_29") ??
+    people.find((item) => item._id === "use_case_demo_candidates_30") ??
     people.find((item) => item.status === "new");
   const second =
     people.find(
@@ -559,7 +559,7 @@ function seedWorkspaceHistory(
         : "linkedin_comment_on_post",
     platform: pendingPerson.platform,
     content: pendingReply,
-    ...(pendingRef ? { sourcePostRef: pendingPost } : {}),
+    ...(pendingRef ? { sourcePostRef: pendingRef } : {}),
     ...(pendingRef ? { sourcePostSummary: pendingPost } : {}),
     ...(pendingUnified ? { sourcePostData: pendingUnified } : {}),
     sourcePostId: pendingRef?.postId,
@@ -616,7 +616,7 @@ function seedWorkspaceHistory(
               message: "Waiting for your approval.",
               status: "pending_approval",
               draftContent: pendingReply,
-              ...(pendingRef ? { sourcePostRef: pendingPost } : {}),
+              ...(pendingRef ? { sourcePostRef: pendingRef } : {}),
               ...(pendingRef ? { sourcePostSummary: pendingPost } : {}),
               ...(pendingUnified ? { sourcePostData: pendingUnified } : {}),
             }),
@@ -661,6 +661,7 @@ function seedWorkspaceHistory(
     addedTitles: [proposalTitle],
     updatedTitles: [],
     removedTitles: [],
+    workspaceId: workspace._id,
     workspaceName: workspace.name,
   });
   seed(threadId("demo_history_profile"), 6, [

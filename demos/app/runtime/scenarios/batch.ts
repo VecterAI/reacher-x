@@ -307,6 +307,9 @@ const invitations = [
   "Hi Maya, your lesson on conflicting feedback fits a free workshop we're organising for independent designers. Would you give a ten-minute practical talk? We'll handle hosting and share your work with attendees. No product pitch.",
   "Hi Tom, you mentioned members asking about revision requests after approval. We're hosting a free 30-minute workshop on client feedback. Would you share it with your community? I'll send a short description and registration link so you can decide if it fits.",
   "Hi Lee, I saw your question about feedback arriving after each review round. We're holding a free workshop for independent designers to compare approaches. Would you join the discussion as a guest? No presentation or preparation needed.",
+  "Hi Maren, your lesson on naming a decision owner per project fits a free workshop we're organising for independent designers. Would you give a ten-minute practical talk? We'll handle hosting and share your work with attendees. No product pitch.",
+  "Hi Idris, you mentioned members asking about approvals arriving in three different apps. We're hosting a free 30-minute workshop on client feedback. Would you share it with your community? I'll send a short description and registration link so you can decide if it fits.",
+  "Hi Selin, I saw your post about a chat approval and an emailed direction disagreeing. We're holding a free workshop for independent designers to compare approaches. Would you join the discussion as a guest? No presentation or preparation needed.",
 ];
 type Run = NonNullable<
   FunctionReturnType<typeof api.planBatches.getPlanBatchRun>
@@ -403,9 +406,18 @@ export function registerBatchStory(
           "Invite Maya to give a short talk",
           "Ask Tom to share the workshop",
           "Invite Lee to join as a guest",
+          "Invite Maren to give a short talk",
+          "Ask Idris to share the workshop",
+          "Invite Selin to join as a guest",
         ][index],
         content: invitations[index],
-        rationale: `${person.displayName}: ${person.briefIntro} ${index === 0 ? "Ask for a short teaching contribution." : index === 1 ? "Ask him to share it; do not ask him to speak." : "Invite participation, without a speaking obligation."}`,
+        rationale: `${person.displayName}: ${person.briefIntro} ${
+          index % 3 === 0
+            ? "Ask for a short teaching contribution."
+            : index % 3 === 1
+              ? "Ask him to share it; do not ask him to speak."
+              : "Invite participation, without a speaking obligation."
+        }`,
       });
       parts.push({
         type: "tool-getProspectPlan",
@@ -415,9 +427,16 @@ export function registerBatchStory(
         output: { success: true, artifact },
       });
     }
+    const readyNames = completed.map(
+      ({ person }) => person.displayName?.split(" ")[0] ?? "their"
+    );
     const text = failedCount
       ? "Maya's speaking invitation and Tom's community invitation are ready to review. Lee's plan request timed out; the other two plans are saved. Retry Lee only."
-      : "Lee's guest invitation is ready. Maya's and Tom's plans are unchanged. Review the invitations before approving them.";
+      : completed.length === 1 && completed[0].index === 2
+        ? "Lee's guest invitation is ready. Maya's and Tom's plans are unchanged. Review the invitations before approving them."
+        : completed.length === 0
+          ? "Those plans already exist, so nothing new was created."
+          : `Invitations for ${readyNames.join(" and ")} are ready. Review them before approving.`;
     parts.push({ type: "text", text });
     agent.append(threadId, "assistant", text, undefined, parts);
     return true;

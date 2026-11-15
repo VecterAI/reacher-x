@@ -1,10 +1,12 @@
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Tweet } from "@/features/threads/types";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import type {
   TwitterPostRef,
   TwitterPostSummary,
 } from "@/shared/lib/twitter/contracts";
+import type { createAppFixtures } from "./appFixtures";
 import type { LocalClient } from "./LocalClient";
 
 export interface DemoHistoryActionRequest {
@@ -39,6 +41,7 @@ export interface DemoHistoryProfileProposal {
   addedTitles: string[];
   updatedTitles: string[];
   removedTitles: string[];
+  workspaceId: Id<"workspaces">;
   workspaceName: string;
 }
 
@@ -120,7 +123,10 @@ export function registerDemoTwitterPost(raw: unknown): Tweet | null {
   return tweet;
 }
 
-export function registerHistoryWorkflowServices(client: LocalClient) {
+export function registerHistoryWorkflowServices(
+  client: LocalClient,
+  state: ReturnType<typeof createAppFixtures>
+) {
   client.register(api.socialActions.getActionRequestPanelContext, (args) => {
     const request = historyActionRequests.get(args.actionRequestId);
     if (!request) return null;
@@ -261,6 +267,16 @@ export function registerHistoryWorkflowServices(client: LocalClient) {
         return { outcome: "superseded" as const, requestId: args.requestId };
       if (proposal.status !== "pending_approval")
         return { outcome: "stale" as const, requestId: args.requestId };
+      // Apply the approved profiles to the workspace, like the production
+      // mutation, so workspace queries reflect the change once applied.
+      const workspace = state.workspaces.find(
+        (item) => item._id === proposal.workspaceId
+      );
+      if (!workspace) throw new Error("Workspace not found.");
+      workspace.icps = proposal.proposedProfiles.map((profile) => ({
+        ...profile,
+      }));
+      workspace.updatedAt = getCurrentUTCTimestamp();
       proposal.status = "applied";
       client.notify();
       return { outcome: "applied" as const, requestId: args.requestId };
