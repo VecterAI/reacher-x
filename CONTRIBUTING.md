@@ -228,6 +228,35 @@ Keep one PR focused on one change. If `main` has moved and your PR conflicts, re
 
 CI runs on every pull request and checks types, lint, formatting on the changed files, and the Convex tests. Run the same checks locally before opening the PR so it goes green on the first push.
 
+## Show your changes
+
+Screenshots and short recordings make interface changes much easier to review, and [uploads.sh](https://uploads.sh) attaches them to your pull request without committing files to the repository.
+
+Set it up once:
+
+```bash
+npm install -g @buildinternet/uploads
+uploads login
+```
+
+On your branch, stage what you changed as you work. When your pull request opens, the files are posted to it as one comment that stays up to date:
+
+```bash
+uploads put ./before.png --state before
+uploads put ./after.png --state after
+```
+
+Posting to the pull request when it opens uses the uploads.sh GitHub App on this repository. If it is not installed yet, run `uploads attach --promote` once your pull request is open.
+
+To attach to a pull request or issue that already exists:
+
+```bash
+uploads attach ./after.png             # the current branch's pull request
+uploads attach ./after.png --issue 12  # an existing issue
+```
+
+Uploaded files are public to anyone with the URL, so keep secrets and credentials out of your captures. If you use a coding agent, it can run these commands for you.
+
 ## PR checklist
 
 Before opening a PR:
@@ -235,7 +264,7 @@ Before opening a PR:
 - explain what changed
 - explain why it changed
 - mention any env var, schema, or integration impact
-- include screenshots for UI changes
+- include screenshots for UI changes, following [Show your changes](#show-your-changes)
 - run the checks that apply
 
 Useful commands:
