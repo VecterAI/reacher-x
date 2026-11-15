@@ -47,7 +47,7 @@ Everything else follows the standard flow: Convex and WorkOS dashboards for the 
 Install dependencies and set up the backend once:
 
 ```bash title="Set up the backend"
-corepack enable pnpm
+corepack enable pnpm # on Node.js 25+, run npm install -g corepack first
 pnpm install
 cp .env.example .env.local
 npx convex dev --once
@@ -81,7 +81,7 @@ My change: <describe the fix or feature>
 Read VISION.md first so the product vision is clear, then follow CONTRIBUTING.md, docs/development-setup.md, and agents.md. Summary:
 
 1. Check before starting: search the open issues and pull requests at github.com/VecterAI/reacher-x for anything about my change. If an issue covers it, note the number and reference it in the PR. If an open PR already fixes it, stop and tell me. If nothing covers it and the change is bigger than a small fix, ask me whether to open an issue first.
-2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm.
+2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm (on Node.js 25+, install corepack first: npm install -g corepack).
 3. I have no push access to VecterAI/reacher-x, so fork it on GitHub before cloning.
 4. Clone my fork, add the upstream remote, and update main from upstream:
    git remote add upstream https://github.com/VecterAI/reacher-x.git

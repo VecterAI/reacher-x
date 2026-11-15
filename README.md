@@ -130,7 +130,7 @@ git clone https://github.com/YOUR-USERNAME/reacher-x.git
 cd reacher-x
 git remote add upstream https://github.com/VecterAI/reacher-x.git
 git fetch upstream
-corepack enable pnpm
+corepack enable pnpm # on Node.js 25+, run npm install -g corepack first
 pnpm install
 cp .env.example .env.local
 npx convex dev --once
@@ -138,7 +138,7 @@ npx convex dev --once
 
 Create a branch, work on one focused change, run the checks, and open a pull request against `VecterAI/reacher-x:main`. The full flow is in [CONTRIBUTING.md](./CONTRIBUTING.md#submitting-changes) and [docs/development-setup.md](./docs/development-setup.md).
 
-Interface changes are much easier to review with proof. Install the [uploads.sh](https://uploads.sh) CLI, run `uploads put ./screenshot.png` on your branch, and your screenshots land in one comment on your pull request without committing a single image. The details are in [Show your changes](./CONTRIBUTING.md#show-your-changes).
+Interface changes are much easier to review with proof. Install the [uploads.sh](https://uploads.sh) CLI and run `uploads put ./screenshot.png` on your branch. Your screenshots land in one comment on your pull request without committing a single image. Automatic posting uses the uploads.sh GitHub App on this repository; if it is not installed yet, run `uploads attach --promote` once your pull request is open. The details are in [Show your changes](./CONTRIBUTING.md#show-your-changes).
 
 ### Hand this prompt to a coding agent
 
@@ -152,7 +152,7 @@ My change: <describe the fix or feature>
 Read VISION.md first so the product vision is clear, then follow CONTRIBUTING.md, docs/development-setup.md, and agents.md. Summary:
 
 1. Check before starting: search the open issues and pull requests at github.com/VecterAI/reacher-x for anything about my change. If an issue covers it, note the number and reference it in the PR. If an open PR already fixes it, stop and tell me. If nothing covers it and the change is bigger than a small fix, ask me whether to open an issue first.
-2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm.
+2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm (on Node.js 25+, install corepack first: npm install -g corepack).
 3. I have no push access to VecterAI/reacher-x, so fork it on GitHub before cloning.
 4. Clone my fork, add the upstream remote, and update main from upstream:
    git remote add upstream https://github.com/VecterAI/reacher-x.git
@@ -164,7 +164,7 @@ Read VISION.md first so the product vision is clear, then follow CONTRIBUTING.md
 9. Select a dev Convex deployment with npx convex dev --once. Set backend-only values with npx convex env set. Never commit .env.local and never upload it to Convex.
 10. Run npx convex dev and pnpm dev in separate terminals. The site is at http://localhost:3000.
 11. Before committing, run: pnpm exec tsc --noEmit, pnpm lint:strict, pnpm test:convex, and pnpm exec prettier --check on changed files.
-12. Push to my fork and open a PR against VecterAI/reacher-x:main, referencing the issue from step 1 when there is one. If my change touches the interface, attach proof with the uploads.sh CLI (npm install -g @buildinternet/uploads, uploads login, then uploads put ./before.png --state before and uploads put ./after.png --state after on the branch); it posts to the PR automatically. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
+12. Push to my fork and open a PR against VecterAI/reacher-x:main, referencing the issue from step 1 when there is one. If my change touches the interface, attach proof with the uploads.sh CLI (npm install -g @buildinternet/uploads, uploads login, then uploads put ./before.png --state before and uploads put ./after.png --state after on the branch); it posts to the PR automatically when the uploads.sh GitHub App is installed, otherwise run uploads attach --promote once the PR is open. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
 ```
 
 ## Roadmap
@@ -180,7 +180,7 @@ Prefer one click? The [Deploy your own instance](#deploy-your-own-instance) sect
 ```bash
 git clone https://github.com/VecterAI/reacher-x.git
 cd reacher-x
-corepack enable pnpm
+corepack enable pnpm # on Node.js 25+, run npm install -g corepack first
 pnpm install
 cp .env.example .env.local
 npx convex dev --once
