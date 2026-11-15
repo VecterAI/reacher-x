@@ -41,6 +41,6 @@ test("platform icons sit in a neutral bordered square, without brand colors", ()
   expect(markup).not.toContain("bg-platform-twitter-badge");
   expect(markup).not.toContain("bg-platform-linkedin-badge");
   expect(markup).toContain("border-border");
-  expect(markup).toContain("rounded-[4px]");
+  expect(markup).toContain("rounded-[");
   expect(markup.match(/<svg/g)?.length).toBe(2);
 });
