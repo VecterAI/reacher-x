@@ -36,13 +36,12 @@ When a fix applies to more than one caller, it belongs in the core, not in a too
 
 1. Checks the prospect limit against the plan.
 2. Generates seed keywords with AI.
-3. Sends them to Bishopi for keyword discovery.
-4. Converts the results into social queries with AI.
-5. Searches X/Twitter with performance-based query reuse.
-6. Searches LinkedIn posts and people.
-7. Saves prospects.
-8. Qualifies the new prospects.
-9. Schedules the next run through the completion handler.
+3. Converts the seed keywords into social queries with AI.
+4. Searches X/Twitter with performance-based query reuse.
+5. Searches LinkedIn posts and people.
+6. Saves prospects.
+7. Qualifies the new prospects.
+8. Schedules the next run through the completion handler.
 
 Query quality is learned. `convex/lib/queryPrioritizationCore.ts` sorts queries into new, proven, learning, and cold groups based on recorded performance, so a query that keeps producing nothing stops consuming attention.
 

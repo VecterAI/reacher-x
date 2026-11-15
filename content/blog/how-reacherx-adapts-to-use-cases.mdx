@@ -42,7 +42,7 @@ rg 'stageLabels|promptContext' shared features convex
 
 If a hiring workspace shows customer labels, check that resolved key first. Do not fix it by hard-coding "Candidates" into a component. `PipelineTimeline.tsx`, the profiles, and the card menus all need to agree on the active use case.
 
-Stages change through `updateProspectStatus` in [convex/prospects.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/prospects.ts). The mutation checks ownership, writes `status` and `pipelineStage`, and records a timestamp for the new stage. Archiving schedules a pause of automated work, and unarchiving resumes it. You must unarchive a person before you can move them to a later stage.
+Stages change through `updateProspectStatus` in [convex/prospects.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/prospects.ts). The mutation checks ownership, writes `status` and `pipelineStage`, and records a timestamp for the new stage. Archiving pauses outreach plans and cancels any in-progress enrichment run. Unarchiving restores the paused plans, but enrichment does not restart on its own, so run it again if the person still needs it. You must unarchive a person before you can move them to a later stage.
 
 ## From definition to agent instructions
 
