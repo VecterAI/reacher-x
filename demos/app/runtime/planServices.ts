@@ -5,6 +5,7 @@ import { api } from "@/convex/_generated/api";
 import { getComposerLimitFromEffectiveLimit } from "@/shared/lib/twitter/xPostTextLimit";
 import type { LocalClient } from "./LocalClient";
 import type { createAppFixtures } from "./appFixtures";
+import { findHistoryPlanByProspect, historyPlans } from "./demoHistoryPlans";
 
 /** Local persistence behind the production plan and draft panels. */
 export function registerPlanServices(
@@ -17,8 +18,10 @@ export function registerPlanServices(
       : never;
   const inFlight = new Set<string>();
   const scheduled = new Set<string>();
+  // History plans are actionable like fixture plans, but never auto-started.
+  const allPlanData = () => [...state.plans.values(), ...historyPlans.values()];
   const findPlan = (id: string) => {
-    const data = [...state.plans.values()].find(({ plan }) => plan._id === id);
+    const data = allPlanData().find(({ plan }) => plan._id === id);
     if (!data) throw new Error("Plan not found");
     return data;
   };
@@ -147,6 +150,7 @@ export function registerPlanServices(
     const data = findPlan(planId);
     if (data.tasks.some((task) => inFlight.has(task._id)))
       throw new Error("Wait for the current send to finish before deleting");
+    if (historyPlans.delete(planId)) return { success: true };
     state.plans.delete(data.plan.prospectId);
     const person = state.prospects.find(
       (person) => person._id === data.plan.prospectId
@@ -155,7 +159,7 @@ export function registerPlanServices(
     return { success: true };
   });
   client.register(api.outreach.approveTaskWithEdits, async (args) => {
-    const data = [...state.plans.values()].find(({ tasks }) =>
+    const data = allPlanData().find(({ tasks }) =>
       tasks.some((task) => task._id === args.taskId)
     );
     const task = data?.tasks.find((task) => task._id === args.taskId);
@@ -234,7 +238,7 @@ export function registerPlanServices(
   client.register(
     api.outreach.approveTask,
     async ({ taskId, expectedType }) => {
-      const task = [...state.plans.values()]
+      const task = allPlanData()
         .flatMap((data) => data.tasks)
         .find((task) => task._id === taskId);
       if (!task || (expectedType && task.type !== expectedType))
@@ -262,18 +266,22 @@ export function registerPlanServices(
   client.register(
     api.outreach.getPlanById,
     ({ planId }) =>
-      [...state.plans.values()].find((data) => data.plan._id === planId) ?? null
+      historyPlans.get(planId) ??
+      [...state.plans.values()].find((data) => data.plan._id === planId) ??
+      null
   );
   client.register(
     api.outreach.getPlanTasks,
     ({ planId }) =>
-      [...state.plans.values()].find((data) => data.plan._id === planId)
-        ?.tasks ?? []
+      allPlanData().find((data) => data.plan._id === planId)?.tasks ?? []
   );
   client.register(
     api.outreach.getAgentPanelContext,
     ({ prospectId, taskId, targetTweetId }) => {
-      const data = state.plans.get(prospectId);
+      // Fixture plans win; history-only plans keep their chat card and panel
+      // consistent for people without a live plan.
+      const data =
+        state.plans.get(prospectId) ?? findHistoryPlanByProspect(prospectId);
       const task = taskId
         ? data?.tasks.find((item) => item._id === taskId)
         : targetTweetId
@@ -351,7 +359,7 @@ export function registerPlanServices(
       mediaDescriptions,
       mediaKinds,
     }) => {
-      const data = [...state.plans.values()].find((data) =>
+      const data = allPlanData().find((data) =>
         data.tasks.some((item) => item._id === taskId)
       );
       const task = data?.tasks.find((item) => item._id === taskId);
@@ -376,6 +384,7 @@ export function registerPlanServices(
   return {
     advanceDueTasks: (now = getCurrentUTCTimestamp()) => {
       state.plans.forEach((data) => advance(data, now));
+      for (const data of historyPlans.values()) advance(data, now);
       client.notify();
     },
     startAutonomous: async (workspaceId: string) => {

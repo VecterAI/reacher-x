@@ -185,8 +185,10 @@ export function registerAgentServices(
   return {
     threads,
     append,
-    seedThreadContext: (threadId: string) => {
-      contexts.set(threadId, { workspaceId: state.selectedWorkspaceId });
+    seedThreadContext: (threadId: string, workspaceId?: Id<"workspaces">) => {
+      contexts.set(threadId, {
+        workspaceId: workspaceId ?? state.selectedWorkspaceId,
+      });
     },
     setRoute: (
       threadId: string,

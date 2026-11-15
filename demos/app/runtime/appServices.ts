@@ -56,6 +56,6 @@ export function createAppServices(scenario?: BlogDemoId) {
   registerSetupStory(client, state, agent, workspaceServices);
   registerBatchStory(client, state, agent);
   registerOutreachStory(agent, state);
-  seedAgentHistory(agent, state);
+  seedAgentHistory(client, agent, state);
   return { ...services, state, agent, reporting, planLifecycle };
 }

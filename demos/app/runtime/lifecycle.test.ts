@@ -221,15 +221,16 @@ test("memory and account snapshots obey their different scopes", async () => {
   const first = state.selectedWorkspaceId;
   const second = state.workspaces[1]._id;
   const args = { workspaceId: second, range: "7d" as const, limit: 10 };
-  assert.equal(
-    (
-      await client.action(
-        api.agentOps.getAgentOpsMemoryInventoryPageSnapshot,
-        args
-      )
-    ).rows.length,
-    0
-  );
+  // Each workspace only sees its own memories: ws1 has its seeded history
+  // memory, and the operator instruction saved in ws0 must not leak across.
+  const otherRows = (
+    await client.action(
+      api.agentOps.getAgentOpsMemoryInventoryPageSnapshot,
+      args
+    )
+  ).rows;
+  assert.equal(otherRows.length, 1);
+  assert.equal(otherRows[0].memoryId, "demo_history_memory_1_ws1");
   assert.equal(
     (
       await client.action(api.agentOps.getAgentOpsMemoryInventoryPageSnapshot, {

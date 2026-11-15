@@ -7,6 +7,7 @@ import type { AgentServices, AgentMessage } from "../agentServices";
 import type { createAppFixtures } from "../appFixtures";
 import type { LocalClient } from "../LocalClient";
 import { createScenarioDraftPlan } from "../scenarioPlanHelpers";
+import { historyPlanBatchRuns } from "../demoPlanBatchRuns";
 import type { AudienceStory } from "./audiences";
 
 export const batchStory: AudienceStory = {
@@ -316,12 +317,13 @@ export function registerBatchStory(
   state: ReturnType<typeof createAppFixtures>,
   agent: AgentServices
 ) {
-  if (state.scenario !== "create-plans-for-several-people") return;
   const runs = new Map<string, Run>();
+  // Registered in every scenario so history cards with batch runs resolve too.
   client.register(
     api.planBatches.getPlanBatchRun,
-    ({ runId }) => runs.get(runId) ?? null
+    ({ runId }) => runs.get(runId) ?? historyPlanBatchRuns.get(runId) ?? null
   );
+  if (state.scenario !== "create-plans-for-several-people") return;
   agent.addResponder(({ threadId, prompt, metadata, messageId }) => {
     const context = normalizeAgentMessageContextMetadata(metadata);
     const ids = new Set(
