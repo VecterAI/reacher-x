@@ -224,6 +224,7 @@ import {
   buildAgentMentionReplacementText,
   collectComposerMentionIds,
   getUnambiguousMentionEntities,
+  hasUntaggedMentionChip,
   hasUntaggedMentionText,
   readMentionEntitiesFromHtml,
   syncMentionSelectionWithComposer,
@@ -3030,7 +3031,11 @@ export function AgentChat({
     if (
       !isSetupAudienceEntryRef.current &&
       untaggedMentionWarningText !== trimmedInput &&
-      hasUntaggedMentionText(agentComposerContent)
+      (hasUntaggedMentionText(agentComposerContent) ||
+        hasUntaggedMentionChip(
+          agentComposerContent,
+          mentionComposerState.pickedEntities
+        ))
     ) {
       setUntaggedMentionWarningText(trimmedInput);
       return;
@@ -3073,6 +3078,7 @@ export function AgentChat({
     hasUploadingAttachment,
     input,
     isSetupReadingUrl,
+    mentionComposerState.pickedEntities,
     readyAttachments,
     selectedAttachmentEntities,
     selectedMentionEntities,
@@ -3083,8 +3089,8 @@ export function AgentChat({
     untaggedMentionWarningText,
   ]);
 
-  // A mention copied from a sent message carries its entity; mark it picked
-  // so the pasted chip is tagged.
+  // A mention copied from a sent message or a cut chip carries its entity;
+  // mark it picked so the pasted chip is tagged.
   const handleMentionPasteCapture = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
       const pastedEntities = readMentionEntitiesFromHtml(
