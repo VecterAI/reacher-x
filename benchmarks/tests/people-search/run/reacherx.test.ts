@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ExportedProspect } from "../../core/execution/convex";
+import type { ExportedProspect } from "../../../core/execution/convex";
 import {
   sampleRejected,
   selectReacherXTopK,
   toCandidate,
-} from "../../people-search/run/reacherx";
+} from "../../../people-search/run/reacherx";
 
 // Synthetic prospects; not benchmark data.
 const prospect = (

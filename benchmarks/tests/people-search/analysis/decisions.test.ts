@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgreementReport } from "../../core/judging/labels";
+import type { AgreementReport } from "../../../core/judging/labels";
 import {
   checkDecisionPoint,
   renderDecisionReport,
-} from "../../people-search/analysis/decisions";
+} from "../../../people-search/analysis/decisions";
 
 // Synthetic measurements only.
 const cycle = (

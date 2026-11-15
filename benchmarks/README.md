@@ -79,7 +79,7 @@ benchmarks/
     calls/                       Transport replay and rate pricing
     judging/                     Identity, evidence, judges and human labels
     analysis/                    Measures, statistics and reports
-    people-search/               Plan rules, filters, decisions, ReacherX results, round one
+    people-search/               setup/, run/ and analysis/, mirroring the people-search code
     tools/                       Adapters against saved responses
 ```
 

@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { StructuredCall } from "../../core/calls/llm";
-import type { BenchmarkTask } from "../../core/types";
+import type { StructuredCall } from "../../../core/calls/llm";
+import type { BenchmarkTask } from "../../../core/types";
 import {
   translateTask,
   unexpressedFields,
   usedFields,
   validateFilterSet,
   type FilterSet,
-} from "../../people-search/setup/filters";
+} from "../../../people-search/setup/filters";
 
 // Synthetic task and criteria; the real ones are frozen separately.
 const task: BenchmarkTask = {

@@ -5,8 +5,8 @@ import {
   learningOrder,
   peopleSearchPlan,
   type NoOpenAIModel,
-} from "../../people-search/setup/plan";
-import { runSettingsSchema } from "../../core/execution/liveSession";
+} from "../../../people-search/setup/plan";
+import { runSettingsSchema } from "../../../core/execution/liveSession";
 
 // The real assertion is the type check: typecheck fails if either line stops holding.
 test("an OpenAI model in any judge slot fails the independence check", () => {
