@@ -41,7 +41,7 @@ export type InlineIconTerm = {
   /** Text shown after the icon; defaults to `term`. Use when the copy's
    * glyph (e.g. "△ Agent") is replaced by the icon itself. */
   display?: string;
-  /** Renders the glyph inside a small neutral bordered square. Brand logos
+  /** Renders the glyph inside a small inverted neutral tile. Brand logos
    * (Clay, Apollo) ship full-bleed colored artwork and render bare. */
   chip?: boolean;
 };
@@ -56,7 +56,8 @@ export type InlineIconSegment =
       chip: boolean;
     };
 
-// Platform glyphs sit in a small bordered square, neutral in both themes.
+// Platform glyphs sit in a small inverted tile: foreground square, glyph in
+// the background color, so the mark stays readable in both themes.
 const PLATFORM_TERMS: InlineIconTerm[] = [
   { term: "X/Twitter", Icon: FilledTwitterIcon, chip: true },
   { term: "LinkedIn", Icon: FilledLinkedinIcon, chip: true },
@@ -117,9 +118,9 @@ export function inlinePlatformIcons(
     return (
       <span key={index} className="whitespace-nowrap">
         {segment.chip ? (
-          <span className="border-border mr-1 inline-flex h-[1.1em] w-[1.1em] items-center justify-center rounded-[0.24em] border align-middle">
+          <span className="bg-foreground mr-1 inline-flex h-[1em] w-[1em] items-center justify-center rounded-[0.2em] align-middle">
             <segment.Icon
-              className="size-[0.72em] shrink-0"
+              className="text-background size-[0.68em] shrink-0"
               aria-hidden="true"
             />
           </span>

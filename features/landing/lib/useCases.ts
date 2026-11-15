@@ -11,13 +11,13 @@ export const USE_CASES: UseCase[] = [
   {
     useCaseKey: "customer_prospecting",
     slug: "customers",
-    title: "Your first paying customers",
+    title: "First paying customers",
     description: "Find and reach people who are likely to buy what you offer.",
   },
   {
     useCaseKey: "recruiting",
     slug: "candidates",
-    title: "Your next great hire",
+    title: "The next great hire",
     description: "Source and engage people who match your open roles.",
   },
   {

@@ -34,13 +34,13 @@ test("terms outside the text are skipped and repeats each get an icon", () => {
   ).toBe(2);
 });
 
-test("platform icons sit in a neutral bordered square, without brand colors", () => {
+test("platform icons sit in an inverted neutral tile, without brand colors", () => {
   const markup = renderToStaticMarkup(
     <p>{inlinePlatformIcons("X/Twitter and LinkedIn")}</p>
   );
   expect(markup).not.toContain("bg-platform-twitter-badge");
   expect(markup).not.toContain("bg-platform-linkedin-badge");
-  expect(markup).toContain("border-border");
-  expect(markup).toContain("rounded-[");
+  expect(markup).toContain("bg-foreground");
+  expect(markup).toContain("text-background");
   expect(markup.match(/<svg/g)?.length).toBe(2);
 });
