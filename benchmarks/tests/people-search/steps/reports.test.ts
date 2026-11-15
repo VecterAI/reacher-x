@@ -3,6 +3,7 @@ import test from "node:test";
 import { peopleSearchRates } from "../../../people-search/setup/rates";
 import type { SegmentId } from "../../../people-search/setup/schedule";
 import {
+  aggregateReport,
   decide,
   learningPairs,
   segmentOutcomeSchema,
@@ -13,8 +14,10 @@ import {
 const judged = (
   taskId: string,
   learning: "on" | "off",
-  verifiedMatch: boolean
+  verifiedMatch: boolean,
+  unit = 1
 ) => ({
+  unitId: `j-reacherx-${taskId}-${learning}-c1-q${unit}`,
   taskId,
   toolId: "reacherx",
   kind: "top" as const,
@@ -23,35 +26,123 @@ const judged = (
   record: { panel: { verifiedMatch } },
 });
 
-test("learning pairs count a completed condition with no verified match as 0 and list incomplete ones apart", () => {
+test("learning pairs need both conditions completed and fully judged; a genuine empty search counts as 0", () => {
+  const ran = (taskId: string) =>
+    (["on", "off"] as const).map((learning) => ({ taskId, learning }));
+  const cases = [
+    judged("p01", "on", true, 1),
+    judged("p01", "on", true, 2),
+    judged("p01", "on", true, 3),
+    judged("p08", "on", true, 1),
+    judged("p08", "off", true, 1),
+    judged("p11", "on", true, 1),
+    judged("p11", "off", true, 1),
+    judged("p12", "on", true, 1),
+  ];
+  const targets = [
+    // p01 off had nothing to judge: a genuine zero.
+    ...[1, 2, 3].map((unit) => `j-reacherx-p01-on-c1-q${unit}`),
+    // p08 off was interrupted after one of its two results.
+    "j-reacherx-p08-on-c1-q1",
+    "j-reacherx-p08-off-c1-q1",
+    "j-reacherx-p08-off-c1-q2",
+    "j-reacherx-p11-on-c1-q1",
+    "j-reacherx-p11-off-c1-q1",
+    // p12 off completed its workspace but judging never reached it.
+    "j-reacherx-p12-on-c1-q1",
+    "j-reacherx-p12-off-c1-q1",
+  ];
   const { pairs, incomplete } = learningPairs(
     [
-      { taskId: "p01", learning: "on" },
-      { taskId: "p01", learning: "off" },
+      ...ran("p01"),
+      ...ran("p08"),
       { taskId: "p06", learning: "on" },
       { taskId: "p07", learning: "on" },
-      { taskId: "p11", learning: "on" },
-      { taskId: "p11", learning: "off" },
+      ...ran("p11"),
+      ...ran("p12"),
     ],
-    [
-      judged("p01", "on", true),
-      judged("p01", "on", true),
-      judged("p01", "on", true),
-      // The off workspace completed but returned nothing to judge.
-      judged("p11", "on", true),
-      judged("p11", "off", true),
-    ],
-    [{ unitId: "w-p06-off" }, { unitId: "j-reacherx-p11-on-c2-q1" }]
+    cases,
+    [{ unitId: "w-p06-off" }, { unitId: "j-reacherx-p11-on-c2-q1" }],
+    targets
   );
   assert.deepEqual(pairs, [{ taskId: "p01", on: 3, off: 0 }]);
   assert.deepEqual(incomplete, [
     { taskId: "p06", learning: "off", reason: "held for review" },
     { taskId: "p07", learning: "off", reason: "not run" },
+    { taskId: "p08", learning: "off", reason: "partly judged" },
     { taskId: "p11", learning: "on", reason: "held for review" },
+    { taskId: "p12", learning: "off", reason: "not judged yet" },
   ]);
+  // Before judging has started nothing is compared.
+  const unjudged = learningPairs(ran("p01"), [], [], null);
+  assert.deepEqual(unjudged.pairs, []);
+  assert.deepEqual(
+    unjudged.incomplete.map((item) => item.reason),
+    ["not judged yet", "not judged yet"]
+  );
 });
 
-const outcome = (segment: SegmentId) =>
+const workspace = (taskId: string) => {
+  const label = `synthetic_${taskId}_on`;
+  return {
+    taskId,
+    learning: "on",
+    label,
+    record: {
+      label,
+      workspace: { workspaceId: `w-${taskId}`, createdAt: 0, label },
+      learning: "on",
+      plannedCycles: 1,
+      submittedAt: 0,
+      startedAt: 1_000,
+      endedAt: 60_000,
+      ending: "planned-cycles",
+      detail: null,
+      cycles: [
+        {
+          cycle: 1,
+          workflowId: "wf1",
+          startedAt: 1_000,
+          discoveryEndedAt: 30_000,
+          outcome: "completed",
+          settledAt: 50_000,
+          nextStartAt: 600_000,
+          nextStartObserved: false,
+          spendAtStartUsd: 0.1,
+          spendAtEndUsd: 0.5,
+        },
+      ],
+      spend: { atSubmitUsd: 0, beforeStartUsd: 0.1, afterUsd: 0.5 },
+      recorded: {
+        costs: {
+          providers: {
+            socialapi: { usd: 0.06, requests: 10, billableUnits: 300 },
+          },
+          llmUsdRecorded: 0.4,
+          llmCallsRecorded: 10,
+          capped: false,
+        },
+        linkdApi: {
+          billableUnits: 11,
+          successes: 11,
+          events: 11,
+          capped: false,
+        },
+      },
+      stop: {
+        cancelFailed: false,
+        stopped: true,
+        monitorsDeleted: 1,
+        monitorFailures: [],
+      },
+      prospects: [],
+    },
+    accountsBefore: [],
+    accountsAfter: [],
+  };
+};
+
+const outcome = (segment: SegmentId, workspaces: unknown[] = []) =>
   segmentOutcomeSchema.parse({
     segment,
     runId: `synthetic-${segment}`,
@@ -60,7 +151,7 @@ const outcome = (segment: SegmentId) =>
     settings: null,
     stage2: null,
     units: { executed: 0, reused: 0 },
-    workspaces: [],
+    workspaces,
     translations: [],
     competitors: [],
     cases: [],
@@ -105,4 +196,22 @@ test("projections stay unknown when a cost they need was never measured", () => 
   assert.equal(stage2?.status, "needs-approval");
   assert.match(stage2?.detail ?? "", /unknown/);
   assert.doesNotMatch(stage2?.detail ?? "", /\$0\.000/);
+});
+
+test("the rest of stage 2 aggregates its first third's workspaces, never stage 1's", () => {
+  const report = aggregateReport(
+    outcome("stage2-rest"),
+    context([
+      outcome("smoke", [workspace("p14")]),
+      outcome("stage2-first", [workspace("p06")]),
+    ])
+  );
+  assert.deepEqual(
+    report.rows.map((row) => `${row.taskId} ${row.toolId}`),
+    ["p06 reacherx"]
+  );
+  const [row] = report.rows;
+  // AI spend of its first cycle (with setup) and the recorded X use.
+  assert.equal(row.usage.pricedUsageUsd.toFixed(2), "0.56");
+  assert.equal(row.speed.requestLatencyMs, 1_000);
 });

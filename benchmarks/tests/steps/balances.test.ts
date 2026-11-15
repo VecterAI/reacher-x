@@ -205,7 +205,10 @@ test("spend counts from the first start, and credits stop the step at their appr
     1.5
   );
   state.credits = 470;
-  await assert.rejects(resumed.check(), /reached its approved credits/);
+  await assert.rejects(
+    resumed.check(),
+    /renidly:\w+ reached its approved amount/
+  );
   // Between workspace polls only the deployment key is checked.
   await resumed.check([`openrouter:${keyFingerprint("synthetic-or")}`]);
 });
@@ -286,4 +289,31 @@ test("keys shared with production are limited by the deployment's records, not t
   assert.equal(use.balanceChange[social], 7);
   assert.equal(use.spent[social], undefined);
   assert.equal(use.spent[`openrouter:${keyFingerprint("synthetic-or")}`], 0);
+});
+
+test("a top-up never frees approved spend, also across a resume", async () => {
+  const { state, readers } = accounts();
+  const social = `socialapi:${keyFingerprint("synthetic-social")}`;
+  state.social = 100;
+  const budget = new StepBudget(approval(10), credits, readers);
+  await budget.open(null);
+  state.social = 91;
+  await budget.check();
+  // Someone tops the account up by $100: the $9 already spent still counts.
+  state.social = 191;
+  await budget.check();
+  const saved = budget.baseline();
+  assert.equal(accountUse(saved, await budget.read()).spent[social], 9);
+  // A resumed attempt continues from the saved decreases, not from the new balance.
+  const resumed = new StepBudget(approval(10), credits, readers);
+  assert.equal((await resumed.open(saved)).spent[social], 9);
+  state.social = 189;
+  await assert.rejects(
+    resumed.check(),
+    /socialapi:\w+ reached its approved amount/
+  );
+  assert.equal(
+    accountUse(resumed.baseline(), await resumed.read()).spent[social],
+    11
+  );
 });

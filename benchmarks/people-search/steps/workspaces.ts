@@ -19,7 +19,11 @@ import {
   type WorkspaceEnding,
   type WorkspaceRunRecord,
 } from "../../core/execution/workspaceRun";
-import type { AccountReader, StepBudget } from "../../core/steps/balances";
+import type {
+  AccountReader,
+  StepBudget,
+  UsageAccount,
+} from "../../core/steps/balances";
 import type { WorkspaceGate } from "../../core/steps/keyGate";
 import {
   untilStopped,
@@ -146,7 +150,7 @@ export type WorkspacePhase = Readonly<{
   // Opens the step's budget on first use; only paid work needs it.
   budget: () => Promise<StepBudget>;
   // Its spend is the workspace's AI cost of record; checked between polls.
-  deployment: AccountReader;
+  deployment: UsageAccount;
   // SocialAPI and Renidly: shared with production, so their balances are
   // only checked for sufficiency before each workspace and recorded.
   x: AccountReader;

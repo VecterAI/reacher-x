@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import test from "node:test";
 import {
   captureReplaySet,
@@ -255,4 +257,81 @@ test("capture refuses a busy deployment and a type that does not match the judge
       })
     )
   );
+});
+
+test("duplicate case IDs are refused before any capture or page read", async (t) => {
+  const store = await temporaryStore(t);
+  const fake = fakeReplay({ p1: prospect("w-people", true) });
+  const exa = fakeExa({});
+  const pages = new LinkedPageReader(exa.transport, "synthetic-key");
+  await assert.rejects(
+    store.withLock(() =>
+      captureReplaySet(
+        {
+          setId: "set-dup",
+          seed: 1,
+          cases: [
+            judged(1, "t1", true),
+            { ...judged(2, "t1", false), caseId: "case-1" },
+          ],
+        },
+        { deployment: fake.deployment, pages, store }
+      )
+    ),
+    /must appear once/
+  );
+  assert.deepEqual(fake.calls, []);
+  assert.equal(exa.requests.length, 0);
+});
+
+test("a stop after the dataset but before the labels resumes without reading pages again", async (t) => {
+  const store = await temporaryStore(t);
+  const fake = fakeReplay({
+    p1: prospect("w-people", true, [
+      { url: "https://blog.example/post", sourcePostIds: ["post-1"] },
+    ]),
+  });
+  const exa = fakeExa({
+    "https://blog.example/post": {
+      text: "Synthetic article",
+      author: "A. Writer",
+    },
+  });
+  const request = {
+    setId: "set-resume",
+    seed: 1,
+    cases: [judged(1, "t1", true)],
+  };
+  const first = await store.withLock(() =>
+    captureReplaySet(request, {
+      deployment: fake.deployment,
+      pages: new LinkedPageReader(exa.transport, "synthetic-key"),
+      store,
+    })
+  );
+  // Simulate the stop: the labels and the set record were never written.
+  const dir = "benchmarks/.local/people-search/quick-check/set-resume";
+  for (const file of ["labels.json", "set.json"])
+    await rm(join(store.repositoryRoot, dir, file));
+  const captures = fake.calls.filter((call) =>
+    call.endsWith("captureQualificationInputs")
+  ).length;
+  const resumed = await store.withLock(() =>
+    captureReplaySet(request, {
+      deployment: fake.deployment,
+      pages: new LinkedPageReader(exa.transport, "synthetic-key"),
+      store,
+    })
+  );
+  assert.equal(exa.requests.length, 1);
+  assert.equal(
+    fake.calls.filter((call) => call.endsWith("captureQualificationInputs"))
+      .length,
+    captures
+  );
+  // The page spend stays the first capture's, and the set is complete again.
+  assert.deepEqual(resumed.linkedPages, first.linkedPages);
+  assert.equal(resumed.linkedPages.requests, 1);
+  assert.deepEqual(resumed.labels, first.labels);
+  assert.equal((await loadReplaySet(store)).cases.length, 1);
 });

@@ -130,6 +130,8 @@ export const segmentOutcomeSchema = z.object({
     })
     .nullable(),
   decision: decisionSchema.nullable(),
+  // Judged-result units the segment scheduled; null when judging never started.
+  judgeTargets: z.array(z.string()).nullable().default(null),
   // Dollars this segment spent: unshared accounts' own spend, X data by the
   // deployment's records, and Exa's reported cost; null while incomplete.
   stepUsd: z.number().nullable(),
@@ -482,23 +484,27 @@ function qualityTable(outcomes: readonly SegmentOutcome[]) {
 
 type LearningCase = Pick<
   JudgedCase,
-  "taskId" | "toolId" | "kind" | "learning" | "cycle"
+  "unitId" | "taskId" | "toolId" | "kind" | "learning" | "cycle"
 > & { record: { panel: { verifiedMatch: boolean } } };
 
 const LEARNING_UNIT = /^(?:w|j-reacherx)-(p\d+)-(on|off)(?:-|$)/;
 
 /**
  * Learning on against off, prompt by prompt (proposal section 4). A condition
- * counts once its workspace completed and none of its units is held for
- * review; its verified matches are then summed over cycles, 0 when there are
- * none. A condition held for review or never run is left out of the pairs
- * and listed instead, with its prompt.
+ * counts once its workspace completed, every result it had to judge was
+ * judged, and none of its units is held for review; its verified matches are
+ * then summed over cycles, 0 when there are none (a genuine empty search).
+ * A condition held for review, never run, or not yet fully judged is left out
+ * of the pairs and listed instead. `judgeTargets` is every judged-result unit
+ * the segment scheduled, or null when judging never started.
  */
 export function learningPairs(
   workspaces: readonly Pick<WorkspaceOutcome, "taskId" | "learning">[],
   cases: readonly LearningCase[],
-  review: readonly Pick<SegmentOutcome["review"][number], "unitId">[]
+  review: readonly Pick<SegmentOutcome["review"][number], "unitId">[],
+  judgeTargets: readonly string[] | null
 ) {
+  const judged = new Set(cases.map((item) => item.unitId));
   const conditions = ["on", "off"] as const;
   const held = (taskId: string, learning: string) =>
     review.some((item) => {
@@ -526,22 +532,31 @@ export function learningPairs(
     ).length;
   const pairs: { taskId: string; on: number; off: number }[] = [];
   const incomplete: { taskId: string; learning: string; reason: string }[] = [];
-  for (const taskId of prompts) {
-    const missing = conditions.filter(
-      (learning) => !ran(taskId, learning) || held(taskId, learning)
+  const missing = (taskId: string, learning: string) => {
+    if (held(taskId, learning)) return "held for review";
+    if (!ran(taskId, learning)) return "not run";
+    if (judgeTargets === null) return "not judged yet";
+    const targets = judgeTargets.filter((id) =>
+      id.startsWith(`j-reacherx-${taskId}-${learning}-`)
     );
-    if (!missing.length)
+    const done = targets.filter((id) => judged.has(id)).length;
+    if (done < targets.length)
+      return done === 0 ? "not judged yet" : "partly judged";
+    return null;
+  };
+  for (const taskId of prompts) {
+    const reasons = conditions.map((learning) => ({
+      learning,
+      reason: missing(taskId, learning),
+    }));
+    if (reasons.every((item) => item.reason === null))
       pairs.push({
         taskId,
         on: verified(taskId, "on"),
         off: verified(taskId, "off"),
       });
-    for (const learning of missing)
-      incomplete.push({
-        taskId,
-        learning,
-        reason: held(taskId, learning) ? "held for review" : "not run",
-      });
+    for (const { learning, reason } of reasons)
+      if (reason) incomplete.push({ taskId, learning, reason });
   }
   return { pairs, incomplete };
 }
@@ -562,7 +577,12 @@ function learningSection(outcome: SegmentOutcome, context: ReportContext) {
   const top = cases.filter((item) => item.kind === "top");
   const rejected = cases.filter((item) => item.kind === "rejected");
   if (!workspaces.length) return [];
-  const { pairs, incomplete } = learningPairs(workspaces, cases, review);
+  const { pairs, incomplete } = learningPairs(
+    workspaces,
+    cases,
+    review,
+    outcome.judgeTargets
+  );
   const lines = [
     "",
     "## ReacherX cycle by cycle (its top 5 per cycle)",
@@ -968,8 +988,7 @@ export function renderSegmentReport(
       )
     );
   }
-  const compared =
-    outcome.segment === "main" ? [...context.earlier, outcome] : [outcome];
+  const compared = comparedOutcomes(outcome, context);
   if (outcome.segment === "smoke" || outcome.segment === "main") {
     const report = aggregate(outcome.runId, context, compared);
     if (report.rows.length)
@@ -1005,9 +1024,20 @@ export function aggregateReport(
   outcome: SegmentOutcome,
   context: ReportContext
 ) {
-  return aggregate(
-    outcome.runId,
-    context,
-    outcome.segment === "main" ? [...context.earlier, outcome] : [outcome]
-  );
+  return aggregate(outcome.runId, context, comparedOutcomes(outcome, context));
+}
+
+/**
+ * The outcomes a segment's aggregate covers: the main run brings in stage 1's
+ * smoke test and pilot; the rest of stage 2 its first third (whose workspaces
+ * it judged), and never stage 1.
+ */
+function comparedOutcomes(outcome: SegmentOutcome, context: ReportContext) {
+  if (outcome.segment === "main") return [...context.earlier, outcome];
+  if (outcome.segment === "stage2-rest")
+    return [
+      ...context.earlier.filter((item) => item.segment === "stage2-first"),
+      outcome,
+    ];
+  return [outcome];
 }

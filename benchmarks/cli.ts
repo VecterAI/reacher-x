@@ -124,6 +124,9 @@ async function main() {
     });
     options = parsed.values;
     positionals = parsed.positionals;
+    // An empty value (an unset shell variable) must never fall through to the
+    // default, paid quick check.
+    if (Object.values(options).some((value) => value === "")) throw new Error();
     // --model and --learning only modify the default quick check.
     const commands = Object.entries(options).filter(
       ([name, value]) => value && name !== "model" && name !== "learning"

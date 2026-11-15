@@ -400,7 +400,9 @@ test("a segment whose closing balances were not read is selected again before it
   const stopped = () =>
     timeline.filter((call) => call === "run benchmarkPeopleSearch:stopRun")
       .length;
-  const failing = (account: AccountReader): AccountReader => ({
+  const failing = <Account extends AccountReader>(
+    account: Account
+  ): Account => ({
     ...account,
     read: () =>
       stopped() >= workspaces
@@ -434,4 +436,42 @@ test("a segment whose closing balances were not read is selected again before it
     signal: stoppedSignal.signal,
   });
   assert.equal(next.outcome.segment, "stage2-rest");
+});
+
+test("a step that stopped before writing its outcome still reads its closing balances", async (t) => {
+  const { root, deps } = await setup(t);
+  const { files } = await runStep("smoke", deps);
+  // The process died after the last unit's checkpoint, before outcome.json.
+  await rm(join(root, files[0]));
+  const unavailable = async () => {
+    throw new Error("Not available on a rerun.");
+  };
+  const rerun = await runStep("smoke", {
+    ...deps,
+    readApproval: async () => null,
+    judgeCall: unavailable,
+    providerCalls: unavailable,
+  });
+  assert.equal(rerun.outcome.units.executed, 0);
+  assert.ok(rerun.outcome.accounts?.end?.length);
+  assert.ok(rerun.outcome.accounts?.start.length);
+
+  // An outcome without a closing summary, after paid work, is not finished.
+  const store = new FileCheckpointStore(root, rerun.outcome.runId);
+  await store.withLock(() =>
+    store.writePrivate(
+      files[0],
+      JSON.stringify({ ...rerun.outcome, accounts: null })
+    )
+  );
+  await assert.rejects(runStep("pilot", deps), /closing balances of smoke/);
+  const reread = await runStep("smoke", {
+    ...deps,
+    readApproval: async () => null,
+  });
+  assert.ok(reread.outcome.accounts?.end?.length);
+  const stopping = new AbortController();
+  stopping.abort();
+  const next = await runStep("pilot", { ...deps, signal: stopping.signal });
+  assert.equal(next.outcome.segment, "pilot");
 });

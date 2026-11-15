@@ -60,7 +60,14 @@ export const captureRequestSchema = z.strictObject({
   setId: identifierSchema,
   seed: z.number().int().nonnegative().safe(),
   size: z.number().int().positive().default(QUICK_CHECK_SET_SIZE),
-  cases: z.array(judgedCaseSchema).min(1),
+  cases: z
+    .array(judgedCaseSchema)
+    .min(1)
+    .refine(
+      (cases) =>
+        new Set(cases.map((item) => item.caseId)).size === cases.length,
+      "Each judged case ID must appear once."
+    ),
 });
 export type CaptureRequest = z.input<typeof captureRequestSchema>;
 
@@ -149,6 +156,20 @@ const datasetSchema = z.strictObject({
     .min(1),
 });
 
+const linkedPageSpendSchema = z.strictObject({
+  requests: z.number().int().nonnegative(),
+  pages: z.number().int().nonnegative(),
+  failedRequests: z.number().int().nonnegative(),
+  spentUsd: z.number().nonnegative(),
+});
+
+// The dataset, labels and page spend saved together before the separate files.
+const checkpointSchema = z.strictObject({
+  dataset: jsonSchema,
+  labels: jsonSchema,
+  linkedPages: linkedPageSpendSchema,
+});
+
 export const replaySetSchema = z.strictObject({
   schemaVersion: z.literal(1),
   setId: identifierSchema,
@@ -158,12 +179,7 @@ export const replaySetSchema = z.strictObject({
   dataset: artifactSchema,
   labels: artifactSchema,
   cases: z.number().int().positive(),
-  linkedPages: z.strictObject({
-    requests: z.number().int().nonnegative(),
-    pages: z.number().int().nonnegative(),
-    failedRequests: z.number().int().nonnegative(),
-    spentUsd: z.number().nonnegative(),
-  }),
+  linkedPages: linkedPageSpendSchema,
 });
 export type ReplaySet = z.infer<typeof replaySetSchema>;
 
@@ -246,6 +262,10 @@ const digestMatches = (stored: string, data: string) => {
  * come first and linked pages last, so a failed read costs nothing. If the
  * private dataset already exists for this set ID, nothing is captured or
  * fetched again; only the upload is repeated. Call under the runner lock.
+ *
+ * The dataset, labels and linked-page spend are first saved together in one
+ * checkpoint, so a stop between the separate files resumes from it without
+ * reading any page again.
  */
 export async function captureReplaySet(
   request: CaptureRequest,
@@ -261,11 +281,17 @@ export async function captureReplaySet(
   const now = dependencies.now ?? (() => new Date());
   const datasetPath = `${setDir(setId)}/dataset.json`;
   const labelsPath = `${setDir(setId)}/labels.json`;
+  const checkpointPath = `${setDir(setId)}/capture.json`;
   await assertDeploymentQuiet(deployment, store);
 
-  let dataset = await store.readPrivate(datasetPath);
-  let labels = await store.readPrivate(labelsPath);
-  if (dataset === null || labels === null) {
+  const saved = await store.readPrivate(checkpointPath);
+  let checkpoint =
+    saved === null ? null : checkpointSchema.parse(JSON.parse(saved));
+  if (checkpoint === null && (await store.readPrivate(datasetPath)) !== null)
+    throw new RunnerStateError(
+      "A dataset exists for this set without its capture checkpoint; review it before capturing again."
+    );
+  if (checkpoint === null) {
     const selected = selectReplayCases(cases, size, seed);
     const full = await captureAll(deployment, selected, "on");
     for (const item of selected) {
@@ -326,11 +352,23 @@ export async function captureReplaySet(
         originalDecision: item.originalDecision,
       })
     );
-    await store.saveFrozenJson(datasetPath, datasetValue);
-    await store.saveFrozenJson(labelsPath, labelValue);
-    dataset = canonicalJson(datasetValue);
-    labels = canonicalJson(labelValue);
+    checkpoint = checkpointSchema.parse({
+      dataset: datasetValue,
+      labels: labelValue,
+      linkedPages: {
+        requests: pages.requests,
+        pages: pages.pagesRequested,
+        failedRequests: pages.failedRequests,
+        spentUsd: pages.spentUsd,
+      },
+    });
+    await store.writePrivate(checkpointPath, canonicalJson(checkpoint));
   }
+  // Writing the same content again is a no-op, so a resume completes both files.
+  await store.saveFrozenJson(datasetPath, checkpoint.dataset);
+  await store.saveFrozenJson(labelsPath, checkpoint.labels);
+  const dataset = canonicalJson(checkpoint.dataset);
+  const labels = canonicalJson(checkpoint.labels);
   const caseCount = datasetSchema.parse(JSON.parse(dataset)).cases.length;
 
   const datasetId = await deployment.upload(dataset);
@@ -352,12 +390,8 @@ export async function captureReplaySet(
     dataset: { path: datasetPath, sha256: hashBytes(dataset) },
     labels: { path: labelsPath, sha256: hashBytes(labels) },
     cases: caseCount,
-    linkedPages: {
-      requests: pages.requests,
-      pages: pages.pagesRequested,
-      failedRequests: pages.failedRequests,
-      spentUsd: pages.spentUsd,
-    },
+    // Cumulative over the first capture and any resumed one.
+    linkedPages: checkpoint.linkedPages,
   });
   await store.writePrivate(`${setDir(setId)}/set.json`, canonicalJson(record));
   await store.writePrivate(CURRENT_SET_PATH, canonicalJson(record));

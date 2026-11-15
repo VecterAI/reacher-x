@@ -5,7 +5,6 @@ import {
   SpendGuard,
   keyFingerprint,
   openRouterKeySpend,
-  type KeySpendSnapshot,
   type SpendReader,
   type StepSpendApproval,
 } from "../execution/spend";
@@ -34,13 +33,17 @@ export type AccountReading = Readonly<{
   note: string | null;
 }>;
 
-export type AccountReader = Readonly<{
+type AccountBase = Readonly<{
   accountId: string;
   unit: AccountUnit;
   read(): Promise<AccountReading>;
-  // The step guard's view of spend: a key's own usage, or the balance's decrease.
-  spend: SpendReader;
 }>;
+// A key that reports its own cumulative usage (OpenRouter).
+export type UsageAccount = AccountBase &
+  Readonly<{ measuredBy: "usage"; spend: SpendReader }>;
+// An account known only by its balance; spend is the sum of its decreases.
+export type BalanceAccount = AccountBase & Readonly<{ measuredBy: "balance" }>;
+export type AccountReader = UsageAccount | BalanceAccount;
 
 const amount = z.union([
   z.number().finite(),
@@ -82,24 +85,6 @@ function parsed<T>(schema: z.ZodType<T>, body: unknown, accountId: string) {
       `The balance of ${accountId} came back in an unexpected shape.`
     );
   return result.data;
-}
-
-/** Spend as the decrease of a balance; only differences are ever used. */
-function balanceSpend(
-  accountId: string,
-  read: () => Promise<AccountReading>
-): SpendReader {
-  return {
-    accountId,
-    async read(): Promise<KeySpendSnapshot> {
-      const reading = await read();
-      return {
-        accountId,
-        recordedAt: reading.recordedAt,
-        cumulativeUsd: -reading.available,
-      };
-    },
-  };
 }
 
 const keySchema = z.object({
@@ -153,12 +138,13 @@ async function openRouterCreditsLeft(
 export function openRouterAccount(
   apiKey: string,
   transport: Transport = liveTransport()
-): AccountReader {
+): UsageAccount {
   const accountId = `openrouter:${keyFingerprint(apiKey)}`;
   const auth = { Authorization: `Bearer ${apiKey}` };
   return {
     accountId,
     unit: "usd",
+    measuredBy: "usage",
     spend: openRouterKeySpend(apiKey, transport),
     async read() {
       const key = parsed(
@@ -217,12 +203,7 @@ export function socialApiAccount(
     recordedAt: new Date().toISOString(),
     note: null,
   });
-  return {
-    accountId,
-    unit: "usd",
-    read,
-    spend: balanceSpend(accountId, read),
-  };
+  return { accountId, unit: "usd", measuredBy: "balance", read };
 }
 
 /** Renidly, formerly LinkdAPI (ReacherX's LinkedIn data): credits left on the key. The trailing slash is required. */
@@ -247,12 +228,7 @@ export function renidlyAccount(
     recordedAt: new Date().toISOString(),
     note: null,
   });
-  return {
-    accountId,
-    unit: "credits",
-    read,
-    spend: balanceSpend(accountId, read),
-  };
+  return { accountId, unit: "credits", measuredBy: "balance", read };
 }
 
 const orgRowSchema = z
@@ -326,14 +302,24 @@ export function tregAccount(
       note: null,
     };
   };
-  return { accountId, unit: "usd", read, spend: balanceSpend(accountId, read) };
+  return { accountId, unit: "usd", measuredBy: "balance", read };
 }
 
 export type CreditLimit = Readonly<{ accountId: string; maxCredits: number }>;
 
-/** Saved when a step first starts, so a resumed step counts spend from the same point. */
+const trackedSchema = z.strictObject({
+  accountId: z.string(),
+  // Sum of the balance's decreases between readings; a rise never lowers it.
+  used: z.number(),
+  last: z.number(),
+});
+
+/**
+ * Saved when a step first starts and updated as it runs, so a resumed step
+ * counts spend from the same point.
+ */
 export const budgetBaselineSchema = z.strictObject({
-  // Guarded dollar accounts: spend so far as the guard reads it.
+  // Accounts measured by their own usage (OpenRouter): usage at the start.
   spend: z.array(
     z.strictObject({
       accountId: z.string(),
@@ -341,10 +327,8 @@ export const budgetBaselineSchema = z.strictObject({
       cumulativeUsd: z.number(),
     })
   ),
-  // Guarded credit accounts: credits available at the start.
-  credits: z.array(
-    z.strictObject({ accountId: z.string(), available: z.number() })
-  ),
+  // Accounts measured by their balance: decreases so far and the last reading.
+  tracked: z.array(trackedSchema).default([]),
   // Every account's balance at the start, for the recorded account change.
   balances: z
     .array(z.strictObject({ accountId: z.string(), available: z.number() }))
@@ -355,24 +339,33 @@ export type BudgetBaseline = z.infer<typeof budgetBaselineSchema>;
 const show = (unit: AccountUnit, value: number) =>
   unit === "usd" ? `$${value.toFixed(2)}` : `${Math.round(value)} credits`;
 
+/** A balance account's use: the previous decreases plus any new one. A top-up never frees approved spend. */
+function decreased(
+  tracked: z.infer<typeof trackedSchema> | undefined,
+  available: number
+) {
+  return tracked ? tracked.used + Math.max(0, tracked.last - available) : 0;
+}
+
 /**
  * One step's approved spend across its accounts. Accounts only the benchmark
- * uses are guarded by their own spend: dollar accounts through the
- * SpendGuard, credit accounts by their balance. Accounts shared with
- * production (`shared`) are measured from the deployment's own records
- * instead (`checkRecorded`), and their balances only show there is enough
- * money. A step is refused when an account holds less than its approval
- * still needs.
+ * uses are guarded by their own spend through the SpendGuard: a key's own
+ * usage, or the sum of a balance's decreases (so a top-up never frees
+ * approved spend). Accounts shared with production (`shared`) are measured
+ * from the deployment's own records instead (`checkRecorded`), and their
+ * balances only show there is enough money. A step is refused when an
+ * account holds less than its approval still needs.
  */
 export class StepBudget {
   private readonly guard: SpendGuard;
   private readonly limits: Map<string, number>;
   private readonly units: Map<string, AccountUnit>;
-  private readonly creditStart = new Map<string, number>();
+  private readonly tracked = new Map<string, z.infer<typeof trackedSchema>>();
+  private opened: BudgetBaseline | null = null;
 
   constructor(
     approval: StepSpendApproval,
-    private readonly creditLimits: readonly CreditLimit[],
+    creditLimits: readonly CreditLimit[],
     private readonly accounts: readonly AccountReader[],
     private readonly shared: readonly string[] = []
   ) {
@@ -385,35 +378,21 @@ export class StepBudget {
     const mismatch = new BudgetStop(
       `The approval must give exactly one limit for each account this step uses: ${expected}.`
     );
-    const creditIds = new Set(creditLimits.map((limit) => limit.accountId));
-    const usdIds = new Set(
-      approval.accountLimits.map((limit) => limit.accountId)
-    );
+    const sameIds = (ids: readonly string[], group: readonly AccountReader[]) =>
+      new Set(ids).size === ids.length &&
+      ids.length === group.length &&
+      group.every((account) => ids.includes(account.accountId));
     if (
-      creditIds.size !== creditLimits.length ||
-      creditIds.size !== credits.length ||
-      credits.some((account) => !creditIds.has(account.accountId)) ||
-      usdIds.size !== approval.accountLimits.length ||
-      usdIds.size !== usd.length ||
-      usd.some((account) => !usdIds.has(account.accountId))
+      !sameIds(
+        creditLimits.map((limit) => limit.accountId),
+        credits
+      ) ||
+      !sameIds(
+        approval.accountLimits.map((limit) => limit.accountId),
+        usd
+      )
     )
       throw mismatch;
-    const guarded = usd.filter(
-      (account) => !shared.includes(account.accountId)
-    );
-    try {
-      this.guard = new SpendGuard(
-        {
-          ...approval,
-          accountLimits: approval.accountLimits.filter(
-            (limit) => !shared.includes(limit.accountId)
-          ),
-        },
-        guarded.map((account) => account.spend)
-      );
-    } catch {
-      throw mismatch;
-    }
     this.limits = new Map([
       ...approval.accountLimits.map(
         (limit) => [limit.accountId, limit.maxAdditionalUsd] as const
@@ -425,6 +404,39 @@ export class StepBudget {
     this.units = new Map(
       accounts.map((account) => [account.accountId, account.unit] as const)
     );
+    // Every unshared account, dollars or credits, goes through the guard;
+    // its approved amount is in the account's own unit.
+    const guarded = accounts.filter(
+      (account) => !shared.includes(account.accountId)
+    );
+    try {
+      this.guard = new SpendGuard(
+        {
+          ...approval,
+          accountLimits: guarded.map((account) => ({
+            accountId: account.accountId,
+            maxAdditionalUsd: this.limits.get(account.accountId)!,
+          })),
+        },
+        guarded.map((account) =>
+          account.measuredBy === "usage"
+            ? account.spend
+            : {
+                accountId: account.accountId,
+                read: async () => {
+                  const [reading] = await this.read([account.accountId]);
+                  return {
+                    accountId: account.accountId,
+                    recordedAt: reading.recordedAt,
+                    cumulativeUsd: this.tracked.get(account.accountId)!.used,
+                  };
+                },
+              }
+        )
+      );
+    } catch {
+      throw mismatch;
+    }
   }
 
   private shortfall(reading: AccountReading, used: number) {
@@ -444,56 +456,54 @@ export class StepBudget {
     saved: BudgetBaseline | null,
     recorded: Readonly<Record<string, number>> = {}
   ) {
+    for (const item of saved?.tracked ?? [])
+      this.tracked.set(item.accountId, item);
     const readings = await this.read();
-    const spend = await this.guard.start(saved?.spend ?? []);
-    for (const reading of readings)
-      if (
-        reading.unit === "credits" &&
-        !this.shared.includes(reading.accountId)
-      )
-        this.creditStart.set(
-          reading.accountId,
-          saved?.credits.find((item) => item.accountId === reading.accountId)
-            ?.available ?? reading.available
-        );
+    // Balance accounts count from zero at the step's first start; their
+    // decreases so far come back with the tracked state.
+    const spend = await this.guard.start([
+      ...(saved?.spend ?? []),
+      ...this.accounts
+        .filter((account) => account.measuredBy === "balance")
+        .map((account) => ({
+          accountId: account.accountId,
+          recordedAt: readings[0]?.recordedAt ?? new Date().toISOString(),
+          cumulativeUsd: 0,
+        })),
+    ]);
     const spent: Record<string, number> = {
       ...(await this.guard.check()),
       ...recorded,
     };
-    for (const [accountId, start] of this.creditStart)
-      spent[accountId] =
-        start -
-        readings.find((reading) => reading.accountId === accountId)!.available;
     const shortfalls = readings.flatMap(
       (reading) => this.shortfall(reading, spent[reading.accountId] ?? 0) ?? []
     );
     if (shortfalls.length) throw new BudgetStop(shortfalls.join(" "));
-    const baseline: BudgetBaseline = {
-      spend: [...spend],
-      credits: [...this.creditStart].map(([accountId, available]) => ({
-        accountId,
-        available,
-      })),
+    this.opened = {
+      spend: spend.filter((snapshot) =>
+        this.accounts.some(
+          (account) =>
+            account.accountId === snapshot.accountId &&
+            account.measuredBy === "usage"
+        )
+      ),
+      tracked: [],
       balances:
         saved?.balances ??
         readings.map(({ accountId, available }) => ({ accountId, available })),
     };
-    return { baseline, readings, spent };
+    return { baseline: this.baseline(), readings, spent };
+  }
+
+  /** What to save so a resumed step counts from the same point, including the balance decreases so far. */
+  baseline(): BudgetBaseline {
+    if (!this.opened) throw new BudgetStop("The step budget was not opened.");
+    return { ...this.opened, tracked: [...this.tracked.values()] };
   }
 
   /** Before each unit of paid work; throws BudgetStop at an approved amount. Shared accounts are skipped. */
   async check(accountIds?: readonly string[]) {
     await this.guard.check(accountIds);
-    for (const limit of this.creditLimits) {
-      if (accountIds && !accountIds.includes(limit.accountId)) continue;
-      if (this.shared.includes(limit.accountId)) continue;
-      const [reading] = await this.read([limit.accountId]);
-      const used = this.creditStart.get(limit.accountId)! - reading.available;
-      if (used >= limit.maxCredits)
-        throw new BudgetStop(
-          `${limit.accountId} reached its approved credits for this step.`
-        );
-    }
   }
 
   /** Shared accounts against their approved amounts, from the deployment's own records of this step. */
@@ -521,22 +531,40 @@ export class StepBudget {
     return readings;
   }
 
-  /** Current readings, for all accounts or the named ones. */
-  read(accountIds?: readonly string[]) {
-    return Promise.all(
+  /** Current readings, for all accounts or the named ones; balance decreases are tracked as they are seen. */
+  async read(accountIds?: readonly string[]) {
+    const readings = await Promise.all(
       this.accounts
         .filter(
           (account) => !accountIds || accountIds.includes(account.accountId)
         )
         .map((account) => account.read())
     );
+    for (const reading of readings) {
+      const account = this.accounts.find(
+        (item) => item.accountId === reading.accountId
+      );
+      if (
+        account?.measuredBy !== "balance" ||
+        this.shared.includes(account.accountId)
+      )
+        continue;
+      const tracked = this.tracked.get(reading.accountId);
+      this.tracked.set(reading.accountId, {
+        accountId: reading.accountId,
+        used: decreased(tracked, reading.available),
+        last: reading.available,
+      });
+    }
+    return readings;
   }
 }
 
 /**
- * What each account was used for since the step first started: guarded
- * accounts by their own spend, and every account's balance change (which,
- * for a shared key, includes other users).
+ * What each account was used for since the step first started: accounts
+ * measured by usage by their own usage, balance accounts by the sum of their
+ * decreases (a top-up never counts as negative use), and every account's
+ * balance change (which, for a shared key, includes other users).
  */
 export function accountUse(
   baseline: BudgetBaseline,
@@ -550,17 +578,16 @@ export function accountUse(
     );
     if (start)
       balanceChange[reading.accountId] = start.available - reading.available;
-    const credits = baseline.credits.find(
+    const usage = baseline.spend.find(
       (item) => item.accountId === reading.accountId
     );
-    if (credits)
-      spent[reading.accountId] = credits.available - reading.available;
-    const usd = baseline.spend.find(
+    if (usage && reading.spentToDate !== null)
+      spent[reading.accountId] = reading.spentToDate - usage.cumulativeUsd;
+    const tracked = baseline.tracked.find(
       (item) => item.accountId === reading.accountId
     );
-    if (usd)
-      spent[reading.accountId] =
-        (reading.spentToDate ?? -reading.available) - usd.cumulativeUsd;
+    if (tracked)
+      spent[reading.accountId] = decreased(tracked, reading.available);
   }
   return { spent, balanceChange };
 }

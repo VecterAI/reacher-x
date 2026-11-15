@@ -25,6 +25,7 @@ import {
   accountUse,
   budgetBaselineSchema,
   type AccountReader,
+  type UsageAccount,
   type AccountReading,
 } from "../../core/steps/balances";
 import { WorkspaceGate } from "../../core/steps/keyGate";
@@ -114,9 +115,9 @@ export const segmentRunId = (planSha256: string, segment: SegmentId) =>
 
 export type StepAccounts = Readonly<{
   // Not shared with production: its spend is ReacherX's AI cost of record.
-  deployment: AccountReader;
+  deployment: UsageAccount;
   // The judges' and harness's own key; null when they share the deployment key.
-  judge: AccountReader | null;
+  judge: UsageAccount | null;
   // The funded X and LinkedIn keys are also production's: their balances are
   // only sufficiency checks, and their use comes from the deployment's records.
   socialApi: AccountReader;
@@ -216,8 +217,17 @@ async function scheduleFor(
  * were read; until then a rerun of its step selects it again, reusing its
  * units and only reading what is missing.
  */
-const finished = (outcome: SegmentOutcome | null) =>
-  outcome?.status === "complete" && outcome.accounts?.end !== null;
+async function finished(
+  root: string,
+  planSha256: string,
+  outcome: SegmentOutcome | null
+) {
+  if (outcome?.status !== "complete") return false;
+  if (outcome.accounts) return outcome.accounts.end !== null;
+  // Paid work leaves a baseline; then a closing summary is required.
+  const store = new FileCheckpointStore(root, outcome.runId);
+  return (await store.readPrivate(store.runFile(BASELINE_FILE))) === null;
+}
 
 const stepOf = (segment: SegmentId) =>
   STEPS.find((step) => {
@@ -231,7 +241,11 @@ export async function runStep(step: StepId, deps: StepDependencies) {
   let segment = segments.at(-1)!;
   for (const candidate of segments)
     if (
-      !finished(await readOutcome(deps.root, deps.frozen.planSha256, candidate))
+      !(await finished(
+        deps.root,
+        deps.frozen.planSha256,
+        await readOutcome(deps.root, deps.frozen.planSha256, candidate)
+      ))
     ) {
       segment = candidate;
       break;
@@ -251,7 +265,7 @@ async function earlierOutcomes(
       throw new RunnerStateError(
         `Finish the ${stepOf(earlier)} step before ${segment}; it needs those results.`
       );
-    if (!finished(outcome))
+    if (!(await finished(root, planSha256, outcome)))
       throw new RunnerStateError(
         `The closing balances of ${earlier} were not read, so its costs are incomplete. Run pnpm benchmark --live ${stepOf(earlier)} again to read them before ${segment}.`
       );
@@ -276,6 +290,7 @@ function segmentAccounts(schedule: SegmentSchedule, accounts: StepAccounts) {
   );
 }
 
+const BASELINE_FILE = "budget-baseline.json";
 const FINAL_READ_ATTEMPTS = 3;
 const FINAL_READ_WAIT_MS = 10_000;
 
@@ -348,7 +363,7 @@ async function runSegment(
     const accounts = segmentAccounts(schedule, deps.accounts);
     const harnessAccount = (deps.accounts.judge ?? deps.accounts.deployment)
       .accountId;
-    const baselinePath = store.runFile("budget-baseline.json");
+    const baselinePath = store.runFile(BASELINE_FILE);
     const dataIds = {
       x: deps.accounts.socialApi.accountId,
       linkedIn: deps.accounts.renidly.accountId,
@@ -412,6 +427,16 @@ async function runSegment(
       null;
     let judging: Awaited<ReturnType<typeof runJudgingUnits>> | null = null;
     let settingsInEffect = previous?.settings ?? null;
+    // Judged-result units this segment scheduled; null until known.
+    let judgeTargets: string[] | null = null;
+    // Keeps the balance decreases seen so far, so a resume counts from them.
+    const saveBudget = async () => {
+      if (opened.budget)
+        await store.writePrivate(
+          baselinePath,
+          JSON.stringify(opened.budget.baseline())
+        );
+    };
     try {
       const workspacePhase = {
         ledger,
@@ -477,6 +502,9 @@ async function runSegment(
         }
       );
       stopWith(competitors.stopped);
+      await saveBudget();
+
+      await saveBudget();
 
       if (schedule.judges) {
         const ownWorkspaces = completed(workspaceResults);
@@ -488,38 +516,36 @@ async function runSegment(
             .flatMap((item) => item.workspaces),
           ...ownWorkspaces,
         ];
-        judging = await runJudgingUnits(
-          [
-            ...judgedWorkspaces.flatMap((workspace) =>
-              reacherxTargets(
-                workspace,
-                tasks.get(workspace.taskId)!,
-                segment,
-                frozen.seed
-              )
-            ),
-            ...completedCompetitors(competitors).flatMap((outcome) =>
-              competitorTargets(outcome, segment)
-            ),
-          ],
-          tasks,
-          {
-            ledger,
-            store,
-            signal,
-            clock: deps.clock,
-            gate,
-            budget: openBudget,
-            accountIds: [harnessAccount],
-            models: {
-              primary: peopleSearchPlan.models.judges,
-              tieBreaker: peopleSearchPlan.models.tieBreaker,
-            },
-            judgeCall: deps.judgeCall,
-            evidence: deps.evidence,
-            log: deps.log,
-          }
-        );
+        const targets = [
+          ...judgedWorkspaces.flatMap((workspace) =>
+            reacherxTargets(
+              workspace,
+              tasks.get(workspace.taskId)!,
+              segment,
+              frozen.seed
+            )
+          ),
+          ...completedCompetitors(competitors).flatMap((outcome) =>
+            competitorTargets(outcome, segment)
+          ),
+        ];
+        judgeTargets = targets.map((target) => target.unitId);
+        judging = await runJudgingUnits(targets, tasks, {
+          ledger,
+          store,
+          signal,
+          clock: deps.clock,
+          gate,
+          budget: openBudget,
+          accountIds: [harnessAccount],
+          models: {
+            primary: peopleSearchPlan.models.judges,
+            tieBreaker: peopleSearchPlan.models.tieBreaker,
+          },
+          judgeCall: deps.judgeCall,
+          evidence: deps.evidence,
+          log: deps.log,
+        });
         stopWith(judging.stopped);
       }
     } catch (error) {
@@ -528,6 +554,7 @@ async function runSegment(
     } finally {
       deps.signal.removeEventListener("abort", interrupted);
     }
+    await saveBudget();
 
     const workspaces = completed(workspaceResults);
     const competitorOutcomes = competitors
@@ -568,15 +595,32 @@ async function runSegment(
     // incomplete, and cost-based decisions wait for a rerun to read them.
     let accountsSummary = previous?.accounts ?? null;
     const savedBaseline = await store.readPrivate(baselinePath);
+    // Also when an earlier attempt stopped after its last unit but before
+    // writing its outcome, so no closing summary exists yet.
     if (
       savedBaseline !== null &&
-      (opened.budget || accountsSummary?.end === null)
+      (opened.budget || !accountsSummary || accountsSummary.end === null)
     ) {
       const baseline = budgetBaselineSchema.parse(JSON.parse(savedBaseline));
       const end = await finalReadings(accounts, deps.clock);
       const use = end ? accountUse(baseline, end) : null;
+      const startFromBaseline = baseline.balances.map(
+        ({ accountId, available }) => ({
+          accountId,
+          unit:
+            accounts.find((account) => account.accountId === accountId)?.unit ??
+            ("usd" as const),
+          available,
+          spentToDate: null,
+          recordedAt: "",
+          note: null,
+        })
+      );
       accountsSummary = {
-        start: [...(previous?.accounts?.start ?? opened.start)],
+        start: [
+          ...(previous?.accounts?.start ??
+            (opened.start.length ? opened.start : startFromBaseline)),
+        ],
         end,
         spent: use?.spent ?? null,
         balanceChange: use?.balanceChange ?? null,
@@ -628,6 +672,7 @@ async function runSegment(
         ended.stop?.reason ??
         (status === "interrupted" ? "The step was interrupted." : null),
       settings: settingsInEffect,
+      judgeTargets,
       stage2: schedule.stage2,
       units: { ...ledger.tally },
       workspaces,
