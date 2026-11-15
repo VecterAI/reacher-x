@@ -23,25 +23,25 @@ export const USE_CASES: UseCase[] = [
   {
     useCaseKey: "investor_outreach",
     slug: "investors",
-    title: "Investors who get what you build",
+    title: "Investors who would fund you",
     description: "Reach investors whose thesis aligns with your raise.",
   },
   {
     useCaseKey: "partnership_outreach",
     slug: "partners",
-    title: "Partners who open doors",
+    title: "Partners who would back you",
     description: "Connect with companies and operators in your space.",
   },
   {
     useCaseKey: "community_growth",
     slug: "community-members",
-    title: "Members who stick around",
+    title: "Members who would come back",
     description: "Find early members who genuinely care about your topic.",
   },
   {
     useCaseKey: "creator_outreach",
     slug: "creators",
-    title: "Creators who champion your product",
+    title: "Creators who would champion you",
     description: "Reach influencers and creators who align with your brand.",
   },
   {

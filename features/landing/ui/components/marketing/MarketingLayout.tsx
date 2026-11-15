@@ -118,9 +118,9 @@ export function inlinePlatformIcons(
     return (
       <span key={index} className="whitespace-nowrap">
         {segment.chip ? (
-          <span className="bg-foreground mr-1 inline-flex h-[1em] w-[1em] items-center justify-center rounded-[0.2em] align-middle">
+          <span className="bg-foreground mr-1 inline-flex h-[0.9em] w-[0.9em] items-center justify-center rounded-[0.18em] align-middle">
             <segment.Icon
-              className="text-background size-[0.68em] shrink-0"
+              className="text-background size-[0.58em] shrink-0"
               aria-hidden="true"
             />
           </span>
