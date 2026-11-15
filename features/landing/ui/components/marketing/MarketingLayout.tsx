@@ -56,8 +56,9 @@ export type InlineIconSegment =
       chip: boolean;
     };
 
-// Platform glyphs sit in a small inverted tile: foreground square, glyph in
-// the background color, so the mark stays readable in both themes.
+// Platform glyphs sit in a small secondary tile, the same surface as the
+// sidebar's "Get a custom plan" button, so the mark stays readable in
+// both themes without shouting.
 const PLATFORM_TERMS: InlineIconTerm[] = [
   { term: "X/Twitter", Icon: FilledTwitterIcon, chip: true },
   { term: "LinkedIn", Icon: FilledLinkedinIcon, chip: true },
@@ -118,9 +119,9 @@ export function inlinePlatformIcons(
     return (
       <span key={index} className="whitespace-nowrap">
         {segment.chip ? (
-          <span className="bg-foreground mr-1 inline-flex h-[0.9em] w-[0.9em] items-center justify-center rounded-[0.18em] align-[0.05em]">
+          <span className="bg-secondary mr-1 inline-flex h-[0.9em] w-[0.9em] items-center justify-center rounded-[0.18em] align-[0.05em]">
             <segment.Icon
-              className="text-background size-[0.58em] shrink-0"
+              className="text-secondary-foreground size-[0.58em] shrink-0"
               aria-hidden="true"
             />
           </span>
