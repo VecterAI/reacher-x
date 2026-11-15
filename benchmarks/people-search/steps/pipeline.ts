@@ -23,6 +23,7 @@ import type { JudgeCaller } from "../../core/judging/judges";
 import {
   StepBudget,
   accountUse,
+  advanceTracked,
   budgetBaselineSchema,
   type AccountReader,
   type UsageAccount,
@@ -604,6 +605,13 @@ async function runSegment(
       const baseline = budgetBaselineSchema.parse(JSON.parse(savedBaseline));
       const end = await finalReadings(accounts, deps.clock);
       const use = end ? accountUse(baseline, end) : null;
+      // The closing reading joins the tracked decreases, so a top-up before
+      // a later resume cannot restore allowance already used.
+      if (end)
+        await store.writePrivate(
+          baselinePath,
+          JSON.stringify(advanceTracked(baseline, end))
+        );
       const startFromBaseline = baseline.balances.map(
         ({ accountId, available }) => ({
           accountId,
@@ -616,11 +624,18 @@ async function runSegment(
           note: null,
         })
       );
+      // Opening balances are the step's first start, the same interval as
+      // the change; this attempt's own reading is used only when it is that.
+      const opening = startFromBaseline.map(
+        (first) =>
+          opened.start.find(
+            (reading) =>
+              reading.accountId === first.accountId &&
+              reading.available === first.available
+          ) ?? first
+      );
       accountsSummary = {
-        start: [
-          ...(previous?.accounts?.start ??
-            (opened.start.length ? opened.start : startFromBaseline)),
-        ],
+        start: [...(previous?.accounts?.start ?? opening)],
         end,
         spent: use?.spent ?? null,
         balanceChange: use?.balanceChange ?? null,

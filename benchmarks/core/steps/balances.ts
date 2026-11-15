@@ -591,3 +591,28 @@ export function accountUse(
   }
   return { spent, balanceChange };
 }
+
+/**
+ * The baseline after a reading: each tracked balance's decreases now include
+ * it, so a later top-up cannot hide spend already seen.
+ */
+export function advanceTracked(
+  baseline: BudgetBaseline,
+  readings: readonly AccountReading[]
+): BudgetBaseline {
+  return {
+    ...baseline,
+    tracked: baseline.tracked.map((item) => {
+      const reading = readings.find(
+        (candidate) => candidate.accountId === item.accountId
+      );
+      return reading
+        ? {
+            ...item,
+            used: decreased(item, reading.available),
+            last: reading.available,
+          }
+        : item;
+    }),
+  };
+}

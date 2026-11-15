@@ -5,7 +5,11 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { syntheticDependencies } from "../../../people-search/dryRun/dryRun";
 import { FileCheckpointStore } from "../../../core/execution/checkpoints";
-import type { AccountReader } from "../../../core/steps/balances";
+import {
+  accountUse,
+  budgetBaselineSchema,
+  type AccountReader,
+} from "../../../core/steps/balances";
 import { peopleSearchRates } from "../../../people-search/setup/rates";
 import {
   segmentSchedule,
@@ -474,4 +478,83 @@ test("a step that stopped before writing its outcome still reads its closing bal
   stopping.abort();
   const next = await runStep("pilot", { ...deps, signal: stopping.signal });
   assert.equal(next.outcome.segment, "pilot");
+});
+
+const savedBaseline = async (root: string, runId: string) => {
+  const store = new FileCheckpointStore(root, runId);
+  return budgetBaselineSchema.parse(
+    JSON.parse(
+      await readFile(join(root, store.runFile("budget-baseline.json")), "utf8")
+    )
+  );
+};
+
+test("the closing reading is kept in the spend tracker, so a later top-up frees nothing", async (t) => {
+  const { root, deps, synthetic } = await setup(t);
+  const { outcome, files } = await runStep("smoke", deps);
+  const treg = deps.accounts.treg.accountId;
+  const closing = outcome.accounts!.end!.find(
+    (item) => item.accountId === treg
+  )!;
+  const first = (await savedBaseline(root, outcome.runId)).tracked.find(
+    (item) => item.accountId === treg
+  )!;
+  assert.equal(first.last, closing.available);
+
+  // A late charge, then a crash before outcome.json: the recovery's closing
+  // read, with no budget opened, is tracked too.
+  await rm(join(root, files[0]));
+  synthetic.tregBalance -= 1;
+  await runStep("smoke", { ...deps, readApproval: async () => null });
+  const after = await savedBaseline(root, outcome.runId);
+  const tracked = after.tracked.find((item) => item.accountId === treg)!;
+  assert.equal(tracked.used.toFixed(3), (first.used + 1).toFixed(3));
+  assert.equal(tracked.last, synthetic.tregBalance);
+
+  // A top-up before any later resume leaves the use where it was.
+  synthetic.tregBalance += 50;
+  const use = accountUse(after, [await deps.accounts.treg.read()]);
+  assert.equal(use.spent[treg].toFixed(3), tracked.used.toFixed(3));
+});
+
+test("a resumed step's opening balances are the first start's, matching its change", async (t) => {
+  const { root, deps, controller } = await setup(t);
+  let polls = 0;
+  const first = await runStep("smoke", {
+    ...deps,
+    driver: new Proxy(deps.driver, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (property !== "status" || typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          if (++polls === 5) controller.abort();
+          return value.apply(target, args);
+        };
+      },
+    }),
+  });
+  assert.equal(first.outcome.status, "interrupted");
+  // No earlier opening summary survives, so the resume must not use its own.
+  await rm(join(root, first.files[0]));
+  const resumed = await runStep("smoke", {
+    ...deps,
+    signal: new AbortController().signal,
+  });
+  const baseline = await savedBaseline(root, resumed.outcome.runId);
+  const { start, end, balanceChange } = resumed.outcome.accounts!;
+  const deployment = deps.accounts.deployment.accountId;
+  const opening = start.find((item) => item.accountId === deployment)!;
+  const firstStart = baseline.balances.find(
+    (item) => item.accountId === deployment
+  )!;
+  assert.equal(opening.available, firstStart.available);
+  for (const item of start) {
+    const closing = end!.find(
+      (reading) => reading.accountId === item.accountId
+    )!;
+    assert.equal(
+      balanceChange![item.accountId].toFixed(6),
+      (item.available - closing.available).toFixed(6)
+    );
+  }
 });
