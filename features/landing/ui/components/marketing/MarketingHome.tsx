@@ -41,7 +41,7 @@ function HeroReveal() {
           {line}
         </span>
       ))}
-      <span className="block font-medium">
+      <span className="block">
         {"for "}
         <span className="font-pixel-square">everyone</span>
         {"."}

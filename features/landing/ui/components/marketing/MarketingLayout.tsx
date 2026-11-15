@@ -118,7 +118,7 @@ export function inlinePlatformIcons(
     return (
       <span key={index} className="whitespace-nowrap">
         {segment.chip ? (
-          <span className="bg-foreground mr-1 inline-flex h-[0.9em] w-[0.9em] items-center justify-center rounded-[0.18em] align-middle">
+          <span className="bg-foreground mr-1 inline-flex h-[0.9em] w-[0.9em] items-center justify-center rounded-[0.18em] align-[0.05em]">
             <segment.Icon
               className="text-background size-[0.58em] shrink-0"
               aria-hidden="true"
@@ -221,7 +221,7 @@ export function MarketingHero({
         )}
       >
         <div className={cn(!hasSideColumn && "text-center")}>
-          <h1 className="text-4xl leading-[1.05] font-normal tracking-tight text-balance sm:text-6xl lg:text-7xl">
+          <h1 className="text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl">
             {title}
           </h1>
           {lede && (
