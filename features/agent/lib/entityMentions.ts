@@ -136,6 +136,17 @@ export function hasUntaggedMentionText(editorState: unknown): boolean {
   );
 }
 
+/** True when a chip's entity was never picked, so the chip tags no one. */
+export function hasUntaggedMentionChip(
+  editorState: unknown,
+  pickedEntities: MentionEntitySearchResult[]
+): boolean {
+  const pickedIds = new Set(pickedEntities.map((entity) => entity.id));
+  return [...collectComposerMentionIds(editorState)].some(
+    (id) => !pickedIds.has(id)
+  );
+}
+
 /** Inline entities whose name no other entity shares. */
 export function getUnambiguousMentionEntities(
   entities: MentionEntitySearchResult[]
@@ -152,7 +163,7 @@ export function getUnambiguousMentionEntities(
   );
 }
 
-/** Entities carried by mentions copied from a sent message (`data-mention-entity`). */
+/** Entities carried by copied mentions and chips (`data-mention-entity`). */
 export function readMentionEntitiesFromHtml(
   html: string
 ): MentionEntitySearchResult[] {
