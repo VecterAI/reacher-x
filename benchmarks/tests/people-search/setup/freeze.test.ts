@@ -95,7 +95,9 @@ test("freezing writes private artifacts and a plan whose digest matches", async 
 test("freezing refuses draft criteria, missing examples and wrong entity types, writing nothing", async (t) => {
   const { root, store: files } = await store(t);
   await assert.rejects(
-    files.withLock(() => freezePlan(files, input())),
+    files.withLock(() =>
+      freezePlan(files, input(), { criteriaStatus: "draft" })
+    ),
     /still a draft/
   );
   const missing = input();

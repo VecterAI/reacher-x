@@ -8,7 +8,7 @@ import {
   type FrozenPlan,
 } from "../../core/setup/manifest";
 import { entitySchema, timestampSchema } from "../../core/types";
-import { buildTasks, criteriaStatus } from "./criteria";
+import { buildTasks, criteriaStatus, type CriteriaStatus } from "./criteria";
 import { peopleSearchPlan } from "./plan";
 import { peopleSearchRates } from "./rates";
 
@@ -88,9 +88,13 @@ export async function loadFrozenPlan(
 export async function freezePlan(
   store: FileCheckpointStore,
   input: FreezeInput,
-  options: { allowDraftCriteria?: boolean } = {}
+  options: {
+    allowDraftCriteria?: boolean;
+    criteriaStatus?: CriteriaStatus;
+  } = {}
 ): Promise<FrozenPlanRecord> {
-  if (criteriaStatus === "draft" && !options.allowDraftCriteria)
+  const status = options.criteriaStatus ?? criteriaStatus;
+  if (status === "draft" && !options.allowDraftCriteria)
     throw new RunnerStateError(
       "The criteria are still a draft. Agree them before freezing the plan."
     );

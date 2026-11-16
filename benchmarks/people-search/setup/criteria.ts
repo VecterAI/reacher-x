@@ -2,10 +2,10 @@ import type { BenchmarkTask, Criterion } from "../../core/types";
 import { peopleSearchPlan } from "./plan";
 
 // Proposal 2.1 and 3.4: what each prompt requires, written down before any
-// run and frozen with the reference date. DRAFT until the project lead and
-// the proposal's author agree; `peopleSearchPlan.criteriaFrozen` stays false
-// until then, and the freeze step refuses a draft.
-export const criteriaStatus = "draft" as const;
+// run and frozen with the reference date. Agreed by the project lead on
+// 16 Nov 2026 as drafted; the freeze step refuses a draft.
+export type CriteriaStatus = "draft" | "agreed";
+export const criteriaStatus: CriteriaStatus = "agreed";
 
 type PromptId = (typeof peopleSearchPlan.prompts)[number]["id"];
 type PromptCriteria = Readonly<{
