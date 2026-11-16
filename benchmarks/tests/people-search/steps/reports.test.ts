@@ -6,6 +6,7 @@ import {
   aggregateReport,
   decide,
   learningPairs,
+  linkedInCapLine,
   segmentOutcomeSchema,
   type ReportContext,
 } from "../../../people-search/steps/reports";
@@ -214,4 +215,25 @@ test("the rest of stage 2 aggregates its first third's workspaces, never stage 1
   // AI spend of its first cycle (with setup) and the recorded X use.
   assert.equal(row.usage.pricedUsageUsd.toFixed(2), "0.56");
   assert.equal(row.speed.requestLatencyMs, 1_000);
+});
+
+test("the step report states whether the LinkedIn call cap was in force", () => {
+  const settings = (linkdApiCycleLimit?: number | null) => ({
+    settings: {
+      production: {},
+      productionSource: "docs",
+      runOnly: {},
+      poolLimits: {},
+      linkdApiCircuitReset: false,
+      ...(linkdApiCycleLimit === undefined ? {} : { linkdApiCycleLimit }),
+    },
+  });
+  assert.match(
+    linkedInCapLine(settings(100)),
+    /in force for this step, at most 100 LinkdAPI calls per workspace cycle/
+  );
+  assert.match(linkedInCapLine(settings(null)), /none; no limit was in force/);
+  // Outcomes recorded before the cap existed still parse and say so.
+  assert.match(linkedInCapLine(settings()), /not recorded/);
+  assert.match(linkedInCapLine({ settings: null }), /not recorded/);
 });

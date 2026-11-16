@@ -41,6 +41,7 @@ type Env = {
   readonly AI_VISION_MODEL: string | undefined;
   readonly AVAILABLE_PLAN_OFFERS: string | undefined;
   readonly BENCHMARK_LEARNING_OFF_WORKSPACE_IDS: string | undefined;
+  readonly BENCHMARK_LINKDAPI_CYCLE_LIMIT: string | undefined;
   readonly BENCHMARK_POOL_LIMITS: string | undefined;
   readonly ENRICHMENT_MAX_PARALLELISM: string | undefined;
   readonly ENRICHMENT_RETRY_INITIAL_BACKOFF_MS: string | undefined;

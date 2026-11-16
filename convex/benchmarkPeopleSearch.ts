@@ -26,8 +26,12 @@ import { workspaceUseCaseKeyValidator } from "./validators";
 import { resolveWorkspaceUseCaseKey } from "../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
 import { resolvePoolLimits } from "./lib/benchmarkConcurrency";
-
-const BENCHMARK_NAME_PREFIX = "Benchmark ";
+import {
+  BENCHMARK_WORKSPACE_PREFIX as BENCHMARK_NAME_PREFIX,
+  LINKDAPI_CYCLE_CAP_REFUSAL,
+  currentBenchmarkCycle,
+  resolveLinkdApiCycleLimit,
+} from "./lib/benchmarkLinkdApiCap";
 const LABEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 const MAX_STATUS_ROWS = 2000;
 const MAX_COST_EVENTS_READ = 5000;
@@ -163,12 +167,23 @@ export const runStatus = internalQuery({
       disqualified: 0,
       unscored: 0,
       organizations: 0,
+      // Pending only until a scheduled retry after the LinkedIn cap refused
+      // a read qualification needed; other failures are not counted.
+      awaitingRetry: 0,
     };
     for (const prospect of prospects.slice(0, MAX_STATUS_ROWS)) {
       counts.total += 1;
       if (prospect.prospectType === "organization") counts.organizations += 1;
-      if (prospect.qualificationStatus === "pending") counts.pending += 1;
-      else if (prospect.qualificationStatus === "qualified")
+      if (prospect.qualificationStatus === "pending") {
+        counts.pending += 1;
+        if (
+          prospect.qualificationLastFailure?.message.includes(
+            LINKDAPI_CYCLE_CAP_REFUSAL
+          ) &&
+          !prospect.qualificationWorkflowId
+        )
+          counts.awaitingRetry += 1;
+      } else if (prospect.qualificationStatus === "qualified")
         counts.qualified += 1;
       else if (prospect.qualificationStatus === "disqualified")
         counts.disqualified += 1;
@@ -485,6 +500,33 @@ export const poolLimitsStatus = internalQuery({
       ...resolvePoolLimits(),
       enforcedTenantScheduling:
         control?.mode === "enforced" || Boolean(enforcedOverride),
+    };
+  },
+});
+
+/**
+ * The LinkedIn call cap in effect, from the same resolver the LinkdAPI
+ * reservation reads, and the benchmark cycle it is counting now.
+ */
+export const linkdApiCycleLimitStatus = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const [state, cycle] = await Promise.all([
+      ctx.db
+        .query("linkdapiBudgetState")
+        .withIndex("by_provider", (q) => q.eq("provider", "linkdapi"))
+        .first(),
+      currentBenchmarkCycle(ctx),
+    ]);
+    const counting = cycle && state?.benchmarkCycleKey === cycle.key;
+    return {
+      ...resolveLinkdApiCycleLimit(),
+      cycle: cycle && {
+        workspaceId: cycle.workspaceId,
+        workflowId: cycle.workflowId,
+        calls: counting ? (state.benchmarkCycleCalls ?? 0) : 0,
+        refused: counting ? (state.benchmarkCycleRefused ?? 0) : 0,
+      },
     };
   },
 });

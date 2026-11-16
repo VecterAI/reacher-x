@@ -1812,6 +1812,11 @@ export default defineSchema({
     nextAvailableAt: v.number(),
     updatedAt: v.number(),
     lastConsumer: v.optional(v.string()),
+    // Development benchmark only (lib/benchmarkLinkdApiCap.ts): the benchmark
+    // workspace cycle being counted, its calls so far and the calls refused.
+    benchmarkCycleKey: v.optional(v.string()),
+    benchmarkCycleCalls: v.optional(v.number()),
+    benchmarkCycleRefused: v.optional(v.number()),
   }).index("by_provider", ["provider"]),
 
   exaApiBudgetState: defineTable({

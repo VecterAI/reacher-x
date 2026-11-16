@@ -2,8 +2,10 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import {
   assertProviderRequestAllowed,
+  ProviderCircuitOpenError,
   type ProviderRequestContext,
 } from "./providerReliability";
+import { linkdApiCycleCapMessage } from "./benchmarkLinkdApiCap";
 import { getSystemRuntimeConfig } from "./runtimeConfigHelpers";
 
 const internalLinkdApiBudget = (internal as any).linkdapiBudget;
@@ -24,10 +26,22 @@ export async function acquireLinkdApiBudget(
     endpoint: consumer,
     ...requestContext,
   });
-  return await ctx.runAction(
+  const reservation = await ctx.runAction(
     internalLinkdApiBudget.acquireLinkdApiBudgetInternal,
     {
       consumer,
     }
   );
+  if (reservation.benchmarkCapRefused !== null) {
+    // Development benchmark cap: refused as an open circuit is, without
+    // recording a provider failure, so every caller degrades as it already
+    // does for an unavailable provider and the circuit stays closed.
+    const refusal = new ProviderCircuitOpenError({
+      provider: "linkdapi",
+      reason: "credits",
+    });
+    refusal.message = linkdApiCycleCapMessage(reservation.benchmarkCapRefused);
+    throw refusal;
+  }
+  return reservation;
 }

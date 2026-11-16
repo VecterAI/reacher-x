@@ -473,3 +473,64 @@ test("a stopping step or a spent budget creates nothing, and a failed start stil
   assert.ok(functions.includes("benchmarkPeopleSearch:stopRun"));
   assert.ok(functions.includes("benchmarkPeopleSearch:exportCandidates"));
 });
+
+test("under the LinkedIn cap, prospects only waiting for a qualification retry count as settled", async () => {
+  const run = (retryWaitsSettle: boolean) =>
+    runWorkspace(
+      fakeDeployment(
+        { PROSPECTING_AUTO_RESCHEDULE: "0" },
+        {
+          "benchmarkPeopleSearch:runStatus": scripted([
+            status({
+              workflowId: "wf1",
+              workflowState: "inProgress",
+              workflowStartedAt: T,
+            }),
+            status({
+              workflowId: "wf1",
+              workflowState: "completed",
+              counts: { total: 4, pending: 2, awaitingRetry: 2 },
+            }),
+          ]),
+        }
+      ).driver,
+      { ...plan, cycles: 1 },
+      hooks().value,
+      { ...options, maxCycleMs: 10 * POLL, retryWaitsSettle },
+      fakeClock(T)
+    );
+  assert.equal((await run(true)).ending, "planned-cycles");
+  assert.equal((await run(false)).ending, "timed-out");
+});
+
+test("the budget check gets the workspace once it exists, and a stop there ends the run", async () => {
+  const seen: (string | null)[] = [];
+  const deployment = fakeDeployment(
+    { PROSPECTING_AUTO_RESCHEDULE: "0" },
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        status({ workflowId: "wf1", workflowState: "inProgress" }),
+      ]),
+    }
+  );
+  const record = await runWorkspace(
+    deployment.driver,
+    { ...plan, cycles: 1 },
+    {
+      ...hooks().value,
+      checkBudget: async (workspace) => {
+        seen.push(workspace?.workspaceId ?? null);
+        if (seen.length === 4)
+          throw new BudgetStop("renidly:abc reached its approved credits.");
+      },
+    },
+    options,
+    fakeClock(T)
+  );
+  assert.deepEqual(seen, [null, "w1", "w1", "w1"]);
+  assert.equal(record.ending, "budget-stop");
+  assert.match(record.detail ?? "", /renidly:abc/);
+  assert.ok(
+    deployment.functionCalls().includes("benchmarkPeopleSearch:stopRun")
+  );
+});

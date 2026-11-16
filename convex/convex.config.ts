@@ -37,6 +37,9 @@ const app = defineApp({
     // Development benchmark only: JSON workflow and worker pool limits for the
     // Starter plan (see lib/benchmarkConcurrency.ts).
     BENCHMARK_POOL_LIMITS: v.optional(v.string()),
+    // Development benchmark only: most LinkdAPI calls per benchmark workspace
+    // cycle (see lib/benchmarkLinkdApiCap.ts).
+    BENCHMARK_LINKDAPI_CYCLE_LIMIT: v.optional(v.string()),
     OPENROUTER_ROUTING_PRESET: v.optional(
       v.union(v.literal("current"), v.literal("cost_optimized"))
     ),

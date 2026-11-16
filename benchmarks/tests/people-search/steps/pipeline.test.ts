@@ -16,7 +16,9 @@ import {
   type SegmentId,
 } from "../../../people-search/setup/schedule";
 import {
+  DEFAULT_LINKEDIN_CALLS_PER_CYCLE,
   runStep,
+  segmentApprovalSchema,
   segmentRunId,
   type StepDependencies,
 } from "../../../people-search/steps/pipeline";
@@ -78,6 +80,14 @@ test("the smoke step runs every phase, resets the deployment, and a rerun only r
   assert.equal(outcome.decision?.point, "D1");
   assert.match(report, /## Verified matches in each tool's top 5/);
   assert.match(decision ?? "", /# D1 checkpoint/);
+  // The LinkedIn cap was on during the workspace, reported, and cleared after.
+  assert.equal(outcome.settings?.linkdApiCycleLimit, 100);
+  assert.match(
+    report,
+    /LinkedIn call cap: in force for this step, at most 100/
+  );
+  assert.ok(timeline.includes("env set BENCHMARK_LINKDAPI_CYCLE_LIMIT"));
+  assert.equal(env.has("BENCHMARK_LINKDAPI_CYCLE_LIMIT"), false);
   assert.deepEqual(Object.fromEntries(env), atRest);
   assert.match(
     await readFile(join(root, files[1]), "utf8"),
@@ -557,4 +567,36 @@ test("a resumed step's opening balances are the first start's, matching its chan
       (item.available - closing.available).toFixed(6)
     );
   }
+});
+
+test("the LinkedIn cap is step-only: 100 calls per workspace cycle unless the approval sets another or none", () => {
+  const approval = {
+    segment: "smoke",
+    spend: {
+      approvalReference: "Synthetic approval",
+      approvedAt: "2026-11-16T09:00:00Z",
+      accountLimits: [{ accountId: "openrouter:a", maxAdditionalUsd: 1 }],
+    },
+  };
+  assert.equal(DEFAULT_LINKEDIN_CALLS_PER_CYCLE, 100);
+  assert.equal(
+    segmentApprovalSchema.parse(approval).linkedInCallsPerCycle,
+    100
+  );
+  for (const value of [40, null])
+    assert.equal(
+      segmentApprovalSchema.parse({
+        ...approval,
+        linkedInCallsPerCycle: value,
+      }).linkedInCallsPerCycle,
+      value
+    );
+  for (const value of [0, 2.5, "100"])
+    assert.equal(
+      segmentApprovalSchema.safeParse({
+        ...approval,
+        linkedInCallsPerCycle: value,
+      }).success,
+      false
+    );
 });

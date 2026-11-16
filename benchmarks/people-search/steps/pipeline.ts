@@ -90,6 +90,13 @@ const stage2SizeSchema = z.strictObject({
   plannedCycleCostUsd: z.number().positive(),
 });
 
+/**
+ * LinkdAPI calls one workspace may make per cycle in a live step, unless its
+ * approval sets another number (or null for none). A step-only setting: it is
+ * never part of the frozen run settings, so the frozen plan is unchanged.
+ */
+export const DEFAULT_LINKEDIN_CALLS_PER_CYCLE = 100;
+
 /** The private per-step approval file (proposal 5.3 step 1). */
 export const segmentApprovalSchema = z.strictObject({
   segment: z.enum(SEGMENTS),
@@ -105,6 +112,14 @@ export const segmentApprovalSchema = z.strictObject({
     .default([]),
   // Stage 2 only: the size approved at D3, or for the rest as set at D4.
   stage2: stage2SizeSchema.optional(),
+  // The development-only LinkedIn call cap per workspace cycle; null for none.
+  linkedInCallsPerCycle: z
+    .number()
+    .int()
+    .min(1)
+    .max(100_000)
+    .nullable()
+    .default(DEFAULT_LINKEDIN_CALLS_PER_CYCLE),
 });
 export type SegmentApproval = z.infer<typeof segmentApprovalSchema>;
 
@@ -466,7 +481,15 @@ async function runSegment(
         ran = await withLiveSession(
           deps.driver,
           sessionFileIn(store),
-          { runId: store.runId, settings, ...deps.session },
+          {
+            runId: store.runId,
+            settings,
+            // openBudget above refused the step without an approval.
+            linkdApiCycleLimit: approval
+              ? approval.linkedInCallsPerCycle
+              : DEFAULT_LINKEDIN_CALLS_PER_CYCLE,
+            ...deps.session,
+          },
           (session) => {
             // Production parity and the pool limits in effect, as confirmed (proposal 5.5).
             settingsInEffect = session.confirmed;

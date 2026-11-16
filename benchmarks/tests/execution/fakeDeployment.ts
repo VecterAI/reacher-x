@@ -47,6 +47,15 @@ export function fakeDeployment(
       truncated: false,
     }),
     "benchmarkPeopleSearch:resetLinkdApiCircuit": () => ({ reset: false }),
+    "benchmarkPeopleSearch:linkdApiCycleLimitStatus": () => ({
+      limit: env.has("BENCHMARK_LINKDAPI_CYCLE_LIMIT")
+        ? Number(env.get("BENCHMARK_LINKDAPI_CYCLE_LIMIT"))
+        : null,
+      source: env.has("BENCHMARK_LINKDAPI_CYCLE_LIMIT")
+        ? "benchmark"
+        : "default",
+      error: null,
+    }),
     "benchmarkPeopleSearch:stopRun": () => ({
       stopped: true,
       cancelFailed: false,
@@ -147,6 +156,7 @@ export function status(
       disqualified: 0,
       unscored: 0,
       organizations: 0,
+      awaitingRetry: 0,
       ...counts,
     },
     pendingLessonWrites: 0,

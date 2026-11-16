@@ -6,6 +6,10 @@ import {
   getLinkdApiBudgetConfig,
   LINKDAPI_PROVIDER,
 } from "./lib/linkdapiBudget";
+import {
+  currentBenchmarkCycle,
+  resolveLinkdApiCycleLimit,
+} from "./lib/benchmarkLinkdApiCap";
 
 const internalLinkdApiBudget = (internal as any).linkdapiBudget;
 
@@ -21,6 +25,41 @@ export const reserveLinkdApiBudgetSlotInternal = internalMutation({
       .withIndex("by_provider", (q) => q.eq("provider", LINKDAPI_PROVIDER))
       .first();
 
+    // Development benchmark cap; unset in production, so nothing below runs there.
+    const cap = resolveLinkdApiCycleLimit();
+    let benchmarkCycle: {
+      benchmarkCycleKey: string;
+      benchmarkCycleCalls: number;
+      benchmarkCycleRefused: number;
+    } | null = null;
+    if (cap.limit !== null) {
+      const cycle = await currentBenchmarkCycle(ctx);
+      if (cycle) {
+        const same = existing?.benchmarkCycleKey === cycle.key;
+        const calls = same ? (existing?.benchmarkCycleCalls ?? 0) : 0;
+        const refused = same ? (existing?.benchmarkCycleRefused ?? 0) : 0;
+        if (existing && calls >= cap.limit) {
+          // Refused before any wait: the call never reaches the provider.
+          await ctx.db.patch(existing._id, {
+            benchmarkCycleKey: cycle.key,
+            benchmarkCycleCalls: calls,
+            benchmarkCycleRefused: refused + 1,
+          });
+          return {
+            waitMs: 0,
+            spacingMs: config.requestSpacingMs,
+            targetRequestsPerMinute: config.targetRequestsPerMinute,
+            benchmarkCapRefused: cap.limit,
+          };
+        }
+        benchmarkCycle = {
+          benchmarkCycleKey: cycle.key,
+          benchmarkCycleCalls: calls + 1,
+          benchmarkCycleRefused: refused,
+        };
+      }
+    }
+
     const reservedAt = Math.max(now, existing?.nextAvailableAt ?? now);
     const nextAvailableAt = reservedAt + config.requestSpacingMs;
 
@@ -29,6 +68,7 @@ export const reserveLinkdApiBudgetSlotInternal = internalMutation({
         nextAvailableAt,
         updatedAt: now,
         lastConsumer: consumer,
+        ...benchmarkCycle,
       });
     } else {
       await ctx.db.insert("linkdapiBudgetState", {
@@ -36,6 +76,7 @@ export const reserveLinkdApiBudgetSlotInternal = internalMutation({
         nextAvailableAt,
         updatedAt: now,
         lastConsumer: consumer,
+        ...benchmarkCycle,
       });
     }
 
@@ -43,6 +84,7 @@ export const reserveLinkdApiBudgetSlotInternal = internalMutation({
       waitMs: Math.max(0, reservedAt - now),
       spacingMs: config.requestSpacingMs,
       targetRequestsPerMinute: config.targetRequestsPerMinute,
+      benchmarkCapRefused: null,
     };
   },
 });
@@ -58,6 +100,8 @@ export const acquireLinkdApiBudgetInternal = internalAction({
     waitMs: number;
     spacingMs: number;
     targetRequestsPerMinute: number;
+    // The benchmark cap that refused this call, or null when it may proceed.
+    benchmarkCapRefused: number | null;
   }> => {
     const config = getLinkdApiBudgetConfig();
     for (

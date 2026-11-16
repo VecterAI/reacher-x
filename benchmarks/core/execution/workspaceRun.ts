@@ -54,14 +54,19 @@ export type WatchOptions = Readonly<{
   // Wait before the final spend reading, because key usage is reported with a delay.
   spendSettleMs: number;
   maxPollFailures: number;
+  // Prospects pending only until a qualification retry after the LinkedIn
+  // cap refused a read count as settled (the deployment counts only those).
+  // Set while the cap is in force: the retry would be refused again.
+  retryWaitsSettle?: boolean;
   signal?: AbortSignal;
 }>;
 
 export type WorkspaceHooks = Readonly<{
   // Cumulative spend of the deployment's OpenRouter key, or null when unreadable.
   readSpendUsd(): Promise<number | null>;
-  // Runs before each poll; throws BudgetStop to end the workspace.
-  checkBudget(): Promise<void>;
+  // Runs before each poll, with the workspace once it exists; throws
+  // BudgetStop to end the workspace.
+  checkBudget(workspace: BenchmarkWorkspace | null): Promise<void>;
   // Records the workspace before it can spend, and clears it once stopped cleanly.
   track(workspace: BenchmarkWorkspace | null): Promise<void>;
 }>;
@@ -169,11 +174,16 @@ async function watchCycles(
   let automatic = plan.cycles > 1;
   let failures = 0;
   // A streak of idle polls with an unchanged prospect count.
-  let quiet = null as { since: number; polls: number; total: number } | null;
+  let quiet = null as {
+    since: number;
+    polls: number;
+    total: number;
+    waiting: number;
+  } | null;
   for (;;) {
     options.signal?.throwIfAborted();
     try {
-      await hooks.checkBudget();
+      await hooks.checkBudget(workspace);
     } catch (error) {
       if (error instanceof BudgetStop)
         return { ending: "budget-stop", detail: error.message };
@@ -276,14 +286,22 @@ async function watchCycles(
       };
 
     if (cycle.discoveryEndedAt !== null && cycle.settledAt === null) {
+      const waiting = options.retryWaitsSettle
+        ? status.counts.awaitingRetry
+        : 0;
       const idle =
-        status.counts.pending === 0 &&
+        status.counts.pending - waiting === 0 &&
         status.pendingLessonWrites === 0 &&
         !status.truncated;
       if (!idle) quiet = null;
-      else if (quiet !== null && quiet.total === status.counts.total)
+      else if (
+        quiet !== null &&
+        quiet.total === status.counts.total &&
+        quiet.waiting === waiting
+      )
         quiet = { ...quiet, polls: quiet.polls + 1 };
-      else quiet = { since: now, polls: 1, total: status.counts.total };
+      else
+        quiet = { since: now, polls: 1, total: status.counts.total, waiting };
       if (quiet && quiet.polls >= options.settlePolls)
         cycle.settledAt = quiet.since;
     }
@@ -329,7 +347,7 @@ export async function runWorkspace(
 
   // Setup is paid, so nothing is created once the step is stopping or over budget.
   options.signal?.throwIfAborted();
-  await hooks.checkBudget();
+  await hooks.checkBudget(null);
   const atSubmitUsd = await hooks.readSpendUsd();
   const submittedAt = clock.now();
   const workspace = await prepare(driver, plan, submittedAt);
@@ -349,7 +367,7 @@ export async function runWorkspace(
 
   // Not started yet: if this throws, the session reset stops the tracked workspace.
   options.signal?.throwIfAborted();
-  await hooks.checkBudget();
+  await hooks.checkBudget(workspace);
   const beforeStartUsd = await hooks.readSpendUsd();
   const startedAt = clock.now();
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   LEARNING_OFF_SETTING,
+  LINKDAPI_CAP_SETTING,
   PROVIDER_KEYS,
   RUNTIME_SETTINGS,
   poolLimitsSchema,
@@ -31,6 +32,7 @@ const MANAGED_SETTINGS: readonly RuntimeSetting[] = [
   "PROSPECTING_AUTO_RESCHEDULE",
   LEARNING_OFF_SETTING,
   "BENCHMARK_POOL_LIMITS",
+  LINKDAPI_CAP_SETTING,
 ];
 
 const settingValuesSchema = z.partialRecord(
@@ -89,6 +91,10 @@ export function atRestProblems(
   if (settings.BENCHMARK_POOL_LIMITS !== null)
     problems.push(
       "Benchmark pool limits are still set (BENCHMARK_POOL_LIMITS)."
+    );
+  if (settings[LINKDAPI_CAP_SETTING] !== null)
+    problems.push(
+      `A LinkedIn call cap is still set (${LINKDAPI_CAP_SETTING}).`
     );
   return problems;
 }
@@ -194,6 +200,9 @@ export type LiveSessionConfig = Readonly<{
   // The local OPENROUTER_API_KEY. Its spend is ReacherX's cost of record, so
   // it must be the key the deployment uses.
   deploymentOpenRouterKey: string;
+  // Most LinkdAPI calls per workspace cycle for this step (step-only, never
+  // frozen), or null for no cap.
+  linkdApiCycleLimit: number | null;
 }>;
 
 export type ConfirmedRunSettings = Readonly<{
@@ -202,6 +211,8 @@ export type ConfirmedRunSettings = Readonly<{
   runOnly: RunSettings["runOnly"];
   poolLimits: PoolLimits;
   linkdApiCircuitReset: boolean;
+  // The LinkedIn call cap per workspace cycle the deployment confirmed, or null.
+  linkdApiCycleLimit: number | null;
 }>;
 
 export type LiveSession = Readonly<{
@@ -285,6 +296,11 @@ async function applyRunSettings(
       `Settings not confirmed on the deployment: ${unconfirmed.join(", ")}.`
     );
 
+  // In force before anything can call LinkedIn.
+  const linkdApiCycleLimit = await driver.applyLinkdApiCycleLimit(
+    config.linkdApiCycleLimit
+  );
+
   // Unpause last; pool limits are reconciled only while jobs run.
   await driver.setSetting("PAUSE_AUTONOMOUS_JOBS", "false");
   if (jobsPaused(await driver.getSetting("PAUSE_AUTONOMOUS_JOBS")))
@@ -296,6 +312,7 @@ async function applyRunSettings(
     runOnly: config.settings.runOnly,
     poolLimits,
     linkdApiCircuitReset: circuit.reset,
+    linkdApiCycleLimit,
   };
 }
 
@@ -360,8 +377,9 @@ export async function withLiveSession<T>(
 }
 
 /**
- * Proposal 5.3 step 6. Stops the tracked workspace, clears pool limits, pauses
- * jobs, restores every recorded setting, and restores the development keys;
+ * Proposal 5.3 step 6. Stops the tracked workspace, clears pool limits and the
+ * LinkedIn call cap, pauses jobs, restores every recorded setting, and
+ * restores the development keys;
  * the SocialAPI key only once the workspace's monitors are deleted, because
  * the funded key's account owns them. Each part is attempted even when an
  * earlier one fails. Returns what is still not reset; the session stays
@@ -413,6 +431,13 @@ export async function resetLiveSession(
     if (!paused) await driver.applyPoolLimits(null);
     // While paused, removing the setting below is enough: pools reconcile on the next unpause.
   });
+
+  await attempt(
+    "The LinkedIn call cap was not confirmed cleared.",
+    async () => {
+      await driver.applyLinkdApiCycleLimit(null);
+    }
+  );
 
   await attempt("Autonomous jobs could not be paused.", () =>
     driver.setSetting(

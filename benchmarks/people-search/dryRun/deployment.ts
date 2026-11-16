@@ -196,6 +196,15 @@ export function syntheticDeployment(
         enforcedTenantScheduling: false,
       }),
       "benchmarkPeopleSearch:resetLinkdApiCircuit": () => ({ reset: false }),
+      "benchmarkPeopleSearch:linkdApiCycleLimitStatus": () => ({
+        limit: env.has("BENCHMARK_LINKDAPI_CYCLE_LIMIT")
+          ? Number(env.get("BENCHMARK_LINKDAPI_CYCLE_LIMIT"))
+          : null,
+        source: env.has("BENCHMARK_LINKDAPI_CYCLE_LIMIT")
+          ? "benchmark"
+          : "default",
+        error: null,
+      }),
       "benchmarkPeopleSearch:deploymentActivity": (args) => ({
         workspaceIds: [...workspaces.values()]
           .filter(
@@ -281,6 +290,7 @@ export function syntheticDeployment(
             organizations: workspace.prospects.filter(
               (item) => item.prospectType === "organization"
             ).length,
+            awaitingRetry: 0,
           },
           pendingLessonWrites: unfinished(LESSONS_MS),
           truncated: false,

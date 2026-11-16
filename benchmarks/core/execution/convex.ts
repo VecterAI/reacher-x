@@ -29,6 +29,7 @@ const PEOPLE_SEARCH_HOOKS = {
   runCosts: "benchmarkPeopleSearch:runCosts",
   linkdApiUnitsSince: "benchmarkPeopleSearch:linkdApiUnitsSince",
   resetLinkdApiCircuit: "benchmarkPeopleSearch:resetLinkdApiCircuit",
+  linkdApiCycleLimitStatus: "benchmarkPeopleSearch:linkdApiCycleLimitStatus",
 } as const satisfies Record<string, `benchmarkPeopleSearch:${string}`>;
 
 export type CommandResult = Readonly<{
@@ -125,9 +126,12 @@ export const RUNTIME_SETTINGS = [
   "JEV_PREFILTER_MODE",
   "BENCHMARK_LEARNING_OFF_WORKSPACE_IDS",
   "BENCHMARK_POOL_LIMITS",
+  "BENCHMARK_LINKDAPI_CYCLE_LIMIT",
 ] as const;
 export type RuntimeSetting = (typeof RUNTIME_SETTINGS)[number];
 export const LEARNING_OFF_SETTING = "BENCHMARK_LEARNING_OFF_WORKSPACE_IDS";
+// Development only: most LinkdAPI calls per benchmark workspace cycle.
+export const LINKDAPI_CAP_SETTING = "BENCHMARK_LINKDAPI_CYCLE_LIMIT";
 
 /** Development provider keys replaced by funded keys during a live step, then restored. */
 export const PROVIDER_KEYS = ["SOCIALAPI_API_KEY", "LINKDAPI_API_KEY"] as const;
@@ -169,6 +173,8 @@ export const runStatusSchema = z
       disqualified: z.number(),
       unscored: z.number(),
       organizations: z.number(),
+      // Pending only until a qualification retry after the LinkedIn cap refused a read.
+      awaitingRetry: z.number().default(0),
     }),
     pendingLessonWrites: z.number(),
     truncated: z.boolean(),
@@ -223,6 +229,12 @@ const poolStatusSchema = z.object({
   source: z.enum(["default", "benchmark"]),
   error: z.string().nullable(),
   enforcedTenantScheduling: z.boolean(),
+});
+
+const linkdApiCapStatusSchema = z.object({
+  limit: z.number().int().nullable(),
+  source: z.enum(["default", "benchmark"]),
+  error: z.string().nullable(),
 });
 
 export const stopResultSchema = z.object({
@@ -376,6 +388,32 @@ export class ConvexReacherXDriver {
         "The deployment did not confirm the requested pool limits."
       );
     return status.limits;
+  }
+
+  /**
+   * Sets the LinkedIn call cap per benchmark workspace cycle (or clears it
+   * with null) and returns the cap the deployment reports in effect. Stops on
+   * any mismatch rather than running with an unknown cap.
+   */
+  async applyLinkdApiCycleLimit(limit: number | null) {
+    if (limit !== null)
+      await this.setSetting(LINKDAPI_CAP_SETTING, String(limit));
+    else if ((await this.getSetting(LINKDAPI_CAP_SETTING)) !== null)
+      await this.env(["remove", LINKDAPI_CAP_SETTING]);
+    const status = await this.call(
+      PEOPLE_SEARCH_HOOKS.linkdApiCycleLimitStatus,
+      {},
+      linkdApiCapStatusSchema
+    );
+    if (
+      status.error ||
+      status.limit !== limit ||
+      status.source !== (limit === null ? "default" : "benchmark")
+    )
+      throw new ConvexCommandError(
+        "The deployment did not confirm the requested LinkedIn call cap."
+      );
+    return status.limit;
   }
 
   prepare(args: {

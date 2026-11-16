@@ -92,6 +92,9 @@ export const segmentOutcomeSchema = z.object({
       runOnly: z.record(z.string(), z.string()),
       poolLimits: z.record(z.string(), z.number()),
       linkdApiCircuitReset: z.boolean(),
+      // LinkdAPI calls allowed per workspace cycle; null for none. Absent in
+      // outcomes recorded before the cap existed.
+      linkdApiCycleLimit: z.number().nullable().optional(),
     })
     .nullable(),
   stage2: z
@@ -891,6 +894,16 @@ export function renderDecision(
 }
 
 /** Markdown for the console and the private run folder. */
+/** Whether the development-only LinkedIn call cap was in force for the step. */
+export function linkedInCapLine(outcome: Pick<SegmentOutcome, "settings">) {
+  const limit = outcome.settings?.linkdApiCycleLimit;
+  if (limit === undefined)
+    return "LinkedIn call cap: not recorded for this step.";
+  if (limit === null)
+    return "LinkedIn call cap: none; no limit was in force for this step.";
+  return `LinkedIn call cap: in force for this step, at most ${limit} LinkdAPI calls per workspace cycle (development-only BENCHMARK_LINKDAPI_CYCLE_LIMIT). Calls past it were refused as an unavailable provider is, so a capped workspace finds and qualifies fewer LinkedIn prospects than production would.`;
+}
+
 export function renderSegmentReport(
   outcome: SegmentOutcome,
   context: ReportContext
@@ -963,6 +976,8 @@ export function renderSegmentReport(
     lines.push(
       "",
       "## ReacherX workspaces",
+      "",
+      linkedInCapLine(outcome),
       "",
       "| Workspace | Ending | Cycles | AI spend (key) | X data (recorded) | LinkedIn credits (recorded) | X / LinkedIn balance change (shared keys) | Qualified of prospects |",
       "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",

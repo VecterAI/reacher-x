@@ -4,6 +4,7 @@ import {
   linkdApiUnitsSchema,
   runCostsSchema,
   stopResultSchema,
+  type BenchmarkWorkspace,
   type ConvexReacherXDriver,
 } from "../../core/execution/convex";
 import {
@@ -110,7 +111,7 @@ export type WorkspaceOutcome = z.infer<typeof workspaceOutcomeSchema>;
  * from ReacherX's records instead.
  */
 export function recordedDataUse(
-  records: readonly WorkspaceRunRecord[],
+  records: readonly Pick<WorkspaceRunRecord, "recorded">[],
   accounts: Readonly<{ x: string; linkedIn: string }>
 ) {
   return {
@@ -157,6 +158,52 @@ export type WorkspacePhase = Readonly<{
   linkedIn: AccountReader;
   log(line: string): void;
 }>;
+
+/**
+ * The in-cycle guard: the deployment key's spend, then the X and LinkedIn
+ * use the deployment recorded for the earlier workspaces and this one,
+ * against their approved amounts. Records that stay unreadable for
+ * `maxFailures` checks in a row stop the workspace too.
+ */
+export function workspaceBudgetCheck(
+  phase: Readonly<{
+    driver: ConvexReacherXDriver;
+    deployment: Pick<UsageAccount, "accountId">;
+    x: Pick<AccountReader, "accountId">;
+    linkedIn: Pick<AccountReader, "accountId">;
+  }>,
+  budget: Pick<StepBudget, "check" | "checkRecorded">,
+  earlier: readonly Pick<WorkspaceRunRecord, "recorded">[],
+  maxFailures: number
+) {
+  let failures = 0;
+  return async (workspace: BenchmarkWorkspace | null) => {
+    await budget.check([phase.deployment.accountId]);
+    if (!workspace) return;
+    let recorded: WorkspaceRunRecord["recorded"];
+    try {
+      const [costs, linkdApi] = await Promise.all([
+        phase.driver.runCosts(workspace, workspace.createdAt),
+        phase.driver.linkdApiUnitsSince(workspace.createdAt),
+      ]);
+      recorded = { costs, linkdApi };
+      failures = 0;
+    } catch {
+      failures += 1;
+      if (failures >= maxFailures)
+        throw new BudgetStop(
+          `The deployment's X and LinkedIn records could not be read ${failures} times in a row.`
+        );
+      return;
+    }
+    budget.checkRecorded(
+      recordedDataUse([...earlier, { recorded }], {
+        x: phase.x.accountId,
+        linkedIn: phase.linkedIn.accountId,
+      })
+    );
+  };
+}
 
 export type WorkspaceUnitResult = Readonly<{
   slot: WorkspaceSlot;
@@ -230,12 +277,23 @@ export async function runWorkspaceUnits(
                   .read()
                   .then((snapshot) => snapshot.cumulativeUsd)
                   .catch(() => null),
-              // Only the deployment key between polls: the X and LinkedIn
-              // providers rate-limit per key, and the workspace uses them.
-              checkBudget: () => budget.check([phase.deployment.accountId]),
+              // The deployment key's spend and the deployment's own X and
+              // LinkedIn records; the providers' balance endpoints are not
+              // read between polls, because they rate-limit per key.
+              checkBudget: workspaceBudgetCheck(
+                phase,
+                budget,
+                [...ran],
+                phase.watch.maxPollFailures
+              ),
               track: phase.gate.tracking(session.trackWorkspace),
             },
-            { ...phase.watch, signal: phase.signal },
+            {
+              ...phase.watch,
+              // A refused LinkedIn read leaves qualification waiting to retry.
+              retryWaitsSettle: session.confirmed.linkdApiCycleLimit !== null,
+              signal: phase.signal,
+            },
             phase.clock
           );
           ending = record.ending;
