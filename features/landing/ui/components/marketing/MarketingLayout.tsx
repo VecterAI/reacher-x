@@ -41,8 +41,6 @@ export type InlineIconTerm = {
   /** Text shown after the icon; defaults to `term`. Use when the copy's
    * glyph (e.g. "△ Agent") is replaced by the icon itself. */
   display?: string;
-  /** Extra classes for the bare glyph, e.g. a muted color. */
-  className?: string;
 };
 
 export type InlineIconSegment =
@@ -52,7 +50,6 @@ export type InlineIconSegment =
       term: string;
       display: string;
       Icon: InlineIconTerm["Icon"];
-      className?: string;
     };
 
 // Platform glyphs render bare at glyph size in muted color, matching
@@ -62,12 +59,10 @@ const PLATFORM_TERMS: InlineIconTerm[] = [
   {
     term: "X/Twitter",
     Icon: FilledTwitterIcon,
-    className: "text-muted-foreground",
   },
   {
     term: "LinkedIn",
     Icon: FilledLinkedinIcon,
-    className: "text-muted-foreground",
   },
   { term: "Clay", Icon: ClayIcon },
   { term: "Apollo", Icon: ApolloIcon },
@@ -105,7 +100,6 @@ export function getInlineIconSegments(
       term: match.term,
       display: match.display ?? match.term,
       Icon: match.Icon,
-      className: match.className,
     });
     rest = rest.slice(match.index + match.term.length);
   }
@@ -126,7 +120,7 @@ export function inlinePlatformIcons(
     return (
       <span key={index} className="whitespace-nowrap">
         <segment.Icon
-          className={cn("mr-1 inline size-4 align-[-2px]", segment.className)}
+          className="mr-1 inline size-4 align-[-2px]"
           aria-hidden="true"
         />
         {segment.display}

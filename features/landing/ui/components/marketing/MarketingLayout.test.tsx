@@ -34,13 +34,12 @@ test("terms outside the text are skipped and repeats each get an icon", () => {
   ).toBe(2);
 });
 
-test("platform icons render bare in muted color, without brand colors", () => {
+test("platform icons render bare in the text color, without brand colors", () => {
   const markup = renderToStaticMarkup(
     <p>{inlinePlatformIcons("X/Twitter and LinkedIn")}</p>
   );
   expect(markup).not.toContain("bg-platform-twitter-badge");
   expect(markup).not.toContain("bg-platform-linkedin-badge");
-  expect(markup).toContain("text-muted-foreground");
-  expect(markup).not.toContain("bg-secondary");
+  expect(markup).not.toContain("text-muted-foreground");
   expect(markup.match(/<svg/g)?.length).toBe(2);
 });
