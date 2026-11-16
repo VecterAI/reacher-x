@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   ConvexCommandError,
   ConvexReacherXDriver,
+  runOutput,
   type CommandRunner,
 } from "../../core/execution/convex";
 import type { LearningCondition } from "../../core/types";
@@ -104,7 +105,7 @@ export class ReplayDeployment {
     // CLI errors can echo arguments; report the function name only.
     if (result.exitCode !== 0)
       throw new ConvexCommandError(`Convex function ${fn} failed.`);
-    return schema.parse(JSON.parse(result.stdout));
+    return schema.parse(runOutput(result.stdout));
   }
 
   /** Sets the qualification model, or removes the setting with null, and confirms it. */

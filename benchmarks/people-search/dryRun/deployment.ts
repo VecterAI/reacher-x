@@ -376,11 +376,10 @@ export function syntheticDeployment(
     const handler = command === "run" && action ? functions[action] : undefined;
     if (!handler) return { exitCode: 1, stdout: "", stderr: "unknown" };
     try {
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify(handler(JSON.parse(name ?? "{}"))),
-        stderr: "",
-      };
+      const output = handler(JSON.parse(name ?? "{}"));
+      // The CLI prints nothing when the function returns null.
+      const stdout = output === null ? "" : JSON.stringify(output);
+      return { exitCode: 0, stdout, stderr: "" };
     } catch {
       return { exitCode: 1, stdout: "", stderr: "failed" };
     }

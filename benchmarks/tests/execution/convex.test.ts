@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ConvexReacherXDriver,
   LEARNING_OFF_SETTING,
+  runOutput,
   type CommandRunner,
 } from "../../core/execution/convex";
 
@@ -87,4 +88,10 @@ test("failed CLI calls report the function, not its arguments", async () => {
       error.message ===
       "Convex function benchmarkPeopleSearch:prepareWorkspace failed."
   );
+});
+
+test("a function result of null, which the CLI prints as nothing, reads as null", () => {
+  assert.equal(runOutput(""), null);
+  assert.equal(runOutput("\n"), null);
+  assert.deepEqual(runOutput('{"workspaceId":"w1"}\n'), { workspaceId: "w1" });
 });

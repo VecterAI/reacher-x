@@ -41,6 +41,10 @@ export type CommandRunner = (
   stdin?: string
 ) => Promise<CommandResult>;
 
+/** A `convex run` result: the CLI prints nothing when the function returns null. */
+export const runOutput = (stdout: string): unknown =>
+  stdout.trim() === "" ? null : JSON.parse(stdout);
+
 // Selection variables that could point the CLI at another deployment.
 const OVERRIDE_VARIABLES = [
   "CONVEX_DEPLOY_KEY",
@@ -274,7 +278,7 @@ export class ConvexReacherXDriver {
     // CLI errors can echo arguments; report the function name only.
     if (result.exitCode !== 0)
       throw new ConvexCommandError(`Convex function ${fn} failed.`);
-    return schema.parse(JSON.parse(result.stdout));
+    return schema.parse(runOutput(result.stdout));
   }
 
   private async env(args: readonly string[], stdin?: string) {

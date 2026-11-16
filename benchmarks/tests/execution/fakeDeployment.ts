@@ -104,7 +104,9 @@ export function fakeDeployment(
     if (!handler) return { exitCode: 1, stdout: "", stderr: "unknown" };
     try {
       const output = await handler(JSON.parse(name ?? "{}"));
-      return { exitCode: 0, stdout: JSON.stringify(output), stderr: "" };
+      // The CLI prints nothing when the function returns null.
+      const stdout = output === null ? "" : JSON.stringify(output);
+      return { exitCode: 0, stdout, stderr: "" };
     } catch {
       return { exitCode: 1, stdout: "", stderr: "failed" };
     }

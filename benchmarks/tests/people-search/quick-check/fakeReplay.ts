@@ -180,11 +180,10 @@ export function fakeReplay(
     if (!handler) return { exitCode: 1, stdout: "", stderr: "unknown" };
     calls.push(action!);
     try {
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify(await handler(JSON.parse(name ?? "{}"))),
-        stderr: "",
-      };
+      const output = await handler(JSON.parse(name ?? "{}"));
+      // The CLI prints nothing when the function returns null.
+      const stdout = output === null ? "" : JSON.stringify(output);
+      return { exitCode: 0, stdout, stderr: "" };
     } catch {
       return { exitCode: 1, stdout: "", stderr: "failed" };
     }
