@@ -87,7 +87,7 @@ The pitch deck description:
 
 ## PR visuals
 
-- Attach screenshots and recordings to PRs and issues with uploads.sh (`uploads put` on a branch, `uploads attach` on an open PR). Never commit images to the repo and never use random file hosts.
+- Attach screenshots and recordings to PRs and issues with uploads.sh: run `uploads put ./file.png`, then paste the printed Markdown into the PR or issue. `uploads attach` posts the managed comment for you, but only works with push access to the repo. Never commit images to the repo and never use random file hosts.
 - Uploads are public to anyone with the URL, so keep secrets and credentials out of captures.
 
 ## Think big
