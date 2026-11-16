@@ -1,4 +1,7 @@
-import type { MentionEntitySearchResult } from "@/shared/lib/mentions/mentionEntities";
+import {
+  normalizeMentionEntitySearchResult,
+  type MentionEntitySearchResult,
+} from "@/shared/lib/mentions/mentionEntities";
 
 /**
  * Text the agent composer inserts for a picked entity (`@<mentionText> `),
@@ -100,4 +103,85 @@ export function syncMentionSelectionWithComposer(
     next.length === current.length &&
     next.every((entity, index) => entity.id === current[index]?.id);
   return unchanged ? current : next;
+}
+
+/** `@` starting a word: at the start, or after whitespace or "(". */
+const MENTION_TEXT_PATTERN = /(^|[\s(])@[\p{L}\p{N}_]/u;
+
+/** True when the composer has `@name` text that is not a chip, so tags no one. */
+export function hasUntaggedMentionText(editorState: unknown): boolean {
+  // Join each paragraph's text so formatting that splits "@Jane" still counts;
+  // chips and other inline nodes become a space.
+  const textOf = (node: unknown): string => {
+    if (!node || typeof node !== "object") {
+      return "";
+    }
+
+    const current = node as {
+      type?: unknown;
+      text?: unknown;
+      children?: unknown;
+    };
+    if (current.type === "text") {
+      return typeof current.text === "string" ? current.text : "";
+    }
+
+    return Array.isArray(current.children)
+      ? `${current.children.map(textOf).join("")}\n`
+      : " ";
+  };
+
+  return MENTION_TEXT_PATTERN.test(
+    textOf((editorState as { root?: unknown } | null | undefined)?.root)
+  );
+}
+
+/** True when a chip's entity was never picked, so the chip tags no one. */
+export function hasUntaggedMentionChip(
+  editorState: unknown,
+  pickedEntities: MentionEntitySearchResult[]
+): boolean {
+  const pickedIds = new Set(pickedEntities.map((entity) => entity.id));
+  return [...collectComposerMentionIds(editorState)].some(
+    (id) => !pickedIds.has(id)
+  );
+}
+
+/** Inline entities whose name no other entity shares. */
+export function getUnambiguousMentionEntities(
+  entities: MentionEntitySearchResult[]
+): MentionEntitySearchResult[] {
+  const inline = entities.filter(
+    (entity) => entity.kind !== "attachment" && entity.mentionText.trim()
+  );
+  const nameOf = (entity: MentionEntitySearchResult) =>
+    entity.mentionText.trim();
+
+  return inline.filter(
+    (entity) =>
+      inline.filter((other) => nameOf(other) === nameOf(entity)).length === 1
+  );
+}
+
+/** Entities carried by copied mentions and chips (`data-mention-entity`). */
+export function readMentionEntitiesFromHtml(
+  html: string
+): MentionEntitySearchResult[] {
+  if (!html.includes("data-mention-entity")) {
+    return [];
+  }
+
+  const document = new DOMParser().parseFromString(html, "text/html");
+  return [...document.querySelectorAll("[data-mention-entity]")].flatMap(
+    (element) => {
+      try {
+        const entity = normalizeMentionEntitySearchResult(
+          JSON.parse(element.getAttribute("data-mention-entity") ?? "")
+        );
+        return entity ? [entity] : [];
+      } catch {
+        return [];
+      }
+    }
+  );
 }

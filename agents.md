@@ -85,6 +85,11 @@ The pitch deck description:
 
 - When doing frontend work, test properly for all devices, desktop and mobile. Something can look good on desktop but cause issues on mobile.
 
+## PR visuals
+
+- Attach screenshots and recordings to PRs and issues with uploads.sh (`uploads put` on a branch, `uploads attach` on an open PR). Never commit images to the repo and never use random file hosts.
+- Uploads are public to anyone with the URL, so keep secrets and credentials out of captures.
+
 ## Think big
 
 - Think outside the box. Don't be afraid to think big. Bold ideas are welcome.

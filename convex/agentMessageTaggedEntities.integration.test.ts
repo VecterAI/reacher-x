@@ -4,7 +4,8 @@ import agentTest from "@convex-dev/agent/test";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildAgentComposerSubmission } from "../features/agent/lib/buildAgentComposerMessage";
-import { api } from "./_generated/api";
+import { createThread } from "@convex-dev/agent";
+import { api, components, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -118,5 +119,82 @@ describe("Agent message tagged entities", () => {
       expect(entity.attachmentDisabled).toBe(false);
       expect(entity.attachmentDisabledReason).toBeNull();
     }
+  });
+
+  test("skips tags with malformed ids and keeps the valid ones", async () => {
+    const t = convexTest(schema, modules);
+    agentTest.register(t);
+    const messageId = "malformed-tag-message";
+    const tag = (
+      kind: "prospect" | "plan",
+      label: string,
+      entityId: string
+    ) => ({
+      id: `${kind}:${entityId}`,
+      entityId,
+      kind,
+      label,
+      mentionText: label,
+      secondaryLabel: "",
+      avatarUrl: null,
+      verified: false,
+    });
+    const { threadId, prospectId } = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "malformed-tag-user",
+        email: "malformed-tag@example.com",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Malformed tag workspace",
+        description: "Malformed tag regression",
+        isDefault: true,
+        updatedAt: 1,
+      });
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "malformed-tag-prospect",
+        data: {},
+        status: "new",
+        displayName: "Jane Roe",
+        updatedAt: 1,
+      });
+      const threadId = await createThread(ctx, components.agent, {
+        userId: String(userId),
+      });
+      await ctx.db.insert("agentMessageContexts", {
+        threadId,
+        messageId,
+        userId,
+        promptTextSource: "user",
+        // Ids pasted from another deployment are malformed here.
+        taggedEntities: [
+          tag("prospect", "Jane Roe", String(prospectId)),
+          tag("prospect", "Ghost", "not-a-real-id"),
+          tag("plan", "Ghost plan", "not-a-real-id"),
+        ],
+        attachments: [],
+        createdAt: 1,
+      });
+      return { threadId, prospectId };
+    });
+
+    const context = await t.query(
+      internal.chat.getAgentMessageContextInternal,
+      { messageId }
+    );
+    expect(context?.taggedEntities.map((entity) => entity.label)).toEqual([
+      "Jane Roe",
+    ]);
+
+    const selected = await t.query(
+      internal.agentThreadContext.resolveSelectedContextForThread,
+      { threadId }
+    );
+    expect(selected.prospectId).toBe(prospectId);
+    expect(selected.planId).toBeNull();
   });
 });

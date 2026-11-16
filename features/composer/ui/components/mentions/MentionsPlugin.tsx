@@ -286,7 +286,8 @@ export function MentionsPlugin({
           ? [
               $createMentionNode(
                 replacementValue.trim().replace(/^@/, ""),
-                selectedOption.entity.id
+                selectedOption.entity.id,
+                JSON.stringify(selectedOption.entity)
               ),
               ...(replacementValue.endsWith(" ") ? [$createTextNode(" ")] : []),
             ]

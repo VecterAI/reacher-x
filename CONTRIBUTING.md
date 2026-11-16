@@ -15,6 +15,8 @@ Supporting repo policies:
 
 ## Before you start
 
+Read [VISION.md](./VISION.md) first. It explains what ReacherX is for, what it is not, and where it is going, so product decisions make sense.
+
 Please talk to me before working on:
 
 - new features
@@ -45,7 +47,9 @@ Small bug fixes, typo fixes, and focused polish PRs are fine without a long pre-
 
 ## Local setup
 
-Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned.
+The complete guide for humans and coding agents is [docs/development-setup.md](./docs/development-setup.md). It covers every service and where its key goes, dev vs production environments, the system diagram, agent tools such as the Convex MCP server, and the ready-made agent prompt shown in the [README](./README.md#hand-this-prompt-to-a-coding-agent).
+
+Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned. Node.js 25 and later no longer bundle Corepack, so if `corepack enable pnpm` fails, run `npm install -g corepack` first.
 
 Contributors do not have push access to the main repo, so start by forking it on GitHub. Clone your fork and add the main repo as a second remote so you can stay in sync:
 
@@ -58,7 +62,7 @@ cd reacher-x
 git remote add upstream https://github.com/VecterAI/reacher-x.git
 git fetch upstream
 
-corepack enable pnpm
+corepack enable pnpm # on Node.js 25+, run npm install -g corepack first
 pnpm install
 cp .env.example .env.local
 npx convex dev --once
@@ -99,6 +103,9 @@ You only need the provider credentials for the feature area you are developing. 
 ## How the codebase is organized
 
 - `app/`: route structure and page-level entry points.
+
+The complete architecture walkthrough with the pipeline, workflows, memory, and reporting lives in [docs/architecture.md](./docs/architecture.md).
+
 - `features/`: product features and UI modules.
 - `shared/`: shared UI, hooks, types, and utilities.
 - `convex/agents/tools/`: thin tool wrappers exposed to agents.
@@ -224,6 +231,35 @@ Keep one PR focused on one change. If `main` has moved and your PR conflicts, re
 
 CI runs on every pull request and checks types, lint, formatting on the changed files, and the Convex tests. Run the same checks locally before opening the PR so it goes green on the first push.
 
+## Show your changes
+
+Screenshots and short recordings make interface changes much easier to review, and [uploads.sh](https://uploads.sh) attaches them to your pull request without committing files to the repository.
+
+Set it up once:
+
+```bash
+npm install -g @buildinternet/uploads
+uploads login
+```
+
+On your branch, stage what you changed as you work. When your pull request opens, the files are posted to it as one comment that stays up to date:
+
+```bash
+uploads put ./before.png --state before
+uploads put ./after.png --state after
+```
+
+Posting to the pull request when it opens uses the uploads.sh GitHub App on this repository. If it is not installed yet, run `uploads attach --promote` once your pull request is open.
+
+To attach to a pull request or issue that already exists:
+
+```bash
+uploads attach ./after.png             # the current branch's pull request
+uploads attach ./after.png --issue 12  # an existing issue
+```
+
+Uploaded files are public to anyone with the URL, so keep secrets and credentials out of your captures. If you use a coding agent, it can run these commands for you.
+
 ## PR checklist
 
 Before opening a PR:
@@ -231,7 +267,7 @@ Before opening a PR:
 - explain what changed
 - explain why it changed
 - mention any env var, schema, or integration impact
-- include screenshots for UI changes
+- include screenshots for UI changes, following [Show your changes](#show-your-changes)
 - run the checks that apply
 
 Useful commands:

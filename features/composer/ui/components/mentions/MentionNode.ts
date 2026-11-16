@@ -13,6 +13,7 @@ import React from "react";
 export interface SerializedMentionNode extends SerializedLexicalNode {
   mentionName: string;
   mentionId: string;
+  mentionEntity?: string;
   type: "MentionNode";
   version: 1;
 }
@@ -20,19 +21,32 @@ export interface SerializedMentionNode extends SerializedLexicalNode {
 export class MentionNode extends DecoratorNode<React.ReactElement> {
   __mentionName: string;
   __mentionId: string;
+  /** JSON of the picked entity, so a cut chip can be tagged again on paste. */
+  __mentionEntity?: string;
 
   static getType(): string {
     return "MentionNode";
   }
 
   static clone(node: MentionNode): MentionNode {
-    return new MentionNode(node.__mentionName, node.__mentionId, node.__key);
+    return new MentionNode(
+      node.__mentionName,
+      node.__mentionId,
+      node.__mentionEntity,
+      node.__key
+    );
   }
 
-  constructor(mentionName: string, mentionId: string, key?: NodeKey) {
+  constructor(
+    mentionName: string,
+    mentionId: string,
+    mentionEntity?: string,
+    key?: NodeKey
+  ) {
     super(key);
     this.__mentionName = mentionName;
     this.__mentionId = mentionId;
+    this.__mentionEntity = mentionEntity;
   }
 
   getMentionName(): string {
@@ -92,20 +106,23 @@ export class MentionNode extends DecoratorNode<React.ReactElement> {
     const element = document.createElement("span");
     element.setAttribute("data-mention-id", this.__mentionId);
     element.setAttribute("data-mention-name", this.__mentionName);
+    if (this.__mentionEntity) {
+      element.setAttribute("data-mention-entity", this.__mentionEntity);
+    }
     element.textContent = `@${this.__mentionName}`;
     return { element };
   }
 
   static importJSON(serializedNode: SerializedMentionNode): MentionNode {
-    const { mentionName, mentionId } = serializedNode;
-    const node = $createMentionNode(mentionName, mentionId);
-    return node;
+    const { mentionName, mentionId, mentionEntity } = serializedNode;
+    return $createMentionNode(mentionName, mentionId, mentionEntity);
   }
 
   exportJSON(): SerializedMentionNode {
     return {
       mentionName: this.__mentionName,
       mentionId: this.__mentionId,
+      ...(this.__mentionEntity ? { mentionEntity: this.__mentionEntity } : {}),
       type: "MentionNode",
       version: 1,
     };
@@ -123,6 +140,10 @@ export class MentionNode extends DecoratorNode<React.ReactElement> {
     );
   }
 
+  getTextContent(): string {
+    return `@${this.__mentionName}`;
+  }
+
   isKeyboardSelectable(): boolean {
     return true;
   }
@@ -136,17 +157,19 @@ function convertMentionElement(domNode: HTMLElement): DOMConversionOutput {
   const mentionName = domNode.getAttribute("data-mention-name");
   const mentionId = domNode.getAttribute("data-mention-id");
   if (mentionName && mentionId) {
-    const node = $createMentionNode(mentionName, mentionId);
-    return { node };
+    const mentionEntity =
+      domNode.getAttribute("data-mention-entity") ?? undefined;
+    return { node: $createMentionNode(mentionName, mentionId, mentionEntity) };
   }
   return { node: null };
 }
 
 export function $createMentionNode(
   mentionName: string,
-  mentionId: string
+  mentionId: string,
+  mentionEntity?: string
 ): MentionNode {
-  const mentionNode = new MentionNode(mentionName, mentionId);
+  const mentionNode = new MentionNode(mentionName, mentionId, mentionEntity);
   return $applyNodeReplacement(mentionNode);
 }
 
