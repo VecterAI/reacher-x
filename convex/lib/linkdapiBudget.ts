@@ -5,7 +5,10 @@ import {
   ProviderCircuitOpenError,
   type ProviderRequestContext,
 } from "./providerReliability";
-import { linkdApiCycleCapMessage } from "./benchmarkLinkdApiCap";
+import {
+  keywordPostSearchCapMessage,
+  type LinkdApiPurpose,
+} from "./benchmarkLinkdApiCap";
 import { getSystemRuntimeConfig } from "./runtimeConfigHelpers";
 
 const internalLinkdApiBudget = (internal as any).linkdapiBudget;
@@ -19,7 +22,10 @@ export function getLinkdApiBudgetConfig() {
 export async function acquireLinkdApiBudget(
   ctx: ActionCtx,
   consumer: string,
-  requestContext?: Omit<ProviderRequestContext, "consumer" | "endpoint">
+  requestContext?: Omit<ProviderRequestContext, "consumer" | "endpoint">,
+  // Set only by enrichment's keyword post search, the one call the
+  // development benchmark cap counts (see benchmarkLinkdApiCap.ts).
+  purpose?: LinkdApiPurpose
 ) {
   await assertProviderRequestAllowed(ctx, "linkdapi", {
     consumer,
@@ -28,19 +34,20 @@ export async function acquireLinkdApiBudget(
   });
   const reservation = await ctx.runAction(
     internalLinkdApiBudget.acquireLinkdApiBudgetInternal,
-    {
-      consumer,
-    }
+    { consumer, ...(purpose ? { purpose } : {}) }
   );
   if (reservation.benchmarkCapRefused !== null) {
-    // Development benchmark cap: refused as an open circuit is, without
-    // recording a provider failure, so every caller degrades as it already
-    // does for an unavailable provider and the circuit stays closed.
+    // Development benchmark cap on the keyword post search: refused as an
+    // open circuit is, without recording a provider failure, so the search
+    // degrades as it already does for an unavailable provider and the circuit
+    // stays closed.
     const refusal = new ProviderCircuitOpenError({
       provider: "linkdapi",
       reason: "credits",
     });
-    refusal.message = linkdApiCycleCapMessage(reservation.benchmarkCapRefused);
+    refusal.message = keywordPostSearchCapMessage(
+      reservation.benchmarkCapRefused
+    );
     throw refusal;
   }
   return reservation;

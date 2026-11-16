@@ -13,6 +13,7 @@ import { internal } from "../../_generated/api";
 import { v } from "convex/values";
 import { internalMutation } from "../../lib/functionBuilders";
 import { runProviderActionRetried } from "../../lib/retrier";
+import { linkdApiPurposeValidator } from "../../lib/benchmarkLinkdApiCap";
 
 /**
  * Start a multi-keyword user-post search for a profile via the action
@@ -29,6 +30,8 @@ export const startUserPostsSearchForResult = internalMutation({
     urn: v.string(),
     keywords: v.array(v.string()),
     maxPosts: v.optional(v.number()),
+    // Set by enrichment's keyword post search (development benchmark cap).
+    purpose: v.optional(linkdApiPurposeValidator),
   },
   returns: v.object({ runId: v.string() }),
   handler: async (ctx, args): Promise<{ runId: string }> => {
@@ -39,6 +42,7 @@ export const startUserPostsSearchForResult = internalMutation({
         urn: args.urn,
         keywords: args.keywords,
         maxPosts: args.maxPosts,
+        ...(args.purpose !== undefined ? { purpose: args.purpose } : {}),
       },
       {
         maxFailures: 0,

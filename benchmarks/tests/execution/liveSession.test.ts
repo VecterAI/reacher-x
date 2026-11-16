@@ -37,7 +37,7 @@ const config: LiveSessionConfig = {
     LINKDAPI_API_KEY: "linkd-funded",
   },
   deploymentOpenRouterKey: "or-deployment",
-  linkdApiCycleLimit: 100,
+  keywordPostSearchLimit: 50,
 };
 const workspace = { workspaceId: "w1", createdAt: 1, label: "run-1_6_on" };
 const SECRETS = ["social-funded", "linkd-funded", "social-dev", "linkd-dev"];
@@ -55,7 +55,7 @@ test("a step runs with funded keys and run settings, then everything is restored
   const seen = await withLiveSession(driver, file, config, async (session) => {
     await session.trackWorkspace(workspace);
     assert.deepEqual(session.confirmed.poolLimits, STARTER);
-    assert.equal(session.confirmed.linkdApiCycleLimit, 100);
+    assert.equal(session.confirmed.keywordPostSearchLimit, 50);
     return Object.fromEntries(env);
   });
   assert.equal(seen.SOCIALAPI_API_KEY, "social-funded");
@@ -64,7 +64,7 @@ test("a step runs with funded keys and run settings, then everything is restored
   assert.equal(seen.AI_ONBOARDING_MODEL, "openai/gpt-6-luna-pro");
   assert.equal(seen.PROSPECTING_RESCHEDULE_INTERVAL_MINUTES, "10");
   assert.deepEqual(JSON.parse(seen.BENCHMARK_POOL_LIMITS), STARTER);
-  assert.equal(seen.BENCHMARK_LINKDAPI_CYCLE_LIMIT, "100");
+  assert.equal(seen.BENCHMARK_KEYWORD_POST_SEARCH_LIMIT, "50");
 
   // Exactly the original deployment afterwards.
   assert.deepEqual(Object.fromEntries(env), AT_REST);
@@ -132,9 +132,9 @@ test("nothing changes when the deployment is not ready for a step", async () => 
     [{ ...AT_REST, PROSPECTING_AUTO_RESCHEDULE: "on" }, {}, /Automatic cycles/],
     [{ ...AT_REST, BENCHMARK_POOL_LIMITS: "{}" }, {}, /pool limits/],
     [
-      { ...AT_REST, BENCHMARK_LINKDAPI_CYCLE_LIMIT: "100" },
+      { ...AT_REST, BENCHMARK_KEYWORD_POST_SEARCH_LIMIT: "100" },
       {},
-      /LinkedIn call cap/,
+      /keyword post-search cap/,
     ],
     [{ ...AT_REST, OPENROUTER_API_KEY: "or-other" }, {}, /OpenRouter key/],
     [
@@ -199,31 +199,31 @@ test("a setting the deployment does not confirm stops the step and resets it", a
   assert.deepEqual(Object.fromEntries(env), AT_REST);
 });
 
-test("a step without a LinkedIn cap leaves none set", async () => {
+test("a step without a keyword post-search cap leaves none set", async () => {
   const { env, driver } = fakeDeployment(AT_REST);
   await withLiveSession(
     driver,
     memoryFile(),
-    { ...config, linkdApiCycleLimit: null },
+    { ...config, keywordPostSearchLimit: null },
     async (session) => {
-      assert.equal(session.confirmed.linkdApiCycleLimit, null);
-      assert.equal(env.has("BENCHMARK_LINKDAPI_CYCLE_LIMIT"), false);
+      assert.equal(session.confirmed.keywordPostSearchLimit, null);
+      assert.equal(env.has("BENCHMARK_KEYWORD_POST_SEARCH_LIMIT"), false);
     }
   );
   assert.deepEqual(Object.fromEntries(env), AT_REST);
 });
 
-test("a LinkedIn cap the deployment does not confirm stops the step and resets it", async () => {
+test("a keyword post-search cap the deployment does not confirm stops the step and resets it", async () => {
   // The first read reports an invalid value; once cleared, no cap is reported.
   let reads = 0;
   const { env, driver } = fakeDeployment(AT_REST, {
-    "benchmarkPeopleSearch:linkdApiCycleLimitStatus": () =>
+    "benchmarkPeopleSearch:keywordPostSearchLimitStatus": () =>
       reads++ === 0
         ? {
             limit: null,
             source: "default",
             error:
-              "BENCHMARK_LINKDAPI_CYCLE_LIMIT is not valid; no cap applies",
+              "BENCHMARK_KEYWORD_POST_SEARCH_LIMIT is not valid; no cap applies",
           }
         : { limit: null, source: "default", error: null },
   });
@@ -233,10 +233,10 @@ test("a LinkedIn cap the deployment does not confirm stops the step and resets i
     withLiveSession(driver, file, config, async () => {
       ran = true;
     }),
-    /did not confirm the requested LinkedIn call cap/
+    /did not confirm the requested keyword post-search cap/
   );
   assert.equal(ran, false);
-  assert.equal(env.has("BENCHMARK_LINKDAPI_CYCLE_LIMIT"), false);
+  assert.equal(env.has("BENCHMARK_KEYWORD_POST_SEARCH_LIMIT"), false);
   assert.equal(env.get("PAUSE_AUTONOMOUS_JOBS"), "true");
 });
 
@@ -253,7 +253,7 @@ test("run settings cannot take over what the runner manages", () => {
   for (const settings of [
     { ...base, runOnly: { PAUSE_AUTONOMOUS_JOBS: "false" } },
     { ...base, production: { BENCHMARK_LEARNING_OFF_WORKSPACE_IDS: "w1" } },
-    { ...base, runOnly: { BENCHMARK_LINKDAPI_CYCLE_LIMIT: "100" } },
+    { ...base, runOnly: { BENCHMARK_KEYWORD_POST_SEARCH_LIMIT: "100" } },
     {
       ...base,
       production: { AI_FAST_MODEL: "a" },

@@ -1,13 +1,18 @@
 import { describe, expect, test } from "vitest";
 import type { ActionCtx } from "../_generated/server";
-import { resolveLinkdApiCycleLimit } from "./benchmarkLinkdApiCap";
+import {
+  isKeywordPostSearchCapRefusal,
+  KEYWORD_POST_SEARCH_PURPOSE,
+  keywordPostSearchCapMessage,
+  resolveKeywordPostSearchLimit,
+} from "./benchmarkLinkdApiCap";
 import { acquireLinkdApiBudget } from "./linkdapiBudget";
 import { isProviderCircuitOpenError } from "./providerReliability";
 
-describe("benchmark LinkedIn cycle cap", () => {
+describe("benchmark keyword post-search cap", () => {
   test("unset means no cap, as in production", () => {
     for (const value of [undefined, "", "  "])
-      expect(resolveLinkdApiCycleLimit(value)).toEqual({
+      expect(resolveKeywordPostSearchLimit(value)).toEqual({
         limit: null,
         source: "default",
         error: null,
@@ -15,7 +20,7 @@ describe("benchmark LinkedIn cycle cap", () => {
   });
 
   test("a positive whole number sets the cap", () => {
-    expect(resolveLinkdApiCycleLimit(" 100\n")).toEqual({
+    expect(resolveKeywordPostSearchLimit(" 100\n")).toEqual({
       limit: 100,
       source: "benchmark",
       error: null,
@@ -24,7 +29,7 @@ describe("benchmark LinkedIn cycle cap", () => {
 
   test("invalid values never cap and report an error", () => {
     for (const value of ["0", "-5", "1.5", "1e2", "abc", "100000000"]) {
-      const resolved = resolveLinkdApiCycleLimit(value);
+      const resolved = resolveKeywordPostSearchLimit(value);
       expect(resolved.limit).toBeNull();
       expect(resolved.source).toBe("default");
       expect(resolved.error).not.toBeNull();
@@ -46,7 +51,50 @@ describe("benchmark LinkedIn cycle cap", () => {
       (error: unknown) => error
     );
     expect(isProviderCircuitOpenError(refusal)).toBe(true);
-    expect((refusal as Error).message).toMatch(/Benchmark LinkedIn cap/);
+    expect(isKeywordPostSearchCapRefusal(refusal)).toBe(true);
+  });
+
+  test("only the keyword post search sends a purpose to the reservation", async () => {
+    const sent: unknown[] = [];
+    const ctx = {
+      runMutation: async () => ({ allowed: true }),
+      runAction: async (_ref: unknown, args: unknown) => {
+        sent.push(args);
+        return {
+          waitMs: 0,
+          spacingMs: 0,
+          targetRequestsPerMinute: 0,
+          benchmarkCapRefused: null,
+        };
+      },
+    } as unknown as ActionCtx;
+    await acquireLinkdApiBudget(ctx, "linkedin.getProfile");
+    await acquireLinkdApiBudget(
+      ctx,
+      "linkedin.searchUserPosts",
+      undefined,
+      KEYWORD_POST_SEARCH_PURPOSE
+    );
+    expect(sent).toEqual([
+      { consumer: "linkedin.getProfile" },
+      {
+        consumer: "linkedin.searchUserPosts",
+        purpose: KEYWORD_POST_SEARCH_PURPOSE,
+      },
+    ]);
+  });
+
+  test("a refusal is recognized after crossing an action boundary", () => {
+    // Convex rethrows a nested action's error as a plain Error with its message.
+    expect(
+      isKeywordPostSearchCapRefusal(
+        new Error(`Uncaught Error: ${keywordPostSearchCapMessage(50)}`)
+      )
+    ).toBe(true);
+    expect(isKeywordPostSearchCapRefusal(new Error("LinkdAPI 503"))).toBe(
+      false
+    );
+    expect(isKeywordPostSearchCapRefusal("not an error")).toBe(false);
   });
 
   test("an allowed reservation is returned unchanged", async () => {

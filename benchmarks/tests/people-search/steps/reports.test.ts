@@ -6,7 +6,7 @@ import {
   aggregateReport,
   decide,
   learningPairs,
-  linkedInCapLine,
+  keywordSearchCapLine,
   segmentOutcomeSchema,
   type ReportContext,
 } from "../../../people-search/steps/reports";
@@ -217,23 +217,33 @@ test("the rest of stage 2 aggregates its first third's workspaces, never stage 1
   assert.equal(row.speed.requestLatencyMs, 1_000);
 });
 
-test("the step report states whether the LinkedIn call cap was in force", () => {
-  const settings = (linkdApiCycleLimit?: number | null) => ({
+test("the step report states whether the keyword post-search cap was in force", () => {
+  const settings = (keywordPostSearchLimit?: number | null) => ({
     settings: {
       production: {},
       productionSource: "docs",
       runOnly: {},
       poolLimits: {},
       linkdApiCircuitReset: false,
-      ...(linkdApiCycleLimit === undefined ? {} : { linkdApiCycleLimit }),
+      ...(keywordPostSearchLimit === undefined
+        ? {}
+        : { keywordPostSearchLimit }),
     },
   });
   assert.match(
-    linkedInCapLine(settings(100)),
-    /in force for this step, at most 100 LinkdAPI calls per workspace cycle/
+    keywordSearchCapLine(settings(100)),
+    /in force for this step, at most 100 LinkdAPI calls per workspace cycle for enrichment's search/
   );
-  assert.match(linkedInCapLine(settings(null)), /none; no limit was in force/);
+  // Only the keyword post search was capped, and the line says so.
+  assert.match(
+    keywordSearchCapLine(settings(100)),
+    /profile and company reads and qualification were not capped/
+  );
+  assert.match(
+    keywordSearchCapLine(settings(null)),
+    /none; no limit was in force/
+  );
   // Outcomes recorded before the cap existed still parse and say so.
-  assert.match(linkedInCapLine(settings()), /not recorded/);
-  assert.match(linkedInCapLine({ settings: null }), /not recorded/);
+  assert.match(keywordSearchCapLine(settings()), /not recorded/);
+  assert.match(keywordSearchCapLine({ settings: null }), /not recorded/);
 });

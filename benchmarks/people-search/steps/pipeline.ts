@@ -91,11 +91,15 @@ const stage2SizeSchema = z.strictObject({
 });
 
 /**
- * LinkdAPI calls one workspace may make per cycle in a live step, unless its
- * approval sets another number (or null for none). A step-only setting: it is
- * never part of the frozen run settings, so the frozen plan is unchanged.
+ * LinkdAPI calls enrichment's keyword post search may make for one workspace
+ * per cycle in a live step, unless its approval sets another number (or null
+ * for none). Each enriched LinkedIn prospect's search takes up to 18 calls
+ * (nine finance keywords, each with a full-history fallback), so 50 covers
+ * about three prospects' full searches per cycle, against the smoke test's
+ * 656 such calls in one cycle. A step-only setting: it is never part of the frozen run settings, so
+ * the frozen plan is unchanged.
  */
-export const DEFAULT_LINKEDIN_CALLS_PER_CYCLE = 100;
+export const DEFAULT_KEYWORD_POST_SEARCH_CALLS = 50;
 
 /** The private per-step approval file (proposal 5.3 step 1). */
 export const segmentApprovalSchema = z.strictObject({
@@ -112,14 +116,14 @@ export const segmentApprovalSchema = z.strictObject({
     .default([]),
   // Stage 2 only: the size approved at D3, or for the rest as set at D4.
   stage2: stage2SizeSchema.optional(),
-  // The development-only LinkedIn call cap per workspace cycle; null for none.
-  linkedInCallsPerCycle: z
+  // The development-only keyword post-search cap per workspace cycle; null for none.
+  keywordPostSearchCallsPerCycle: z
     .number()
     .int()
     .min(1)
     .max(100_000)
     .nullable()
-    .default(DEFAULT_LINKEDIN_CALLS_PER_CYCLE),
+    .default(DEFAULT_KEYWORD_POST_SEARCH_CALLS),
 });
 export type SegmentApproval = z.infer<typeof segmentApprovalSchema>;
 
@@ -485,9 +489,9 @@ async function runSegment(
             runId: store.runId,
             settings,
             // openBudget above refused the step without an approval.
-            linkdApiCycleLimit: approval
-              ? approval.linkedInCallsPerCycle
-              : DEFAULT_LINKEDIN_CALLS_PER_CYCLE,
+            keywordPostSearchLimit: approval
+              ? approval.keywordPostSearchCallsPerCycle
+              : DEFAULT_KEYWORD_POST_SEARCH_CALLS,
             ...deps.session,
           },
           (session) => {

@@ -25,7 +25,7 @@ import { peopleSearchPlan } from "../setup/plan";
 import { STEPS, type SegmentId, type StepId } from "../setup/schedule";
 import { WATCH_OPTIONS } from "../steps/live";
 import {
-  DEFAULT_LINKEDIN_CALLS_PER_CYCLE,
+  DEFAULT_KEYWORD_POST_SEARCH_CALLS,
   runStep,
   type SegmentApproval,
   type SegmentResult,
@@ -116,7 +116,7 @@ function approval(segment: SegmentId, accounts: StepAccounts): SegmentApproval {
       })),
     },
     credits: [{ accountId: accounts.renidly.accountId, maxCredits: 1_000 }],
-    linkedInCallsPerCycle: DEFAULT_LINKEDIN_CALLS_PER_CYCLE,
+    keywordPostSearchCallsPerCycle: DEFAULT_KEYWORD_POST_SEARCH_CALLS,
     ...(segment.startsWith("stage2")
       ? {
           stage2: {

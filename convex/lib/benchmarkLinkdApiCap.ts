@@ -1,50 +1,64 @@
 /**
- * Benchmark-only LinkedIn call cap (issue #122) for a development deployment.
+ * Benchmark-only cap on enrichment's keyword post search (issue #122) for a
+ * development deployment.
  *
- * `BENCHMARK_LINKDAPI_CYCLE_LIMIT` holds a positive whole number: the most
- * LinkdAPI calls one benchmark workspace may make in one prospecting cycle.
+ * Enrichment searches each qualified LinkedIn prospect's own posts for the
+ * finance keywords (up to two LinkdAPI calls per keyword), which made most of
+ * the smoke test's LinkedIn calls. `BENCHMARK_KEYWORD_POST_SEARCH_LIMIT` holds
+ * a positive whole number: the most LinkdAPI calls that search may make for
+ * one benchmark workspace in one prospecting cycle. Only calls carrying
+ * `KEYWORD_POST_SEARCH_PURPOSE` are counted or refused; discovery, profile and
+ * company reads, and every search qualification makes, never carry it.
+ *
  * Calls carry no workspace, so they count against the cycle of the benchmark
  * workspace that started most recently; the benchmark runs one at a time.
  * Counting happens at the reservation every LinkdAPI call takes
  * (`convex/linkdapiBudget.ts`), and a call past the cap is refused the way an
- * open provider circuit refuses it, so callers degrade as they already do.
+ * open provider circuit refuses it; the search stops there and enrichment
+ * carries on with the posts it already has.
  *
  * Unset means no cap, as in production. An invalid value never changes
- * behaviour: no cap applies and `resolveLinkdApiCycleLimit` reports the error
- * so the benchmark refuses to run. Workspaces not named by the benchmark are
- * never counted or refused. Never set in production.
+ * behaviour: no cap applies and `resolveKeywordPostSearchLimit` reports the
+ * error so the benchmark refuses to run. Workspaces not named by the benchmark
+ * are never counted or refused. Never set in production.
  */
+import { v } from "convex/values";
 import { env } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 
 export const BENCHMARK_WORKSPACE_PREFIX = "Benchmark ";
-export const LINKDAPI_CYCLE_LIMIT_MAX = 100_000;
+export const KEYWORD_POST_SEARCH_LIMIT_MAX = 100_000;
 // Workspaces read per status when finding the current benchmark cycle.
 const MAX_CYCLE_CANDIDATES = 50;
 
-export type ResolvedLinkdApiCycleLimit = Readonly<{
+/** Marks the LinkdAPI calls of enrichment's keyword post search. */
+export const KEYWORD_POST_SEARCH_PURPOSE = "enrichment.keywordPostSearch";
+export const linkdApiPurposeValidator = v.literal(KEYWORD_POST_SEARCH_PURPOSE);
+export type LinkdApiPurpose = typeof KEYWORD_POST_SEARCH_PURPOSE;
+
+export type ResolvedKeywordPostSearchLimit = Readonly<{
   limit: number | null;
   source: "default" | "benchmark";
   error: string | null;
 }>;
 
-export function resolveLinkdApiCycleLimit(
-  value: string | undefined = env.BENCHMARK_LINKDAPI_CYCLE_LIMIT
-): ResolvedLinkdApiCycleLimit {
+export function resolveKeywordPostSearchLimit(
+  value: string | undefined = env.BENCHMARK_KEYWORD_POST_SEARCH_LIMIT
+): ResolvedKeywordPostSearchLimit {
   const text = value?.trim();
   if (!text) return { limit: null, source: "default", error: null };
   const limit = /^\d+$/.test(text) ? Number(text) : Number.NaN;
   if (
     Number.isSafeInteger(limit) &&
     limit >= 1 &&
-    limit <= LINKDAPI_CYCLE_LIMIT_MAX
+    limit <= KEYWORD_POST_SEARCH_LIMIT_MAX
   )
     return { limit, source: "benchmark", error: null };
   return {
     limit: null,
     source: "default",
-    error: "BENCHMARK_LINKDAPI_CYCLE_LIMIT is not valid; no cap applies",
+    error: "BENCHMARK_KEYWORD_POST_SEARCH_LIMIT is not valid; no cap applies",
   };
 }
 
@@ -61,8 +75,8 @@ const isBenchmarkCycle = (workspace: Doc<"workspaces">) =>
 
 /**
  * The cycle of the benchmark workspace that started most recently, among
- * running ones and ones stopped by a failed cycle (whose qualification can
- * still call LinkedIn). A cycle is one prospecting workflow.
+ * running ones and ones stopped by a failed cycle (whose enrichment can still
+ * call LinkedIn). A cycle is one prospecting workflow.
  */
 export async function currentBenchmarkCycle(
   ctx: Pick<QueryCtx, "db">
@@ -98,9 +112,16 @@ export async function currentBenchmarkCycle(
   };
 }
 
-// Starts every refusal message, so a failure the cap caused can be recognized.
-export const LINKDAPI_CYCLE_CAP_REFUSAL = "Benchmark LinkedIn cap reached";
+// Starts every refusal message, so a refusal the cap caused can be recognized
+// after it crosses an action boundary.
+export const KEYWORD_POST_SEARCH_CAP_REFUSAL =
+  "Benchmark keyword post search cap reached";
 
 /** The refusal message; callers see a provider-circuit refusal with it. */
-export const linkdApiCycleCapMessage = (limit: number) =>
-  `${LINKDAPI_CYCLE_CAP_REFUSAL}: at most ${limit} LinkdAPI calls per workspace cycle (BENCHMARK_LINKDAPI_CYCLE_LIMIT, development only)`;
+export const keywordPostSearchCapMessage = (limit: number) =>
+  `${KEYWORD_POST_SEARCH_CAP_REFUSAL}: at most ${limit} LinkdAPI keyword post-search calls per workspace cycle (BENCHMARK_KEYWORD_POST_SEARCH_LIMIT, development only)`;
+
+/** Whether an error, possibly rethrown across an action boundary, is a cap refusal. */
+export const isKeywordPostSearchCapRefusal = (error: unknown) =>
+  error instanceof Error &&
+  error.message.includes(KEYWORD_POST_SEARCH_CAP_REFUSAL);

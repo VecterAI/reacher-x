@@ -16,7 +16,7 @@ import {
   type SegmentId,
 } from "../../../people-search/setup/schedule";
 import {
-  DEFAULT_LINKEDIN_CALLS_PER_CYCLE,
+  DEFAULT_KEYWORD_POST_SEARCH_CALLS,
   runStep,
   segmentApprovalSchema,
   segmentRunId,
@@ -80,14 +80,15 @@ test("the smoke step runs every phase, resets the deployment, and a rerun only r
   assert.equal(outcome.decision?.point, "D1");
   assert.match(report, /## Verified matches in each tool's top 5/);
   assert.match(decision ?? "", /# D1 checkpoint/);
-  // The LinkedIn cap was on during the workspace, reported, and cleared after.
-  assert.equal(outcome.settings?.linkdApiCycleLimit, 100);
+  // The keyword post-search cap was on during the workspace, reported, and
+  // cleared after.
+  assert.equal(outcome.settings?.keywordPostSearchLimit, 50);
   assert.match(
     report,
-    /LinkedIn call cap: in force for this step, at most 100/
+    /Keyword post-search cap: in force for this step, at most 50/
   );
-  assert.ok(timeline.includes("env set BENCHMARK_LINKDAPI_CYCLE_LIMIT"));
-  assert.equal(env.has("BENCHMARK_LINKDAPI_CYCLE_LIMIT"), false);
+  assert.ok(timeline.includes("env set BENCHMARK_KEYWORD_POST_SEARCH_LIMIT"));
+  assert.equal(env.has("BENCHMARK_KEYWORD_POST_SEARCH_LIMIT"), false);
   assert.deepEqual(Object.fromEntries(env), atRest);
   assert.match(
     await readFile(join(root, files[1]), "utf8"),
@@ -569,7 +570,7 @@ test("a resumed step's opening balances are the first start's, matching its chan
   }
 });
 
-test("the LinkedIn cap is step-only: 100 calls per workspace cycle unless the approval sets another or none", () => {
+test("the keyword post-search cap is step-only: 50 calls per workspace cycle unless the approval sets another or none", () => {
   const approval = {
     segment: "smoke",
     spend: {
@@ -578,24 +579,24 @@ test("the LinkedIn cap is step-only: 100 calls per workspace cycle unless the ap
       accountLimits: [{ accountId: "openrouter:a", maxAdditionalUsd: 1 }],
     },
   };
-  assert.equal(DEFAULT_LINKEDIN_CALLS_PER_CYCLE, 100);
+  assert.equal(DEFAULT_KEYWORD_POST_SEARCH_CALLS, 50);
   assert.equal(
-    segmentApprovalSchema.parse(approval).linkedInCallsPerCycle,
-    100
+    segmentApprovalSchema.parse(approval).keywordPostSearchCallsPerCycle,
+    50
   );
   for (const value of [40, null])
     assert.equal(
       segmentApprovalSchema.parse({
         ...approval,
-        linkedInCallsPerCycle: value,
-      }).linkedInCallsPerCycle,
+        keywordPostSearchCallsPerCycle: value,
+      }).keywordPostSearchCallsPerCycle,
       value
     );
   for (const value of [0, 2.5, "100"])
     assert.equal(
       segmentApprovalSchema.safeParse({
         ...approval,
-        linkedInCallsPerCycle: value,
+        keywordPostSearchCallsPerCycle: value,
       }).success,
       false
     );

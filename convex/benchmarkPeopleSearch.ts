@@ -28,10 +28,10 @@ import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
 import { resolvePoolLimits } from "./lib/benchmarkConcurrency";
 import {
   BENCHMARK_WORKSPACE_PREFIX as BENCHMARK_NAME_PREFIX,
-  LINKDAPI_CYCLE_CAP_REFUSAL,
   currentBenchmarkCycle,
-  resolveLinkdApiCycleLimit,
+  resolveKeywordPostSearchLimit,
 } from "./lib/benchmarkLinkdApiCap";
+
 const LABEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 const MAX_STATUS_ROWS = 2000;
 const MAX_COST_EVENTS_READ = 5000;
@@ -167,23 +167,12 @@ export const runStatus = internalQuery({
       disqualified: 0,
       unscored: 0,
       organizations: 0,
-      // Pending only until a scheduled retry after the LinkedIn cap refused
-      // a read qualification needed; other failures are not counted.
-      awaitingRetry: 0,
     };
     for (const prospect of prospects.slice(0, MAX_STATUS_ROWS)) {
       counts.total += 1;
       if (prospect.prospectType === "organization") counts.organizations += 1;
-      if (prospect.qualificationStatus === "pending") {
-        counts.pending += 1;
-        if (
-          prospect.qualificationLastFailure?.message.includes(
-            LINKDAPI_CYCLE_CAP_REFUSAL
-          ) &&
-          !prospect.qualificationWorkflowId
-        )
-          counts.awaitingRetry += 1;
-      } else if (prospect.qualificationStatus === "qualified")
+      if (prospect.qualificationStatus === "pending") counts.pending += 1;
+      else if (prospect.qualificationStatus === "qualified")
         counts.qualified += 1;
       else if (prospect.qualificationStatus === "disqualified")
         counts.disqualified += 1;
@@ -505,10 +494,10 @@ export const poolLimitsStatus = internalQuery({
 });
 
 /**
- * The LinkedIn call cap in effect, from the same resolver the LinkdAPI
+ * The keyword post-search cap in effect, from the same resolver the LinkdAPI
  * reservation reads, and the benchmark cycle it is counting now.
  */
-export const linkdApiCycleLimitStatus = internalQuery({
+export const keywordPostSearchLimitStatus = internalQuery({
   args: {},
   handler: async (ctx) => {
     const [state, cycle] = await Promise.all([
@@ -520,7 +509,7 @@ export const linkdApiCycleLimitStatus = internalQuery({
     ]);
     const counting = cycle && state?.benchmarkCycleKey === cycle.key;
     return {
-      ...resolveLinkdApiCycleLimit(),
+      ...resolveKeywordPostSearchLimit(),
       cycle: cycle && {
         workspaceId: cycle.workspaceId,
         workflowId: cycle.workflowId,

@@ -103,57 +103,6 @@ describe("benchmark people-search hooks", () => {
     ).rejects.toThrow(/Only benchmark workspaces/);
   });
 
-  test("runStatus counts pending prospects that only wait for a qualification retry", async () => {
-    const t = convexTest(schema, modules);
-    const ids = await seed(t);
-    await t.run(async (ctx) => {
-      const workspace = await ctx.db.get(ids.benchmark);
-      const prospect = (
-        externalId: string,
-        fields: {
-          qualificationWorkflowId?: string;
-          failure?: string;
-        }
-      ) =>
-        ctx.db.insert("prospects", {
-          workspaceId: ids.benchmark,
-          userId: workspace!.userId,
-          platform: "linkedin",
-          origin: "workspace_discovery",
-          externalId,
-          data: {},
-          status: "in_progress",
-          qualificationStatus: "pending",
-          updatedAt: 1,
-          qualificationWorkflowId: fields.qualificationWorkflowId,
-          qualificationLastFailure: fields.failure
-            ? {
-                stage: "workflow",
-                provider: "convex_workflow",
-                code: "qualification_workflow_failed",
-                message: fields.failure,
-                workflowAttemptCount: 1,
-                failedAt: 1,
-              }
-            : undefined,
-        });
-      const refused =
-        "[QualificationEvidence] Benchmark LinkedIn cap reached: at most 100 LinkdAPI calls";
-      await prospect("waiting", { failure: refused });
-      await prospect("retrying", {
-        failure: refused,
-        qualificationWorkflowId: "q1",
-      });
-      // A failure the cap did not cause is still unsettled work.
-      await prospect("model-failed", { failure: "Model evaluation failed" });
-      await prospect("fresh", {});
-    });
-    const status = await t.query(internal.benchmarkPeopleSearch.runStatus, {
-      workspaceId: ids.benchmark,
-    });
-    expect(status?.counts).toMatchObject({ pending: 4, awaitingRetry: 1 });
-  });
-
   test("deploymentActivity lists running workspaces and pending restarts, except the named one", async () => {
     const t = convexTest(schema, modules);
     const ids = await seed(t);

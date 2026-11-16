@@ -288,12 +288,7 @@ export async function runWorkspaceUnits(
               ),
               track: phase.gate.tracking(session.trackWorkspace),
             },
-            {
-              ...phase.watch,
-              // A refused LinkedIn read leaves qualification waiting to retry.
-              retryWaitsSettle: session.confirmed.linkdApiCycleLimit !== null,
-              signal: phase.signal,
-            },
+            { ...phase.watch, signal: phase.signal },
             phase.clock
           );
           ending = record.ending;

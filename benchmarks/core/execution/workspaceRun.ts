@@ -54,10 +54,6 @@ export type WatchOptions = Readonly<{
   // Wait before the final spend reading, because key usage is reported with a delay.
   spendSettleMs: number;
   maxPollFailures: number;
-  // Prospects pending only until a qualification retry after the LinkedIn
-  // cap refused a read count as settled (the deployment counts only those).
-  // Set while the cap is in force: the retry would be refused again.
-  retryWaitsSettle?: boolean;
   signal?: AbortSignal;
 }>;
 
@@ -174,12 +170,7 @@ async function watchCycles(
   let automatic = plan.cycles > 1;
   let failures = 0;
   // A streak of idle polls with an unchanged prospect count.
-  let quiet = null as {
-    since: number;
-    polls: number;
-    total: number;
-    waiting: number;
-  } | null;
+  let quiet = null as { since: number; polls: number; total: number } | null;
   for (;;) {
     options.signal?.throwIfAborted();
     try {
@@ -286,22 +277,14 @@ async function watchCycles(
       };
 
     if (cycle.discoveryEndedAt !== null && cycle.settledAt === null) {
-      const waiting = options.retryWaitsSettle
-        ? status.counts.awaitingRetry
-        : 0;
       const idle =
-        status.counts.pending - waiting === 0 &&
+        status.counts.pending === 0 &&
         status.pendingLessonWrites === 0 &&
         !status.truncated;
       if (!idle) quiet = null;
-      else if (
-        quiet !== null &&
-        quiet.total === status.counts.total &&
-        quiet.waiting === waiting
-      )
+      else if (quiet !== null && quiet.total === status.counts.total)
         quiet = { ...quiet, polls: quiet.polls + 1 };
-      else
-        quiet = { since: now, polls: 1, total: status.counts.total, waiting };
+      else quiet = { since: now, polls: 1, total: status.counts.total };
       if (quiet && quiet.polls >= options.settlePolls)
         cycle.settledAt = quiet.since;
     }
