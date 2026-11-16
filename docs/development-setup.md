@@ -39,7 +39,7 @@ Never commit on `main`. See [CONTRIBUTING.md](../CONTRIBUTING.md#submitting-chan
 ## Install and run
 
 ```bash
-corepack enable pnpm
+corepack enable pnpm # on Node.js 25+, run npm install -g corepack first
 pnpm install
 cp .env.example .env.local
 npx convex dev --once
@@ -60,6 +60,16 @@ pnpm dev
 ```
 
 Open `http://localhost:3000`.
+
+Working on the marketing pages, blog posts, or the interactive demos? Those need the demo app, a separate Next.js app with no Convex or provider credentials. Copy its environment file and run it in a third terminal:
+
+```bash
+# Terminal 3: demo app
+cp demos/app/.env.example demos/app/.env.local
+pnpm dev:demo
+```
+
+The demo runs on `http://localhost:3001`, and the main site and demo must use different origins. The demo needs no provider keys. See [configuration.md](./configuration.md#interactive-demos) for the origin variables and production demo hosting.
 
 ## Environments: dev vs production
 

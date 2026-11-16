@@ -47,7 +47,7 @@ Everything else follows the standard flow: Convex and WorkOS dashboards for the 
 Install dependencies and set up the backend once. Node.js 25 and later no longer bundle Corepack, so if `corepack enable pnpm` fails, run `npm install -g corepack` first.
 
 ```bash title="Set up the backend"
-corepack enable pnpm
+corepack enable pnpm # on Node.js 25+, run npm install -g corepack first
 pnpm install
 cp .env.example .env.local
 npx convex dev --once
