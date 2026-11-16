@@ -29,31 +29,31 @@ export const USE_CASES: UseCase[] = [
   {
     useCaseKey: "partnership_outreach",
     slug: "partners",
-    title: "Partners who would back you",
+    title: "Partners who bring business",
     description: "Connect with companies and operators in your space.",
   },
   {
     useCaseKey: "community_growth",
     slug: "community-members",
-    title: "Members who would come back",
+    title: "Members who actually care",
     description: "Find early members who genuinely care about your topic.",
   },
   {
     useCaseKey: "creator_outreach",
     slug: "creators",
-    title: "Creators who would champion you",
+    title: "Creators who love what you build",
     description: "Reach influencers and creators who align with your brand.",
   },
   {
     useCaseKey: "user_research_recruitment",
     slug: "research-participants",
-    title: "Honest answers from real users",
+    title: "Users who tell you the truth",
     description: "Recruit people who match your study criteria.",
   },
   {
     useCaseKey: "podcast_speaker_sourcing",
     slug: "podcast-guests",
-    title: "Guests your listeners remember",
+    title: "Guests with something to say",
     description: "Find guests with real expertise and something to say.",
   },
 ];

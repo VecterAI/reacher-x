@@ -41,9 +41,8 @@ export type InlineIconTerm = {
   /** Text shown after the icon; defaults to `term`. Use when the copy's
    * glyph (e.g. "△ Agent") is replaced by the icon itself. */
   display?: string;
-  /** Renders the glyph inside a small inverted neutral tile. Brand logos
-   * (Clay, Apollo) ship full-bleed colored artwork and render bare. */
-  chip?: boolean;
+  /** Extra classes for the bare glyph, e.g. a muted color. */
+  className?: string;
 };
 
 export type InlineIconSegment =
@@ -53,15 +52,23 @@ export type InlineIconSegment =
       term: string;
       display: string;
       Icon: InlineIconTerm["Icon"];
-      chip: boolean;
+      className?: string;
     };
 
-// Platform glyphs sit in a small secondary tile, the same surface as the
-// sidebar's "Get a custom plan" button, so the mark stays readable in
-// both themes without shouting.
+// Platform glyphs render bare at glyph size in muted color, matching
+// PlatformSearchRow. Brand logos (Clay, Apollo) ship full-bleed colored
+// artwork and inherit nothing.
 const PLATFORM_TERMS: InlineIconTerm[] = [
-  { term: "X/Twitter", Icon: FilledTwitterIcon, chip: true },
-  { term: "LinkedIn", Icon: FilledLinkedinIcon, chip: true },
+  {
+    term: "X/Twitter",
+    Icon: FilledTwitterIcon,
+    className: "text-muted-foreground",
+  },
+  {
+    term: "LinkedIn",
+    Icon: FilledLinkedinIcon,
+    className: "text-muted-foreground",
+  },
   { term: "Clay", Icon: ClayIcon },
   { term: "Apollo", Icon: ApolloIcon },
 ];
@@ -98,7 +105,7 @@ export function getInlineIconSegments(
       term: match.term,
       display: match.display ?? match.term,
       Icon: match.Icon,
-      chip: match.chip ?? false,
+      className: match.className,
     });
     rest = rest.slice(match.index + match.term.length);
   }
@@ -118,19 +125,10 @@ export function inlinePlatformIcons(
     if (segment.kind === "text") return segment.text;
     return (
       <span key={index} className="whitespace-nowrap">
-        {segment.chip ? (
-          <span className="border-border bg-secondary mr-1 inline-flex h-[0.9em] w-[0.9em] items-center justify-center rounded-[0.18em] border align-[0.05em] dark:border-white/20">
-            <segment.Icon
-              className="text-secondary-foreground size-[0.58em] shrink-0"
-              aria-hidden="true"
-            />
-          </span>
-        ) : (
-          <segment.Icon
-            className="mr-1 inline size-4 align-[-2px]"
-            aria-hidden="true"
-          />
-        )}
+        <segment.Icon
+          className={cn("mr-1 inline size-4 align-[-2px]", segment.className)}
+          aria-hidden="true"
+        />
         {segment.display}
       </span>
     );
