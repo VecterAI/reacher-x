@@ -1,53 +1,53 @@
 ---
 title: "How ReacherX discovers people"
-description: "Follow an audience description through query generation, platform searches, saved results, and repeat discovery."
+description: "How an audience description becomes searches on X/Twitter and LinkedIn, and how the system learns which searches to run again."
 category: engineering
 date: "2026-07-08"
-updated: "2026-09-10"
+updated: "2026-11-13"
 related: ["how-reacherx-qualification-works", "how-reacherx-memory-works"]
 tags: ["engineering", "discovery", "contributors"]
 ---
 
-Discovery answers a first question: who might fit this workspace? It produces candidates for later checks. A search result is not yet a qualified person.
+Discovery answers a first question. Who might fit this workspace? It produces candidates for later checks, and a search result is not yet a qualified person.
 
-This walkthrough follows the v4 beta code at commit `8ea2662`. Start with [convex/workflows/prospecting.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workflows/prospecting.ts). The file is large, so follow `prospectingWorkflow` before reading its search helpers.
+Everything in this step starts in [convex/workflows/prospecting.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/workflows/prospecting.ts). The file is large, so follow `prospectingWorkflow` first and read the search helpers afterwards.
 
 ## From an audience to search queries
 
-The workspace stores audience information and structured targeting criteria. Those criteria describe requirements, preferences, exclusions, and the kinds of evidence needed. [convex/lib/targetingSpecCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/targetingSpecCore.ts) normalizes that structure and bounds model-produced values.
+The workspace stores an audience description plus structured targeting criteria. The criteria cover requirements, preferences, exclusions, and the kinds of evidence that would satisfy them. [convex/lib/targetingSpecCore.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/targetingSpecCore.ts) normalizes that structure and keeps model-produced values bounded.
 
-The prospecting workflow checks capacity and workspace state, loads the audience data, and collects synthetic posts. These are generated examples of what relevant people might say. They help produce search language; they are not evidence that a real person said something.
+Each prospecting cycle checks capacity and workspace state, loads the audience data, and collects synthetic posts. Those are generated examples of what relevant people might say. They shape search language, and they are never treated as evidence that a real person said something.
 
-The workflow generates keywords and converts them into platform-specific queries. Metadata records the platform, search surface, strictness, and criteria associated with each query. Keywords are saved before searching so later results can be attributed to them.
+The cycle then generates keywords and turns them into platform-specific queries. Each query carries metadata for the platform, the search surface, how strict it is, and which criteria it serves. Keywords are saved before the search runs, so later results can be attributed to them.
 
-A useful detail lives in [convex/lib/discoveryQueryPlanningCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/discoveryQueryPlanningCore.ts). `resolvePeopleQueryStage` decides when a query should broaden:
+One detail worth knowing lives in [convex/lib/discoveryQueryPlanningCore.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/discoveryQueryPlanningCore.ts). The function `resolvePeopleQueryStage` decides when a people query should broaden:
 
 ```ts
 return hasRequiredWorkflow && isRoleOnly ? "broad" : stage;
 ```
 
-If the audience requires evidence of an activity, searching only for a job title is a broad way to find candidates. It doesn't establish that activity. This distinction keeps discovery from quietly treating a title match as proof of intent.
+Here is what that line means. If the audience requires evidence of an activity, and the query only mentions a job title, the query is broad. A title match can establish a role, but it cannot establish the activity the workspace asked for. Broadening stops discovery from quietly treating a title match as proof of intent.
 
 ## Search the platforms and preserve the reason
 
-The workflow can search X/Twitter and LinkedIn in parallel. The X/Twitter path separates exact and raw query modes and can use checkpoints. LinkedIn has distinct post and people searches.
+The workflow can search X/Twitter and LinkedIn in parallel. The X/Twitter path separates exact and raw query modes and uses checkpoints to avoid re-fetching old results. LinkedIn has separate post and people searches.
 
-Read `searchTwitterInternal` and `searchLinkedInInternal` next. They turn provider responses into saved prospect data and discovery context, including where the person came from and a relevant snippet. The persistence path connects new results to qualification.
+Read `searchTwitterInternal` and `searchLinkedInInternal` next. They turn provider responses into saved prospects and discovery context, including where the person came from and a snippet worth keeping. This is also the point where a saved result connects to qualification.
 
-There are also conversation-seed and monitor-related paths. Don't assume the main scheduled search is the only way a person can enter the system. When debugging a result, inspect its discovery source before tracing the wrong entry point.
+People can enter the system outside the main scheduled search too. Conversation seeds and monitors create their own paths. When you debug a result, inspect how it arrived before you trace the wrong entry point.
 
 ## Decide what to search again
 
-[convex/lib/queryPrioritizationCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/queryPrioritizationCore.ts) groups queries as new, proven, learning, or cold. It uses recorded performance and search history to choose what gets another chance. A new query needs a chance to run; a repeatedly unproductive one shouldn't consume the same attention forever.
+[convex/lib/queryPrioritizationCore.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/queryPrioritizationCore.ts) sorts queries into four groups, called new, proven, learning, and cold. Recorded performance and search history decide which group a query lands in. A new query earns a first chance. A query that keeps producing nothing should not keep consuming the same attention.
 
-That is one concrete part of the application's learning behavior. It uses recorded outcomes to allocate future search work. It does not guarantee each new search will be better.
+That is one concrete piece of learning behavior in the product. It uses recorded outcomes to allocate future search work. It does not promise that the next search will be better.
 
-The completion handler in `prospecting.ts` decides whether to schedule another cycle. Workspace state, capacity, runtime configuration, and recovery conditions matter. Pausing a workspace stores a paused status on the workspace record, and the workflow checks that stored state before starting its next cycle.
+The completion handler in `prospecting.ts` decides whether to schedule another cycle. Workspace state, capacity, runtime configuration, and recovery conditions all play a part. Pausing a workspace writes a paused status to the workspace record, and the cycle checks that state before starting again.
 
 ## Make a change you can evaluate
 
-For a query-quality bug, keep the audience description, structured criteria, generated query, provider surface, and observed mismatch together. An example such as “requires recent migration experience, but role-only queries were treated as strict” is actionable.
+If you are fixing a query-quality bug, keep the whole story together. The audience description, the structured criteria, the generated query, the provider surface, and the mismatch you observed. An example like "requires recent migration experience, but role-only queries were treated as strict" is the kind of thing that leads somewhere.
 
-Start with [convex/lib/discoveryQueryPlanningCore.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/discoveryQueryPlanningCore.test.ts) and [convex/discoveryQueryPlanning.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/discoveryQueryPlanning.integration.test.ts). Add a regression around the actual mismatch instead of asserting that a prompt contains a particular adjective.
+Start with [convex/lib/discoveryQueryPlanningCore.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/discoveryQueryPlanningCore.test.ts) and [convex/discoveryQueryPlanning.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/discoveryQueryPlanning.integration.test.ts). Add a regression around the actual mismatch instead of asserting that a prompt contains a particular adjective.
 
-Next, follow a saved result into [qualification](/blog/how-reacherx-qualification-works). That is where the system decides whether the available evidence supports the workspace's requirements.
+Next, follow a saved result into [qualification](/blog/how-reacherx-qualification-works), where the system decides whether the evidence supports the workspace's requirements.

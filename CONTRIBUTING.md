@@ -15,6 +15,8 @@ Supporting repo policies:
 
 ## Before you start
 
+Read [VISION.md](./VISION.md) first. It explains what ReacherX is for, what it is not, and where it is going, so product decisions make sense.
+
 Please talk to me before working on:
 
 - new features
@@ -45,7 +47,9 @@ Small bug fixes, typo fixes, and focused polish PRs are fine without a long pre-
 
 ## Local setup
 
-Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned.
+The complete guide for humans and coding agents is [docs/development-setup.md](./docs/development-setup.md). It covers every service and where its key goes, dev vs production environments, the system diagram, agent tools such as the Convex MCP server, and the ready-made agent prompt shown in the [README](./README.md#hand-this-prompt-to-a-coding-agent).
+
+Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned. Node.js 25 and later no longer bundle Corepack, so if `corepack enable pnpm` fails, run `npm install -g corepack` first.
 
 Contributors do not have push access to the main repo, so start by forking it on GitHub. Clone your fork and add the main repo as a second remote so you can stay in sync:
 
@@ -99,6 +103,9 @@ You only need the provider credentials for the feature area you are developing. 
 ## How the codebase is organized
 
 - `app/`: route structure and page-level entry points.
+
+The complete architecture walkthrough with the pipeline, workflows, memory, and reporting lives in [docs/architecture.md](./docs/architecture.md).
+
 - `features/`: product features and UI modules.
 - `shared/`: shared UI, hooks, types, and utilities.
 - `convex/agents/tools/`: thin tool wrappers exposed to agents.

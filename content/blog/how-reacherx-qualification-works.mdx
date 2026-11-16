@@ -1,32 +1,30 @@
 ---
 title: "How ReacherX decides whether someone fits"
-description: "Read the evidence checks, criterion verdicts, deterministic score, and workflow guards behind qualification."
+description: "How qualification checks real evidence against your criteria, scores what it finds, and refuses to guess when the evidence is missing."
 category: engineering
 date: "2026-07-09"
-updated: "2026-09-10"
+updated: "2026-11-13"
 related: ["how-reacherx-enrichment-works", "how-reacherx-discovery-works"]
 tags: ["engineering", "qualification", "contributors"]
 ---
 
-A person can appear in a search without being a good match. Qualification is the step that checks the available information against what the workspace actually needs.
+A person can appear in a search and still be a bad fit. Qualification is the step that checks the available information against what the workspace actually needs, and it is more demanding than it looks.
 
-In the normal discovery path, qualification comes before the full enrichment workflow. It can still load the evidence posts it needs into the qualification context before deciding. “Before enrichment” doesn't mean “score a name without looking at anything”.
+This step sits between discovery and enrichment. It can load the evidence posts it needs into context before deciding, so "before enrichment" never means "score a name without looking at anything".
 
-This article follows v4 beta at commit `8ea2662`.
+## Start with what the workspace asked for
 
-## Start with the workspace's requirements
+Read [convex/workflows/qualification.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/workflows/qualification.ts) and [convex/lib/qualificationCore.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/qualificationCore.ts). The workflow loads the prospect and the workspace, confirms the work is still valid, pulls in learning context, and hands everything to the core evaluator.
 
-Read [convex/workflows/qualification.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/workflows/qualification.ts) and [convex/lib/qualificationCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/qualificationCore.ts). The workflow loads the prospect and workspace, checks whether the work is still valid, retrieves learning context, and calls the core evaluator.
+The evaluator does not chase a vague wish to "find good leads". It works through structured criteria. Each criterion is required, preferred, or an exclusion. The result carries verdicts, a confidence level, a rationale, and references to the sources that back it.
 
-The core works with structured criteria rather than a vague request to find a good lead. Each criterion can be required, preferred, or an exclusion. The evaluation returns verdicts, confidence, a rationale, and source references.
+The shape of a criterion changes what counts as proof. "Has discussed this problem" and "works as a designer" need completely different evidence, and a job title can only ever support the second one.
 
-A required criterion such as “has discussed this problem” needs different evidence from “works as a designer”. A job title cannot prove the first one.
+## Judgment and arithmetic stay separate
 
-## Keep judgment separate from arithmetic
+The model interprets evidence. [convex/lib/qualificationScoringCore.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/qualificationScoringCore.ts) reconciles its verdicts and computes the score in plain TypeScript.
 
-The model interprets evidence. [convex/lib/qualificationScoringCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/qualificationScoringCore.ts) reconciles the results and calculates the score in ordinary TypeScript.
-
-The score has four components:
+The score has four parts.
 
 | Component       | Maximum |
 | --------------- | ------- |
@@ -35,31 +33,31 @@ The score has four components:
 | Intent strength | 25      |
 | Recency         | 15      |
 
-Those numbers are not a probability that someone will buy or respond. They are a ranking built from the workspace's criteria and supported evidence.
+The total is a ranking built from the workspace's criteria and the evidence behind them. It is not a probability that someone will buy or reply, and treating it like one is a mistake.
 
-The final condition is explicit:
+## A high score cannot rescue missing evidence
+
+The final condition is explicit, and it reads almost like a refusal:
 
 ```ts
 qualified:
   breakdown.total >= args.threshold && hardFailureCriterionIds.length === 0,
 ```
 
-A high total cannot cancel a hard failure. A required criterion must be matched. A sufficiently confident matched exclusion blocks qualification. Likely-bot detection and having no verified evidence can also block it.
+The score has to clear the threshold, and no hard failure can be present. A required criterion that is unmatched blocks qualification. A confidently matched exclusion blocks it. Likely-bot detection blocks it. So does having no verified evidence at all.
 
-## Missing evidence stays missing
+Missing evidence gets special treatment. `reconcileQualificationCriterionResults` fills absent criterion results with `unknown`, and a criterion that demands activity evidence gets downgraded to `unknown` when someone claims a match without pointing at a source.
 
-`reconcileQualificationCriterionResults` fills absent criterion results with `unknown`. For non-exclusion criteria that require activity evidence, a matched or partial verdict without source IDs is downgraded to unknown.
+That rule exists because AI answers can sound confident while pointing at nothing. Raising the score threshold would not fix that. Checking the evidence before scoring does.
 
-That rule is important when an AI response sounds confident but doesn't point to a source. Raising the score threshold would not solve the underlying problem. The evidence needs to be checked before scoring.
-
-The evidence-related helpers and tests sit beside the scoring code. Follow [convex/lib/qualificationEvidenceCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/qualificationEvidenceCore.ts) when investigating source handling, and [convex/lib/qualificationDiscoveryEvidenceCore.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/qualificationDiscoveryEvidenceCore.ts) when the original search result should contribute evidence.
+The helpers and tests for evidence handling sit next to the scoring code. Read [convex/lib/qualificationEvidenceCore.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/qualificationEvidenceCore.ts) for source handling, and [convex/lib/qualificationDiscoveryEvidenceCore.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/qualificationDiscoveryEvidenceCore.ts) for the case where the original search result contributes evidence.
 
 ## Save a result only if the work is still current
 
-The workflow uses a stored workflow ID and state checks to avoid treating stale or duplicate work as a fresh result. It records qualification activity and a memory event, then starts enrichment for eligible qualified results.
+The workflow uses a stored workflow ID and state checks so that stale or duplicate work is never treated as a fresh result. A saved qualification records its activity and a memory event, then starts enrichment for anyone who qualified.
 
-A provider failure is different from a valid decision that someone doesn't fit. The recovery code and failure metadata preserve that distinction. Don't “fix” an outage by marking every affected person disqualified.
+There is one distinction worth protecting: a provider failure is not the same as a valid decision that someone does not fit. The recovery code keeps them apart. Never "fix" an outage by marking every affected person disqualified.
 
-For a contribution, capture the criterion, evidence, expected verdict, and actual verdict. Read [convex/lib/qualificationScoringCore.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/lib/qualificationScoringCore.test.ts), [convex/qualificationDiscoveryEvidence.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/qualificationDiscoveryEvidence.integration.test.ts), and [convex/qualificationFailureRecovery.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/8ea266282d045c8d83764be86c561ef8010fa661/convex/qualificationFailureRecovery.integration.test.ts) for the relevant boundaries.
+For a contribution, capture the criterion, the evidence, the expected verdict, and the actual verdict. Read [convex/lib/qualificationScoringCore.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/lib/qualificationScoringCore.test.ts), [convex/qualificationDiscoveryEvidence.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/qualificationDiscoveryEvidence.integration.test.ts), and [convex/qualificationFailureRecovery.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/qualificationFailureRecovery.integration.test.ts) for the boundaries that matter.
 
 The next article follows a qualified person into [enrichment](/blog/how-reacherx-enrichment-works), where the system builds a fuller profile for the user and later planning.
