@@ -231,8 +231,10 @@ export function renidlyAccount(
   return { accountId, unit: "credits", measuredBy: "balance", read };
 }
 
+// Treg returns numeric organization IDs; strings are accepted too.
+const orgIdSchema = z.union([z.string(), z.number().int()]).transform(String);
 const orgRowSchema = z
-  .object({ org_id: z.string().optional(), id: z.string().optional() })
+  .object({ org_id: orgIdSchema.optional(), id: orgIdSchema.optional() })
   .transform((row) => row.org_id ?? row.id ?? null);
 const orgsSchema = z.union([
   z.array(orgRowSchema),

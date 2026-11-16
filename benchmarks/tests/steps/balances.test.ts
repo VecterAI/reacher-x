@@ -69,8 +69,12 @@ test("each account is read from its free endpoint, with the key only in secret h
   assert.deepEqual(renidly.seen[0].secretHeaders, { "X-AUTHAPI-Key": KEY });
 
   const treg = provider({
-    "https://treg.to/orgs": { orgs: [{ org_id: "org-1" }] },
-    "https://treg.to/orgs/org-1/balance": { balance_micro: 501_250_000 },
+    // Treg's organization IDs are numbers.
+    "https://treg.to/orgs": [{ org_id: 41, slug: "team" }],
+    "https://treg.to/orgs/41/balance": {
+      org_id: 41,
+      balance_micro: 501_250_000,
+    },
   });
   const account = tregAccount(KEY, treg.transport);
   assert.equal((await account.read()).available, 501.25);
@@ -80,8 +84,8 @@ test("each account is read from its free endpoint, with the key only in secret h
     treg.seen.map((request) => request.url),
     [
       "https://treg.to/orgs",
-      "https://treg.to/orgs/org-1/balance",
-      "https://treg.to/orgs/org-1/balance",
+      "https://treg.to/orgs/41/balance",
+      "https://treg.to/orgs/41/balance",
     ]
   );
   assert.ok(
