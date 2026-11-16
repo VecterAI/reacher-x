@@ -9,9 +9,12 @@ import {
   WorkspaceRunError,
   cycleMeasurements,
   cycleOfProspect,
+  resumeProblem,
+  resumeWorkspace,
   runWorkspace,
   type WorkspaceHooks,
   type WorkspacePlan,
+  type WorkspaceRunRecord,
 } from "../../core/execution/workspaceRun";
 import { fakeClock, fakeDeployment, status } from "./fakeDeployment";
 
@@ -504,4 +507,344 @@ test("the budget check gets the workspace once it exists, and a stop there ends 
   assert.ok(
     deployment.functionCalls().includes("benchmarkPeopleSearch:stopRun")
   );
+});
+
+/** The arguments of each call to one deployment function. */
+const argsOf = (
+  deployment: ReturnType<typeof fakeDeployment>,
+  name: string
+): Record<string, unknown>[] =>
+  deployment.calls
+    .filter((call) => call.args[0] === "run" && call.args[1] === name)
+    .map((call) => JSON.parse(call.args[2] ?? "{}"));
+
+test("a budget stop sets the LinkedIn kill switch before a stop that cancels running prospect work; a planned end does not", async () => {
+  const budget = fakeDeployment(
+    {},
+    {
+      "benchmarkPeopleSearch:runStatus": () =>
+        status({ workflowId: "wf1", workflowState: "inProgress" }),
+    }
+  );
+  let polls = 0;
+  await runWorkspace(
+    budget.driver,
+    { ...plan, cycles: 1 },
+    hooks([], () => {
+      if (++polls === 3) throw new BudgetStop("renidly:abc reached it.");
+    }).value,
+    options,
+    fakeClock(T)
+  );
+  const switched = budget.calls.findIndex(
+    (call) =>
+      call.args.join(" ") === "env set BENCHMARK_HALTED_WORKSPACE_ID" &&
+      call.stdin === "w1\n"
+  );
+  const stopped = budget.calls.findIndex(
+    (call) => call.args[1] === "benchmarkPeopleSearch:stopRun"
+  );
+  assert.ok(switched >= 0 && stopped > switched);
+  assert.deepEqual(argsOf(budget, "benchmarkPeopleSearch:stopRun"), [
+    { workspaceId: "w1", halt: true },
+  ]);
+
+  const planned = fakeDeployment(
+    { PROSPECTING_AUTO_RESCHEDULE: "0" },
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        status({ workflowId: "wf1", workflowState: "inProgress" }),
+        status({ workflowId: "wf1", workflowState: "completed" }),
+        status({ workflowId: "wf1", workflowState: "completed" }),
+        status({ workflowId: "wf1", workflowState: "completed" }),
+      ]),
+    }
+  );
+  const record = await runWorkspace(
+    planned.driver,
+    { ...plan, cycles: 1 },
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(record.ending, "planned-cycles");
+  assert.equal(planned.env.has("BENCHMARK_HALTED_WORKSPACE_ID"), false);
+  assert.deepEqual(argsOf(planned, "benchmarkPeopleSearch:stopRun"), [
+    { workspaceId: "w1" },
+  ]);
+});
+
+// A one-cycle workspace the guard stopped mid-qualification, as recorded then.
+const STOPPED_AT = T + 40 * 60_000;
+const heldRecord: WorkspaceRunRecord = {
+  label: "run-1_14_on",
+  workspace: { workspaceId: "w1", createdAt: T - 60_000, label: "run-1_14_on" },
+  learning: "on",
+  plannedCycles: 1,
+  submittedAt: T - 70_000,
+  startedAt: T,
+  endedAt: STOPPED_AT,
+  ending: "budget-stop",
+  detail: "renidly:abc reached its approved credits.",
+  cycles: [
+    {
+      cycle: 1,
+      workflowId: "wf1",
+      startedAt: T + 3_000,
+      discoveryEndedAt: null,
+      outcome: null,
+      settledAt: null,
+      nextStartAt: null,
+      nextStartObserved: false,
+      spendAtStartUsd: 1.0,
+      spendAtEndUsd: 2.2,
+    },
+  ],
+  spend: { atSubmitUsd: 0.9, beforeStartUsd: 1.0, afterUsd: 2.2 },
+  recorded: {
+    costs: null,
+    linkdApi: {
+      billableUnits: 472,
+      successes: 472,
+      events: 496,
+      capped: false,
+    },
+  },
+  stop: {
+    stopped: true,
+    cancelFailed: false,
+    monitorsDeleted: 0,
+    monitorFailures: [],
+  },
+  prospects: [],
+};
+
+test("a held workspace continues its own cycle: no discovery, the pause left out of active time, spend combined", async () => {
+  const RESUME_AT = STOPPED_AT + 24 * 3_600_000;
+  const deployment = fakeDeployment(
+    { PROSPECTING_AUTO_RESCHEDULE: "1" },
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        // Before the resume: paused at the stopped cycle.
+        status({
+          workspaceStatus: "paused",
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { total: 443, pending: 131, qualified: 235 },
+        }),
+        status({
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { total: 443, pending: 60, enrichmentWaiting: 235 },
+        }),
+        status({
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { total: 443, enrichmentWaiting: 12 },
+          pendingLessonWrites: 40,
+        }),
+        status({
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { total: 443 },
+        }),
+        status({
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { total: 443 },
+        }),
+      ]),
+      "benchmarkPeopleSearch:linkdApiUnitsSince": () => ({
+        billableUnits: 900,
+        successes: 900,
+        events: 950,
+        capped: false,
+      }),
+    }
+  );
+  // At the resume, then after.
+  const { value, tracked } = hooks([2.3, 3.1]);
+  const record = await resumeWorkspace(
+    deployment.driver,
+    heldRecord,
+    value,
+    options,
+    fakeClock(RESUME_AT)
+  );
+  assert.equal(record.ending, "planned-cycles");
+  assert.deepEqual(tracked, ["w1", null]);
+  // Automatic cycles off before the resume, and nothing that starts discovery.
+  assert.equal(deployment.env.get("PROSPECTING_AUTO_RESCHEDULE"), "0");
+  const functions = deployment.functionCalls();
+  for (const name of [
+    "benchmarkPeopleSearch:prepareWorkspace",
+    "benchmarkPeopleSearch:startWorkspace",
+  ])
+    assert.ok(!functions.includes(name));
+  assert.deepEqual(
+    argsOf(deployment, "benchmarkPeopleSearch:resumeHeldWorkspace"),
+    [{ workspaceId: "w1", workflowId: "wf1" }]
+  );
+  // Settled normally, so a plain stop.
+  assert.deepEqual(argsOf(deployment, "benchmarkPeopleSearch:stopRun"), [
+    { workspaceId: "w1" },
+  ]);
+
+  const [cycle] = record.cycles;
+  assert.equal(record.cycles.length, 1);
+  assert.equal(cycle.pausedMs, RESUME_AT - STOPPED_AT);
+  assert.equal(cycle.outcome, "canceled");
+  assert.equal(cycle.spendAtEndUsd, 3.1);
+  const [measured] = cycleMeasurements("p14", record);
+  // Active: the cycle's start to the stop, then the resume to the first of
+  // the two quiet polls (two polls after it).
+  assert.equal(measured.activeMs, STOPPED_AT - (T + 3_000) + 2 * POLL);
+  // Combined cost: the whole cycle on the key, with setup.
+  assert.equal(round(measured.costUsd), round(3.1 - 0.9));
+  assert.deepEqual(record.spend, {
+    atSubmitUsd: 0.9,
+    beforeStartUsd: 1.0,
+    afterUsd: 3.1,
+  });
+  assert.equal(record.recorded.linkdApi?.billableUnits, 900);
+  assert.equal(record.resumed?.length, 1);
+  const [resumed] = record.resumed!;
+  assert.equal(resumed.after, "budget-stop");
+  assert.equal(resumed.discoveryCompleted, false);
+  assert.deepEqual(resumed.spend, {
+    atStopUsd: 2.2,
+    atResumeUsd: 2.3,
+    afterUsd: 3.1,
+  });
+  assert.equal(resumed.recordedAtStop.linkdApi?.billableUnits, 472);
+  assert.equal(resumed.stoppedAt, STOPPED_AT);
+  assert.equal(resumed.resumedAt, RESUME_AT);
+});
+
+test("a continuation that sees a new discovery cycle, or reaches the budget, stops at once", async () => {
+  const paused = status({
+    workspaceStatus: "paused",
+    workflowId: "wf1",
+    workflowState: "canceled",
+  });
+  const extra = fakeDeployment(
+    {},
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        paused,
+        status({ workflowId: "wf2", workflowState: "inProgress" }),
+      ]),
+    }
+  );
+  const record = await resumeWorkspace(
+    extra.driver,
+    heldRecord,
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(record.ending, "extra-cycle");
+  assert.equal(
+    extra
+      .functionCalls()
+      .filter((name) => name === "benchmarkPeopleSearch:stopRun").length,
+    1
+  );
+
+  let checks = 0;
+  const budget = fakeDeployment(
+    {},
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        paused,
+        status({
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { pending: 5 },
+        }),
+      ]),
+    }
+  );
+  const stopped = await resumeWorkspace(
+    budget.driver,
+    heldRecord,
+    hooks([], () => {
+      if (++checks === 4) throw new BudgetStop("renidly:abc reached it again.");
+    }).value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(stopped.ending, "budget-stop");
+  assert.equal(stopped.resumed?.[0].ending, "budget-stop");
+  // Still resumable: a second continuation would take over from here.
+  assert.equal(resumeProblem(stopped), null);
+  assert.deepEqual(argsOf(budget, "benchmarkPeopleSearch:stopRun"), [
+    { workspaceId: "w1", halt: true },
+  ]);
+  assert.equal(budget.env.get("BENCHMARK_HALTED_WORKSPACE_ID"), "w1");
+});
+
+test("only a stopped last cycle is continued, and never while its discovery is running or over budget", async () => {
+  assert.match(
+    resumeProblem({ ...heldRecord, ending: "timed-out" }) ?? "",
+    /only a budget stop or an interruption/
+  );
+  assert.match(
+    resumeProblem({
+      ...heldRecord,
+      stop: { ...heldRecord.stop, monitorFailures: ["m1"] },
+    }) ?? "",
+    /not confirmed stopped/
+  );
+  assert.match(
+    resumeProblem({ ...heldRecord, plannedCycles: 2 }) ?? "",
+    /cycle 1 of 2/
+  );
+  assert.match(
+    resumeProblem({ ...heldRecord, cycles: [] }) ?? "",
+    /never started/
+  );
+
+  // Discovery still running: refused before anything is resumed.
+  const running = fakeDeployment(
+    {},
+    {
+      "benchmarkPeopleSearch:runStatus": () =>
+        status({ workflowId: "wf1", workflowState: "inProgress" }),
+    }
+  );
+  await assert.rejects(
+    resumeWorkspace(
+      running.driver,
+      heldRecord,
+      hooks().value,
+      options,
+      fakeClock(T)
+    ),
+    WorkspaceRunError
+  );
+  assert.ok(
+    !running
+      .functionCalls()
+      .includes("benchmarkPeopleSearch:resumeHeldWorkspace")
+  );
+
+  // Over budget already: nothing changes on the deployment.
+  const spent = fakeDeployment({});
+  await assert.rejects(
+    resumeWorkspace(
+      spent.driver,
+      heldRecord,
+      hooks([], () => {
+        throw new BudgetStop("renidly:abc reached its approved credits.");
+      }).value,
+      options,
+      fakeClock(T)
+    ),
+    BudgetStop
+  );
+  assert.deepEqual(spent.functionCalls(), [
+    "benchmarkPeopleSearch:deploymentActivity",
+  ]);
+  assert.ok(!spent.calls.some((call) => call.args[1] === "set"));
 });

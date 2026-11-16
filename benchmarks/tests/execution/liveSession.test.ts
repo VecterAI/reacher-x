@@ -79,7 +79,7 @@ test("a step runs with funded keys and run settings, then everything is restored
 });
 
 test("the reset still runs when the step fails, and the step's error is kept", async () => {
-  const { env, driver, functionCalls } = fakeDeployment(AT_REST);
+  const { env, calls, driver, functionCalls } = fakeDeployment(AT_REST);
   const file = memoryFile();
   await assert.rejects(
     withLiveSession(driver, file, config, async (session) => {
@@ -89,6 +89,14 @@ test("the reset still runs when the step fails, and the step's error is kept", a
     /adapter failed/
   );
   assert.ok(functionCalls().includes("benchmarkPeopleSearch:stopRun"));
+  // A reset with the workspace still tracked stops it firmly.
+  const stop = calls.find(
+    (call) => call.args[1] === "benchmarkPeopleSearch:stopRun"
+  );
+  assert.deepEqual(JSON.parse(stop?.args[2] ?? "{}"), {
+    workspaceId: workspace.workspaceId,
+    halt: true,
+  });
   assert.deepEqual(Object.fromEntries(env), AT_REST);
   assert.equal(await hasOpenSession(file), false);
 });
@@ -136,6 +144,11 @@ test("nothing changes when the deployment is not ready for a step", async () => 
       {},
       /keyword post-search cap/,
     ],
+    [
+      { ...AT_REST, BENCHMARK_HALTED_WORKSPACE_ID: "w1" },
+      {},
+      /LinkedIn kill switch/,
+    ],
     [{ ...AT_REST, OPENROUTER_API_KEY: "or-other" }, {}, /OpenRouter key/],
     [
       AT_REST,
@@ -180,6 +193,27 @@ test("a step left open blocks the next one until it is reset", async () => {
     withLiveSession(driver, file, config, async () => undefined),
     /not reset/
   );
+  assert.deepEqual(await resetLiveSession(driver, file), []);
+  assert.deepEqual(Object.fromEntries(env), AT_REST);
+});
+
+test("a session left open before the kill switch existed can still be reset", async () => {
+  const { env, driver } = fakeDeployment(AT_REST);
+  const file = memoryFile();
+  let record = "";
+  let midStep = new Map<string, string>();
+  await withLiveSession(driver, file, config, async (session) => {
+    await session.trackWorkspace(workspace);
+    record = file.data!;
+    midStep = new Map(env);
+  });
+  // The older record has no entry for the setting added since.
+  const legacy = JSON.parse(record);
+  delete legacy.snapshot.settings.BENCHMARK_HALTED_WORKSPACE_ID;
+  await file.write(JSON.stringify(legacy));
+  env.clear();
+  for (const [name, value] of midStep) env.set(name, value);
+  assert.equal(await hasOpenSession(file), true);
   assert.deepEqual(await resetLiveSession(driver, file), []);
   assert.deepEqual(Object.fromEntries(env), AT_REST);
 });

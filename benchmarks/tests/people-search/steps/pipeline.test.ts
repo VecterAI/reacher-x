@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -600,4 +600,144 @@ test("the keyword post-search cap is step-only: 50 calls per workspace cycle unl
       }).success,
       false
     );
+});
+
+const withOpenRouterLimit = (
+  approval: Awaited<ReturnType<StepDependencies["readApproval"]>>,
+  usd: number
+) =>
+  approval && {
+    ...approval,
+    spend: {
+      ...approval.spend,
+      accountLimits: approval.spend.accountLimits.map((limit) =>
+        limit.accountId.startsWith("openrouter:")
+          ? { ...limit, maxAdditionalUsd: usd }
+          : limit
+      ),
+    },
+  };
+
+test("--resume-held continues the budget-stopped workspace's cycle without discovery, then the step finishes", async (t) => {
+  const { root, deps, timeline, env, atRest } = await setup(t);
+  const stopped = await runStep("smoke", {
+    ...deps,
+    readApproval: async (segment) =>
+      withOpenRouterLimit(await deps.readApproval(segment), 0.1),
+  });
+  assert.equal(stopped.outcome.status, "budget-stop");
+  assert.match(stopped.outcome.review[0].reason, /budget-stop/);
+  // The kill switch was set for the stop and the reset removed it.
+  assert.ok(timeline.includes("env set BENCHMARK_HALTED_WORKSPACE_ID"));
+  assert.deepEqual(Object.fromEntries(env), atRest);
+
+  // Without the flag the held workspace is never repeated.
+  timeline.length = 0;
+  const plain = await runStep("smoke", {
+    ...deps,
+    signal: new AbortController().signal,
+  });
+  assert.ok(
+    !timeline.includes("run benchmarkPeopleSearch:resumeHeldWorkspace")
+  );
+  assert.equal(plain.outcome.workspaces.length, 0);
+
+  // With it (and a raised approval), the same workspace finishes its cycle.
+  timeline.length = 0;
+  const resumed = await runStep("smoke", {
+    ...deps,
+    signal: new AbortController().signal,
+    resumeHeld: true,
+  });
+  assert.ok(timeline.includes("run benchmarkPeopleSearch:resumeHeldWorkspace"));
+  for (const call of [
+    "run benchmarkPeopleSearch:prepareWorkspace",
+    "run benchmarkPeopleSearch:startWorkspace",
+  ])
+    assert.ok(!timeline.includes(call));
+  assert.equal(resumed.outcome.status, "complete");
+  assert.deepEqual(resumed.outcome.review, []);
+  const [workspace] = resumed.outcome.workspaces;
+  assert.equal(workspace.record.ending, "planned-cycles");
+  assert.equal(workspace.record.cycles.length, 1);
+  assert.equal(workspace.record.resumed?.[0].after, "budget-stop");
+  assert.ok((workspace.record.cycles[0].pausedMs ?? 0) > 0);
+  assert.ok(resumed.outcome.cases.some((item) => item.toolId === "reacherx"));
+  assert.equal(resumed.outcome.competitors.length, 8);
+  assert.equal(resumed.outcome.decision?.point, "D1");
+  assert.match(
+    resumed.report,
+    /\| planned-cycles \(resumed after a budget stop\) \|/
+  );
+  assert.match(
+    resumed.report,
+    /Resumed workspaces \(spend before and after the stop, combined\)/
+  );
+  assert.match(resumed.report, /No new discovery cycle started/);
+  assert.match(
+    resumed.decision ?? "",
+    /was resumed after a budget stop; its cycle cost and active time combine the attempts/
+  );
+  assert.deepEqual(Object.fromEntries(env), atRest);
+  // The held checkpoint was kept, not replaced without a trace.
+  const runDir = join(
+    root,
+    "benchmarks/.local/runs",
+    segmentRunId(deps.frozen.planSha256, "smoke"),
+    "held"
+  );
+  assert.ok(
+    (await readdir(runDir)).some((name) =>
+      name.startsWith("w-p14-on.before-resume-")
+    )
+  );
+
+  // Nothing is left to continue.
+  await assert.rejects(
+    runStep("smoke", {
+      ...deps,
+      signal: new AbortController().signal,
+      resumeHeld: true,
+    }),
+    /--resume-held found no held workspace/
+  );
+});
+
+test("a raised approval file applies between polls; an invalid one keeps the approval in force", async (t) => {
+  const { deps } = await setup(t);
+  const lines: string[] = [];
+  let reads = 0;
+  const { outcome } = await runStep("smoke", {
+    ...deps,
+    log: (line) => lines.push(line),
+    readApproval: async (segment) => {
+      reads += 1;
+      const approval = await deps.readApproval(segment);
+      // The step opens with too little; the file is then broken, then raised.
+      if (reads === 1) return withOpenRouterLimit(approval, 0.1);
+      if (reads === 2)
+        throw new Error("The approval in the file is not valid.");
+      if (reads === 3) return withOpenRouterLimit(approval, 0.05);
+      return withOpenRouterLimit(approval, 5);
+    },
+  });
+  assert.equal(outcome.status, "complete");
+  assert.ok(
+    lines.some((line) =>
+      /not valid\. The approval in force is kept\./.test(line)
+    )
+  );
+  assert.ok(
+    lines.some((line) =>
+      /Not lowered: openrouter:\w+ stays at \$0\.10/.test(line)
+    )
+  );
+  assert.equal(
+    lines.filter((line) =>
+      /Approval raised mid-step: openrouter:\w+ from \$0\.10 to \$5\.00/.test(
+        line
+      )
+    ).length,
+    1
+  );
 });

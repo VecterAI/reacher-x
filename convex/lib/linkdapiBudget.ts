@@ -6,6 +6,7 @@ import {
   type ProviderRequestContext,
 } from "./providerReliability";
 import {
+  benchmarkHaltMessage,
   keywordPostSearchCapMessage,
   type LinkdApiPurpose,
 } from "./benchmarkLinkdApiCap";
@@ -36,6 +37,16 @@ export async function acquireLinkdApiBudget(
     internalLinkdApiBudget.acquireLinkdApiBudgetInternal,
     { consumer, ...(purpose ? { purpose } : {}) }
   );
+  if (reservation.benchmarkHalted) {
+    // Development benchmark kill switch: refused the same way, so work that
+    // is already running stops calling LinkedIn while its workspace stops.
+    const refusal = new ProviderCircuitOpenError({
+      provider: "linkdapi",
+      reason: "credits",
+    });
+    refusal.message = benchmarkHaltMessage(reservation.benchmarkHalted);
+    throw refusal;
+  }
   if (reservation.benchmarkCapRefused !== null) {
     // Development benchmark cap on the keyword post search: refused as an
     // open circuit is, without recording a provider failure, so the search

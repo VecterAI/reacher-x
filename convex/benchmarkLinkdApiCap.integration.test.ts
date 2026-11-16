@@ -140,6 +140,52 @@ describe("benchmark keyword post-search cap", () => {
     expect(reported.error).not.toBeNull();
   });
 
+  test("the kill switch refuses every LinkdAPI call while a benchmark workspace is stopped, and nothing when unset", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t);
+    expect((await reserveOther(t)).benchmarkHalted).toBeNull();
+    vi.stubEnv("BENCHMARK_HALTED_WORKSPACE_ID", ids.benchmark);
+    vi.stubEnv("BENCHMARK_KEYWORD_POST_SEARCH_LIMIT", "5");
+    const before = await t.run((ctx) =>
+      ctx.db.query("linkdapiBudgetState").first()
+    );
+    for (const call of [reserve, reserveOther]) {
+      const reservation = await call(t);
+      expect(reservation.benchmarkHalted).toBe(ids.benchmark);
+      expect(reservation.waitMs).toBe(0);
+    }
+    // Refused before any reservation or count is written.
+    expect(
+      await t.run((ctx) => ctx.db.query("linkdapiBudgetState").first())
+    ).toEqual(before);
+    vi.stubEnv("BENCHMARK_HALTED_WORKSPACE_ID", "  ");
+    expect((await reserveOther(t)).benchmarkHalted).toBeNull();
+  });
+
+  test("a call refused by the kill switch never reaches LinkedIn", async () => {
+    vi.stubEnv("BENCHMARK_HALTED_WORKSPACE_ID", "stopped-workspace");
+    vi.stubEnv("LINKDAPI_API_KEY", "test-key");
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ success: true, data: { posts: [], hasMore: false } })
+        )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const result = await t.action(
+      internal.integrations.linkedin.searchUserPosts.searchUserPostsCore,
+      {
+        urn: "ACoAABYrFkMBC7rsx_EOLFLBZrG7-N-IDnL2aCQ",
+        keywords: ["ARR"],
+        maxPosts: 10,
+      }
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.error).toMatch(/Benchmark stop in force/);
+  }, 20_000);
+
   test("a refused keyword search stops and returns what it found; other searches are not capped", async () => {
     vi.stubEnv("BENCHMARK_KEYWORD_POST_SEARCH_LIMIT", "1");
     vi.stubEnv("LINKDAPI_API_KEY", "test-key");

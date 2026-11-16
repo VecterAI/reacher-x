@@ -508,6 +508,40 @@ export class StepBudget {
     await this.guard.check(accountIds);
   }
 
+  /**
+   * Applies an approval file re-read mid-step. Only increases take effect:
+   * an approved amount is never lowered while the step runs, accounts the
+   * step does not use are ignored, and nothing changes for an account the
+   * file leaves out. Returns what was raised and what was kept, for the log.
+   */
+  raise(spend: StepSpendApproval, credits: readonly CreditLimit[]) {
+    const wanted = new Map<string, number>([
+      ...spend.accountLimits.map(
+        (limit) => [limit.accountId, limit.maxAdditionalUsd] as const
+      ),
+      ...credits.map((limit) => [limit.accountId, limit.maxCredits] as const),
+    ]);
+    const raised: string[] = [];
+    const kept: string[] = [];
+    for (const [accountId, current] of this.limits) {
+      const next = wanted.get(accountId);
+      if (next === undefined || next === current) continue;
+      const unit = this.units.get(accountId) ?? "usd";
+      if (next < current) {
+        kept.push(
+          `${accountId} stays at ${show(unit, current)} (the file asks for ${show(unit, next)}; only increases apply during a step)`
+        );
+        continue;
+      }
+      this.limits.set(accountId, next);
+      this.guard.raise(accountId, next);
+      raised.push(
+        `${accountId} from ${show(unit, current)} to ${show(unit, next)}`
+      );
+    }
+    return { raised, kept };
+  }
+
   /** Shared accounts against their approved amounts, from the deployment's own records of this step. */
   checkRecorded(recorded: Readonly<Record<string, number>>) {
     for (const accountId of this.shared) {

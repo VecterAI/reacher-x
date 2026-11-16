@@ -141,11 +141,18 @@ export function openRouterKeySpend(
  */
 export class SpendGuard {
   private readonly baselines = new Map<string, KeySpendSnapshot>();
+  private readonly limits: Map<string, number>;
 
   constructor(
-    private readonly approval: StepSpendApproval,
+    approval: StepSpendApproval,
     private readonly readers: readonly SpendReader[]
   ) {
+    this.limits = new Map(
+      approval.accountLimits.map((limit) => [
+        limit.accountId,
+        limit.maxAdditionalUsd,
+      ])
+    );
     const approved = new Set(
       approval.accountLimits.map((limit) => limit.accountId)
     );
@@ -186,9 +193,7 @@ export class SpendGuard {
       if (only && !only.includes(reader.accountId)) continue;
       const baseline = this.baselines.get(reader.accountId);
       if (!baseline) throw new BudgetStop("The spend guard was not started.");
-      const limit = this.approval.accountLimits.find(
-        (account) => account.accountId === reader.accountId
-      )!.maxAdditionalUsd;
+      const limit = this.limits.get(reader.accountId)!;
       const additional =
         (await reader.read()).cumulativeUsd - baseline.cumulativeUsd;
       spent[reader.accountId] = additional;
@@ -198,5 +203,12 @@ export class SpendGuard {
         );
     }
     return spent;
+  }
+
+  /** Raises an account's approved amount mid-step; never lowers it. */
+  raise(accountId: string, amount: number) {
+    const current = this.limits.get(accountId);
+    if (current !== undefined && amount > current)
+      this.limits.set(accountId, amount);
   }
 }

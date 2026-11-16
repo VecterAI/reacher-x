@@ -7,6 +7,7 @@ import {
   LINKDAPI_PROVIDER,
 } from "./lib/linkdapiBudget";
 import {
+  benchmarkHaltedWorkspace,
   currentBenchmarkCycle,
   KEYWORD_POST_SEARCH_PURPOSE,
   linkdApiPurposeValidator,
@@ -23,6 +24,18 @@ export const reserveLinkdApiBudgetSlotInternal = internalMutation({
   },
   handler: async (ctx, { consumer, purpose }) => {
     const config = getLinkdApiBudgetConfig();
+    // Development benchmark kill switch, read from the environment only (no
+    // database read): while a benchmark step stops its workspace, every call
+    // is refused before it waits or reaches the provider. Unset in production.
+    const halted = benchmarkHaltedWorkspace();
+    if (halted !== null)
+      return {
+        waitMs: 0,
+        spacingMs: config.requestSpacingMs,
+        targetRequestsPerMinute: config.targetRequestsPerMinute,
+        benchmarkCapRefused: null,
+        benchmarkHalted: halted,
+      };
     const now = getCurrentUTCTimestamp();
     const existing = await ctx.db
       .query("linkdapiBudgetState")
@@ -58,6 +71,7 @@ export const reserveLinkdApiBudgetSlotInternal = internalMutation({
             spacingMs: config.requestSpacingMs,
             targetRequestsPerMinute: config.targetRequestsPerMinute,
             benchmarkCapRefused: limit,
+            benchmarkHalted: null,
           };
         }
         benchmarkCycle = {
@@ -93,6 +107,7 @@ export const reserveLinkdApiBudgetSlotInternal = internalMutation({
       spacingMs: config.requestSpacingMs,
       targetRequestsPerMinute: config.targetRequestsPerMinute,
       benchmarkCapRefused: null,
+      benchmarkHalted: null,
     };
   },
 });
@@ -111,6 +126,8 @@ export const acquireLinkdApiBudgetInternal = internalAction({
     targetRequestsPerMinute: number;
     // The benchmark cap that refused this call, or null when it may proceed.
     benchmarkCapRefused: number | null;
+    // The benchmark workspace being stopped, while its kill switch refuses every call.
+    benchmarkHalted: string | null;
   }> => {
     const config = getLinkdApiBudgetConfig();
     for (

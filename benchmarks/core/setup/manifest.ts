@@ -155,6 +155,8 @@ export const checkpointSchema = z.discriminatedUnion("status", [
     ...checkpointBase,
     status: z.literal("started"),
     startedAt: timestampSchema,
+    // Set when a held unit was continued: the review receipt it continues.
+    resumedFrom: artifactSchema.optional(),
   }),
   z.strictObject({
     ...checkpointBase,

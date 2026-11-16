@@ -56,6 +56,8 @@ const help = `ReacherX benchmark
                                (the file must be under benchmarks/.local/)
   pnpm benchmark --offline-run <file>  Checkpoint saved JSON work from a frozen manifest
   pnpm benchmark --live <step> Run one live step: smoke, pilot, main or stage2
+  pnpm benchmark --live <step> --resume-held  Continue the step's workspaces
+                               held after a budget stop or an interruption
   pnpm benchmark --dry-run [step]  The same pipeline on synthetic data at $0,
                                through the given step (all steps when omitted)
   pnpm benchmark --reset       Reset the development deployment after an interrupted live step
@@ -73,6 +75,16 @@ judges. Every unit is checkpointed: running the same command again resumes,
 reuses finished units and never repeats one that started without finishing.
 Ctrl+C stops new work and always finishes the deployment reset; if that
 reset cannot finish, fix the cause and run --reset.
+
+--resume-held continues, inside the same kind of live session, a workspace
+held after a budget stop or an interruption: the same workspace and cycle,
+so its pending qualification, enrichment and lesson writing finish. It never
+starts a discovery cycle. Its earlier use counts against the approval, so
+raise the approval first. The step then carries on as usual.
+
+While a step runs, the approval file is read again between status polls:
+higher amounts apply at once; lower amounts and invalid files are ignored
+(the approval in force is kept) and logged.
 
 --dry-run makes no network call and contacts no deployment. It runs every
 phase on invented data in a temporary folder and prints the reports.
@@ -120,6 +132,7 @@ async function main() {
         "capture-replay": { type: "string" },
         "restore-model": { type: "boolean" },
         publish: { type: "string" },
+        "resume-held": { type: "boolean" },
       },
     });
     options = parsed.values;
@@ -129,10 +142,16 @@ async function main() {
     if (Object.values(options).some((value) => value === "")) throw new Error();
     // --model and --learning only modify the default quick check.
     const commands = Object.entries(options).filter(
-      ([name, value]) => value && name !== "model" && name !== "learning"
+      ([name, value]) =>
+        value &&
+        name !== "model" &&
+        name !== "learning" &&
+        name !== "resume-held"
     );
     if (commands.length > 1 || (commands.length && modifiesQuickCheck(options)))
       throw new Error();
+    // --resume-held only modifies a live step.
+    if (options["resume-held"] && options.live === undefined) throw new Error();
     if (
       options.learning !== undefined &&
       !["on", "off", "both"].includes(options.learning)
@@ -164,7 +183,10 @@ async function main() {
         interrupt.signal,
         (line) => console.error(line)
       );
-      const result = await runStep(step, deps);
+      const result = await runStep(step, {
+        ...deps,
+        resumeHeld: options["resume-held"] === true,
+      });
       print([result]);
       console.error(`Private files: ${result.files.join(", ")}.`);
       if (result.outcome.status === "interrupted") {
@@ -179,7 +201,7 @@ async function main() {
         process.exitCode = 1;
       } else if (result.outcome.status === "budget-stop") {
         console.error(
-          `The step stopped before spending more: ${result.outcome.stopReason ?? ""} Review it, update the approval if more is agreed, then run the same command to resume.`
+          `The step stopped before spending more: ${result.outcome.stopReason ?? ""} Review it, update the approval if more is agreed, then run the same command to resume; add --resume-held to continue the stopped workspace's cycle.`
         );
         process.exitCode = 1;
       }

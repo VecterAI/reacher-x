@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -139,4 +139,113 @@ test("a finished value can be held for review, and a changed unit or schedule is
     /different frozen plan/
   );
   assert.deepEqual(units.tally, { executed: 0, reused: 0 });
+});
+
+test("a held unit continues only as an explicit resume of its receipt, and its earlier checkpoint is kept", async (t) => {
+  const { store, ledger: units } = await ledger(t);
+  const held = await store.withLock(async () => {
+    await units.open({ schedule: ["w"] });
+    return units.run(spec("w"), value, async () => {
+      throw new UnitFailed("Budget stop.", { count: 1 });
+    });
+  });
+  assert.equal(held.status, "needs-review");
+  if (held.status !== "needs-review" || !held.receipt) throw new Error();
+  const receipt = held.receipt;
+
+  const saved = await store.withLock(() => units.held("w"));
+  assert.deepEqual(saved?.value, {
+    reason: "Budget stop.",
+    receipt: { count: 1 },
+  });
+  // A plain run never repeats it, and a held unit cannot restart without a resume.
+  const plain = await store.withLock(() =>
+    units.run(spec("w"), value, async () => ({ count: 9 }))
+  );
+  assert.equal(plain.status, "needs-review");
+  const checkpoint = await store.read("w");
+  await assert.rejects(
+    store.withLock(() =>
+      store.write({
+        unit: checkpoint!.unit,
+        status: "started",
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+    ),
+    RunnerStateError
+  );
+  // A receipt that is not the held one is refused.
+  await assert.rejects(
+    store.withLock(() =>
+      units.resume(
+        spec("w"),
+        { ...receipt, sha256: "0".repeat(64) },
+        value,
+        async () => ({ count: 2 })
+      )
+    ),
+    RunnerStateError
+  );
+
+  const resumed = await store.withLock(() =>
+    units.resume(spec("w"), receipt, value, async () => ({ count: 2 }))
+  );
+  assert.deepEqual(resumed, {
+    status: "completed",
+    value: { count: 2 },
+    reused: false,
+  });
+  // The held checkpoint is kept under held/, and its receipt still reads.
+  const runDir = join(
+    store.repositoryRoot,
+    "benchmarks/.local/runs/synthetic-step"
+  );
+  const kept = (await readdir(join(runDir, "held"))).filter((name) =>
+    name.startsWith("w.before-resume-")
+  );
+  assert.equal(kept.length, 1);
+  assert.equal(
+    JSON.parse(await readFile(join(runDir, "held", kept[0]), "utf8")).status,
+    "needs-review"
+  );
+  assert.deepEqual(await store.readArtifact(receipt), {
+    reason: "Budget stop.",
+    receipt: { count: 1 },
+  });
+  // Completed now: reused, never resumed again.
+  assert.equal(await store.withLock(() => units.held("w")), null);
+});
+
+test("a continuation that crashed is held again with the receipt it continued", async (t) => {
+  const { store, ledger: units } = await ledger(t);
+  const held = await store.withLock(async () => {
+    await units.open({ schedule: ["w"] });
+    return units.run(spec("w"), value, async () => {
+      throw new UnitFailed("Budget stop.", { count: 1 });
+    });
+  });
+  if (held.status !== "needs-review" || !held.receipt) throw new Error();
+  // The process dies mid-continuation: the checkpoint stays started.
+  const checkpoint = await store.read("w");
+  const now = new Date().toISOString();
+  await store.withLock(() =>
+    store.write({
+      unit: checkpoint!.unit,
+      status: "started",
+      startedAt: now,
+      updatedAt: now,
+      resumedFrom: held.receipt!,
+    })
+  );
+  const next = await store.withLock(() =>
+    new UnitLedger(store).run(spec("w"), value, async () => ({ count: 9 }))
+  );
+  assert.equal(next.status, "needs-review");
+  const again = await store.withLock(() => units.held("w"));
+  assert.deepEqual(again?.value, {
+    reason:
+      "Started in an earlier attempt that did not finish; it may have been billed.",
+    receipt: { count: 1 },
+  });
 });

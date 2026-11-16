@@ -19,9 +19,12 @@ import {
   internalQuery,
 } from "./lib/functionBuilders";
 import { generateInitialSetupDraft } from "./lib/setupGenerationCore";
+import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
+import { getSystemRuntimeConfig } from "./lib/runtimeConfigHelpers";
 import { markWorkspaceProfilesAsAiGenerated } from "./lib/workspaceProfileChangeCore";
 import { workflow } from "./lib/workflow";
 import { requestWorkspaceDeletion } from "./workflows/deleteWorkspace";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { workspaceUseCaseKeyValidator } from "./validators";
 import { resolveWorkspaceUseCaseKey } from "../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
@@ -39,9 +42,20 @@ const EVIDENCE_POSTS_KEPT = 3;
 const EVIDENCE_TEXT_CHARS = 1500;
 const DELETE_WINDOW_MS = 10 * 60 * 1000;
 const MAX_SCHEDULED_SCAN = 1000;
-// workflows/prospecting:startNextCycle; the backend may include the module's extension.
-const NEXT_CYCLE_FUNCTION = /^workflows\/prospecting(?:\.js)?:startNextCycle$/;
+// workflows/prospecting:startNextCycle and the automatic restart after a
+// failed cycle; the backend may include the module's extension.
+const NEXT_CYCLE_FUNCTION =
+  /^(?:workflows\/prospecting(?:\.js)?:startNextCycle|workspaces(?:\.js)?:attemptProspectingWorkflowRecoveryInternal)$/;
 const MAX_ACTIVITY_ROWS = 500;
+// Prospects read per page when stopping or resuming a workspace's own work.
+const PROSPECT_PAGE_SIZE = 100;
+const PROSPECT_PAGE_BYTES = 2_000_000;
+const MAX_PROSPECT_PAGES = 100;
+// Enrichment claims taken before a workflow starts carry this prefix.
+const ENRICHMENT_CLAIM_PREFIX = "pending:";
+const ENRICHMENT_DONE = new Set(["enriched", "partial", "failed"]);
+const isDecided = (status: string | undefined) =>
+  status === "qualified" || status === "disqualified";
 
 function benchmarkWorkspaceName(label: string) {
   if (!LABEL_PATTERN.test(label)) {
@@ -167,9 +181,17 @@ export const runStatus = internalQuery({
       disqualified: 0,
       unscored: 0,
       organizations: 0,
+      // Qualified prospects whose enrichment has not finished yet.
+      enrichmentWaiting: 0,
     };
     for (const prospect of prospects.slice(0, MAX_STATUS_ROWS)) {
       counts.total += 1;
+      if (
+        prospect.qualificationStatus === "qualified" &&
+        prospect.status !== "archived" &&
+        !ENRICHMENT_DONE.has(prospect.enrichmentStatus ?? "")
+      )
+        counts.enrichmentWaiting += 1;
       if (prospect.prospectType === "organization") counts.organizations += 1;
       if (prospect.qualificationStatus === "pending") counts.pending += 1;
       else if (prospect.qualificationStatus === "qualified")
@@ -323,13 +345,83 @@ export const linkdApiUnitsSince = internalQuery({
 });
 
 /**
+ * One page of a workspace's prospects with the fields that say what work is
+ * still open on each: qualification, enrichment and their workflow leases.
+ */
+export const prospectWorkPage = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    cursor: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, { workspaceId, cursor }) => {
+    // Prospect documents are large; row and byte caps keep each page small.
+    const result = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+      .paginate({
+        numItems: PROSPECT_PAGE_SIZE,
+        cursor,
+        maximumRowsRead: PROSPECT_PAGE_SIZE,
+        maximumBytesRead: PROSPECT_PAGE_BYTES,
+      });
+    return {
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      page: result.page.map((prospect) => ({
+        prospectId: prospect._id,
+        archived: prospect.status === "archived",
+        qualificationStatus: prospect.qualificationStatus ?? null,
+        qualificationWorkflowId: prospect.qualificationWorkflowId ?? null,
+        enrichmentStatus: prospect.enrichmentStatus ?? null,
+        enrichmentWorkflowId: prospect.enrichmentWorkflowId ?? null,
+      })),
+    };
+  },
+});
+
+type ProspectWork = Readonly<{
+  prospectId: Id<"prospects">;
+  archived: boolean;
+  qualificationStatus: string | null;
+  qualificationWorkflowId: string | null;
+  enrichmentStatus: string | null;
+  enrichmentWorkflowId: string | null;
+}>;
+
+/** Every page of the workspace's open prospect work, bounded. */
+async function forEachProspectPage(
+  ctx: Pick<ActionCtx, "runQuery">,
+  workspaceId: Id<"workspaces">,
+  visit: (page: readonly ProspectWork[]) => Promise<void>
+) {
+  let cursor: string | null = null;
+  for (let pages = 0; pages < MAX_PROSPECT_PAGES; pages++) {
+    const result: {
+      isDone: boolean;
+      continueCursor: string;
+      page: ProspectWork[];
+    } = await ctx.runQuery(internal.benchmarkPeopleSearch.prospectWorkPage, {
+      workspaceId,
+      cursor,
+    });
+    await visit(result.page);
+    if (result.isDone) return true;
+    cursor = result.continueCursor;
+  }
+  return false;
+}
+
+/**
  * Pauses the workspace, cancels its workflow and removes its SocialAPI
  * monitors so nothing keeps billing. Funded provider keys are restored only
- * after this reports no monitor failures.
+ * after this reports no monitor failures. With `halt` (a budget stop or an
+ * interrupted step), the qualification and enrichment workflows already
+ * running for its prospects are canceled too, so they take no further step;
+ * a step already executing finishes. Never deletes data.
  */
 export const stopRun = internalAction({
-  args: { workspaceId: v.id("workspaces") },
-  handler: async (ctx, { workspaceId }) => {
+  args: { workspaceId: v.id("workspaces"), halt: v.optional(v.boolean()) },
+  handler: async (ctx, { workspaceId, halt }) => {
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
       workspaceId,
     });
@@ -339,6 +431,7 @@ export const stopRun = internalAction({
         cancelFailed: false,
         monitorsDeleted: 0,
         monitorFailures: [],
+        prospectWorkflowsCanceled: 0,
       };
     await ctx.runMutation(internal.tenantScheduler.pauseWorkspaceInternal, {
       workspaceId,
@@ -366,6 +459,55 @@ export const stopRun = internalAction({
       status: "paused",
       pauseReason: "manual",
     });
+    // Paused first, so nothing new is claimed while running work is canceled.
+    let prospectWorkflowsCanceled = 0;
+    // Cancellations that failed while the workflow is still running.
+    let prospectCancelFailures = 0;
+    // Pages never read leave their workflows unconfirmed.
+    let prospectScanComplete = true;
+    if (halt && workspace.name.startsWith(BENCHMARK_NAME_PREFIX)) {
+      prospectScanComplete = await forEachProspectPage(
+        ctx,
+        workspaceId,
+        async (page) => {
+          const running = page.flatMap((prospect) => [
+            ...(prospect.qualificationWorkflowId &&
+            !isDecided(prospect.qualificationStatus ?? undefined)
+              ? [prospect.qualificationWorkflowId]
+              : []),
+            ...(prospect.enrichmentWorkflowId &&
+            !prospect.enrichmentWorkflowId.startsWith(
+              ENRICHMENT_CLAIM_PREFIX
+            ) &&
+            !ENRICHMENT_DONE.has(prospect.enrichmentStatus ?? "")
+              ? [prospect.enrichmentWorkflowId]
+              : []),
+          ]);
+          const results = await Promise.all(
+            running.map(async (id) => {
+              try {
+                await workflow.cancel(ctx, id as WorkflowId);
+                return "canceled" as const;
+              } catch {
+                // Fine only if the workflow has already ended.
+                const status = await workflow
+                  .status(ctx, id as WorkflowId)
+                  .catch(() => null);
+                return status && status.type !== "inProgress"
+                  ? ("ended" as const)
+                  : ("failed" as const);
+              }
+            })
+          );
+          prospectWorkflowsCanceled += results.filter(
+            (result) => result === "canceled"
+          ).length;
+          prospectCancelFailures += results.filter(
+            (result) => result === "failed"
+          ).length;
+        }
+      );
+    }
     const monitors = await ctx.runQuery(
       internal.socialapiMonitors.listWorkspaceMonitorsInternal,
       { workspaceId }
@@ -387,11 +529,15 @@ export const stopRun = internalAction({
         monitorFailures.push(monitor.monitorId);
       }
     }
+    // Prospect work that could not be confirmed stopped keeps the stop unconfirmed.
+    const unresolved =
+      cancelFailed || prospectCancelFailures > 0 || !prospectScanComplete;
     return {
-      stopped: !cancelFailed,
-      cancelFailed,
+      stopped: !unresolved,
+      cancelFailed: unresolved,
       monitorsDeleted,
       monitorFailures,
+      prospectWorkflowsCanceled,
     };
   },
 });
@@ -408,27 +554,280 @@ export const cancelScheduledCycles = internalMutation({
     if (!workspace?.name.startsWith(BENCHMARK_NAME_PREFIX)) {
       throw new Error("Only benchmark workspaces can be held here");
     }
-    // A next cycle is scheduled as the previous one completes, so it is among the newest entries.
-    const recent = await ctx.db.system
-      .query("_scheduled_functions")
-      .order("desc")
-      .take(MAX_SCHEDULED_SCAN);
-    let canceled = 0;
-    for (const job of recent) {
-      const [jobArgs] = job.args as [{ workspaceId?: unknown } | undefined];
+    return await cancelPendingCycleStarts(ctx, workspaceId);
+  },
+});
+
+/** Cancels the workspace's pending next-cycle starts and automatic restarts. */
+async function cancelPendingCycleStarts(
+  ctx: MutationCtx,
+  workspaceId: Id<"workspaces">
+) {
+  // A next cycle is scheduled as the previous one completes, so it is among the newest entries.
+  const recent = await ctx.db.system
+    .query("_scheduled_functions")
+    .order("desc")
+    .take(MAX_SCHEDULED_SCAN);
+  let canceled = 0;
+  for (const job of recent) {
+    const [jobArgs] = job.args as [{ workspaceId?: unknown } | undefined];
+    if (
+      job.state.kind === "pending" &&
+      NEXT_CYCLE_FUNCTION.test(job.name) &&
+      jobArgs?.workspaceId === workspaceId
+    ) {
+      await ctx.scheduler.cancel(job._id);
+      canceled += 1;
+    }
+  }
+  if (canceled > 0) {
+    await ctx.db.patch(workspaceId, { prospectingNextRunAt: undefined });
+  }
+  return { canceled, truncated: recent.length === MAX_SCHEDULED_SCAN };
+}
+
+/**
+ * Marks a held benchmark workspace running again at the cycle it stopped in,
+ * without starting a workflow: its discovery workflow stays as it ended, and
+ * any next-cycle start or automatic restart still scheduled is canceled first,
+ * so no discovery can start. The cycle's start time is kept.
+ */
+export const markResumedInternal = internalMutation({
+  args: { workspaceId: v.id("workspaces"), workflowId: v.string() },
+  handler: async (ctx, { workspaceId, workflowId }) => {
+    const workspace = await ctx.db.get(workspaceId);
+    if (!workspace?.name.startsWith(BENCHMARK_NAME_PREFIX))
+      throw new Error("Only benchmark workspaces can be resumed here");
+    if (
+      workspace.deletionStartedAt !== undefined ||
+      workspace.deletionWorkflowId
+    )
+      throw new Error("This benchmark workspace is being deleted");
+    if (workspace.prospectingWorkflowStatus !== "paused")
+      throw new Error("Only a paused benchmark workspace can be resumed");
+    if (workspace.prospectingWorkflowId !== workflowId)
+      throw new Error(
+        "The workspace is no longer at the cycle the benchmark stopped"
+      );
+    const { canceled } = await cancelPendingCycleStarts(ctx, workspaceId);
+    await ctx.db.patch(workspaceId, {
+      prospectingWorkflowStatus: "running",
+      prospectingWorkflowPauseReason: undefined,
+      prospectingWorkflowPausedAt: undefined,
+      prospectingNextRunAt: undefined,
+      prospectingNextRecoveryAt: undefined,
+    });
+    return { cycleStartsCanceled: canceled };
+  },
+});
+
+/**
+ * Requeues one page of a resumed workspace's unfinished prospect work through
+ * the product's own entry points: qualification for undecided prospects (with
+ * any retry backoff the stop left cleared, as a manual restart clears it), and
+ * enrichment for qualified prospects not yet enriched (releasing a lease whose
+ * workflow is no longer running). Each prospect is checked again here.
+ */
+export const requeueForResumeInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    qualify: v.array(v.id("prospects")),
+    enrich: v.array(
+      v.object({
+        prospectId: v.id("prospects"),
+        // The lease to release, exactly as read; absent when there is none.
+        lease: v.optional(v.string()),
+      })
+    ),
+  },
+  handler: async (ctx, { workspaceId, qualify, enrich }) => {
+    const workspace = await ctx.db.get(workspaceId);
+    if (
+      !workspace?.name.startsWith(BENCHMARK_NAME_PREFIX) ||
+      workspace.prospectingWorkflowStatus !== "running"
+    )
+      throw new Error("Only a resumed benchmark workspace is requeued here");
+    const now = Date.now();
+    let qualificationQueued = 0;
+    let failuresCleared = 0;
+    for (const prospectId of qualify) {
+      const prospect = await ctx.db.get(prospectId);
       if (
-        job.state.kind === "pending" &&
-        NEXT_CYCLE_FUNCTION.test(job.name) &&
-        jobArgs?.workspaceId === workspaceId
-      ) {
-        await ctx.scheduler.cancel(job._id);
-        canceled += 1;
+        !prospect ||
+        prospect.workspaceId !== workspaceId ||
+        prospect.status === "archived" ||
+        isDecided(prospect.qualificationStatus)
+      )
+        continue;
+      if (prospect.qualificationLastFailure) {
+        await ctx.db.patch(prospectId, {
+          qualificationLastFailure: undefined,
+          updatedAt: now,
+        });
+        failuresCleared += 1;
       }
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.qualification.startQualification,
+        { prospectId, workspaceId }
+      );
+      qualificationQueued += 1;
     }
-    if (canceled > 0) {
-      await ctx.db.patch(workspaceId, { prospectingNextRunAt: undefined });
+    let enrichmentQueued = 0;
+    let leasesReleased = 0;
+    for (const { prospectId, lease } of enrich) {
+      const prospect = await ctx.db.get(prospectId);
+      if (
+        !prospect ||
+        prospect.workspaceId !== workspaceId ||
+        prospect.status === "archived" ||
+        prospect.qualificationStatus !== "qualified" ||
+        ENRICHMENT_DONE.has(prospect.enrichmentStatus ?? "") ||
+        prospect.enrichmentWorkflowId !== lease
+      )
+        continue;
+      if (lease !== undefined) {
+        await ctx.db.patch(prospectId, {
+          enrichmentWorkflowId: undefined,
+          updatedAt: now,
+        });
+        leasesReleased += 1;
+      }
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.enrichment.startEnrichment,
+        { prospectId, workspaceId }
+      );
+      enrichmentQueued += 1;
     }
-    return { canceled, truncated: recent.length === MAX_SCHEDULED_SCAN };
+    return {
+      qualificationQueued,
+      failuresCleared,
+      enrichmentQueued,
+      leasesReleased,
+    };
+  },
+});
+
+/**
+ * Continues a benchmark workspace the runner stopped (a budget stop or an
+ * interrupted step) at the same cycle, so that cycle can finish: its pending
+ * prospects are qualified, qualified ones enriched and its lessons written.
+ * No discovery workflow is started and none can be: automatic cycles must be
+ * off, the cycle's discovery workflow must have ended, and scheduled cycle
+ * starts are canceled before the workspace runs again. SocialAPI monitors are
+ * not recreated. Development benchmark only; the runner stops the workspace
+ * again afterwards.
+ */
+export const resumeHeldWorkspace = internalAction({
+  args: { workspaceId: v.id("workspaces"), workflowId: v.string() },
+  handler: async (
+    ctx,
+    { workspaceId, workflowId }
+  ): Promise<{
+    qualificationQueued: number;
+    failuresCleared: number;
+    enrichmentQueued: number;
+    leasesReleased: number;
+    leasesKept: number;
+    cycleStartsCanceled: number;
+    truncated: boolean;
+  }> => {
+    if (getSystemRuntimeConfig().prospecting.autoReschedule)
+      throw new Error(
+        "Turn automatic cycles off (PROSPECTING_AUTO_RESCHEDULE) before resuming"
+      );
+    if (areAutonomousJobsPaused())
+      throw new Error("Unpause autonomous jobs before resuming");
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId,
+    });
+    if (!workspace?.name.startsWith(BENCHMARK_NAME_PREFIX))
+      throw new Error("Only benchmark workspaces can be resumed here");
+    // Discovery is never repeated or continued: its workflow must have ended.
+    const discovery = await workflow
+      .status(ctx, workflowId as WorkflowId)
+      .catch(() => null);
+    if (!discovery || discovery.type === "inProgress")
+      throw new Error("The cycle's discovery workflow has not ended");
+
+    const { cycleStartsCanceled }: { cycleStartsCanceled: number } =
+      await ctx.runMutation(
+        internal.benchmarkPeopleSearch.markResumedInternal,
+        { workspaceId, workflowId }
+      );
+    await ctx.runMutation(internal.tenantScheduler.resumeWorkspaceInternal, {
+      workspaceId,
+    });
+
+    const totals = {
+      qualificationQueued: 0,
+      failuresCleared: 0,
+      enrichmentQueued: 0,
+      leasesReleased: 0,
+      // Enrichment workflows still running (or unreadable), left alone.
+      leasesKept: 0,
+    };
+    const complete = await forEachProspectPage(
+      ctx,
+      workspaceId,
+      async (page) => {
+        const qualify = page
+          .filter(
+            (prospect) =>
+              !prospect.archived &&
+              !isDecided(prospect.qualificationStatus ?? undefined)
+          )
+          .map((prospect) => prospect.prospectId);
+        const enrich: { prospectId: Id<"prospects">; lease?: string }[] = [];
+        for (const prospect of page) {
+          if (
+            prospect.archived ||
+            prospect.qualificationStatus !== "qualified" ||
+            ENRICHMENT_DONE.has(prospect.enrichmentStatus ?? "")
+          )
+            continue;
+          const lease = prospect.enrichmentWorkflowId;
+          if (lease === null) {
+            enrich.push({ prospectId: prospect.prospectId });
+            continue;
+          }
+          // A claim taken before its workflow started is safe to release:
+          // the queued job checks the claim before it starts anything.
+          if (!lease.startsWith(ENRICHMENT_CLAIM_PREFIX)) {
+            const state = await workflow
+              .status(ctx, lease as WorkflowId)
+              .catch(() => null);
+            if (!state || state.type === "inProgress") {
+              totals.leasesKept += 1;
+              continue;
+            }
+          }
+          enrich.push({ prospectId: prospect.prospectId, lease });
+        }
+        if (!qualify.length && !enrich.length) return;
+        const result: {
+          qualificationQueued: number;
+          failuresCleared: number;
+          enrichmentQueued: number;
+          leasesReleased: number;
+        } = await ctx.runMutation(
+          internal.benchmarkPeopleSearch.requeueForResumeInternal,
+          { workspaceId, qualify, enrich }
+        );
+        totals.qualificationQueued += result.qualificationQueued;
+        totals.failuresCleared += result.failuresCleared;
+        totals.enrichmentQueued += result.enrichmentQueued;
+        totals.leasesReleased += result.leasesReleased;
+      }
+    );
+    // Lesson writing drains the workspace's pending events one at a time.
+    await ctx.scheduler.runAfter(
+      0,
+      internal.workflows.memory.enqueueWorkspaceMemoryEvaluationInternal,
+      { workspaceId }
+    );
+    return { ...totals, cycleStartsCanceled, truncated: !complete };
   },
 });
 

@@ -178,12 +178,25 @@ export class UnitLedger {
         reason: "Marked for review in an earlier attempt.",
         receipt: checkpoint.receipt,
       };
-    if (checkpoint?.status === "started")
+    if (checkpoint?.status === "started") {
+      // A continuation that crashed keeps the receipt it continued, so it
+      // can be continued again after review.
+      const earlier = checkpoint.resumedFrom
+        ? await this.store
+            .readArtifact(checkpoint.resumedFrom)
+            .catch(() => null)
+        : null;
       return this.review(
         unit,
         "Started in an earlier attempt that did not finish; it may have been billed.",
-        null
+        earlier !== null &&
+          typeof earlier === "object" &&
+          !Array.isArray(earlier) &&
+          "receipt" in earlier
+          ? (earlier.receipt ?? null)
+          : null
       );
+    }
     if (!checkpoint)
       await this.store.write({ unit, status: "pending", updatedAt: now() });
     const startedAt = now();
@@ -193,7 +206,78 @@ export class UnitLedger {
       startedAt,
       updatedAt: startedAt,
     });
+    return this.finish(unit, schema, execute, review);
+  }
 
+  /** A completed unit's value, read without counting it as reused; null otherwise. */
+  async completed<S extends z.ZodType>(
+    unitId: string,
+    schema: S
+  ): Promise<z.output<S> | null> {
+    const checkpoint = await this.store.read(unitId);
+    if (checkpoint?.status !== "completed") return null;
+    return schema.parse(await this.store.readArtifact(checkpoint.result));
+  }
+
+  /** A held unit's review receipt as saved, or null when it is not held or kept none. */
+  async held(
+    unitId: string
+  ): Promise<{ receipt: ArtifactReference; value: JsonValue } | null> {
+    const checkpoint = await this.store.read(unitId);
+    if (checkpoint?.status !== "needs-review" || !checkpoint.receipt)
+      return null;
+    return {
+      receipt: checkpoint.receipt,
+      value: await this.store.readArtifact(checkpoint.receipt),
+    };
+  }
+
+  /**
+   * Continues a unit held for review, only when explicitly asked (for a
+   * workspace the harness stopped, `--resume-held`). The held checkpoint is
+   * copied into the run's held/ folder first and its receipt stays in
+   * results/, so nothing is lost; the unit then runs as `run` does and is
+   * completed or held again.
+   */
+  async resume<S extends z.ZodType>(
+    spec: UnitSpec,
+    receipt: ArtifactReference,
+    schema: S,
+    execute: () => Promise<ReadonlyDeep<z.output<S>>>,
+    review: (value: z.output<S>) => string | null = () => null
+  ): Promise<UnitOutcome<z.output<S>>> {
+    const unit = await this.workUnit(spec);
+    const checkpoint = await this.store.read(unit.id);
+    if (
+      checkpoint?.status !== "needs-review" ||
+      !checkpoint.receipt ||
+      canonicalJson(checkpoint.receipt) !== canonicalJson(receipt) ||
+      canonicalJson(checkpoint.unit) !== canonicalJson(unit)
+    )
+      throw new RunnerStateError(
+        `Checkpoint ${unit.id} is not the held unit this continuation expects.`
+      );
+    const startedAt = now();
+    await this.store.keepCheckpoint(
+      unit.id,
+      `before-resume-${startedAt.replace(/[^0-9a-zA-Z]/g, "-")}`
+    );
+    await this.store.write({
+      unit,
+      status: "started",
+      startedAt,
+      updatedAt: startedAt,
+      resumedFrom: receipt,
+    });
+    return this.finish(unit, schema, execute, review);
+  }
+
+  private async finish<S extends z.ZodType>(
+    unit: WorkUnit,
+    schema: S,
+    execute: () => Promise<ReadonlyDeep<z.output<S>>>,
+    review: (value: z.output<S>) => string | null
+  ): Promise<UnitOutcome<z.output<S>>> {
     let raw: unknown;
     try {
       raw = await execute();

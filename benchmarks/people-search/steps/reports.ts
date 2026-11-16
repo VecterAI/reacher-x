@@ -657,7 +657,89 @@ function problemsOf(outcome: SegmentOutcome) {
         (item) =>
           `${item.label} ended ${item.record.ending}${item.record.detail ? ` (${item.record.detail})` : ""}`
       ),
+    // A continued cycle is measured across two attempts, so a decision must see it.
+    ...outcome.workspaces
+      .filter((item) => item.record.resumed?.length)
+      .map(
+        (item) =>
+          `${item.label} was ${resumedLabel(item.record.resumed!)}; its cycle cost and active time combine the attempts (see the report)`
+      ),
   ];
+}
+
+const stopName = (ending: string) =>
+  ending === "budget-stop" ? "a budget stop" : `an ending of ${ending}`;
+
+/** "resumed after a budget stop", for tables and decision notes. */
+function resumedLabel(
+  resumed: NonNullable<WorkspaceOutcome["record"]["resumed"]>
+) {
+  const first = resumed[0];
+  return `resumed after ${first.after === "interrupted" ? "an interruption" : stopName(first.after)}${
+    resumed.length > 1 ? ` (${resumed.length} continuations)` : ""
+  }`;
+}
+
+const difference = (to: number | null, from: number | null) =>
+  to !== null && from !== null ? to - from : null;
+const sumKnown = (values: readonly (number | null)[]) =>
+  values.some((value) => value === null)
+    ? null
+    : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+
+/**
+ * How a continued workspace's spend splits between its attempts: AI on the
+ * deployment key before the stop (with setup), between the stop and the
+ * resume, and in each continuation, and the LinkedIn credits and X items the
+ * deployment recorded before the stop and since. All on the same cycle; no
+ * discovery cycle starts in a continuation.
+ */
+function resumedLines(outcome: SegmentOutcome) {
+  return outcome.workspaces.flatMap((item) => {
+    const resumed = item.record.resumed;
+    if (!resumed?.length) return [];
+    const { spend, recorded } = item.record;
+    const first = resumed[0];
+    const beforeStop = difference(first.spend.atStopUsd, spend.atSubmitUsd);
+    const between = sumKnown(
+      resumed.map((entry) =>
+        difference(entry.spend.atResumeUsd, entry.spend.atStopUsd)
+      )
+    );
+    const continued = sumKnown(
+      resumed.map((entry) =>
+        difference(entry.spend.afterUsd, entry.spend.atResumeUsd)
+      )
+    );
+    const combined = difference(spend.afterUsd, spend.atSubmitUsd);
+    const credits = (value: number | null) =>
+      value === null ? "unknown" : String(value);
+    const creditsAtStop = first.recordedAtStop.linkdApi?.billableUnits ?? null;
+    const creditsTotal = recorded.linkdApi?.billableUnits ?? null;
+    const xAtStop =
+      first.recordedAtStop.costs?.providers.socialapi?.billableUnits ?? null;
+    const xTotal = recorded.costs
+      ? (recorded.costs.providers.socialapi?.billableUnits ?? 0)
+      : null;
+    const pausedMs = resumed.reduce(
+      (sum, entry) => sum + (entry.resumedAt - entry.stoppedAt),
+      0
+    );
+    return [
+      `- ${item.label}: ${resumedLabel(resumed)} (${(first.afterDetail ?? "no detail").replace(/\.$/, "")}). The same workspace continued the same cycle: pending prospects were qualified, qualified ones enriched and lessons written. No new discovery cycle started${
+        first.discoveryCompleted
+          ? "."
+          : "; discovery had been cut off by the stop and was not repeated."
+      } ${
+        resumed.at(-1)!.ending === "planned-cycles"
+          ? "The continuation settled."
+          : `The continuation ended ${resumed.at(-1)!.ending}.`
+      }`,
+      `  - AI on the deployment key: ${money(beforeStop)} before the stop (with setup), ${money(between)} between the stop and the resume, ${money(continued)} in the continuation; combined for the workspace ${money(combined)} (the resumed cycle's own cost is in the cycle table).`,
+      `  - LinkedIn credits (recorded): ${credits(creditsAtStop)} before the stop, ${credits(difference(creditsTotal, creditsAtStop))} since, ${credits(creditsTotal)} combined. X items (recorded): ${credits(xAtStop)} before the stop, ${credits(difference(xTotal, xAtStop))} since, ${credits(xTotal)} combined.`,
+      `  - Time: ${minutes(first.stoppedAt - item.record.startedAt)} from the start to the stop, ${minutes(resumed.reduce((sum, entry) => sum + (entry.endedAt - entry.resumedAt), 0))} in the continuation; active time leaves out the ${minutes(pausedMs)} the workspace stood stopped.`,
+    ];
+  });
 }
 
 const knownCosts = (outcomes: readonly SegmentOutcome[]) =>
@@ -992,7 +1074,10 @@ export function renderSegmentReport(
           costs.xItems === null
             ? "unknown"
             : `${costs.xItems} items, ${costs.xUsd === null ? "unpriced" : money(costs.xUsd)}`;
-        return `| ${item.label} | ${item.record.ending} | ${item.record.cycles.length}/${item.record.plannedCycles} | ${money(costs.openRouterUsd)} | ${x}${costs.recordsCapped ? " (capped)" : ""} | ${costs.linkedInCredits ?? "unknown"} | ${money(costs.xBalanceChange)} / ${costs.linkedInBalanceChange ?? "unknown"} | ${qualified} of ${item.record.prospects.length} |`;
+        const ending = item.record.resumed?.length
+          ? `${item.record.ending} (${resumedLabel(item.record.resumed)})`
+          : item.record.ending;
+        return `| ${item.label} | ${ending} | ${item.record.cycles.length}/${item.record.plannedCycles} | ${money(costs.openRouterUsd)} | ${x}${costs.recordsCapped ? " (capped)" : ""} | ${costs.linkedInCredits ?? "unknown"} | ${money(costs.xBalanceChange)} / ${costs.linkedInBalanceChange ?? "unknown"} | ${qualified} of ${item.record.prospects.length} |`;
       }),
       "",
       "| Prompt | Learning | Cycle | Cost | Active | Start to next start |",
@@ -1000,10 +1085,23 @@ export function renderSegmentReport(
       ...outcome.workspaces.flatMap((item) =>
         cycleMeasurements(item.taskId, item.record).map(
           (cycle) =>
-            `| ${cycle.taskId} | ${item.learning} | ${cycle.cycle} | ${money(cycle.costUsd)} | ${minutes(cycle.activeMs)} | ${minutes(cycle.gapMs)} |`
+            `| ${cycle.taskId} | ${item.learning} | ${cycle.cycle}${
+              item.record.resumed?.length &&
+              cycle.cycle === item.record.cycles.length
+                ? " (resumed)"
+                : ""
+            } | ${money(cycle.costUsd)} | ${minutes(cycle.activeMs)} | ${minutes(cycle.gapMs)} |`
         )
       )
     );
+    const resumed = resumedLines(outcome);
+    if (resumed.length)
+      lines.push(
+        "",
+        "Resumed workspaces (spend before and after the stop, combined):",
+        "",
+        ...resumed
+      );
   }
   const compared = comparedOutcomes(outcome, context);
   if (outcome.segment === "smoke" || outcome.segment === "main") {

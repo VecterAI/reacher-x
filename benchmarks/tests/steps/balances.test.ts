@@ -321,3 +321,47 @@ test("a top-up never frees approved spend, also across a resume", async () => {
     11
   );
 });
+
+test("an approval raised mid-step applies at once; a lower amount never does", async () => {
+  const { state, readers } = accounts();
+  const openRouter = `openrouter:${keyFingerprint("synthetic-or")}`;
+  const social = `socialapi:${keyFingerprint("synthetic-social")}`;
+  const renidly = `renidly:${keyFingerprint("synthetic-renidly")}`;
+  const budget = new StepBudget(approval(5), credits, readers, [
+    social,
+    renidly,
+  ]);
+  await budget.open(null);
+  state.usage = 3;
+  await assert.rejects(budget.check(), /openrouter:\w+ reached its approved/);
+  assert.throws(() => budget.checkRecorded({ [renidly]: 30 }), /credits/);
+
+  const raised = {
+    ...approval(5),
+    accountLimits: [
+      { accountId: openRouter, maxAdditionalUsd: 4 },
+      { accountId: social, maxAdditionalUsd: 5 },
+    ],
+  };
+  const first = budget.raise(raised, [{ accountId: renidly, maxCredits: 60 }]);
+  assert.equal(first.raised.length, 2);
+  assert.deepEqual(first.kept, []);
+  await budget.check();
+  budget.checkRecorded({ [renidly]: 59 });
+  assert.throws(() => budget.checkRecorded({ [renidly]: 60 }), /credits/);
+
+  // A lower amount, or an account the step does not use, changes nothing.
+  const lower = budget.raise(
+    {
+      ...raised,
+      accountLimits: [
+        { accountId: openRouter, maxAdditionalUsd: 1 },
+        { accountId: "treg:unused", maxAdditionalUsd: 99 },
+      ],
+    },
+    []
+  );
+  assert.deepEqual(lower.raised, []);
+  assert.match(lower.kept[0], /openrouter:\w+ stays at \$4\.00/);
+  await budget.check();
+});

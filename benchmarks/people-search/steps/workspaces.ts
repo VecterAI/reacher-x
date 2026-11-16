@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   exportedProspectSchema,
   linkdApiUnitsSchema,
+  resumeResultSchema,
   runCostsSchema,
   stopResultSchema,
   type BenchmarkWorkspace,
@@ -14,6 +15,8 @@ import {
 import { BudgetStop } from "../../core/execution/spend";
 import {
   WORKSPACE_ENDINGS,
+  resumeProblem,
+  resumeWorkspace,
   runWorkspace,
   type Clock,
   type WatchOptions,
@@ -27,10 +30,13 @@ import type {
 } from "../../core/steps/balances";
 import type { WorkspaceGate } from "../../core/steps/keyGate";
 import {
+  UnitFailed,
+  toJson,
   untilStopped,
   type UnitLedger,
   type UnitOutcome,
 } from "../../core/steps/units";
+import type { ArtifactReference } from "../../core/types";
 import type { WorkspaceSlot } from "../setup/schedule";
 
 /** Proposal 5.3 step 2: ReacherX, one workspace at a time, one checkpointed unit each. */
@@ -64,6 +70,7 @@ export const workspaceRunRecordSchema: z.ZodType<WorkspaceRunRecord> = z.object(
         nextStartObserved: z.boolean(),
         spendAtStartUsd: nullableNumber,
         spendAtEndUsd: nullableNumber,
+        pausedMs: z.number().optional(),
       })
     ),
     spend: z.object({
@@ -77,6 +84,29 @@ export const workspaceRunRecordSchema: z.ZodType<WorkspaceRunRecord> = z.object(
     }),
     stop: stopResultSchema,
     prospects: z.array(exportedProspectSchema),
+    resumed: z
+      .array(
+        z.object({
+          after: z.enum(WORKSPACE_ENDINGS),
+          afterDetail: z.string().nullable(),
+          discoveryCompleted: z.boolean(),
+          stoppedAt: z.number(),
+          resumedAt: z.number(),
+          endedAt: z.number(),
+          ending: z.enum(WORKSPACE_ENDINGS),
+          spend: z.object({
+            atStopUsd: nullableNumber,
+            atResumeUsd: nullableNumber,
+            afterUsd: nullableNumber,
+          }),
+          recordedAtStop: z.object({
+            costs: runCostsSchema.nullable(),
+            linkdApi: linkdApiUnitsSchema.nullable(),
+          }),
+          requeued: resumeResultSchema.nullable(),
+        })
+      )
+      .optional(),
   }
 );
 
@@ -156,6 +186,8 @@ export type WorkspacePhase = Readonly<{
   // only checked for sufficiency before each workspace and recorded.
   x: AccountReader;
   linkedIn: AccountReader;
+  // Re-reads the approval file between status polls and applies increases.
+  refreshApproval?: () => Promise<void>;
   log(line: string): void;
 }>;
 
@@ -174,10 +206,13 @@ export function workspaceBudgetCheck(
   }>,
   budget: Pick<StepBudget, "check" | "checkRecorded">,
   earlier: readonly Pick<WorkspaceRunRecord, "recorded">[],
-  maxFailures: number
+  maxFailures: number,
+  refreshApproval?: () => Promise<void>
 ) {
   let failures = 0;
   return async (workspace: BenchmarkWorkspace | null) => {
+    // An approval raised mid-step applies from this poll on.
+    await refreshApproval?.();
     await budget.check([phase.deployment.accountId]);
     if (!workspace) return;
     let recorded: WorkspaceRunRecord["recorded"];
@@ -205,6 +240,43 @@ export function workspaceBudgetCheck(
   };
 }
 
+const heldReceiptSchema = z.object({
+  reason: z.string(),
+  receipt: workspaceOutcomeSchema,
+});
+
+/** A held workspace that `--resume-held` may continue. */
+export type HeldWorkspace = Readonly<{
+  receipt: ArtifactReference;
+  outcome: WorkspaceOutcome;
+}>;
+
+/**
+ * The scheduled workspaces held for review that can be continued, and why
+ * the others cannot. Only reads local checkpoints.
+ */
+export async function heldForResume(
+  slots: readonly WorkspaceSlot[],
+  ledger: UnitLedger
+) {
+  const ready = new Map<string, HeldWorkspace>();
+  const problems: string[] = [];
+  for (const slot of slots) {
+    const id = workspaceUnitId(slot);
+    if ((await ledger.state(id)) !== "needs-review") continue;
+    const held = await ledger.held(id);
+    const parsed = held ? heldReceiptSchema.safeParse(held.value) : null;
+    if (!held || !parsed?.success) {
+      problems.push(`${id}: its review receipt holds no workspace record.`);
+      continue;
+    }
+    const problem = resumeProblem(parsed.data.receipt.record);
+    if (problem) problems.push(`${id}: ${problem}`);
+    else ready.set(id, { receipt: held.receipt, outcome: parsed.data.receipt });
+  }
+  return { ready, problems };
+}
+
 export type WorkspaceUnitResult = Readonly<{
   slot: WorkspaceSlot;
   outcome: UnitOutcome<WorkspaceOutcome> | null;
@@ -219,17 +291,32 @@ export type WorkspaceUnitResult = Readonly<{
 export async function runWorkspaceUnits(
   slots: readonly WorkspaceSlot[],
   phase: WorkspacePhase,
-  session: LiveSession | null
+  session: LiveSession | null,
+  // Held workspaces to continue (`--resume-held`), by unit ID.
+  resumable: ReadonlyMap<string, HeldWorkspace> = new Map()
 ) {
   const results: WorkspaceUnitResult[] = [];
   const dataIds = [phase.x.accountId, phase.linkedIn.accountId];
-  // Workspaces whose recorded X and LinkedIn use counts against the approval.
-  const ran: WorkspaceRunRecord[] = [];
-  const recorded = () =>
-    recordedDataUse(ran, {
+  // Workspaces whose recorded X and LinkedIn use counts against the
+  // approval: each one's latest record, by unit ID, so none counts twice.
+  const ran = new Map<string, WorkspaceRunRecord>();
+  const others = (unitId: string) =>
+    [...ran].flatMap(([id, record]) => (id === unitId ? [] : [record]));
+  const recorded = (records: readonly WorkspaceRunRecord[]) =>
+    recordedDataUse(records, {
       x: phase.x.accountId,
       linkedIn: phase.linkedIn.accountId,
     });
+  // Continuing held workspaces: every completed or held workspace's use
+  // counts from the start; each is replaced as its own turn finishes.
+  if (resumable.size)
+    for (const slot of slots) {
+      const id = workspaceUnitId(slot);
+      const done = await phase.ledger.completed(id, workspaceOutcomeSchema);
+      const held = resumable.get(id);
+      if (done) ran.set(id, done.record);
+      else if (held) ran.set(id, held.outcome.record);
+    }
   const stopped = await untilStopped(async () => {
     for (const slot of slots) {
       const spec = {
@@ -241,76 +328,115 @@ export async function runWorkspaceUnits(
         input: { ...slot },
       };
       const state = await phase.ledger.state(spec.id);
+      const held =
+        state === "needs-review" ? resumable.get(spec.id) : undefined;
       let before: z.infer<typeof accountReadingSchema>[] = [];
-      if (state === "new" || state === "pending") {
+      if (state === "new" || state === "pending" || held) {
         if (phase.signal.aborted || !session) {
           results.push({ slot, outcome: null });
           continue;
         }
+        // A held workspace's earlier use counts against the approval too.
+        const used = recorded(
+          held ? [...others(spec.id), held.outcome.record] : others(spec.id)
+        );
         const budget = await phase.budget();
         await budget.check([phase.deployment.accountId]);
-        budget.checkRecorded(recorded());
-        before = await budget.ensureAvailable(dataIds, recorded());
-        phase.log(`Workspace ${slot.label}: ${slot.cycles} cycle(s).`);
+        budget.checkRecorded(used);
+        before = await budget.ensureAvailable(dataIds, used);
+        phase.log(
+          held
+            ? `Workspace ${slot.label}: resuming its cycle after ${held.outcome.record.ending}; no new discovery cycle.`
+            : `Workspace ${slot.label}: ${slot.cycles} cycle(s).`
+        );
       }
       let ending: WorkspaceEnding | null = null;
       let finished: WorkspaceRunRecord | null = null;
-      const outcome = await phase.ledger.run(
-        spec,
-        workspaceOutcomeSchema,
-        async () => {
-          if (!session) throw new Error("No live session is open.");
-          const budget = await phase.budget();
-          const record = await runWorkspace(
-            phase.driver,
-            {
-              label: slot.label,
-              userId: phase.userId,
-              prompt: slot.prompt,
-              useCaseKey: slot.useCaseKey,
-              learning: slot.learning,
-              cycles: slot.cycles,
-            },
-            {
-              readSpendUsd: () =>
-                phase.deployment.spend
-                  .read()
-                  .then((snapshot) => snapshot.cumulativeUsd)
-                  .catch(() => null),
-              // The deployment key's spend and the deployment's own X and
-              // LinkedIn records; the providers' balance endpoints are not
-              // read between polls, because they rate-limit per key.
-              checkBudget: workspaceBudgetCheck(
-                phase,
-                budget,
-                [...ran],
-                phase.watch.maxPollFailures
-              ),
-              track: phase.gate.tracking(session.trackWorkspace),
-            },
-            { ...phase.watch, signal: phase.signal },
-            phase.clock
-          );
-          ending = record.ending;
-          finished = record;
-          const after = await budget.read(dataIds).catch(() => []);
-          return {
-            taskId: slot.taskId,
-            learning: slot.learning,
-            label: slot.label,
-            record,
-            accountsBefore: before,
-            accountsAfter: after,
-          };
-        },
-        ({ record }) =>
-          HARNESS_ENDINGS.includes(record.ending)
-            ? `The workspace ended early (${record.ending})${record.detail ? `: ${record.detail}` : "."}`
-            : null
-      );
+      const work = async () => {
+        if (!session) throw new Error("No live session is open.");
+        const budget = await phase.budget();
+        const hooks = {
+          readSpendUsd: () =>
+            phase.deployment.spend
+              .read()
+              .then((snapshot) => snapshot.cumulativeUsd)
+              .catch(() => null),
+          // The deployment key's spend and the deployment's own X and
+          // LinkedIn records; the providers' balance endpoints are not
+          // read between polls, because they rate-limit per key.
+          checkBudget: workspaceBudgetCheck(
+            phase,
+            budget,
+            others(spec.id),
+            phase.watch.maxPollFailures,
+            phase.refreshApproval
+          ),
+          track: phase.gate.tracking(session.trackWorkspace),
+        };
+        const watch = { ...phase.watch, signal: phase.signal };
+        const record = held
+          ? await resumeWorkspace(
+              phase.driver,
+              held.outcome.record,
+              hooks,
+              watch,
+              phase.clock
+            )
+          : await runWorkspace(
+              phase.driver,
+              {
+                label: slot.label,
+                userId: phase.userId,
+                prompt: slot.prompt,
+                useCaseKey: slot.useCaseKey,
+                learning: slot.learning,
+                cycles: slot.cycles,
+              },
+              hooks,
+              watch,
+              phase.clock
+            );
+        ending = record.ending;
+        finished = record;
+        const after = await budget.read(dataIds).catch(() => []);
+        return {
+          taskId: slot.taskId,
+          learning: slot.learning,
+          label: slot.label,
+          record,
+          // A continued workspace keeps the readings from its first start.
+          accountsBefore: held ? held.outcome.accountsBefore : before,
+          accountsAfter: after,
+        };
+      };
+      const review = ({ record }: WorkspaceOutcome) =>
+        HARNESS_ENDINGS.includes(record.ending)
+          ? `The workspace ended early (${record.ending})${record.detail ? `: ${record.detail}` : "."}`
+          : null;
+      const outcome = held
+        ? await phase.ledger.resume(
+            spec,
+            held.receipt,
+            workspaceOutcomeSchema,
+            // A continuation that fails keeps the held record as its receipt,
+            // so it can be continued again after review.
+            () =>
+              work().catch((error: unknown) => {
+                throw new UnitFailed(
+                  error instanceof Error
+                    ? error.message
+                    : "The continuation failed.",
+                  toJson(held.outcome),
+                  { cause: error }
+                );
+              }),
+            review
+          )
+        : await phase.ledger.run(spec, workspaceOutcomeSchema, work, review);
       // Recorded use counts whether the workspace finished or is held for review.
-      if (outcome.status === "completed") ran.push(outcome.value.record);
-      else if (finished) ran.push(finished);
+      if (outcome.status === "completed")
+        ran.set(spec.id, outcome.value.record);
+      else if (finished) ran.set(spec.id, finished);
       results.push({ slot, outcome });
       if (outcome.status === "needs-review")
         phase.log(

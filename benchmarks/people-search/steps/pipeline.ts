@@ -66,6 +66,7 @@ import {
   type SegmentOutcome,
 } from "./reports";
 import {
+  heldForResume,
   recordedDataUse,
   runWorkspaceUnits,
   workspaceUnitId,
@@ -161,6 +162,10 @@ export type StepDependencies = Readonly<{
   secrets: Readonly<Record<string, string>>;
   judgeCall: JudgeCaller;
   evidence: Readonly<{ transport: Transport; apiKey: string }>;
+  // `--resume-held`: continue workspaces the harness stopped (a budget stop
+  // or an interruption) at the cycle they stopped in, instead of leaving
+  // them held for review. Never starts a new discovery cycle for them.
+  resumeHeld?: boolean;
   log(line: string): void;
 }>;
 
@@ -422,6 +427,42 @@ async function runSegment(
       return next;
     };
 
+    // Mid-step approval changes: increases apply between status polls; a
+    // missing or invalid file keeps the approval in force. Logged on change.
+    let lastApprovalNote: string | null = null;
+    const note = (line: string) => {
+      if (line !== lastApprovalNote) deps.log(line);
+      lastApprovalNote = line;
+    };
+    const refreshApproval = async () => {
+      if (!opened.budget) return;
+      let next: SegmentApproval | null;
+      try {
+        next = await deps.readApproval(segment);
+      } catch (error) {
+        note(
+          `${error instanceof Error ? error.message : "The approval file could not be read."} The approval in force is kept.`
+        );
+        return;
+      }
+      if (!next) {
+        note(
+          `${approvalPath(segment)} is missing; the approval in force is kept.`
+        );
+        return;
+      }
+      const { raised, kept } = opened.budget.raise(next.spend, next.credits);
+      if (raised.length || kept.length)
+        note(
+          [
+            ...(raised.length
+              ? [`Approval raised mid-step: ${raised.join("; ")}.`]
+              : []),
+            ...(kept.length ? [`Not lowered: ${kept.join("; ")}.`] : []),
+          ].join(" ")
+        );
+    };
+
     const gate = new WorkspaceGate();
     // No new unit starts once the step is interrupted, over budget or halted;
     // later phases still collect the units already finished.
@@ -470,15 +511,30 @@ async function runSegment(
         deployment: deps.accounts.deployment,
         x: deps.accounts.socialApi,
         linkedIn: deps.accounts.renidly,
+        refreshApproval,
         log: deps.log,
       };
       const states = await Promise.all(
         schedule.workspaces.map((slot) => ledger.state(workspaceUnitId(slot)))
       );
+      const held = deps.resumeHeld
+        ? await heldForResume(schedule.workspaces, ledger)
+        : { ready: new Map(), problems: [] };
+      if (deps.resumeHeld) {
+        for (const problem of held.problems)
+          deps.log(`Not resumed: ${problem}`);
+        if (!held.ready.size)
+          throw new RunnerStateError(
+            `--resume-held found no held workspace to continue in ${segment}${
+              held.problems.length ? `: ${held.problems.join(" ")}` : "."
+            } Run the step without it.`
+          );
+      }
       let ran: Awaited<ReturnType<typeof runWorkspaceUnits>>;
       if (
         !signal.aborted &&
-        states.some((state) => state === "new" || state === "pending")
+        (held.ready.size > 0 ||
+          states.some((state) => state === "new" || state === "pending"))
       ) {
         // Balances are checked before the deployment is touched.
         await openBudget();
@@ -500,7 +556,8 @@ async function runSegment(
             return runWorkspaceUnits(
               schedule.workspaces,
               workspacePhase,
-              session
+              session,
+              held.ready
             );
           },
           () => new Date(deps.clock.now())

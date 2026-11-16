@@ -121,6 +121,32 @@ export const KEYWORD_POST_SEARCH_CAP_REFUSAL =
 export const keywordPostSearchCapMessage = (limit: number) =>
   `${KEYWORD_POST_SEARCH_CAP_REFUSAL}: at most ${limit} LinkdAPI keyword post-search calls per workspace cycle (BENCHMARK_KEYWORD_POST_SEARCH_LIMIT, development only)`;
 
+/**
+ * Development benchmark kill switch, set by the runner the moment its spend
+ * guard stops a workspace (or the step is interrupted) and removed by the
+ * session reset. `BENCHMARK_HALTED_WORKSPACE_ID` names the workspace being
+ * stopped; while it holds any value, every LinkdAPI reservation is refused
+ * before it reaches the provider, so qualification and enrichment steps
+ * already running cannot keep spending LinkedIn credits. LinkdAPI calls carry
+ * no workspace, so the refusal covers every call; a live step runs only its
+ * own workspace, and this is never set at rest or in production. Reading it
+ * costs no database reads.
+ */
+export const BENCHMARK_HALT_SETTING = "BENCHMARK_HALTED_WORKSPACE_ID";
+
+export function benchmarkHaltedWorkspace(
+  value: string | undefined = env.BENCHMARK_HALTED_WORKSPACE_ID
+): string | null {
+  const text = value?.trim();
+  return text ? text : null;
+}
+
+export const BENCHMARK_HALT_REFUSAL = "Benchmark stop in force";
+
+/** The refusal message while the kill switch is set. */
+export const benchmarkHaltMessage = (workspaceId: string) =>
+  `${BENCHMARK_HALT_REFUSAL}: LinkdAPI calls are refused while benchmark workspace ${workspaceId} is stopped (BENCHMARK_HALTED_WORKSPACE_ID, development only)`;
+
 /** Whether an error, possibly rethrown across an action boundary, is a cap refusal. */
 export const isKeywordPostSearchCapRefusal = (error: unknown) =>
   error instanceof Error &&

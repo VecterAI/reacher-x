@@ -50,6 +50,8 @@ type Workspace = {
   entityType: "individual" | "organization";
   createdAt: number;
   stopped: boolean;
+  // When a stopped workspace was resumed to finish its cycle's work.
+  resumedAt: number | null;
   cycles: Cycle[];
   nextRunAt: number | null;
   prospects: ExportedProspect[];
@@ -228,6 +230,7 @@ export function syntheticDeployment(
           entityType: peopleSearchPlan.categories[prompt.category].entityType,
           createdAt: clock.now(),
           stopped: false,
+          resumedAt: null,
           cycles: [],
           nextRunAt: null,
           prospects: [],
@@ -261,7 +264,13 @@ export function syntheticDeployment(
         const unfinished = (phaseMs: number) =>
           finished(workspace.cycles).filter(
             (cycle) => now - cycle.endsAt < phaseMs
-          ).length;
+          ).length +
+          // A resumed cycle's remaining qualification and lesson writing.
+          (workspace.resumedAt !== null &&
+          !workspace.stopped &&
+          now - workspace.resumedAt < phaseMs
+            ? 1
+            : 0);
         const count = (status: string) =>
           workspace.prospects.filter(
             (item) => item.qualificationStatus === status
@@ -290,6 +299,7 @@ export function syntheticDeployment(
             organizations: workspace.prospects.filter(
               (item) => item.prospectType === "organization"
             ).length,
+            enrichmentWaiting: 0,
           },
           pendingLessonWrites: unfinished(LESSONS_MS),
           truncated: false,
@@ -300,6 +310,31 @@ export function syntheticDeployment(
         const canceled = workspace?.nextRunAt ? 1 : 0;
         if (workspace) workspace.nextRunAt = null;
         return { canceled, truncated: false };
+      },
+      "benchmarkPeopleSearch:resumeHeldWorkspace": (args) => {
+        // Same cycle, no discovery: only its remaining work runs and charges.
+        const workspace = find(args);
+        const current = workspace?.cycles.at(-1);
+        if (
+          !workspace ||
+          !workspace.stopped ||
+          !current?.ended ||
+          current.workflowId !== args.workflowId ||
+          env.get("PROSPECTING_AUTO_RESCHEDULE") === "1"
+        )
+          throw new Error("Not resumable.");
+        workspace.stopped = false;
+        workspace.resumedAt = clock.now();
+        accounts.openRouterUsage += 0.05;
+        return {
+          qualificationQueued: 3,
+          failuresCleared: 0,
+          enrichmentQueued: 0,
+          leasesReleased: 0,
+          leasesKept: 0,
+          cycleStartsCanceled: 0,
+          truncated: false,
+        };
       },
       "benchmarkPeopleSearch:stopRun": (args) => {
         // Played forward to now first, so only the cycle still running is canceled.

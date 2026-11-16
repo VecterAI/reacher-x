@@ -31,6 +31,7 @@ const PEOPLE_SEARCH_HOOKS = {
   resetLinkdApiCircuit: "benchmarkPeopleSearch:resetLinkdApiCircuit",
   keywordPostSearchLimitStatus:
     "benchmarkPeopleSearch:keywordPostSearchLimitStatus",
+  resumeHeldWorkspace: "benchmarkPeopleSearch:resumeHeldWorkspace",
 } as const satisfies Record<string, `benchmarkPeopleSearch:${string}`>;
 
 export type CommandResult = Readonly<{
@@ -128,12 +129,16 @@ export const RUNTIME_SETTINGS = [
   "BENCHMARK_LEARNING_OFF_WORKSPACE_IDS",
   "BENCHMARK_POOL_LIMITS",
   "BENCHMARK_KEYWORD_POST_SEARCH_LIMIT",
+  "BENCHMARK_HALTED_WORKSPACE_ID",
 ] as const;
 export type RuntimeSetting = (typeof RUNTIME_SETTINGS)[number];
 export const LEARNING_OFF_SETTING = "BENCHMARK_LEARNING_OFF_WORKSPACE_IDS";
 // Development only: most LinkdAPI calls enrichment's keyword post search may
 // make per benchmark workspace cycle.
 export const KEYWORD_SEARCH_CAP_SETTING = "BENCHMARK_KEYWORD_POST_SEARCH_LIMIT";
+// Development only: names the workspace a step is stopping; while set, the
+// deployment refuses every LinkdAPI call (convex/lib/benchmarkLinkdApiCap.ts).
+export const HALT_SETTING = "BENCHMARK_HALTED_WORKSPACE_ID";
 
 /** Development provider keys replaced by funded keys during a live step, then restored. */
 export const PROVIDER_KEYS = ["SOCIALAPI_API_KEY", "LINKDAPI_API_KEY"] as const;
@@ -175,6 +180,8 @@ export const runStatusSchema = z
       disqualified: z.number(),
       unscored: z.number(),
       organizations: z.number(),
+      // Qualified prospects whose enrichment has not finished.
+      enrichmentWaiting: z.number().default(0),
     }),
     pendingLessonWrites: z.number(),
     truncated: z.boolean(),
@@ -242,8 +249,21 @@ export const stopResultSchema = z.object({
   stopped: z.boolean(),
   monitorsDeleted: z.number(),
   monitorFailures: z.array(z.string()),
+  // Qualification and enrichment workflows a firm stop canceled.
+  prospectWorkflowsCanceled: z.number().optional(),
 });
 export type StopResult = z.infer<typeof stopResultSchema>;
+
+export const resumeResultSchema = z.object({
+  qualificationQueued: z.number(),
+  failuresCleared: z.number(),
+  enrichmentQueued: z.number(),
+  leasesReleased: z.number(),
+  leasesKept: z.number(),
+  cycleStartsCanceled: z.number(),
+  truncated: z.boolean(),
+});
+export type ResumeResult = z.infer<typeof resumeResultSchema>;
 
 const activitySchema = z.object({
   workspaceIds: z.array(idSchema),
@@ -482,14 +502,44 @@ export class ConvexReacherXDriver {
     }
   }
 
-  /** Pauses the workspace, cancels its workflow and deletes its SocialAPI monitors. Never deletes data. */
+  /**
+   * Pauses the workspace, cancels its workflow and deletes its SocialAPI
+   * monitors. With `halt`, the qualification and enrichment workflows still
+   * running for its prospects are canceled too. Never deletes data.
+   */
   stop(
-    workspace: Pick<BenchmarkWorkspace, "workspaceId">
+    workspace: Pick<BenchmarkWorkspace, "workspaceId">,
+    options: Readonly<{ halt?: boolean }> = {}
   ): Promise<StopResult> {
     return this.call(
       PEOPLE_SEARCH_HOOKS.stopRun,
-      { workspaceId: workspace.workspaceId },
+      {
+        workspaceId: workspace.workspaceId,
+        ...(options.halt ? { halt: true } : {}),
+      },
       stopResultSchema
+    );
+  }
+
+  /**
+   * The development kill switch: from now until the session reset removes
+   * it, the deployment refuses every LinkdAPI call, so work already running
+   * for a workspace being stopped cannot keep spending LinkedIn credits.
+   */
+  async haltLinkedIn(workspace: Pick<BenchmarkWorkspace, "workspaceId">) {
+    await this.setSetting(HALT_SETTING, workspace.workspaceId);
+  }
+
+  /**
+   * Runs a held workspace again at the cycle it stopped in (`workflowId`),
+   * requeuing its unfinished qualification, enrichment and lesson writing.
+   * Starts no discovery; refused while automatic cycles are on.
+   */
+  resume(workspace: BenchmarkWorkspace, workflowId: string) {
+    return this.call(
+      PEOPLE_SEARCH_HOOKS.resumeHeldWorkspace,
+      { workspaceId: workspace.workspaceId, workflowId },
+      resumeResultSchema
     );
   }
 

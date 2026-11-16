@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  HALT_SETTING,
   LEARNING_OFF_SETTING,
   KEYWORD_SEARCH_CAP_SETTING,
   PROVIDER_KEYS,
@@ -33,6 +34,7 @@ const MANAGED_SETTINGS: readonly RuntimeSetting[] = [
   LEARNING_OFF_SETTING,
   "BENCHMARK_POOL_LIMITS",
   KEYWORD_SEARCH_CAP_SETTING,
+  HALT_SETTING,
 ];
 
 const settingValuesSchema = z.partialRecord(
@@ -96,6 +98,10 @@ export function atRestProblems(
     problems.push(
       `A keyword post-search cap is still set (${KEYWORD_SEARCH_CAP_SETTING}).`
     );
+  if (settings[HALT_SETTING] !== null)
+    problems.push(
+      `The LinkedIn kill switch of a stopped step is still set (${HALT_SETTING}).`
+    );
   return problems;
 }
 
@@ -105,7 +111,18 @@ const snapshotSchema = z.strictObject({
     .regex(/^dev:.+/)
     .transform((value) => value as `dev:${string}`),
   recordedAt: timestampSchema,
-  settings: z.record(z.enum(RUNTIME_SETTINGS), z.string().nullable()),
+  // A session opened before a setting joined the list recorded none for it;
+  // it was unset then, so it is read as null and the reset still runs.
+  settings: z.preprocess(
+    (value) =>
+      value !== null && typeof value === "object"
+        ? {
+            ...Object.fromEntries(RUNTIME_SETTINGS.map((name) => [name, null])),
+            ...value,
+          }
+        : value,
+    z.record(z.enum(RUNTIME_SETTINGS), z.string().nullable())
+  ),
 });
 
 const sessionSchema = z.discriminatedUnion("status", [
@@ -414,7 +431,9 @@ export async function resetLiveSession(
     const workspace = state.workspace;
     monitorsCleared = false;
     await attempt("The active workspace could not be stopped.", async () => {
-      const stop = await driver.stop(workspace);
+      // A reset with a workspace still tracked follows a crash or a failed
+      // stop, so its running prospect work is canceled too.
+      const stop = await driver.stop(workspace, { halt: true });
       if (stop.cancelFailed)
         problems.push(
           "The workspace's workflow could not be canceled; check that it is not running."

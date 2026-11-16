@@ -251,13 +251,21 @@ export class FileCheckpointStore {
     if (next.unit.runId !== this.runId)
       throw new RunnerStateError("Checkpoint belongs to a different run.");
     const previous = await this.read(next.unit.id);
+    // A held unit starts again only as an explicit continuation of its receipt.
+    const resumes =
+      previous?.status === "needs-review" &&
+      next.status === "started" &&
+      previous.receipt !== null &&
+      next.resumedFrom !== undefined &&
+      canonicalJson(next.resumedFrom) === canonicalJson(previous.receipt);
     const valid =
       previous === null
         ? next.status === "pending"
         : previous.status === "pending"
-          ? next.status === "started"
-          : previous.status === "started" &&
-            (next.status === "completed" || next.status === "needs-review");
+          ? next.status === "started" && next.resumedFrom === undefined
+          : resumes ||
+            (previous.status === "started" &&
+              (next.status === "completed" || next.status === "needs-review"));
     if (
       !valid ||
       (previous && canonicalJson(previous.unit) !== canonicalJson(next.unit))
@@ -268,6 +276,19 @@ export class FileCheckpointStore {
     await this.atomicWrite(
       this.runPath(`checkpoints/${next.unit.id}.json`),
       canonicalJson(next)
+    );
+  }
+
+  /**
+   * Keeps a copy of a unit's current checkpoint under the run's held/ folder
+   * before it changes, so nothing an earlier attempt recorded is lost.
+   */
+  async keepCheckpoint(unitId: string, label: string) {
+    const checkpoint = await this.read(unitId);
+    if (!checkpoint) throw new RunnerStateError("No checkpoint to keep.");
+    return this.saveFrozenJson(
+      this.runPath(`held/${unitId}.${identifierSchema.parse(label)}.json`),
+      jsonSchema.parse(JSON.parse(JSON.stringify(checkpoint)))
     );
   }
 

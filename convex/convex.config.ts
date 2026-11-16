@@ -41,6 +41,10 @@ const app = defineApp({
     // post search may make per benchmark workspace cycle (see
     // lib/benchmarkLinkdApiCap.ts).
     BENCHMARK_KEYWORD_POST_SEARCH_LIMIT: v.optional(v.string()),
+    // Development benchmark only: the workspace a benchmark step is stopping;
+    // while set, every LinkdAPI reservation is refused (see
+    // lib/benchmarkLinkdApiCap.ts).
+    BENCHMARK_HALTED_WORKSPACE_ID: v.optional(v.string()),
     OPENROUTER_ROUTING_PRESET: v.optional(
       v.union(v.literal("current"), v.literal("cost_optimized"))
     ),

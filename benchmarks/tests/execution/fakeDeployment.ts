@@ -62,6 +62,15 @@ export function fakeDeployment(
       monitorsDeleted: 1,
       monitorFailures: [],
     }),
+    "benchmarkPeopleSearch:resumeHeldWorkspace": () => ({
+      qualificationQueued: 0,
+      failuresCleared: 0,
+      enrichmentQueued: 0,
+      leasesReleased: 0,
+      leasesKept: 0,
+      cycleStartsCanceled: 0,
+      truncated: false,
+    }),
     "benchmarkPeopleSearch:cancelScheduledCycles": () => ({
       canceled: 0,
       truncated: false,
@@ -156,6 +165,7 @@ export function status(
       disqualified: 0,
       unscored: 0,
       organizations: 0,
+      enrichmentWaiting: 0,
       ...counts,
     },
     pendingLessonWrites: 0,
