@@ -41,9 +41,6 @@ export type InlineIconTerm = {
   /** Text shown after the icon; defaults to `term`. Use when the copy's
    * glyph (e.g. "△ Agent") is replaced by the icon itself. */
   display?: string;
-  /** Badge chip tint classes; omitted when the logo is full-bleed colored. */
-  bg?: string;
-  fg?: string;
 };
 
 export type InlineIconSegment =
@@ -53,24 +50,19 @@ export type InlineIconSegment =
       term: string;
       display: string;
       Icon: InlineIconTerm["Icon"];
-      bg?: string;
-      fg?: string;
     };
 
-// Badge tiles mirror ProspectPlatformAvatar's platform badge styling. Brand
-// logos (Clay, Apollo) ship full-bleed artwork and render without a chip.
+// Platform glyphs render bare at glyph size in muted color, matching
+// PlatformSearchRow. Brand logos (Clay, Apollo) ship full-bleed colored
+// artwork and inherit nothing.
 const PLATFORM_TERMS: InlineIconTerm[] = [
   {
     term: "X/Twitter",
     Icon: FilledTwitterIcon,
-    bg: "bg-platform-twitter-badge",
-    fg: "text-platform-twitter-badge-foreground",
   },
   {
     term: "LinkedIn",
     Icon: FilledLinkedinIcon,
-    bg: "bg-platform-linkedin-badge",
-    fg: "text-platform-linkedin-badge-foreground",
   },
   { term: "Clay", Icon: ClayIcon },
   { term: "Apollo", Icon: ApolloIcon },
@@ -108,8 +100,6 @@ export function getInlineIconSegments(
       term: match.term,
       display: match.display ?? match.term,
       Icon: match.Icon,
-      bg: match.bg,
-      fg: match.fg,
     });
     rest = rest.slice(match.index + match.term.length);
   }
@@ -129,22 +119,10 @@ export function inlinePlatformIcons(
     if (segment.kind === "text") return segment.text;
     return (
       <span key={index} className="whitespace-nowrap">
-        {segment.bg && segment.fg ? (
-          <span
-            className={cn(
-              "mr-1 inline-flex size-4 items-center justify-center rounded-[4px] align-[-2px]",
-              segment.bg,
-              segment.fg
-            )}
-          >
-            <segment.Icon className="size-3.5 shrink-0" aria-hidden="true" />
-          </span>
-        ) : (
-          <segment.Icon
-            className="mr-1 inline size-4 align-[-2px]"
-            aria-hidden="true"
-          />
-        )}
+        <segment.Icon
+          className="mr-1 inline size-4 align-[-2px]"
+          aria-hidden="true"
+        />
         {segment.display}
       </span>
     );
@@ -236,7 +214,7 @@ export function MarketingHero({
         )}
       >
         <div className={cn(!hasSideColumn && "text-center")}>
-          <h1 className="text-4xl leading-[1.05] font-normal tracking-tight text-balance sm:text-6xl lg:text-7xl">
+          <h1 className="text-4xl leading-[1.05] font-medium tracking-tight text-balance sm:text-6xl lg:text-7xl">
             {title}
           </h1>
           {lede && (

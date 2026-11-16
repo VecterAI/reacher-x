@@ -8,12 +8,19 @@ import { makeProspect } from "@/features/landing/ui/components/use-case-demo/use
 type Person = Pick<
   Parameters<typeof makeProspect>[0],
   "title" | "briefIntro" | "signal" | "qualificationScore"
-> & { displayName: keyof typeof portraits };
+> & {
+  displayName: keyof typeof portraits;
+  status?: "new" | "contacted" | "in_progress";
+  platform?: "twitter" | "linkedin";
+  location?: string;
+  matchedKeywords?: string[];
+  gender?: "woman" | "man";
+};
 export interface AudienceStory {
   useCaseKey: WorkspaceUseCaseKey;
   workspace: string;
   brief: string;
-  people: [Person, Person, Person];
+  people: Person[];
 }
 
 /** Fictional people, source posts and outreach; each story follows its article's premise. */
@@ -50,6 +57,356 @@ export const audienceStories: Record<AudienceDemoId, AudienceStory> = {
           "Builds websites for independent shops and wants an easier way to track client revisions.",
         signal:
           "Does anyone have a lightweight way to track website revisions? My client keeps adding requests to an old shared document after approving the page.",
+      },
+      {
+        displayName: "Erin Walsh",
+        title: "Freelance web designer",
+        qualificationScore: 91,
+        status: "contacted",
+        platform: "twitter",
+        location: "Dublin, Ireland",
+        briefIntro:
+          "Builds websites for small businesses and chases client feedback across WhatsApp, email, and shared documents.",
+        signal:
+          "Three clients this month, three feedback loops: WhatsApp voice notes, long email threads, and a shared sheet I gave up on. How do other freelance web designers keep revisions in one place?",
+        matchedKeywords: ["client feedback", "website revisions"],
+      },
+      {
+        displayName: "Helena Costa",
+        title: "Independent brand designer",
+        qualificationScore: 88,
+        status: "in_progress",
+        location: "Lisbon, Portugal",
+        briefIntro:
+          "Runs a solo brand studio and is comparing tools after a client approved an outdated logo version from an old email thread.",
+        signal:
+          "A client approved a logo direction from a two-week-old email while the current round lived in chat. I need one place where feedback and approvals stay in order. What works for your studio?",
+        matchedKeywords: ["client feedback", "brand approvals"],
+      },
+      {
+        displayName: "Ibrahim Saleh",
+        title: "Independent web designer",
+        qualificationScore: 83,
+        status: "contacted",
+        platform: "twitter",
+        location: "Amman, Jordan",
+        briefIntro:
+          "Designs and maintains websites for local restaurants and describes chasing sign-off across chat and shared documents.",
+        signal:
+          "Sign-off for a restaurant menu page happened in a chat message, but the change requests keep arriving in a shared document. Two sources of truth, one launch date.",
+        matchedKeywords: ["client feedback", "approvals"],
+      },
+      {
+        displayName: "Hannah Schmidt",
+        title: "Freelance product designer",
+        qualificationScore: 84,
+        location: "Hamburg, Germany",
+        briefIntro:
+          "Designs dashboards for small SaaS teams and recently described piecing client feedback together from Figma comments, email, and a shared drive.",
+        signal:
+          "This week's client review: comments in Figma, decisions in email, the final brief on a shared drive. Assembling the timeline took longer than the redesign itself.",
+        matchedKeywords: ["client feedback", "design reviews"],
+      },
+      {
+        displayName: "Chloe Dupont",
+        title: "Freelance brand and web designer",
+        qualificationScore: 76,
+        location: "Bordeaux, France",
+        briefIntro:
+          "Works with boutique clients on brand and web projects and wants a clearer approval trail after a revision round was lost between two inboxes.",
+        signal:
+          "Lost track of which homepage revision the client actually approved: one email said version two, a chat message mentioned version three. Client work needs a single approval trail.",
+        matchedKeywords: ["client feedback", "approval history"],
+      },
+      {
+        displayName: "Freya Lindholm",
+        status: "in_progress",
+        title: "Independent brand designer",
+        gender: "woman",
+        qualificationScore: 89,
+        location: "Stockholm, Sweden",
+        briefIntro:
+          "Designs identities for small food and retail brands and describes reconciling approval emails with chat decisions.",
+        signal:
+          "Client approved the packaging direction in a chat thread, then replied to a two-week-old email with different changes. I spent the evening working out which version is real. How do other brand designers keep one source of truth?",
+        matchedKeywords: ["client feedback", "brand approvals"],
+      },
+      {
+        displayName: "Rafael Ortiz",
+        status: "contacted",
+        title: "Freelance web designer",
+        gender: "man",
+        qualificationScore: 84,
+        platform: "twitter",
+        location: "Valencia, Spain",
+        briefIntro:
+          "Builds marketing sites for small studios and chases revision requests across WhatsApp, email, and shared folders.",
+        signal:
+          "Three clients, three revision flows: WhatsApp messages, long email threads, and a shared folder nobody organises. Yesterday I shipped the wrong header because a chat change never made it to my list.",
+        matchedKeywords: ["website revisions", "client feedback"],
+      },
+      {
+        displayName: "Aoife Byrne",
+        status: "in_progress",
+        title: "Freelance product designer",
+        gender: "woman",
+        qualificationScore: 87,
+        location: "Dublin, Ireland",
+        briefIntro:
+          "Designs dashboards for early-stage teams and wants a clearer record of who approved which screen.",
+        signal:
+          "The product team signs off in Slack, the founder emails changes, and the brief lives in a doc. Rebuilding the decision trail before every handoff takes longer than the redesign itself.",
+        matchedKeywords: ["design reviews", "client feedback"],
+      },
+      {
+        displayName: "Karim Mansour",
+        status: "in_progress",
+        title: "Independent web designer",
+        gender: "man",
+        qualificationScore: 81,
+        platform: "twitter",
+        location: "Cairo, Egypt",
+        briefIntro:
+          "Designs and maintains sites for local restaurants and clinics, with sign-off scattered across chat and documents.",
+        signal:
+          "Sign-off for a clinic booking page happened in a chat message, but change requests keep arriving in a shared document. Two sources of truth, one launch date next week.",
+        matchedKeywords: ["approvals", "client feedback"],
+      },
+      {
+        displayName: "Ginevra Moretti",
+        status: "in_progress",
+        title: "Freelance brand designer",
+        gender: "woman",
+        qualificationScore: 90,
+        location: "Milan, Italy",
+        briefIntro:
+          "Runs a solo brand studio and describes comparing approval emails with chat messages before every client delivery.",
+        signal:
+          "Before every delivery I audit three places: the approval email, the chat thread, and the comments in the shared deck. Last week two of them disagreed. Freelancers, how do you record the final decision?",
+        matchedKeywords: ["brand approvals", "approval history"],
+      },
+      {
+        displayName: "Petr Novotny",
+        status: "in_progress",
+        title: "Freelance UI designer",
+        gender: "man",
+        qualificationScore: 76,
+        platform: "twitter",
+        location: "Prague, Czechia",
+        briefIntro:
+          "Designs interfaces for agency partners and tracks feedback across email threads and shared design files.",
+        signal:
+          "My agency partner sends feedback in email, their client comments in the design file, and sometimes both change the same screen. I need one ordered trail of what was actually decided.",
+        matchedKeywords: ["design reviews", "website revisions"],
+      },
+      {
+        displayName: "Ines Cardoso",
+        status: "contacted",
+        title: "Independent product designer",
+        gender: "woman",
+        qualificationScore: 88,
+        location: "Porto, Portugal",
+        briefIntro:
+          "Designs web products for small clients and wants client decisions kept beside the screens they changed.",
+        signal:
+          "A client approved last Tuesday's flow in email, then requested the old version in chat on Friday. I keep a spreadsheet of decisions now, which tells me the tooling is wrong.",
+        matchedKeywords: ["client feedback", "approval history"],
+      },
+      {
+        displayName: "Amélie Roussel",
+        title: "Freelance brand and web designer",
+        gender: "woman",
+        qualificationScore: 86,
+        status: "contacted",
+        platform: "twitter",
+        location: "Lyon, France",
+        briefIntro:
+          "Works with boutique clients and describes losing revision rounds between two inboxes and a chat app.",
+        signal:
+          "One client, two inboxes, and a chat app: the homepage revision nobody can find. I now write approvals down by hand. What do other freelance designers send clients so decisions stay clear?",
+        matchedKeywords: ["approval history", "client feedback"],
+      },
+      {
+        displayName: "Andrés Ramos",
+        status: "contacted",
+        title: "Independent web designer",
+        gender: "man",
+        qualificationScore: 83,
+        location: "Bogotá, Colombia",
+        briefIntro:
+          "Designs sites for independent shops and reconciles chat approvals with email change requests every week.",
+        signal:
+          "The shop owner approved the checkout design in chat, then emailed a change list that contradicted it. Reconciling the two took my whole Monday. How do solo designers keep one approval trail?",
+        matchedKeywords: ["client feedback", "approvals"],
+      },
+      {
+        displayName: "Zainab Haddad",
+        status: "in_progress",
+        title: "Independent brand designer",
+        gender: "woman",
+        qualificationScore: 90,
+        location: "Amman, Jordan",
+        briefIntro:
+          "Designs brands for family businesses and wants feedback and approvals kept in order, not scattered across apps.",
+        signal:
+          "A family business approved the wordmark in email, then the son sent different notes in chat. I need one place where feedback and approvals stay in order. What works for your studio?",
+        matchedKeywords: ["brand approvals", "client feedback"],
+      },
+      {
+        displayName: "Anton Lindgren",
+        title: "Freelance web designer",
+        gender: "man",
+        qualificationScore: 78,
+        platform: "twitter",
+        location: "Stockholm, Sweden",
+        briefIntro:
+          "Builds portfolio sites for creatives and tracks revision requests across chat, email, and a shared sheet.",
+        signal:
+          "Revision requests arrive in chat, approvals in email, and I still keep the tracker in a shared sheet I gave up on. There must be a simpler way to keep client work in one place.",
+        matchedKeywords: ["website revisions", "client feedback"],
+      },
+      {
+        displayName: "Yuki Tanabe",
+        status: "contacted",
+        title: "Freelance product designer",
+        gender: "woman",
+        qualificationScore: 85,
+        location: "Osaka, Japan",
+        briefIntro:
+          "Designs web apps for small teams and describes piecing client reviews together from comments, email, and calls.",
+        signal:
+          "This week's client review: comments in the design file, decisions in email, and the rest on a call nobody wrote down. Assembling the timeline took longer than the fixes.",
+        matchedKeywords: ["design reviews", "client feedback"],
+      },
+      {
+        displayName: "Owen Hartley",
+        status: "in_progress",
+        title: "Independent web designer",
+        gender: "man",
+        qualificationScore: 82,
+        platform: "twitter",
+        location: "Manchester, UK",
+        briefIntro:
+          "Designs sites for local trades and describes sign-off living in chat while change requests arrive by email.",
+        signal:
+          "Sign-off for a trade client's booking page happened in a chat message; the change requests keep arriving by email. Two sources of truth and a launch date that will not move.",
+        matchedKeywords: ["approvals", "website revisions"],
+      },
+      {
+        displayName: "Camille Aubert",
+        title: "Freelance brand designer",
+        gender: "woman",
+        qualificationScore: 87,
+        location: "Nantes, France",
+        briefIntro:
+          "Designs identities for independent retailers and wants a single approval trail per project.",
+        signal:
+          "A retailer approved version two by email while their manager mentioned version three in chat. Client work needs one approval trail, not my memory of three conversations.",
+        matchedKeywords: ["approval history", "brand approvals"],
+      },
+      {
+        displayName: "Arjun Mehta",
+        title: "Freelance UI designer",
+        gender: "man",
+        qualificationScore: 84,
+        status: "in_progress",
+        platform: "twitter",
+        location: "Bengaluru, India",
+        briefIntro:
+          "Designs interfaces for SaaS founders and reconciles chat feedback with emailed approval lists each sprint.",
+        signal:
+          "The founder sends UI feedback in chat at midnight and the approved scope arrives by email two days later. Every sprint starts with reconciling the two. How do other freelance UI designers handle this?",
+        matchedKeywords: ["client feedback", "design reviews"],
+      },
+      {
+        displayName: "Elif Demir",
+        status: "contacted",
+        title: "Independent product designer",
+        gender: "woman",
+        qualificationScore: 88,
+        location: "Istanbul, Türkiye",
+        briefIntro:
+          "Designs mobile and web products for small clients and wants approvals recorded beside the work.",
+        signal:
+          "A client approved the onboarding flow in email, then their developer sent contradictory notes in chat. I started saving screenshots of every approval. There has to be a better way.",
+        matchedKeywords: ["approval history", "client feedback"],
+      },
+      {
+        displayName: "Lucas Girard",
+        title: "Freelance web designer",
+        gender: "man",
+        qualificationScore: 79,
+        platform: "twitter",
+        location: "Montreal, Canada",
+        briefIntro:
+          "Builds sites for independent restaurants and chases approvals across email, chat, and printed notes.",
+        signal:
+          "One restaurant client approves on paper, one by email, one in chat. Three projects, three approval trails, zero of them searchable. Freelancers, how do you keep this straight?",
+        matchedKeywords: ["website revisions", "approvals"],
+      },
+      {
+        displayName: "Mariana Vega",
+        status: "in_progress",
+        title: "Independent brand designer",
+        gender: "woman",
+        qualificationScore: 86,
+        location: "Mexico City, Mexico",
+        briefIntro:
+          "Runs a solo identity studio and compares client approvals across email threads and chat before every delivery.",
+        signal:
+          "Delivery day audit: the approval email, the WhatsApp thread, and the comments in the shared deck. Two of three disagreed last week. How do solo brand designers record the final call?",
+        matchedKeywords: ["brand approvals", "approval history"],
+      },
+      {
+        displayName: "Mateus Silva",
+        status: "contacted",
+        title: "Freelance product designer",
+        gender: "man",
+        qualificationScore: 82,
+        platform: "twitter",
+        location: "Lisbon, Portugal",
+        briefIntro:
+          "Designs dashboards for small clients and tracks decisions scattered across chat, email, and design comments.",
+        signal:
+          "Client decisions live in chat, email, and design comments. Yesterday I rebuilt the decision trail from screenshots before a handoff. There should be one ordered record of what was approved.",
+        matchedKeywords: ["design reviews", "client feedback"],
+      },
+      {
+        displayName: "Elsa Lindqvist",
+        title: "Independent web designer",
+        gender: "woman",
+        qualificationScore: 90,
+        location: "Malmö, Sweden",
+        briefIntro:
+          "Designs sites for small businesses and wants feedback and sign-off kept together with the project.",
+        signal:
+          "A client signed off in chat, then emailed changes the same afternoon. I keep one document per project now, but approvals still arrive everywhere else. What does your sign-off flow look like?",
+        matchedKeywords: ["client feedback", "approvals"],
+      },
+      {
+        displayName: "Felix Braun",
+        title: "Freelance brand and web designer",
+        gender: "man",
+        qualificationScore: 81,
+        platform: "twitter",
+        location: "Berlin, Germany",
+        briefIntro:
+          "Works with startup clients on brand and web and describes revision rounds lost between email and chat.",
+        signal:
+          "Startup clients approve in chat, then their ops lead emails a different change list. Last round I shipped the wrong landing page for two days. One approval trail would have caught it.",
+        matchedKeywords: ["approval history", "website revisions"],
+      },
+      {
+        displayName: "Ayesha Karim",
+        title: "Independent UI designer",
+        gender: "woman",
+        qualificationScore: 85,
+        location: "Dubai, United Arab Emirates",
+        briefIntro:
+          "Designs interfaces for independent studios and wants client feedback collected in one ordered place.",
+        signal:
+          "Feedback arrives in chat, approvals in email, and the brief lives in a shared drive. I spend the first hour of every review reconnecting the three. How do other UI designers centralise this?",
+        matchedKeywords: ["client feedback", "design reviews"],
       },
     ],
   },
@@ -273,13 +630,13 @@ export function createAudienceProspect(
   const prospect = makeProspect({
     ...person,
     key: `audience_${index + 1}`,
-    platform,
+    platform: person.platform ?? platform,
     handle:
-      platform === "twitter"
+      (person.platform ?? platform) === "twitter"
         ? demoHandle(person.displayName)
         : `fictional-${person.displayName.toLowerCase().replaceAll(" ", "-")}`,
     hoursAgo: index + 1,
-    matchedKeywords: [],
+    matchedKeywords: person.matchedKeywords ?? [],
   });
   if (
     ["Alex Rivera", "Daniel Park", "Owen Clarke"].includes(person.displayName)

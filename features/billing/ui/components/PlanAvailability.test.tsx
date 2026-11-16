@@ -175,7 +175,7 @@ test.each(["plans", "onboarding"] as const)(
     await render(surface);
     expect(text()).not.toContain("Loading plans");
     expect(text()).toContain(
-      "Pick a plan. Every plan comes with a 30-day money-back guarantee."
+      "Pick a plan. Every plan comes with a full refund in the first 30 days."
     );
     expect(text()).toContain("Base");
     expect(text()).toContain("Pro");

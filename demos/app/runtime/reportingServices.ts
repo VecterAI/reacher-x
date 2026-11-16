@@ -24,6 +24,67 @@ type Memory = NonNullable<
 export const DEMO_MEMORY_INSTRUCTION =
   "Keep the first message under 80 words. Ask one question. Don't ask for a meeting in the first message.";
 
+/**
+ * Memories seeded by agentHistorySeeds so the "Open in Agent observability"
+ * button on seeded memory cards resolves. Registered at seed time, read by
+ * the handlers below regardless of service registration order.
+ */
+const seedMemories = new Map<string, Map<string, Memory>>();
+
+export function registerDemoHistoryMemory(input: {
+  workspaceId: string;
+  memoryId: string;
+  title: string;
+  summary: string;
+  category?:
+    | "operator_instruction"
+    | "qualification_win_pattern"
+    | "qualification_false_positive_pattern"
+    | "enrichment_signal_pattern"
+    | "enrichment_role_pattern"
+    | "outreach_winning_pattern"
+    | "outreach_objection_pattern";
+  confidence?: number;
+  impactScore?: number;
+}) {
+  const recordedAt = getCurrentUTCTimestamp();
+  const memory: Memory = {
+    memoryId: input.memoryId,
+    title: input.title,
+    summary: input.summary,
+    createdAt: recordedAt,
+    source: "outreach",
+    category: input.category ?? "outreach_winning_pattern",
+    namespace: "lessons",
+    confidence: input.confidence ?? 0.92,
+    impactScore: input.impactScore ?? 0.72,
+    prospect: null,
+    signals: [],
+    evidence: [],
+    relatedQueries: [],
+    promotions: [],
+    narrative:
+      "Saved from a rule the user stated in the workspace Agent conversation.",
+    memoryText: input.summary,
+    canonicalMemory: {
+      memoryId: input.memoryId,
+      authority: "learned",
+      kind: "instruction",
+      status: "active",
+      indexStatus: "ready",
+      instruction: input.summary,
+      canonicalContent: input.summary,
+      surfaces: ["outreach"],
+      channels: ["linkedin", "twitter"],
+      indexError: null,
+      updatedAt: recordedAt,
+    },
+  };
+  if (!seedMemories.has(input.workspaceId))
+    seedMemories.set(input.workspaceId, new Map());
+  seedMemories.get(input.workspaceId)!.set(input.memoryId, memory);
+}
+
 export function registerReportingServices(client: LocalClient, state: State) {
   const recordedAt = getCurrentUTCTimestamp();
   const workspaceMemories = new Map<string, Map<string, Memory>>();
@@ -334,7 +395,10 @@ export function registerReportingServices(client: LocalClient, state: State) {
   client.register(
     api.agentOps.getAgentOpsMemoryInventoryPageSnapshot,
     ({ workspaceId, search, category, page = 0 }) => {
-      const rows = [...memoriesFor(workspaceId).values()]
+      const rows = [
+        ...memoriesFor(workspaceId).values(),
+        ...(seedMemories.get(workspaceId)?.values() ?? []),
+      ]
         .filter(
           (memory) =>
             (!search ||
@@ -355,7 +419,9 @@ export function registerReportingServices(client: LocalClient, state: State) {
         page,
         totalCount: rows.length,
         totalPages: 1,
-        availableCategories: ["operator_instruction"],
+        availableCategories: [
+          ...new Set(rows.map((memory) => memory.category)),
+        ],
         continueCursor: null,
         isDone: true,
         scanned: rows.length,
@@ -365,7 +431,9 @@ export function registerReportingServices(client: LocalClient, state: State) {
   client.register(
     api.agentOps.getAgentOpsMemoryDetail,
     ({ workspaceId, memoryId }) =>
-      memoriesFor(workspaceId).get(memoryId) ?? null
+      memoriesFor(workspaceId).get(memoryId) ??
+      seedMemories.get(workspaceId)?.get(memoryId) ??
+      null
   );
   const activity = () => [
     {

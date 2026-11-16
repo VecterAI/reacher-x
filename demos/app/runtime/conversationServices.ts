@@ -8,6 +8,7 @@ import { createConversation } from "./conversationFixtures";
 import type { createAppFixtures } from "./appFixtures";
 import { getStringProperty } from "@/convex/lib/typeGuards";
 import { recordDemoMessage } from "./lifecycleHelpers";
+import { historyActionRequests } from "./demoHistoryWorkflows";
 import {
   isUseCaseWalkthrough,
   USE_CASE_WALKTHROUGH_COPY,
@@ -99,6 +100,15 @@ export function createServices(state?: ReturnType<typeof createAppFixtures>) {
       errorMessage: undefined,
     };
     operations = [...operations, operation];
+    // Sending a pending seeded DM (or editing it then sending) approves and
+    // executes it, matching how the real queue resolves action requests.
+    if (args.actionRequestId) {
+      const request = historyActionRequests.get(args.actionRequestId);
+      if (request && request.status === "pending_approval") {
+        request.status = "completed";
+        client.notify();
+      }
+    }
     const person = state?.prospects.find(
       (person) => person._id === args.prospectId
     );

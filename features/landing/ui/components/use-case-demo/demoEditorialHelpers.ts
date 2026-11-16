@@ -48,6 +48,13 @@ export function getEditorialDemoDataset(
           matchedKeywords: ["feedback"],
           location: "Milan, Italy",
         }),
+        // Keep the curated pair first, then let the rest of the dataset
+        // through so the editorial grid is not two people.
+        ...dataset.prospects.filter(
+          (prospect) =>
+            prospect._id !== "use_case_demo_customers_1" &&
+            prospect._id !== "use_case_demo_customers_2"
+        ),
       ],
     };
   }
@@ -75,14 +82,9 @@ export function getEditorialDemoDataset(
           : ["keyboard navigation", "frontend", "accessibility"],
         location: "Paris, France",
       }),
-      ...dataset.prospects
-        .slice(1)
-        .filter((p) =>
-          (designer
-            ? /design/i
-            : /frontend|front-end|full-stack|product engineer/i
-          ).test(p.title ?? "")
-        ),
+      ...dataset.prospects.filter(
+        (prospect) => prospect._id !== "use_case_demo_candidates_1"
+      ),
     ],
   };
 }

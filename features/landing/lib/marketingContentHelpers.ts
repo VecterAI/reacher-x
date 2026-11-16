@@ -7,13 +7,13 @@ export const MARKETING_COPY = {
     revealLine: "for everyone.",
     /** Plain-text form of the hero for the OG image and Markdown title. */
     headline: "The Go-To-Market stack, for everyone.",
-    /** Hero sub text; rendered with inline brand logos and repo link.
-     * Ends without a period so the "Open source" link closes the line. */
+    /** Hero sub text; rendered with inline brand logos. Ends without a
+     * period so the "Open source" repo link closes it on its own line. */
     tagline:
-      "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. Prospecting, CRM, outreach, and social in one tool. Open source",
+      "Clay and Apollo take weeks to learn. ReacherX takes 5 minutes. People search, CRM, outreach, plus X/Twitter and LinkedIn built right in. Open source",
     description:
       "Describe who you want to reach. ReacherX watches X/Twitter and LinkedIn around the clock, finds people who match, and helps you start real conversations.",
-    guaranteeNote: "30-day money-back guarantee.",
+    guaranteeNote: "Full refund in 30 days.",
     setupTimeNote: "Set up in under 5 minutes.",
   },
   /**
@@ -24,7 +24,7 @@ export const MARKETING_COPY = {
   narrative: [
     "The people you're looking for are out there on X/Twitter and LinkedIn.",
     "ReacherX △ Agent finds them around the clock, keeps every relationship in a built-in CRM, and drafts outreach with voice notes, images, and videos. View profiles, like, comment, reply. All without leaving the app.",
-    "No more stitching prospecting, a CRM, and outreach tools together. No funnels, no sales vocabulary. Just say who you need, in plain words.",
+    "No more stitching people search, a CRM, and outreach tools together. No funnels, no sales vocabulary. Just say who you need, in plain words, and get matched with the right people.",
   ],
   workflow: {
     setup:

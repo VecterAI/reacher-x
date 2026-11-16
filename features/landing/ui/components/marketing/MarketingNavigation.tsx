@@ -124,7 +124,7 @@ export function MarketingNavigation() {
       active: isUseCasesActive,
       featuredEyebrow: "Explore Use cases",
       featured: useCaseFeatured,
-      columnsEyebrow: "Who do you want to find?",
+      columnsEyebrow: "What you can do with ReacherX",
       columns: useCaseColumns,
     },
     {
