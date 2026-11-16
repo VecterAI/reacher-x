@@ -4,11 +4,32 @@ import type { LearningCondition } from "../types";
 
 /**
  * Drives the development deployment through the authenticated Convex CLI,
- * calling the internal hooks in convex/benchmarkPeopleSearch.ts. Values for
- * `env set` go through standard input so they never appear in a command line.
+ * calling the internal hooks in convex/benchmarkPeopleSearch.ts (listed in
+ * PEOPLE_SEARCH_HOOKS below). Values for `env set` go through standard input
+ * so they never appear in a command line.
  * Every call here can reach the deployment; the runner invokes it only inside
  * an approved live step.
  */
+
+/**
+ * The people-search hook set. This driver serves only the people-search
+ * benchmark for now, so its Convex function names live here in one place; it
+ * gets generalized when a second benchmark needs it.
+ */
+const PEOPLE_SEARCH_HOOKS = {
+  poolLimitsStatus: "benchmarkPeopleSearch:poolLimitsStatus",
+  prepareWorkspace: "benchmarkPeopleSearch:prepareWorkspace",
+  findRunWorkspace: "benchmarkPeopleSearch:findRunWorkspace",
+  startWorkspace: "benchmarkPeopleSearch:startWorkspace",
+  runStatus: "benchmarkPeopleSearch:runStatus",
+  exportCandidates: "benchmarkPeopleSearch:exportCandidates",
+  stopRun: "benchmarkPeopleSearch:stopRun",
+  cancelScheduledCycles: "benchmarkPeopleSearch:cancelScheduledCycles",
+  deploymentActivity: "benchmarkPeopleSearch:deploymentActivity",
+  runCosts: "benchmarkPeopleSearch:runCosts",
+  linkdApiUnitsSince: "benchmarkPeopleSearch:linkdApiUnitsSince",
+  resetLinkdApiCircuit: "benchmarkPeopleSearch:resetLinkdApiCircuit",
+} as const satisfies Record<string, `benchmarkPeopleSearch:${string}`>;
 
 export type CommandResult = Readonly<{
   exitCode: number;
@@ -332,7 +353,7 @@ export class ConvexReacherXDriver {
       z.object({ enforced: z.boolean() })
     );
     const status = await this.call(
-      "benchmarkPeopleSearch:poolLimitsStatus",
+      PEOPLE_SEARCH_HOOKS.poolLimitsStatus,
       {},
       poolStatusSchema
     );
@@ -360,7 +381,7 @@ export class ConvexReacherXDriver {
     useCaseKey: string;
   }) {
     return this.call(
-      "benchmarkPeopleSearch:prepareWorkspace",
+      PEOPLE_SEARCH_HOOKS.prepareWorkspace,
       args,
       workspaceRefSchema
     ).then((ref): BenchmarkWorkspace => ({ ...ref, label: args.label }));
@@ -368,7 +389,7 @@ export class ConvexReacherXDriver {
 
   findPrepared(args: { userId: string; label: string; since: number }) {
     return this.call(
-      "benchmarkPeopleSearch:findRunWorkspace",
+      PEOPLE_SEARCH_HOOKS.findRunWorkspace,
       args,
       workspaceRefSchema.nullable()
     ).then((ref) => (ref ? { ...ref, label: args.label } : null));
@@ -387,7 +408,7 @@ export class ConvexReacherXDriver {
 
   async start(workspace: BenchmarkWorkspace) {
     await this.call(
-      "benchmarkPeopleSearch:startWorkspace",
+      PEOPLE_SEARCH_HOOKS.startWorkspace,
       { workspaceId: workspace.workspaceId },
       z.null()
     );
@@ -395,7 +416,7 @@ export class ConvexReacherXDriver {
 
   status(workspace: BenchmarkWorkspace) {
     return this.call(
-      "benchmarkPeopleSearch:runStatus",
+      PEOPLE_SEARCH_HOOKS.runStatus,
       { workspaceId: workspace.workspaceId },
       runStatusSchema
     );
@@ -406,7 +427,7 @@ export class ConvexReacherXDriver {
     let cursor: string | null = null;
     for (;;) {
       const page: z.infer<typeof exportPageSchema> = await this.call(
-        "benchmarkPeopleSearch:exportCandidates",
+        PEOPLE_SEARCH_HOOKS.exportCandidates,
         {
           workspaceId: workspace.workspaceId,
           paginationOpts: { numItems: 100, cursor },
@@ -424,7 +445,7 @@ export class ConvexReacherXDriver {
     workspace: Pick<BenchmarkWorkspace, "workspaceId">
   ): Promise<StopResult> {
     return this.call(
-      "benchmarkPeopleSearch:stopRun",
+      PEOPLE_SEARCH_HOOKS.stopRun,
       { workspaceId: workspace.workspaceId },
       stopResultSchema
     );
@@ -433,7 +454,7 @@ export class ConvexReacherXDriver {
   /** Cancels next cycles already scheduled for the workspace; it keeps running so qualification finishes. */
   cancelScheduledCycles(workspace: BenchmarkWorkspace) {
     return this.call(
-      "benchmarkPeopleSearch:cancelScheduledCycles",
+      PEOPLE_SEARCH_HOOKS.cancelScheduledCycles,
       { workspaceId: workspace.workspaceId },
       z.object({ canceled: z.number(), truncated: z.boolean() })
     );
@@ -442,7 +463,7 @@ export class ConvexReacherXDriver {
   /** Other workspaces that could spend while jobs are unpaused. */
   activity(except?: BenchmarkWorkspace) {
     return this.call(
-      "benchmarkPeopleSearch:deploymentActivity",
+      PEOPLE_SEARCH_HOOKS.deploymentActivity,
       except ? { exceptWorkspaceId: except.workspaceId } : {},
       activitySchema
     );
@@ -451,7 +472,7 @@ export class ConvexReacherXDriver {
   /** Provider usage and model cost the app recorded for the workspace since a time. */
   runCosts(workspace: BenchmarkWorkspace, since: number) {
     return this.call(
-      "benchmarkPeopleSearch:runCosts",
+      PEOPLE_SEARCH_HOOKS.runCosts,
       { workspaceId: workspace.workspaceId, since },
       runCostsSchema
     );
@@ -460,7 +481,7 @@ export class ConvexReacherXDriver {
   /** LinkedIn data units since a time; only the active benchmark runs while jobs are unpaused. */
   linkdApiUnitsSince(since: number) {
     return this.call(
-      "benchmarkPeopleSearch:linkdApiUnitsSince",
+      PEOPLE_SEARCH_HOOKS.linkdApiUnitsSince,
       { since },
       linkdApiUnitsSchema
     );
@@ -469,7 +490,7 @@ export class ConvexReacherXDriver {
   /** Closes a LinkedIn circuit breaker an earlier run left open. */
   resetLinkdApiCircuit() {
     return this.call(
-      "benchmarkPeopleSearch:resetLinkdApiCircuit",
+      PEOPLE_SEARCH_HOOKS.resetLinkdApiCircuit,
       {},
       z.object({ reset: z.boolean(), previousStatus: z.string().optional() })
     );
