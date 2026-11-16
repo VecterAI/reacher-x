@@ -3,12 +3,14 @@ title: "What does ReacherX do on its own?"
 description: "Understand background discovery, automatic outreach, approval settings, and how to pause △ Agent."
 category: tutorials
 date: "2026-07-05"
-updated: "2026-09-11"
+updated: "2026-11-13"
 related: ["read-your-reacherx-analytics", "understand-agent-observability"]
 tags: ["automation", "autonomy", "sending approvals", "pause", "self driving"]
 ---
 
 Once a workspace is running, ReacherX can keep finding people, checking whether they fit, and preparing outreach without you moving every step along. That's the point of v4's agentic design. After v3 taught me that people expect the tool to do the work, I rebuilt v4 around △ Agent carrying work out. It's still beta, so I want to be clear about what that means in the app today.
+
+A quick orientation if you're new. A workspace is the container for one search. A person is someone the system saved as a possible match. A plan is the prepared approach for one person. △ Agent is the assistant doing that work. [How ReacherX works](/blog/how-reacherx-works) explains each of those in plain words.
 
 ## What can it do while I'm away?
 
@@ -16,7 +18,7 @@ Discovery, fit checks, background gathering, and plan preparation can all contin
 
 Supported replies and other activity can cause △ Agent to reconsider a plan. It might continue, finish, or stop it. A plan can also wait until a scheduled time or ask you for input.
 
-You can see what's happening in the workspace status. Sometimes one part can keep working while another needs attention. For example, discovery might be running while a messaging account needs reconnecting. Work can also stop when you hit a usage limit or pause △ Agent yourself.
+You can see what's happening in the workspace status. Sometimes one part can keep working while another needs attention. For example, discovery might be running while a messaging account needs reconnecting. Work can also stop when you reach a plan limit or pause △ Agent yourself.
 
 ## Will it send messages without asking me?
 
@@ -36,6 +38,6 @@ Tell it when something is wrong. Give it a useful correction and [ask it to reme
 
 Keep track of things that happen elsewhere, too. A person accepting an invitation on a phone call won't automatically become a recorded outcome in ReacherX. Finishing an outreach plan doesn't prove they accepted.
 
-And you can stop the work. Open the workspace status and choose “Pause △ Agent”. This pauses new discovery, monitoring, and queued background work for that workspace. A task already running may finish safely. Your saved people and progress stay there, and you can resume from the same dialog.
+And you can stop the work. Open the workspace status and choose "Pause △ Agent". This pauses new discovery, monitoring, and queued background work for that workspace. A task already running may finish safely. Your saved people and progress stay there, and you can resume from the same dialog.
 
 I want ReacherX to do more of the work over time. I also want you to be able to see what it's doing. [Analytics](/blog/read-your-reacherx-analytics) shows recorded outcomes. [Agent observability](/blog/understand-agent-observability) lets you inspect the activity behind them.

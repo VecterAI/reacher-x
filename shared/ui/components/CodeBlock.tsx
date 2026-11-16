@@ -3,11 +3,7 @@
 import { cn } from "@/shared/lib/utils";
 import React, { useEffect, useState } from "react";
 import { codeToHtml } from "shiki";
-
-const DEFAULT_CODE_BLOCK_THEMES = {
-  light: "github-light",
-  dark: "github-dark",
-} as const;
+import { neutralShikiThemes } from "./shikiNeutralTheme";
 
 export type CodeBlockProps = {
   children?: React.ReactNode;
@@ -58,11 +54,7 @@ function CodeBlockCode({
 
       const html = await codeToHtml(code, {
         lang: language,
-        ...(theme
-          ? { theme }
-          : {
-              themes: DEFAULT_CODE_BLOCK_THEMES,
-            }),
+        ...(theme ? { theme } : { themes: neutralShikiThemes }),
       });
 
       if (!isCancelled) {

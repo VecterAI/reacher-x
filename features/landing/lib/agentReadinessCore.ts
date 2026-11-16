@@ -123,5 +123,5 @@ export function buildAgentReadingIndex(posts: BlogPostSummary[]) {
     )
     .join(
       "\n"
-    )}\n${posts.map((post) => `- ${link(post.title, blogHref(post.slug))}: ${post.description}`).join("\n")}\n\n## Reading formats\n\nPublic marketing pages, blog listings, and articles support Accept: text/markdown. Each page advertises its Markdown URL through a Link header and alternate metadata.\n\n- ${link("XML sitemap", "/sitemap.xml")}\n- ${link("Blog Markdown index", "/blog/sitemap.md")}\n- ${link("RSS feed", "/blog/feed.xml")}\n- [Vision and mission](${GITHUB_REPO_URL}/blob/main/VISION.md)\n- [Source code](${GITHUB_REPO_URL})\n- [Contact](mailto:creativecoder.crco@gmail.com)\n`;
+    )}\n${posts.map((post) => `- ${link(post.title, blogHref(post.slug))}: ${post.description}`).join("\n")}\n\n## Reading formats\n\nPublic marketing pages, blog listings, and articles support Accept: text/markdown. Each page advertises its Markdown URL through a Link header and alternate metadata.\n\n- ${link("XML sitemap", "/sitemap.xml")}\n- ${link("Blog Markdown index", "/blog/sitemap.md")}\n- ${link("RSS feed", "/blog/feed.xml")}\n- [Vision and mission](${GITHUB_REPO_URL}/blob/main/VISION.md)\n- [Architecture](${GITHUB_REPO_URL}/blob/main/docs/architecture.md)\n- [Source code](${GITHUB_REPO_URL})\n- [Contact](mailto:creativecoder.crco@gmail.com)\n`;
 }

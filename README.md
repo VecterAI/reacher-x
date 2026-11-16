@@ -149,10 +149,10 @@ Set up ReacherX for local development and open a pull request.
 
 My change: <describe the fix or feature>
 
-Read VISION.md first so the product vision is clear, then follow CONTRIBUTING.md, docs/development-setup.md, and agents.md. Summary:
+Read VISION.md first so the product vision is clear, then follow CONTRIBUTING.md, docs/architecture.md, docs/development-setup.md, and agents.md. Summary:
 
 1. Check before starting: search the open issues and pull requests at github.com/VecterAI/reacher-x for anything about my change. If an issue covers it, note the number and reference it in the PR. If an open PR already fixes it, stop and tell me. If nothing covers it and the change is bigger than a small fix, ask me whether to open an issue first.
-2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm (on Node.js 25+, install corepack first: npm install -g corepack).
+2. Requirements: Node.js 22+ and pnpm 11. The repo pins pnpm via package.json, so run corepack enable pnpm. If that fails, your Node.js may be 25 or later without bundled Corepack: run npm install -g corepack first.
 3. I have no push access to VecterAI/reacher-x, so fork it on GitHub before cloning.
 4. Clone my fork, add the upstream remote, and update main from upstream:
    git remote add upstream https://github.com/VecterAI/reacher-x.git
@@ -162,7 +162,7 @@ Read VISION.md first so the product vision is clear, then follow CONTRIBUTING.md
 7. Install agent tooling for this repo: the Convex plugin for Claude Code, Codex, or Cursor (or npx -y convex@latest mcp start), the Vercel MCP with vercel mcp, and npx convex ai-files install for repo AI files. The repo already ships Convex skills under skills/.
 8. Read docs/configuration.md. Configure only the services for my change area and ask me for missing keys. Special cases: SocialAPI.me access comes from the maintainer, and Renidly signup needs a work email address.
 9. Select a dev Convex deployment with npx convex dev --once. Set backend-only values with npx convex env set. Never commit .env.local and never upload it to Convex.
-10. Run npx convex dev and pnpm dev in separate terminals. The site is at http://localhost:3000.
+10. Run npx convex dev and pnpm dev in separate terminals. The site is at http://localhost:3000. For marketing, blog, or demo work, also run cp demos/app/.env.example demos/app/.env.local and pnpm dev:demo in a third terminal; the demo app is at http://localhost:3001.
 11. Before committing, run: pnpm exec tsc --noEmit, pnpm lint:strict, pnpm test:convex, and pnpm exec prettier --check on changed files.
 12. Push to my fork and open a PR against VecterAI/reacher-x:main, referencing the issue from step 1 when there is one. If my change touches the interface, attach proof with the uploads.sh CLI (npm install -g @buildinternet/uploads, uploads login, then uploads put ./before.png --state before and uploads put ./after.png --state after on the branch); it posts to the PR automatically when the uploads.sh GitHub App is installed, otherwise run uploads attach --promote once the PR is open. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
 ```
@@ -173,7 +173,7 @@ Full roadmap in [ROADMAP.md](./ROADMAP.md). Reliability and evaluations now, ema
 
 ## Self-hosting
 
-Requirements: Node.js 22+ and pnpm 11.x.
+Requirements: Node.js 22+ and pnpm 11.x. The repository pins pnpm in `package.json`, so `corepack enable pnpm` keeps you aligned; on Node.js 25 or later, install Corepack first with `npm install -g corepack`.
 
 Prefer one click? The [Deploy your own instance](#deploy-your-own-instance) section covers what the button imports and what stays manual.
 
@@ -207,6 +207,9 @@ Full functionality needs external provider accounts: Convex, WorkOS, AI provider
 ## Project structure
 
 - `app/`: Next.js routes and entry points.
+
+The full system walkthrough, from the discovery pipeline to memory and reporting, lives in [docs/architecture.md](./docs/architecture.md).
+
 - `features/`: product UI and feature logic.
 - `shared/`: shared utilities, components, hooks, and types.
 - `convex/agents/tools/`: thin agent-facing tool layer.

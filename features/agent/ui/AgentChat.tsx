@@ -223,6 +223,10 @@ import { getLatestUserMessageScrollAnchorKey } from "@/features/agent/lib/agentM
 import {
   buildAgentMentionReplacementText,
   collectComposerMentionIds,
+  getUnambiguousMentionEntities,
+  hasUntaggedMentionChip,
+  hasUntaggedMentionText,
+  readMentionEntitiesFromHtml,
   syncMentionSelectionWithComposer,
   type AgentMentionSelection,
 } from "@/features/agent/lib/entityMentions";
@@ -1481,6 +1485,17 @@ function AgentAttachmentList({
 const TAGGED_MENTION_CHIP_CLASS_NAME =
   "text-primary-foreground/70 inline-block max-w-full truncate align-bottom font-mono";
 
+/** Lets a copied mention paste back into the composer as a tagged chip. */
+function mentionDataAttributes(entity?: MentionEntitySearchResult) {
+  return entity
+    ? {
+        "data-mention-id": entity.id,
+        "data-mention-name": entity.mentionText.trim(),
+        "data-mention-entity": JSON.stringify(entity),
+      }
+    : {};
+}
+
 /**
  * Renders a sent message with its @mentions styled. Mentions matched against
  * the message's tagged entities are clamped to one short line; without tagged
@@ -1509,6 +1524,13 @@ function HighlightTaggedText({
   // fallback pattern below is a guess over words after "@", so clamping it
   // would hide ordinary message text.
   const hasConfirmedMentions = mentionLabels.length > 0;
+
+  const entityByToken = new Map(
+    getUnambiguousMentionEntities(taggedEntities).map((entity) => [
+      `@${entity.mentionText.trim()}`,
+      entity,
+    ])
+  );
 
   const pattern =
     mentionLabels.length > 0
@@ -1544,6 +1566,7 @@ function HighlightTaggedText({
           key={`${tokenStart}-${token}`}
           className={TAGGED_MENTION_CHIP_CLASS_NAME}
           title={token}
+          {...mentionDataAttributes(entityByToken.get(token))}
         >
           {compactMentionText(token)}
         </span>
@@ -2621,6 +2644,10 @@ export function AgentChat({
   const [agentComposerContent, setAgentComposerContent] = useState<
     SerializedEditorState | undefined
   >(buildSerializedTextState(input));
+  // Text held back for an untagged "@name"; sending it again goes through.
+  const [untaggedMentionWarningText, setUntaggedMentionWarningText] = useState<
+    string | null
+  >(null);
   const [agentComposerApi, setAgentComposerApi] =
     useState<ComposerEditorAPI | null>(null);
   const isSetupRouteEarly = pathname === "/agent/setup";
@@ -2708,6 +2735,7 @@ export function AgentChat({
           }
     );
     setAgentComposerContent(buildSerializedTextState(""));
+    setUntaggedMentionWarningText(null);
   }, [mentionScopeKey]);
 
   // Mention chips carry the id of the entity the user picked, so tagged
@@ -3000,6 +3028,19 @@ export function AgentChat({
       return;
     }
 
+    if (
+      !isSetupAudienceEntryRef.current &&
+      untaggedMentionWarningText !== trimmedInput &&
+      (hasUntaggedMentionText(agentComposerContent) ||
+        hasUntaggedMentionChip(
+          agentComposerContent,
+          mentionComposerState.pickedEntities
+        ))
+    ) {
+      setUntaggedMentionWarningText(trimmedInput);
+      return;
+    }
+
     const submission = buildAgentComposerSubmission({
       input: trimmedInput,
       taggedEntities: selectedTaggedEntities,
@@ -3019,6 +3060,7 @@ export function AgentChat({
       pickedEntities: [],
       selectedEntities: [],
     }));
+    setUntaggedMentionWarningText(null);
     agentComposerApi?.clearContent();
     setAgentComposerContent(undefined);
     setInput("");
@@ -3031,10 +3073,12 @@ export function AgentChat({
     });
   }, [
     agentComposerApi,
+    agentComposerContent,
     beginSetupUrlRead,
     hasUploadingAttachment,
     input,
     isSetupReadingUrl,
+    mentionComposerState.pickedEntities,
     readyAttachments,
     selectedAttachmentEntities,
     selectedMentionEntities,
@@ -3042,7 +3086,35 @@ export function AgentChat({
     sendMessage,
     setInput,
     setupSourceUrl,
+    untaggedMentionWarningText,
   ]);
+
+  // A mention copied from a sent message or a cut chip carries its entity;
+  // mark it picked so the pasted chip is tagged.
+  const handleMentionPasteCapture = useCallback(
+    (event: ClipboardEvent<HTMLDivElement>) => {
+      const pastedEntities = readMentionEntitiesFromHtml(
+        event.clipboardData.getData("text/html")
+      );
+      if (pastedEntities.length === 0) {
+        return;
+      }
+
+      setMentionComposerState((current) => {
+        const newEntities = pastedEntities.filter(
+          (entity) =>
+            !current.pickedEntities.some((picked) => picked.id === entity.id)
+        );
+        return newEntities.length === 0
+          ? current
+          : {
+              ...current,
+              pickedEntities: [...current.pickedEntities, ...newEntities],
+            };
+      });
+    },
+    []
+  );
 
   const handleSetupUrlPasteCapture = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
@@ -3566,6 +3638,18 @@ export function AgentChat({
 
   const composerContent = (
     <>
+      {untaggedMentionWarningText === input.trim() ? (
+        <p
+          role="status"
+          className={cn(
+            AGENT_CHAT_CONTENT_COLUMN_CLASS_NAME,
+            "mb-2 text-xs text-amber-600 dark:text-amber-400"
+          )}
+        >
+          An @mention here isn&apos;t tagged, so the Agent won&apos;t know who
+          you mean. Pick it from the @ menu, or send again to send it as text.
+        </p>
+      ) : null}
       {composerDisplayAttachments.length > 0 ? (
         <div className={cn(AGENT_CHAT_CONTENT_COLUMN_CLASS_NAME, "mb-2")}>
           <AgentAttachmentList attachments={composerDisplayAttachments} />
@@ -3587,7 +3671,9 @@ export function AgentChat({
           target?.focus();
         }}
         onPasteCapture={
-          isSetupCollectingAudience ? handleSetupUrlPasteCapture : undefined
+          isSetupCollectingAudience
+            ? handleSetupUrlPasteCapture
+            : handleMentionPasteCapture
         }
       >
         <ComposerEditor

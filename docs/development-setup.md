@@ -10,7 +10,7 @@ For a complete variable reference, see [configuration.md](./configuration.md). T
 
 ## What you need
 
-- Node.js 22+ and pnpm 11.x. The repository pins pnpm in `package.json`, so `corepack enable pnpm` keeps you aligned. Node.js 25 and newer no longer bundle Corepack; if `corepack` is missing, install it first with `npm install -g corepack`.
+- Node.js 22+ and pnpm 11.x. The repository pins pnpm in `package.json`, so `corepack enable pnpm` keeps you aligned. Node.js 25 and later no longer bundle Corepack, so if that command fails, run `npm install -g corepack` first.
 - A GitHub account.
 - Accounts for the services in the area you work on. The code is free; the services are not bundled.
 
@@ -104,6 +104,8 @@ The frontend reads `.env.local`. Convex functions do not: backend values are set
 Optional helpers (Exa, Bishopi, GitHub token) are listed in [configuration.md](./configuration.md#optional-product-services). You only need credentials for the area you work on.
 
 ## The system in one picture
+
+The full architecture walkthrough with the pipeline details lives in [docs/architecture.md](./architecture.md).
 
 ```text
               your browser
