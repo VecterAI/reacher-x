@@ -233,7 +233,7 @@ CI runs on every pull request and checks types, lint, formatting on the changed 
 
 ## Show your changes
 
-Screenshots and short recordings make interface changes much easier to review, and [uploads.sh](https://uploads.sh) attaches them to your pull request without committing files to the repository.
+Screenshots and short recordings make interface changes much easier to review, and [uploads.sh](https://uploads.sh) hosts them at a stable public URL so nothing has to be committed to the repository.
 
 Set it up once:
 
@@ -242,21 +242,16 @@ npm install -g @buildinternet/uploads
 uploads login
 ```
 
-On your branch, stage what you changed as you work. When your pull request opens, the files are posted to it as one comment that stays up to date:
+Upload what you changed as you work. Every upload prints a Markdown line that renders inline in a pull request or issue:
 
 ```bash
-uploads put ./before.png --state before
-uploads put ./after.png --state after
+uploads put ./before.png --state before --destination screenshots
+uploads put ./after.png --state after --destination screenshots
 ```
 
-Posting to the pull request when it opens uses the uploads.sh GitHub App on this repository. If it is not installed yet, run `uploads attach --promote` once your pull request is open.
+Paste that line into the pull request description or a comment. If a screenshot changes, upload the new version and swap the link in your PR.
 
-To attach to a pull request or issue that already exists:
-
-```bash
-uploads attach ./after.png             # the current branch's pull request
-uploads attach ./after.png --issue 12  # an existing issue
-```
+Maintainers with push access to this repository can also run `uploads attach ./after.png`, which posts one comment on the pull request that stays up to date. Contributions from forks use the paste flow above.
 
 Uploaded files are public to anyone with the URL, so keep secrets and credentials out of your captures. If you use a coding agent, it can run these commands for you.
 
