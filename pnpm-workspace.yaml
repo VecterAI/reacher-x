@@ -5,6 +5,8 @@ allowBuilds:
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - "@convex-dev/aggregate@0.3.0"
+overrides:
+  proxy-addr: ">=2.0.8"
 patchedDependencies:
   "@convex-dev/action-retrier@0.3.1": patches/@convex-dev__action-retrier@0.3.1.patch
   "@xdevplatform/chat-xdk@0.5.0": patches/@xdevplatform__chat-xdk@0.5.0.patch
