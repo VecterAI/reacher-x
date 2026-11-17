@@ -199,3 +199,43 @@ test("the tie-breaker runs only on disagreement and decides the match", async ()
   assert.deepEqual(called.sort(), ["a", "c"]);
   assert.equal(agreed.tieBreaker, null);
 });
+
+test("a malformed judgment is asked for once more, and both calls count", async () => {
+  const input = buildBlindInput(task, candidate);
+  const answer = (criteria: string[]) => ({
+    output: {
+      caseId: input.caseId,
+      criteria: criteria.map((criterionId) => ({
+        criterionId,
+        verdict: "met",
+        evidenceIds: [],
+        explanation: "synthetic",
+      })),
+    },
+    modelObserved: "a",
+    costUsd: 0.001,
+  });
+  const calls: Record<string, number> = {};
+  const call: JudgeCaller = async (model) => {
+    calls[model] = (calls[model] ?? 0) + 1;
+    // Model "a" first repeats a criterion, then answers properly.
+    return model === "a" && calls[model] === 1
+      ? answer(["location", "location"])
+      : answer(["location"]);
+  };
+  const result = await evaluateWithPanel(
+    input,
+    { primary: ["a", "b"], tieBreaker: "c" },
+    call
+  );
+  assert.deepEqual(calls, { a: 2, b: 1 });
+  assert.equal(result.verifiedMatch, true);
+  assert.equal(result.costUsd, 0.003);
+
+  // A second malformed answer still fails the unit.
+  const broken: JudgeCaller = async () => answer(["location", "location"]);
+  await assert.rejects(
+    evaluateWithPanel(input, { primary: ["a", "b"], tieBreaker: "c" }, broken),
+    /exactly the criteria/
+  );
+});

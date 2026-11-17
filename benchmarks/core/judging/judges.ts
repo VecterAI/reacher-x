@@ -148,9 +148,26 @@ export async function evaluateWithPanel(
   models: PanelModels,
   call: JudgeCaller
 ): Promise<PanelResult> {
+  // A malformed answer (a criterion missed or repeated, unknown evidence) is
+  // asked for once more; a valid grade is never retried. Both calls' cost counts.
   const judge = async (model: string) => {
     const response = await call(model, input);
-    return { judgment: validateJudgment(input, response.output), ...response };
+    try {
+      return {
+        judgment: validateJudgment(input, response.output),
+        ...response,
+      };
+    } catch {
+      const again = await call(model, input);
+      return {
+        judgment: validateJudgment(input, again.output),
+        ...again,
+        costUsd:
+          response.costUsd === null || again.costUsd === null
+            ? null
+            : response.costUsd + again.costUsd,
+      };
+    }
   };
   const [first, second] = await Promise.all(models.primary.map(judge));
   const a = verdictsOf(first.judgment);
