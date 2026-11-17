@@ -37,6 +37,7 @@ import {
   readRememberedXChatPin,
   rememberXChatPinOnDevice,
 } from "./xChatDeviceCredentialStorage";
+import { loadXChatSdk } from "./xChatSdk";
 
 export type { BrowserDecryptedXChatMessage } from "./xChatBrowserMessageNormalization";
 
@@ -1086,8 +1087,7 @@ export async function prepareXChatEncryptedMediaInBrowser(args: {
   const plaintext = new Uint8Array(await args.file.arrayBuffer());
   const conversationKey = keyCandidate.conversationKey;
   try {
-    const { detectImageDimensions, detectMimeType } =
-      await import("@xdevplatform/chat-xdk");
+    const { detectImageDimensions, detectMimeType } = await loadXChatSdk();
     const dimensions = detectImageDimensions(plaintext);
     const detectedMimeType = detectMimeType(plaintext);
     // M4A and MP4 share an ISO-BMFF container. The SDK correctly recognizes
@@ -1870,7 +1870,7 @@ async function readXChatEncryptedMediaResponse(
 async function detectXChatMediaMimeType(
   plaintext: Uint8Array
 ): Promise<string | undefined> {
-  const { detectMimeType } = await import("@xdevplatform/chat-xdk");
+  const { detectMimeType } = await loadXChatSdk();
   return detectMimeType(plaintext);
 }
 
@@ -2586,7 +2586,7 @@ async function decryptXChatInBrowserOnce(args: {
     if (!args.pin.trim()) {
       throw new Error("Enter your XChat PIN to unlock this conversation.");
     }
-    const { createChat } = await import("@xdevplatform/chat-xdk");
+    const { createChat } = await loadXChatSdk();
     chat = await createChat({
       juiceboxConfig: bundle.juiceboxConfig,
       getAuthToken: createInFlightRealmAuthTokenProvider(
