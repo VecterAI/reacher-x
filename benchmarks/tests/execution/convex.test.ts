@@ -95,3 +95,59 @@ test("a function result of null, which the CLI prints as nothing, reads as null"
   assert.equal(runOutput("\n"), null);
   assert.deepEqual(runOutput('{"workspaceId":"w1"}\n'), { workspaceId: "w1" });
 });
+
+test("status adds up parked work page by page once the match limit is reached", async () => {
+  const baseStatus = {
+    workspaceStatus: "running",
+    pauseReason: null,
+    workflowId: "wf1",
+    workflowState: "inProgress",
+    workflowStartedAt: 1,
+    nextRunAt: null,
+    bootstrapCycleCount: null,
+    bootstrapCompletedAt: null,
+    counts: {
+      total: 9,
+      pending: 3,
+      qualified: 6,
+      disqualified: 0,
+      unscored: 0,
+      organizations: 0,
+      enrichmentWaiting: 4,
+    },
+    pendingLessonWrites: 0,
+    truncated: false,
+  };
+  const pages: Record<string, unknown> = {
+    null: { pending: 1, enrichmentWaiting: 2, cursor: "c1" },
+    c1: { pending: 2, enrichmentWaiting: 1, cursor: null },
+  };
+  const run =
+    (reached: boolean): CommandRunner =>
+    async (args) => {
+      const [, fn, json] = args;
+      const output =
+        fn === "benchmarkPeopleSearch:runStatus"
+          ? {
+              ...baseStatus,
+              matchLimit: { limit: 3, qualifiedThisCycle: 6, reached },
+            }
+          : pages[String(JSON.parse(json ?? "{}").cursor)];
+      return { exitCode: 0, stdout: JSON.stringify(output), stderr: "" };
+    };
+  const workspace = { workspaceId: "w1", createdAt: 1, label: "w" };
+  const reached = await new ConvexReacherXDriver("dev:test", run(true)).status(
+    workspace
+  );
+  assert.deepEqual(reached?.matchLimit?.parked, {
+    pending: 3,
+    enrichmentWaiting: 3,
+  });
+  const open = await new ConvexReacherXDriver("dev:test", run(false)).status(
+    workspace
+  );
+  assert.deepEqual(open?.matchLimit?.parked, {
+    pending: 0,
+    enrichmentWaiting: 0,
+  });
+});

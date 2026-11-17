@@ -9,9 +9,33 @@ import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { firstMatchIds } from "./lib/benchmarkMatchLimit";
 import { PLAN_LIMITS } from "./lib/planConstants";
+import { buildProspectSummaryRecord } from "./lib/readModelHelpers";
 import { WORKSPACE_REPORTING_AGGREGATE_VERSION } from "./lib/workspaceReportingAggregate";
 
 const modules = import.meta.glob("./**/*.ts");
+
+/** The parked work, read page by page as the runner reads it. */
+async function parkedWork(
+  t: ReturnType<typeof convexTest>,
+  workspaceId: Id<"workspaces">
+) {
+  const parked = { pending: 0, enrichmentWaiting: 0 };
+  let cursor: string | null = null;
+  do {
+    const page: {
+      pending: number;
+      enrichmentWaiting: number;
+      cursor: string | null;
+    } = await t.query(internal.benchmarkPeopleSearch.matchLimitParked, {
+      workspaceId,
+      cursor,
+    });
+    parked.pending += page.pending;
+    parked.enrichmentWaiting += page.enrichmentWaiting;
+    cursor = page.cursor;
+  } while (cursor);
+  return parked;
+}
 const now = Date.UTC(2026, 10, 17, 12);
 // The current cycle started an hour ago.
 const cycleStart = now - 3_600_000;
@@ -101,6 +125,11 @@ async function fixture(
         enrichmentWorkflowId: seed.enrichmentWorkflowId,
         updatedAt: now - 3_600_000,
       });
+      // Seeded writes skip the trigger that keeps summaries in sync.
+      await ctx.db.insert(
+        "prospectSummaries",
+        buildProspectSummaryRecord((await ctx.db.get(id))!)
+      );
       ids.push(id);
       if (options.aggregate && !seed.pending && seed.qualifiedAt)
         await aggregate.insert(ctx, {
@@ -204,10 +233,7 @@ describe.each([
         docs.flatMap((doc) => (doc ? [doc] : []))
       ),
     ]).toEqual([first]);
-    const status = await t.query(internal.benchmarkPeopleSearch.runStatus, {
-      workspaceId,
-    });
-    expect(status?.matchLimit?.parked).toEqual({
+    expect(await parkedWork(t, workspaceId)).toEqual({
       pending: 0,
       enrichmentWaiting: 1,
     });
@@ -231,7 +257,10 @@ describe.each([
       limit: 2,
       qualifiedThisCycle: 0,
       reached: false,
-      parked: { pending: 0, enrichmentWaiting: 0 },
+    });
+    expect(await parkedWork(t, workspaceId)).toEqual({
+      pending: 0,
+      enrichmentWaiting: 0,
     });
   });
 });
@@ -376,7 +405,10 @@ describe("benchmark match limit", () => {
       limit: 3,
       qualifiedThisCycle: 5,
       reached: true,
-      parked: { pending: 1, enrichmentWaiting: 2 },
+    });
+    expect(await parkedWork(t, workspaceId)).toEqual({
+      pending: 1,
+      enrichmentWaiting: 2,
     });
   });
 });

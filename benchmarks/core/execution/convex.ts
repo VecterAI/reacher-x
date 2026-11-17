@@ -32,6 +32,7 @@ const PEOPLE_SEARCH_HOOKS = {
   keywordPostSearchLimitStatus:
     "benchmarkPeopleSearch:keywordPostSearchLimitStatus",
   matchLimitStatus: "benchmarkPeopleSearch:matchLimitStatus",
+  matchLimitParked: "benchmarkPeopleSearch:matchLimitParked",
   resumeHeldWorkspace: "benchmarkPeopleSearch:resumeHeldWorkspace",
 } as const satisfies Record<string, `benchmarkPeopleSearch:${string}`>;
 
@@ -168,45 +169,67 @@ export type BenchmarkWorkspace = Readonly<
   z.infer<typeof workspaceRefSchema> & { label: string }
 >;
 
+const parkedSchema = z.object({
+  pending: z.number(),
+  enrichmentWaiting: z.number(),
+});
+
+const statusFields = {
+  workspaceStatus: z.string().nullable(),
+  pauseReason: z.string().nullable(),
+  workflowId: z.string().nullable(),
+  workflowState: z.string().nullable(),
+  workflowStartedAt: z.number().nullable(),
+  nextRunAt: z.number().nullable(),
+  bootstrapCycleCount: z.number().nullable(),
+  bootstrapCompletedAt: z.number().nullable(),
+  counts: z.object({
+    total: z.number(),
+    pending: z.number(),
+    qualified: z.number(),
+    disqualified: z.number(),
+    unscored: z.number(),
+    organizations: z.number(),
+    // Qualified prospects whose enrichment has not finished.
+    enrichmentWaiting: z.number().default(0),
+  }),
+  pendingLessonWrites: z.number(),
+  truncated: z.boolean(),
+};
+const matchLimitFields = {
+  limit: z.number(),
+  qualifiedThisCycle: z.number(),
+  reached: z.boolean(),
+};
+
+// What `runStatus` returns; the parked work is read page by page after it.
+const deploymentStatusSchema = z
+  .object({
+    ...statusFields,
+    matchLimit: z.object(matchLimitFields).nullable().default(null),
+  })
+  .nullable();
+
+const parkedPageSchema = parkedSchema.extend({ cursor: z.string().nullable() });
+// Pages read at most per status read (each byte-capped; far more than any
+// benchmark workspace needs). Past it the read fails and is retried.
+const MAX_PARKED_PAGES = 50;
+
 export const runStatusSchema = z
   .object({
-    workspaceStatus: z.string().nullable(),
-    pauseReason: z.string().nullable(),
-    workflowId: z.string().nullable(),
-    workflowState: z.string().nullable(),
-    workflowStartedAt: z.number().nullable(),
-    nextRunAt: z.number().nullable(),
-    bootstrapCycleCount: z.number().nullable(),
-    bootstrapCompletedAt: z.number().nullable(),
-    counts: z.object({
-      total: z.number(),
-      pending: z.number(),
-      qualified: z.number(),
-      disqualified: z.number(),
-      unscored: z.number(),
-      organizations: z.number(),
-      // Qualified prospects whose enrichment has not finished.
-      enrichmentWaiting: z.number().default(0),
-    }),
+    ...statusFields,
     // The development-only match limit per cycle; null when none applies.
     // Absent from deployments without it.
     matchLimit: z
       .object({
-        limit: z.number(),
-        qualifiedThisCycle: z.number(),
-        reached: z.boolean(),
+        ...matchLimitFields,
         // Of counts.pending and counts.enrichmentWaiting, the prospects the
         // reached limit holds back for the rest of the cycle: no workflow is
         // working on them and none will start.
-        parked: z.object({
-          pending: z.number(),
-          enrichmentWaiting: z.number(),
-        }),
+        parked: parkedSchema,
       })
       .nullable()
       .default(null),
-    pendingLessonWrites: z.number(),
-    truncated: z.boolean(),
   })
   .nullable();
 export type RunStatus = z.infer<typeof runStatusSchema>;
@@ -526,12 +549,31 @@ export class ConvexReacherXDriver {
     );
   }
 
-  status(workspace: BenchmarkWorkspace) {
-    return this.call(
+  async status(workspace: BenchmarkWorkspace): Promise<RunStatus> {
+    const { workspaceId } = workspace;
+    const status = await this.call(
       PEOPLE_SEARCH_HOOKS.runStatus,
-      { workspaceId: workspace.workspaceId },
-      runStatusSchema
+      { workspaceId },
+      deploymentStatusSchema
     );
+    if (!status?.matchLimit) return status && { ...status, matchLimit: null };
+    const parked = { pending: 0, enrichmentWaiting: 0 };
+    if (status.matchLimit.reached) {
+      let cursor: string | null = null;
+      for (let page = 0; ; page += 1) {
+        if (page >= MAX_PARKED_PAGES)
+          throw new ConvexCommandError("Parked work has too many pages.");
+        const result: z.infer<typeof parkedPageSchema> = await this.call(
+          PEOPLE_SEARCH_HOOKS.matchLimitParked,
+          { workspaceId, cursor },
+          parkedPageSchema
+        );
+        parked.pending += result.pending;
+        parked.enrichmentWaiting += result.enrichmentWaiting;
+        if (!(cursor = result.cursor)) break;
+      }
+    }
+    return { ...status, matchLimit: { ...status.matchLimit, parked } };
   }
 
   async exportCandidates(workspace: BenchmarkWorkspace) {

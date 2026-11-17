@@ -1,3 +1,4 @@
+import { buildProspectSummaryRecord } from "./lib/readModelHelpers";
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test";
@@ -186,8 +187,11 @@ describe("benchmark people-search hooks", () => {
     const ids = await seed(t);
     const prospects = await t.run(async (ctx) => {
       const workspace = await ctx.db.get(ids.benchmark);
-      const prospect = (externalId: string, fields: Record<string, unknown>) =>
-        ctx.db.insert("prospects", {
+      const prospect = async (
+        externalId: string,
+        fields: Record<string, unknown>
+      ) => {
+        const id = await ctx.db.insert("prospects", {
           userId: workspace!.userId,
           workspaceId: ids.benchmark,
           platform: "linkedin",
@@ -198,6 +202,13 @@ describe("benchmark people-search hooks", () => {
           updatedAt: 1_000,
           ...fields,
         });
+        // Seeded writes skip the trigger that keeps summaries in sync.
+        await ctx.db.insert(
+          "prospectSummaries",
+          buildProspectSummaryRecord((await ctx.db.get(id))!)
+        );
+        return id;
+      };
       return {
         pending: await prospect("pending", {
           qualificationStatus: "pending",

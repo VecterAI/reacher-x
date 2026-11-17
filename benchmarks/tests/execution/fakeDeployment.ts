@@ -30,6 +30,8 @@ export function fakeDeployment(
   const calls: { args: readonly string[]; stdin?: string }[] = [];
   // Settings the fake refuses to change, to simulate an unconfirmed write.
   const ignoredSets = new Set<string>();
+  // runStatus scripts carry the parked work; the driver reads it by page.
+  let parked: unknown = { pending: 0, enrichmentWaiting: 0 };
   const defaults: Record<string, Handler> = {
     "tenantScheduler:reconcilePoolConfigurationInternal": () => ({
       enforced: false,
@@ -55,6 +57,10 @@ export function fakeDeployment(
         ? "benchmark"
         : "default",
       error: null,
+    }),
+    "benchmarkPeopleSearch:matchLimitParked": () => ({
+      ...(parked as object),
+      cursor: null,
     }),
     "benchmarkPeopleSearch:matchLimitStatus": () => ({
       limit: env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE")
@@ -131,6 +137,8 @@ export function fakeDeployment(
     if (!handler) return { exitCode: 1, stdout: "", stderr: "unknown" };
     try {
       const output = await handler(JSON.parse(name ?? "{}"));
+      if (action === "benchmarkPeopleSearch:runStatus")
+        parked = (output as RunStatus)?.matchLimit?.parked ?? parked;
       // The CLI prints nothing when the function returns null.
       const stdout = output === null ? "" : JSON.stringify(output);
       return { exitCode: 0, stdout, stderr: "" };

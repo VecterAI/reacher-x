@@ -44,6 +44,10 @@ const LABEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 const MAX_STATUS_ROWS = 2000;
 const LESSON_STATUS_BYTES = 2_000_000;
 const PROCESSING_LESSON_ROWS = 50;
+// One page of `matchLimitParked`: full prospects are large, so each page is
+// byte-capped well under Convex's 16 MB read limit.
+const PARKED_PAGE_ROWS = 500;
+const PARKED_PAGE_BYTES = 8_000_000;
 const MAX_COST_EVENTS_READ = 5000;
 const EVIDENCE_POSTS_KEPT = 3;
 const EVIDENCE_TEXT_CHARS = 1500;
@@ -177,20 +181,20 @@ export const runStatus = internalQuery({
         workflowState = "unknown";
       }
     }
-    const prospects = await ctx.db
-      .query("prospects")
+    // Prospect summaries carry every field counted here at a small fraction
+    // of a full prospect's size (a full read of a large workspace passes
+    // Convex's 16 MB read limit).
+    const summaries = await ctx.db
+      .query("prospectSummaries")
       .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
       .take(MAX_STATUS_ROWS + 1);
-    const rows = prospects.slice(0, MAX_STATUS_ROWS);
-    // Development-only match limit per cycle; null when none applies.
+    const rows = summaries.slice(0, MAX_STATUS_ROWS).map((summary) => ({
+      ...summary,
+      _id: summary.prospectId,
+    }));
+    // Development-only match limit per cycle; null when none applies. The
+    // work it parks is counted page by page by `matchLimitParked`.
     const matchLimit = await benchmarkMatchLimitState(ctx, workspace);
-    // Once it is reached, work no workflow holds is parked: pending
-    // qualification, and enrichment of every prospect but the cycle's first
-    // N matches, the same split the gate makes.
-    const firstMatches = matchLimit?.reached
-      ? firstMatchIds(matchLimit, rows)
-      : null;
-    const parked = { pending: 0, enrichmentWaiting: 0 };
     const counts = {
       total: 0,
       pending: 0,
@@ -209,18 +213,10 @@ export const runStatus = internalQuery({
         !ENRICHMENT_DONE.has(prospect.enrichmentStatus ?? "")
       ) {
         counts.enrichmentWaiting += 1;
-        if (
-          firstMatches &&
-          !prospect.enrichmentWorkflowId &&
-          !firstMatches.has(prospect._id)
-        )
-          parked.enrichmentWaiting += 1;
       }
       if (prospect.prospectType === "organization") counts.organizations += 1;
       if (prospect.qualificationStatus === "pending") {
         counts.pending += 1;
-        if (firstMatches && !prospect.qualificationWorkflowId)
-          parked.pending += 1;
       } else if (prospect.qualificationStatus === "qualified")
         counts.qualified += 1;
       else if (prospect.qualificationStatus === "disqualified")
@@ -263,17 +259,14 @@ export const runStatus = internalQuery({
       bootstrapCycleCount: workspace.prospectingBootstrapCycleCount ?? null,
       bootstrapCompletedAt: workspace.prospectingBootstrapCompletedAt ?? null,
       counts,
-      // Of counts.pending and counts.enrichmentWaiting, `parked` is the work
-      // the match limit holds back for the rest of the cycle.
       matchLimit: matchLimit && {
         limit: matchLimit.limit,
         qualifiedThisCycle: matchLimit.qualifiedThisCycle,
         reached: matchLimit.reached,
-        parked,
       },
       pendingLessonWrites: pendingLessons.length + processingLessons.length,
       truncated:
-        prospects.length > MAX_STATUS_ROWS ||
+        summaries.length > MAX_STATUS_ROWS ||
         pendingLessons.length > MAX_STATUS_ROWS ||
         processingLessons.length >= PROCESSING_LESSON_ROWS,
     };
@@ -966,6 +959,63 @@ export const keywordPostSearchLimitStatus = internalQuery({
         refused: counting ? (state.benchmarkCycleRefused ?? 0) : 0,
       },
     };
+  },
+});
+
+/**
+ * One page of the work a reached match limit parks: pending qualification,
+ * and enrichment of every prospect but the cycle's first N matches, the same
+ * split the gate makes, unless a workflow still holds it. Full prospects are
+ * needed for the workflow IDs, so the runner pages through them; a limit not
+ * reached parks nothing.
+ */
+export const matchLimitParked = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    cursor: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, { workspaceId, cursor }) => {
+    const parked = {
+      pending: 0,
+      enrichmentWaiting: 0,
+      cursor: null as string | null,
+    };
+    const workspace = await ctx.db.get(workspaceId);
+    const state = workspace && (await benchmarkMatchLimitState(ctx, workspace));
+    if (!state?.reached) return parked;
+    // The cycle's first N matches, from the small summaries.
+    const qualified = await ctx.db
+      .query("prospectSummaries")
+      .withIndex("by_workspace_qualification", (q) =>
+        q.eq("workspaceId", workspaceId).eq("qualificationStatus", "qualified")
+      )
+      .take(MAX_STATUS_ROWS);
+    const firstMatches = firstMatchIds(
+      state,
+      qualified.map((summary) => ({ ...summary, _id: summary.prospectId }))
+    );
+    const page = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+      .paginate({
+        numItems: PARKED_PAGE_ROWS,
+        cursor,
+        maximumBytesRead: PARKED_PAGE_BYTES,
+      });
+    for (const prospect of page.page) {
+      if (prospect.qualificationStatus === "pending") {
+        if (!prospect.qualificationWorkflowId) parked.pending += 1;
+      } else if (
+        prospect.qualificationStatus === "qualified" &&
+        prospect.status !== "archived" &&
+        !ENRICHMENT_DONE.has(prospect.enrichmentStatus ?? "") &&
+        !prospect.enrichmentWorkflowId &&
+        !firstMatches.has(prospect._id)
+      )
+        parked.enrichmentWaiting += 1;
+    }
+    parked.cursor = page.isDone ? null : page.continueCursor;
+    return parked;
   },
 });
 

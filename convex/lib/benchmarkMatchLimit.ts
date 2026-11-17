@@ -36,9 +36,9 @@ import {
 } from "./planQualifiedUsageCore";
 
 export const MATCH_LIMIT_PER_CYCLE_MAX = 100_000;
-// Rows read at most when ordering same-millisecond matches by ID (well under
-// Convex's per-function scan limit; benchmark workspaces stay far smaller).
-const TIE_SCAN_MAX_ROWS = 5_000;
+// Summaries read at most when ordering same-millisecond matches by ID (a few
+// MB at most; benchmark workspaces stay far smaller).
+const TIE_SCAN_MAX_ROWS = 2_000;
 
 export type ResolvedMatchLimitPerCycle = Readonly<{
   limit: number | null;
@@ -162,16 +162,19 @@ async function matchesBefore(
   );
   if (through <= cycle.limit) return before;
   // No index covers qualifiedAt, so the scan is bounded explicitly (the
-  // filter runs here, so every row read is counted). Past the bound the work
-  // is treated as parked: the cheaper side, and the gate never fails.
+  // filter runs here, so every row read is counted). It reads prospect
+  // summaries, which carry the fields compared at a fraction of a full
+  // prospect's size. Past the bound the work is treated as parked: the
+  // cheaper side, and the gate never fails.
   let tiedBefore = 0;
   let scanned = 0;
-  for await (const other of ctx.db
-    .query("prospects")
+  for await (const summary of ctx.db
+    .query("prospectSummaries")
     .withIndex("by_workspace_qualification", (q) =>
       q.eq("workspaceId", workspaceId).eq("qualificationStatus", "qualified")
     )) {
     if (++scanned > TIE_SCAN_MAX_ROWS) return cycle.limit;
+    const other = { ...summary, _id: summary.prospectId };
     if (
       other.qualifiedAt === match.qualifiedAt &&
       isCycleMatch(cycle, other) &&
