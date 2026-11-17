@@ -559,15 +559,16 @@ async function resolveAttachmentReference(
   };
 }
 
-async function buildResolvedTaggedEntityLine(
+export async function buildResolvedTaggedEntityLine(
   ctx: ActionCtx,
   scope: AgentThreadScopeContext,
   entity: AgentMessageContextMetadata["taggedEntities"][number]
 ): Promise<string | null> {
+  // Records are read only from the thread's own workspace, so none without one.
   switch (entity.kind) {
     case "prospect": {
       const prospectId = entity.prospectId ?? entity.entityId;
-      if (!prospectId) {
+      if (!prospectId || !scope.workspaceId) {
         return null;
       }
 
@@ -580,7 +581,7 @@ async function buildResolvedTaggedEntityLine(
       if (!prospect) {
         return null;
       }
-      if (scope.workspaceId && prospect.workspaceId !== scope.workspaceId) {
+      if (prospect.workspaceId !== scope.workspaceId) {
         return null;
       }
       if (scope.prospectId && prospect._id !== scope.prospectId) {
@@ -605,7 +606,7 @@ async function buildResolvedTaggedEntityLine(
     }
     case "plan": {
       const planId = entity.planId ?? entity.entityId;
-      if (!planId) {
+      if (!planId || !scope.workspaceId) {
         return null;
       }
 
@@ -616,7 +617,7 @@ async function buildResolvedTaggedEntityLine(
       if (!plan) {
         return null;
       }
-      if (scope.workspaceId && plan.workspaceId !== scope.workspaceId) {
+      if (plan.workspaceId !== scope.workspaceId) {
         return null;
       }
       if (scope.prospectId && plan.prospectId !== scope.prospectId) {
@@ -640,7 +641,7 @@ async function buildResolvedTaggedEntityLine(
     }
     case "task": {
       const taskId = entity.taskId ?? entity.entityId;
-      if (!taskId) {
+      if (!taskId || !scope.workspaceId) {
         return null;
       }
 
@@ -657,7 +658,7 @@ async function buildResolvedTaggedEntityLine(
       if (!plan) {
         return null;
       }
-      if (scope.workspaceId && plan.workspaceId !== scope.workspaceId) {
+      if (plan.workspaceId !== scope.workspaceId) {
         return null;
       }
       if (scope.prospectId && plan.prospectId !== scope.prospectId) {

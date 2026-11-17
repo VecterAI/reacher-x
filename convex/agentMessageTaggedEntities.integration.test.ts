@@ -6,6 +6,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildAgentComposerSubmission } from "../features/agent/lib/buildAgentComposerMessage";
 import { createThread } from "@convex-dev/agent";
 import { api, components, internal } from "./_generated/api";
+import type { ActionCtx } from "./_generated/server";
+import { buildResolvedTaggedEntityLine } from "./chat";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -196,5 +198,100 @@ describe("Agent message tagged entities", () => {
     );
     expect(selected.prospectId).toBe(prospectId);
     expect(selected.planId).toBeNull();
+  });
+
+  test("only reads tagged records from the thread's own workspace", async () => {
+    const t = convexTest(schema, modules);
+    agentTest.register(t);
+
+    const lines = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: "scoped-tag-user",
+        email: "scoped-tag@example.com",
+      });
+      const workspaceId = await ctx.db.insert("workspaces", {
+        userId,
+        name: "Scoped tag workspace",
+        description: "Tag scope regression",
+        isDefault: true,
+        updatedAt: 1,
+      });
+      const prospectId = await ctx.db.insert("prospects", {
+        workspaceId,
+        userId,
+        platform: "twitter",
+        origin: "workspace_discovery",
+        externalId: "scoped-tag-prospect",
+        data: {},
+        status: "new",
+        displayName: "Jane Roe",
+        updatedAt: 1,
+      });
+      const planId = await ctx.db.insert("outreachPlans", {
+        prospectId,
+        workspaceId,
+        userId,
+        status: "draft",
+        strategy: { rationale: "r", valueProposition: "v", tone: "peer" },
+        version: 1,
+        updatedAt: 1,
+      });
+      const taskId = await ctx.db.insert("outreachTasks", {
+        planId,
+        order: 1,
+        type: "dm",
+        description: "Say hi",
+        status: "pending",
+        timing: { type: "immediate" },
+      });
+
+      const tag = (kind: "prospect" | "plan" | "task", entityId: string) => ({
+        id: `${kind}:${entityId}`,
+        entityId,
+        kind,
+        label: kind,
+        mentionText: kind,
+        secondaryLabel: "",
+        avatarUrl: null,
+        verified: false,
+      });
+      const tags = [
+        tag("prospect", String(prospectId)),
+        tag("plan", String(planId)),
+        tag("task", String(taskId)),
+      ];
+      const resolve = (
+        scope: Parameters<typeof buildResolvedTaggedEntityLine>[1]
+      ) =>
+        Promise.all(
+          tags.map((entity) =>
+            buildResolvedTaggedEntityLine(
+              ctx as unknown as ActionCtx,
+              scope,
+              entity
+            )
+          )
+        );
+
+      return {
+        // A thread with no workspace, e.g. one from createChatThread.
+        noWorkspace: await resolve({
+          kind: "unknown",
+          workspaceId: null,
+          prospectId: null,
+          userId: null,
+        }),
+        ownWorkspace: await resolve({
+          kind: "workspace",
+          workspaceId,
+          prospectId: null,
+          userId,
+        }),
+      };
+    });
+
+    expect(lines.noWorkspace).toEqual([null, null, null]);
+    expect(lines.ownWorkspace[1]).toContain("Plan for Jane Roe");
+    expect(lines.ownWorkspace[2]).toContain("Say hi");
   });
 });
