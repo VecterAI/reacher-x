@@ -125,6 +125,15 @@ export const segmentApprovalSchema = z.strictObject({
     .max(100_000)
     .nullable()
     .default(DEFAULT_KEYWORD_POST_SEARCH_CALLS),
+  // The development-only match limit per workspace cycle, applied through the
+  // plan-limit gate; absent or null for none. Fixed for the step.
+  matchLimitPerCycle: z
+    .number()
+    .int()
+    .min(1)
+    .max(100_000)
+    .nullable()
+    .default(null),
 });
 export type SegmentApproval = z.infer<typeof segmentApprovalSchema>;
 
@@ -548,6 +557,7 @@ async function runSegment(
             keywordPostSearchLimit: approval
               ? approval.keywordPostSearchCallsPerCycle
               : DEFAULT_KEYWORD_POST_SEARCH_CALLS,
+            matchLimitPerCycle: approval?.matchLimitPerCycle ?? null,
             ...deps.session,
           },
           (session) => {

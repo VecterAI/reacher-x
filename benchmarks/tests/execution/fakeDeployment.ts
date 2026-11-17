@@ -56,6 +56,15 @@ export function fakeDeployment(
         : "default",
       error: null,
     }),
+    "benchmarkPeopleSearch:matchLimitStatus": () => ({
+      limit: env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE")
+        ? Number(env.get("BENCHMARK_MATCH_LIMIT_PER_CYCLE"))
+        : null,
+      source: env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE")
+        ? "benchmark"
+        : "default",
+      error: null,
+    }),
     "benchmarkPeopleSearch:stopRun": () => ({
       stopped: true,
       cancelFailed: false,
@@ -168,6 +177,7 @@ export function status(
       enrichmentWaiting: 0,
       ...counts,
     },
+    matchLimit: null,
     pendingLessonWrites: 0,
     truncated: false,
     ...rest,

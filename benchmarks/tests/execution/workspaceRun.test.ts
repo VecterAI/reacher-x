@@ -721,6 +721,169 @@ test("a held workspace continues its own cycle: no discovery, the pause left out
   assert.equal(resumed.resumedAt, RESUME_AT);
 });
 
+// A cycle that reached a match limit of 20: what the deployment parked.
+const limited = (
+  parked: { pending: number; enrichmentWaiting: number },
+  qualifiedThisCycle = 325
+) => ({ limit: 20, qualifiedThisCycle, reached: true, parked });
+
+test("a cycle that reached its match limit settles once only parked work is left", async () => {
+  const run = (
+    matchLimit: (pending: number) => NonNullable<RunStatus>["matchLimit"]
+  ) =>
+    fakeDeployment(
+      {},
+      {
+        "benchmarkPeopleSearch:runStatus": scripted([
+          status({
+            workflowId: "wf1",
+            workflowState: "inProgress",
+            workflowStartedAt: T,
+          }),
+          // Two qualifications still running when the limit was reached.
+          status({
+            workflowId: "wf1",
+            workflowState: "completed",
+            counts: { total: 50, pending: 12, enrichmentWaiting: 3 },
+            matchLimit: matchLimit(10),
+          }),
+          status({
+            workflowId: "wf1",
+            workflowState: "completed",
+            counts: { total: 50, pending: 10, enrichmentWaiting: 3 },
+            matchLimit: matchLimit(10),
+          }),
+        ]),
+      }
+    );
+  const parked = run((pending) =>
+    limited({ pending, enrichmentWaiting: 3 }, 22)
+  );
+  const record = await runWorkspace(
+    parked.driver,
+    { ...plan, cycles: 1 },
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(record.ending, "planned-cycles");
+  // Settled at the first quiet poll, after the running work finished.
+  assert.equal(record.cycles[0].settledAt, T + 2 * POLL);
+
+  // The same pending work without a limit never settles.
+  const unlimited = run(() => null);
+  const waited = await runWorkspace(
+    unlimited.driver,
+    { ...plan, cycles: 1 },
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(waited.ending, "timed-out");
+});
+
+test("under a match limit a cycle also waits for its matches' enrichment; without one it does not", async () => {
+  const run = (matchLimit: NonNullable<RunStatus>["matchLimit"]) =>
+    fakeDeployment(
+      {},
+      {
+        "benchmarkPeopleSearch:runStatus": scripted([
+          status({
+            workflowId: "wf1",
+            workflowState: "inProgress",
+            workflowStartedAt: T,
+          }),
+          // One of the cycle's first 20 matches is still being enriched.
+          status({
+            workflowId: "wf1",
+            workflowState: "completed",
+            counts: { total: 30, enrichmentWaiting: 4 },
+            matchLimit,
+          }),
+          status({
+            workflowId: "wf1",
+            workflowState: "completed",
+            counts: { total: 30, enrichmentWaiting: 3 },
+            matchLimit,
+          }),
+        ]),
+      }
+    );
+  const capped = await runWorkspace(
+    run(limited({ pending: 0, enrichmentWaiting: 3 }, 21)).driver,
+    { ...plan, cycles: 1 },
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(capped.ending, "planned-cycles");
+  assert.equal(capped.cycles[0].settledAt, T + 2 * POLL);
+
+  // Uncapped, enrichment is not waited for, as before.
+  const uncapped = await runWorkspace(
+    run(null).driver,
+    { ...plan, cycles: 1 },
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(uncapped.ending, "planned-cycles");
+  assert.equal(uncapped.cycles[0].settledAt, T + POLL);
+});
+
+test("a held workspace past its match limit leaves the parked work and settles once lessons finish", async () => {
+  // The smoke workspace: 325 matches before the limit existed, 90 of them
+  // unenriched, and undecided prospects left over.
+  const deployment = fakeDeployment(
+    {},
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        status({
+          workspaceStatus: "paused",
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { total: 443, pending: 118, enrichmentWaiting: 90 },
+        }),
+        // Two of the cycle's first 20 are still being enriched.
+        status({
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { total: 443, pending: 118, enrichmentWaiting: 90 },
+          matchLimit: limited({ pending: 118, enrichmentWaiting: 88 }),
+          pendingLessonWrites: 40,
+        }),
+        status({
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { total: 443, pending: 118, enrichmentWaiting: 88 },
+          matchLimit: limited({ pending: 118, enrichmentWaiting: 88 }),
+          pendingLessonWrites: 12,
+        }),
+        status({
+          workflowId: "wf1",
+          workflowState: "canceled",
+          counts: { total: 443, pending: 118, enrichmentWaiting: 88 },
+          matchLimit: limited({ pending: 118, enrichmentWaiting: 88 }),
+        }),
+      ]),
+    }
+  );
+  const record = await resumeWorkspace(
+    deployment.driver,
+    heldRecord,
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(record.ending, "planned-cycles");
+  // The first of the quiet polls, once lessons finished.
+  assert.equal(record.cycles[0].settledAt, T + 2 * POLL);
+  // Settled normally, so a plain stop.
+  assert.deepEqual(argsOf(deployment, "benchmarkPeopleSearch:stopRun"), [
+    { workspaceId: "w1" },
+  ]);
+});
+
 test("a continuation that sees a new discovery cycle, or reaches the budget, stops at once", async () => {
   const paused = status({
     workspaceStatus: "paused",

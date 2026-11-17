@@ -602,6 +602,57 @@ test("the keyword post-search cap is step-only: 50 calls per workspace cycle unl
     );
 });
 
+test("the match limit is step-only: none unless the approval sets a positive whole number", () => {
+  const approval = {
+    segment: "smoke",
+    spend: {
+      approvalReference: "Synthetic approval",
+      approvedAt: "2026-11-17T09:00:00Z",
+      accountLimits: [{ accountId: "openrouter:a", maxAdditionalUsd: 1 }],
+    },
+  };
+  assert.equal(segmentApprovalSchema.parse(approval).matchLimitPerCycle, null);
+  for (const value of [20, null])
+    assert.equal(
+      segmentApprovalSchema.parse({ ...approval, matchLimitPerCycle: value })
+        .matchLimitPerCycle,
+      value
+    );
+  for (const value of [0, -1, 2.5, "20"])
+    assert.equal(
+      segmentApprovalSchema.safeParse({
+        ...approval,
+        matchLimitPerCycle: value,
+      }).success,
+      false
+    );
+});
+
+test("an approved match limit is set for the step, reported, and cleared after", async (t) => {
+  const { deps, timeline, env, atRest } = await setup(t);
+  const { outcome, report } = await runStep("smoke", {
+    ...deps,
+    readApproval: async (segment) => {
+      const approval = await deps.readApproval(segment);
+      return approval && { ...approval, matchLimitPerCycle: 20 };
+    },
+  });
+  assert.equal(outcome.status, "complete");
+  // Recorded on the workspace run it governed, never as a step setting.
+  assert.equal(outcome.workspaces[0].record.matchLimitPerCycle, 20);
+  assert.ok(outcome.settings && !("matchLimitPerCycle" in outcome.settings));
+  assert.match(
+    report,
+    /Match limit: 20 per cycle, applied through the plan-limit gate \(agreed by the project lead, 17 Nov 2026/
+  );
+  // Set before jobs were unpaused, and removed by the reset.
+  const set = timeline.indexOf("env set BENCHMARK_MATCH_LIMIT_PER_CYCLE");
+  assert.ok(set >= 0);
+  assert.ok(set < timeline.indexOf("env set PAUSE_AUTONOMOUS_JOBS"));
+  assert.equal(env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE"), false);
+  assert.deepEqual(Object.fromEntries(env), atRest);
+});
+
 const withOpenRouterLimit = (
   approval: Awaited<ReturnType<StepDependencies["readApproval"]>>,
   usd: number
@@ -701,6 +752,41 @@ test("--resume-held continues the budget-stopped workspace's cycle without disco
     }),
     /--resume-held found no held workspace/
   );
+});
+
+test("a workspace stopped without a match limit and continued with one is reported as it ran", async (t) => {
+  const { deps } = await setup(t);
+  const stopped = await runStep("smoke", {
+    ...deps,
+    readApproval: async (segment) =>
+      withOpenRouterLimit(await deps.readApproval(segment), 0.1),
+  });
+  assert.equal(stopped.outcome.status, "budget-stop");
+
+  // The continuation's approval adds a limit; the earlier run keeps none.
+  const resumed = await runStep("smoke", {
+    ...deps,
+    signal: new AbortController().signal,
+    resumeHeld: true,
+    readApproval: async (segment) => {
+      const approval = await deps.readApproval(segment);
+      return approval && { ...approval, matchLimitPerCycle: 20 };
+    },
+  });
+  assert.equal(resumed.outcome.status, "complete");
+  const [workspace] = resumed.outcome.workspaces;
+  assert.equal(workspace.record.matchLimitPerCycle, null);
+  assert.equal(workspace.record.resumed?.at(-1)?.matchLimitPerCycle, 20);
+  assert.match(
+    resumed.report,
+    /Match limit: not the same for every workspace run/
+  );
+  assert.match(
+    resumed.report,
+    /- \S+: no match limit during its cycle; match limit 20 per cycle from the \d{1,2} [A-Z][a-z]{2} resume\./
+  );
+  // No step-level line claims the limit for the cycle that ran without it.
+  assert.doesNotMatch(resumed.report, /^Match limit: 20 per cycle/m);
 });
 
 test("a raised approval file applies between polls; an invalid one keeps the approval in force", async (t) => {

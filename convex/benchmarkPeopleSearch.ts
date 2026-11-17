@@ -34,6 +34,11 @@ import {
   currentBenchmarkCycle,
   resolveKeywordPostSearchLimit,
 } from "./lib/benchmarkLinkdApiCap";
+import {
+  benchmarkMatchLimitState,
+  firstMatchIds,
+  resolveMatchLimitPerCycle,
+} from "./lib/benchmarkMatchLimit";
 
 const LABEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 const MAX_STATUS_ROWS = 2000;
@@ -176,6 +181,16 @@ export const runStatus = internalQuery({
       .query("prospects")
       .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
       .take(MAX_STATUS_ROWS + 1);
+    const rows = prospects.slice(0, MAX_STATUS_ROWS);
+    // Development-only match limit per cycle; null when none applies.
+    const matchLimit = await benchmarkMatchLimitState(ctx, workspace);
+    // Once it is reached, work no workflow holds is parked: pending
+    // qualification, and enrichment of every prospect but the cycle's first
+    // N matches, the same split the gate makes.
+    const firstMatches = matchLimit?.reached
+      ? firstMatchIds(matchLimit, rows)
+      : null;
+    const parked = { pending: 0, enrichmentWaiting: 0 };
     const counts = {
       total: 0,
       pending: 0,
@@ -186,17 +201,27 @@ export const runStatus = internalQuery({
       // Qualified prospects whose enrichment has not finished yet.
       enrichmentWaiting: 0,
     };
-    for (const prospect of prospects.slice(0, MAX_STATUS_ROWS)) {
+    for (const prospect of rows) {
       counts.total += 1;
       if (
         prospect.qualificationStatus === "qualified" &&
         prospect.status !== "archived" &&
         !ENRICHMENT_DONE.has(prospect.enrichmentStatus ?? "")
-      )
+      ) {
         counts.enrichmentWaiting += 1;
+        if (
+          firstMatches &&
+          !prospect.enrichmentWorkflowId &&
+          !firstMatches.has(prospect._id)
+        )
+          parked.enrichmentWaiting += 1;
+      }
       if (prospect.prospectType === "organization") counts.organizations += 1;
-      if (prospect.qualificationStatus === "pending") counts.pending += 1;
-      else if (prospect.qualificationStatus === "qualified")
+      if (prospect.qualificationStatus === "pending") {
+        counts.pending += 1;
+        if (firstMatches && !prospect.qualificationWorkflowId)
+          parked.pending += 1;
+      } else if (prospect.qualificationStatus === "qualified")
         counts.qualified += 1;
       else if (prospect.qualificationStatus === "disqualified")
         counts.disqualified += 1;
@@ -238,6 +263,14 @@ export const runStatus = internalQuery({
       bootstrapCycleCount: workspace.prospectingBootstrapCycleCount ?? null,
       bootstrapCompletedAt: workspace.prospectingBootstrapCompletedAt ?? null,
       counts,
+      // Of counts.pending and counts.enrichmentWaiting, `parked` is the work
+      // the match limit holds back for the rest of the cycle.
+      matchLimit: matchLimit && {
+        limit: matchLimit.limit,
+        qualifiedThisCycle: matchLimit.qualifiedThisCycle,
+        reached: matchLimit.reached,
+        parked,
+      },
       pendingLessonWrites: pendingLessons.length + processingLessons.length,
       truncated:
         prospects.length > MAX_STATUS_ROWS ||
@@ -934,6 +967,12 @@ export const keywordPostSearchLimitStatus = internalQuery({
       },
     };
   },
+});
+
+/** The match limit per cycle in effect, from the same resolver the plan-limit gate reads. */
+export const matchLimitStatus = internalQuery({
+  args: {},
+  handler: async () => resolveMatchLimitPerCycle(),
 });
 
 /** Clears a LinkedIn circuit breaker left open by an earlier run, before a new run. */

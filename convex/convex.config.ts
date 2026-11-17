@@ -45,6 +45,10 @@ const app = defineApp({
     // while set, every LinkdAPI reservation is refused (see
     // lib/benchmarkLinkdApiCap.ts).
     BENCHMARK_HALTED_WORKSPACE_ID: v.optional(v.string()),
+    // Development benchmark only: most matches a benchmark workspace's cycle
+    // qualifies before further qualification is parked at the plan-limit gate
+    // (see lib/benchmarkMatchLimit.ts).
+    BENCHMARK_MATCH_LIMIT_PER_CYCLE: v.optional(v.string()),
     OPENROUTER_ROUTING_PRESET: v.optional(
       v.union(v.literal("current"), v.literal("cost_optimized"))
     ),

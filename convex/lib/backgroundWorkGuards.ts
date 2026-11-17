@@ -13,6 +13,8 @@
 // workflows/qualification.ts and workflows/enrichment.ts:
 //   - workspace automation state (paused/stopped/deleting)
 //   - plan match limit for the current usage cycle
+//   - the development benchmark's match limit per cycle (never set in
+//     production; see benchmarkMatchLimit.ts)
 //   - provider circuit health for the prospect's platform
 
 import { v } from "convex/values";
@@ -20,12 +22,16 @@ import { internalQuery } from "./functionBuilders";
 import type { QueryCtx } from "../_generated/server";
 import { isWorkspaceAutomationActive } from "./workspaceSystem";
 import { checkProspectLimit } from "./prospectingHelpers";
+import { isParkedByBenchmarkMatchLimit } from "./benchmarkMatchLimit";
 import { isProviderCircuitStateUsable } from "./providerReliability";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 export const backgroundWorkBlockReasonValidator = v.union(
   v.literal("workspace_inactive"),
   v.literal("prospect_limit_reached"),
+  // Development benchmark only. Kept apart from prospect_limit_reached so it
+  // never triggers the plan-limit capacity reconcile.
+  v.literal("benchmark_match_limit_reached"),
   v.literal("provider_circuit_open")
 );
 
@@ -62,7 +68,10 @@ export const checkBackgroundWorkAllowedInternal = internalQuery({
   }),
   handler: async (ctx, args) => {
     const reasons: Array<
-      "workspace_inactive" | "prospect_limit_reached" | "provider_circuit_open"
+      | "workspace_inactive"
+      | "prospect_limit_reached"
+      | "benchmark_match_limit_reached"
+      | "provider_circuit_open"
     > = [];
 
     const workspace = await ctx.db.get(args.workspaceId);
@@ -79,6 +88,14 @@ export const checkBackgroundWorkAllowedInternal = internalQuery({
       if (limitState.limitReached) {
         reasons.push("prospect_limit_reached");
       }
+    }
+
+    if (
+      workspace &&
+      reasons.length === 0 &&
+      (await isParkedByBenchmarkMatchLimit(ctx, workspace, args.prospectId))
+    ) {
+      reasons.push("benchmark_match_limit_reached");
     }
 
     if (args.prospectId) {

@@ -31,6 +31,7 @@ const PEOPLE_SEARCH_HOOKS = {
   resetLinkdApiCircuit: "benchmarkPeopleSearch:resetLinkdApiCircuit",
   keywordPostSearchLimitStatus:
     "benchmarkPeopleSearch:keywordPostSearchLimitStatus",
+  matchLimitStatus: "benchmarkPeopleSearch:matchLimitStatus",
   resumeHeldWorkspace: "benchmarkPeopleSearch:resumeHeldWorkspace",
 } as const satisfies Record<string, `benchmarkPeopleSearch:${string}`>;
 
@@ -130,6 +131,7 @@ export const RUNTIME_SETTINGS = [
   "BENCHMARK_POOL_LIMITS",
   "BENCHMARK_KEYWORD_POST_SEARCH_LIMIT",
   "BENCHMARK_HALTED_WORKSPACE_ID",
+  "BENCHMARK_MATCH_LIMIT_PER_CYCLE",
 ] as const;
 export type RuntimeSetting = (typeof RUNTIME_SETTINGS)[number];
 export const LEARNING_OFF_SETTING = "BENCHMARK_LEARNING_OFF_WORKSPACE_IDS";
@@ -139,6 +141,9 @@ export const KEYWORD_SEARCH_CAP_SETTING = "BENCHMARK_KEYWORD_POST_SEARCH_LIMIT";
 // Development only: names the workspace a step is stopping; while set, the
 // deployment refuses every LinkdAPI call (convex/lib/benchmarkLinkdApiCap.ts).
 export const HALT_SETTING = "BENCHMARK_HALTED_WORKSPACE_ID";
+// Development only: most matches a benchmark workspace's cycle qualifies before
+// the plan-limit gate parks further qualification (convex/lib/benchmarkMatchLimit.ts).
+export const MATCH_LIMIT_SETTING = "BENCHMARK_MATCH_LIMIT_PER_CYCLE";
 
 /** Development provider keys replaced by funded keys during a live step, then restored. */
 export const PROVIDER_KEYS = ["SOCIALAPI_API_KEY", "LINKDAPI_API_KEY"] as const;
@@ -183,6 +188,23 @@ export const runStatusSchema = z
       // Qualified prospects whose enrichment has not finished.
       enrichmentWaiting: z.number().default(0),
     }),
+    // The development-only match limit per cycle; null when none applies.
+    // Absent from deployments without it.
+    matchLimit: z
+      .object({
+        limit: z.number(),
+        qualifiedThisCycle: z.number(),
+        reached: z.boolean(),
+        // Of counts.pending and counts.enrichmentWaiting, the prospects the
+        // reached limit holds back for the rest of the cycle: no workflow is
+        // working on them and none will start.
+        parked: z.object({
+          pending: z.number(),
+          enrichmentWaiting: z.number(),
+        }),
+      })
+      .nullable()
+      .default(null),
     pendingLessonWrites: z.number(),
     truncated: z.boolean(),
   })
@@ -238,7 +260,8 @@ const poolStatusSchema = z.object({
   enforcedTenantScheduling: z.boolean(),
 });
 
-const keywordSearchCapStatusSchema = z.object({
+// What a development-only cap's resolver reports (keyword post search, match limit).
+const capStatusSchema = z.object({
   limit: z.number().int().nullable(),
   source: z.enum(["default", "benchmark"]),
   error: z.string().nullable(),
@@ -423,7 +446,7 @@ export class ConvexReacherXDriver {
     const status = await this.call(
       PEOPLE_SEARCH_HOOKS.keywordPostSearchLimitStatus,
       {},
-      keywordSearchCapStatusSchema
+      capStatusSchema
     );
     if (
       status.error ||
@@ -432,6 +455,33 @@ export class ConvexReacherXDriver {
     )
       throw new ConvexCommandError(
         "The deployment did not confirm the requested keyword post-search cap."
+      );
+    return status.limit;
+  }
+
+  /**
+   * Sets the match limit per benchmark workspace cycle (or clears it with
+   * null) and returns the limit in effect. A limit must be confirmed by the
+   * deployment's own resolver; a cleared one only needs the setting gone,
+   * because an unset value means no limit. Stops on any mismatch.
+   */
+  async applyMatchLimit(limit: number | null) {
+    if (limit === null) {
+      if ((await this.getSetting(MATCH_LIMIT_SETTING)) !== null)
+        await this.env(["remove", MATCH_LIMIT_SETTING]);
+      if ((await this.getSetting(MATCH_LIMIT_SETTING)) !== null)
+        throw new ConvexCommandError("The match limit was not cleared.");
+      return null;
+    }
+    await this.setSetting(MATCH_LIMIT_SETTING, String(limit));
+    const status = await this.call(
+      PEOPLE_SEARCH_HOOKS.matchLimitStatus,
+      {},
+      capStatusSchema
+    );
+    if (status.error || status.limit !== limit || status.source !== "benchmark")
+      throw new ConvexCommandError(
+        "The deployment did not confirm the requested match limit."
       );
     return status.limit;
   }

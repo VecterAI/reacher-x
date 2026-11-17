@@ -3,6 +3,7 @@ import {
   HALT_SETTING,
   LEARNING_OFF_SETTING,
   KEYWORD_SEARCH_CAP_SETTING,
+  MATCH_LIMIT_SETTING,
   PROVIDER_KEYS,
   RUNTIME_SETTINGS,
   poolLimitsSchema,
@@ -35,6 +36,7 @@ const MANAGED_SETTINGS: readonly RuntimeSetting[] = [
   "BENCHMARK_POOL_LIMITS",
   KEYWORD_SEARCH_CAP_SETTING,
   HALT_SETTING,
+  MATCH_LIMIT_SETTING,
 ];
 
 const settingValuesSchema = z.partialRecord(
@@ -101,6 +103,10 @@ export function atRestProblems(
   if (settings[HALT_SETTING] !== null)
     problems.push(
       `The LinkedIn kill switch of a stopped step is still set (${HALT_SETTING}).`
+    );
+  if (settings[MATCH_LIMIT_SETTING] !== null)
+    problems.push(
+      `A match limit per cycle is still set (${MATCH_LIMIT_SETTING}).`
     );
   return problems;
 }
@@ -221,6 +227,9 @@ export type LiveSessionConfig = Readonly<{
   // workspace cycle for this step (step-only, never
   // frozen), or null for no cap.
   keywordPostSearchLimit: number | null;
+  // Most matches a workspace cycle qualifies before the plan-limit gate parks
+  // further qualification (step-only, never frozen), or null for no limit.
+  matchLimitPerCycle: number | null;
 }>;
 
 export type ConfirmedRunSettings = Readonly<{
@@ -236,6 +245,10 @@ export type ConfirmedRunSettings = Readonly<{
 
 export type LiveSession = Readonly<{
   confirmed: ConfirmedRunSettings;
+  // The match limit per workspace cycle the deployment confirmed, or null.
+  // A step's sessions can differ (a continuation may add one), so it is
+  // recorded on each workspace run it governs, never as a step setting.
+  matchLimitPerCycle: number | null;
   /** Records the workspace about to run (or null once it is stopped) before anything else happens. */
   trackWorkspace(workspace: BenchmarkWorkspace | null): Promise<void>;
 }>;
@@ -283,7 +296,9 @@ async function checkCanOpen(
 async function applyRunSettings(
   driver: ConvexReacherXDriver,
   config: LiveSessionConfig
-): Promise<ConfirmedRunSettings> {
+): Promise<
+  Pick<LiveSession, "matchLimitPerCycle"> & { confirmed: ConfirmedRunSettings }
+> {
   // Funded keys, confirmed by fingerprint so neither value is ever printed.
   for (const name of PROVIDER_KEYS) {
     await driver.setProviderKey(name, config.fundedKeys[name]);
@@ -319,6 +334,10 @@ async function applyRunSettings(
   const keywordPostSearchLimit = await driver.applyKeywordPostSearchLimit(
     config.keywordPostSearchLimit
   );
+  // In force before anything can qualify.
+  const matchLimitPerCycle = await driver.applyMatchLimit(
+    config.matchLimitPerCycle
+  );
 
   // Unpause last; pool limits are reconciled only while jobs run.
   await driver.setSetting("PAUSE_AUTONOMOUS_JOBS", "false");
@@ -326,12 +345,15 @@ async function applyRunSettings(
     throw new LiveSessionError("Autonomous jobs did not unpause.");
   const poolLimits = await driver.applyPoolLimits(config.settings.poolLimits);
   return {
-    production: config.settings.production,
-    productionSource: config.settings.productionSource,
-    runOnly: config.settings.runOnly,
-    poolLimits,
-    linkdApiCircuitReset: circuit.reset,
-    keywordPostSearchLimit,
+    confirmed: {
+      production: config.settings.production,
+      productionSource: config.settings.productionSource,
+      runOnly: config.settings.runOnly,
+      poolLimits,
+      linkdApiCircuitReset: circuit.reset,
+      keywordPostSearchLimit,
+    },
+    matchLimitPerCycle,
   };
 }
 
@@ -364,11 +386,11 @@ export async function withLiveSession<T>(
 
   let outcome: { ok: true; value: T } | { ok: false; error: unknown };
   try {
-    const confirmed = await applyRunSettings(driver, config);
+    const applied = await applyRunSettings(driver, config);
     outcome = {
       ok: true,
       value: await body({
-        confirmed,
+        ...applied,
         async trackWorkspace(workspace) {
           state = {
             ...state,
@@ -396,9 +418,9 @@ export async function withLiveSession<T>(
 }
 
 /**
- * Proposal 5.3 step 6. Stops the tracked workspace, clears pool limits and the
- * keyword post-search cap, pauses jobs, restores every recorded setting, and
- * restores the development keys;
+ * Proposal 5.3 step 6. Stops the tracked workspace, clears pool limits, the
+ * keyword post-search cap and the match limit, pauses jobs, restores every
+ * recorded setting, and restores the development keys;
  * the SocialAPI key only once the workspace's monitors are deleted, because
  * the funded key's account owns them. Each part is attempted even when an
  * earlier one fails. Returns what is still not reset; the session stays
@@ -459,6 +481,10 @@ export async function resetLiveSession(
       await driver.applyKeywordPostSearchLimit(null);
     }
   );
+
+  await attempt("The match limit was not confirmed cleared.", async () => {
+    await driver.applyMatchLimit(null);
+  });
 
   await attempt("Autonomous jobs could not be paused.", () =>
     driver.setSetting(

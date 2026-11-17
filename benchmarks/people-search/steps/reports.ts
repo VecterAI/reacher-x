@@ -987,6 +987,85 @@ export function keywordSearchCapLine(
   return `Keyword post-search cap: in force for this step, at most ${limit} LinkdAPI calls per workspace cycle for enrichment's search of each LinkedIn prospect's own posts for finance keywords (development-only BENCHMARK_KEYWORD_POST_SEARCH_LIMIT). Searches past it stopped early, so some enriched prospects show fewer finance posts than production would; discovery, profile and company reads and qualification were not capped.`;
 }
 
+// The decision behind the development-only match limit.
+const MATCH_LIMIT_AGREEMENT = "agreed by the project lead, 17 Nov 2026";
+const MATCH_LIMIT_HOW = `applied through the plan-limit gate (${MATCH_LIMIT_AGREEMENT}; development-only BENCHMARK_MATCH_LIMIT_PER_CYCLE)`;
+
+const describeMatchLimit = (limit: number | null) =>
+  limit === null ? "no match limit" : `match limit ${limit} per cycle`;
+const dayOf = (time: number) =>
+  new Date(time).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+
+/**
+ * The match limit in force from a workspace's start, then in each
+ * continuation. Records made before the limit existed carry none, because
+ * none could apply.
+ */
+function matchLimitPhases(record: WorkspaceOutcome["record"]) {
+  return {
+    start: record.matchLimitPerCycle ?? null,
+    continuations: (record.resumed ?? []).map((entry) => ({
+      limit: entry.matchLimitPerCycle ?? null,
+      resumedAt: entry.resumedAt,
+    })),
+  };
+}
+
+/** One workspace's match limit, naming each continuation that changed it. */
+function workspaceMatchLimit(record: WorkspaceOutcome["record"]) {
+  const { start, continuations } = matchLimitPhases(record);
+  const changes = continuations.filter(
+    (phase, index) =>
+      phase.limit !== (index ? continuations[index - 1].limit : start)
+  );
+  if (!changes.length) return `${describeMatchLimit(start)} throughout`;
+  const cycles =
+    record.cycles.length === 1
+      ? "its cycle"
+      : `its ${record.cycles.length} cycles`;
+  return [
+    `${describeMatchLimit(start)} during ${cycles}`,
+    ...changes.map(
+      (phase) =>
+        `${describeMatchLimit(phase.limit)} from the ${dayOf(phase.resumedAt)} resume`
+    ),
+  ].join("; ");
+}
+
+/**
+ * The match limit per cycle the step's workspaces ran with. One line when
+ * every workspace ran with the same value throughout; otherwise per
+ * workspace, so no line claims a limit for a cycle that ran without it.
+ */
+export function matchLimitLines(outcome: Pick<SegmentOutcome, "workspaces">) {
+  const limits = new Set(
+    outcome.workspaces.flatMap((item) => {
+      const { start, continuations } = matchLimitPhases(item.record);
+      return [start, ...continuations.map((phase) => phase.limit)];
+    })
+  );
+  if (limits.size <= 1) {
+    const [limit = null] = limits;
+    if (limit === null)
+      return [
+        "Match limit: none; only the plan's own limit applied in this step.",
+      ];
+    return [
+      `Match limit: ${limit} per cycle, ${MATCH_LIMIT_HOW}. Once a workspace's cycle had ${limit} matches, qualifying its other prospects was parked as at a plan limit; qualifications already running finished, so a cycle can hold a few more. Only the cycle's first ${limit} matches were enriched. Cycles still started and were scheduled as usual, each counting from zero.`,
+    ];
+  }
+  return [
+    `Match limit: not the same for every workspace run, so stated per workspace. Where in force it was ${MATCH_LIMIT_HOW}: once a cycle had that many matches, qualifying its other prospects was parked as at a plan limit, qualifications already running finished, and only the cycle's first matches up to the limit were enriched.`,
+    ...outcome.workspaces.map(
+      (item) => `- ${item.label}: ${workspaceMatchLimit(item.record)}.`
+    ),
+  ];
+}
+
 /** Markdown for the console and the private run folder. */
 export function renderSegmentReport(
   outcome: SegmentOutcome,
@@ -1062,6 +1141,8 @@ export function renderSegmentReport(
       "## ReacherX workspaces",
       "",
       keywordSearchCapLine(outcome),
+      "",
+      ...matchLimitLines(outcome),
       "",
       "| Workspace | Ending | Cycles | AI spend (key) | X data (recorded) | LinkedIn credits (recorded) | X / LinkedIn balance change (shared keys) | Qualified of prospects |",
       "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",

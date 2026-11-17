@@ -126,6 +126,7 @@ import type * as lib_backgroundWorkGuards from "../lib/backgroundWorkGuards.js";
 import type * as lib_benchmarkConcurrency from "../lib/benchmarkConcurrency.js";
 import type * as lib_benchmarkLearningControl from "../lib/benchmarkLearningControl.js";
 import type * as lib_benchmarkLinkdApiCap from "../lib/benchmarkLinkdApiCap.js";
+import type * as lib_benchmarkMatchLimit from "../lib/benchmarkMatchLimit.js";
 import type * as lib_contactDiscoveryCore from "../lib/contactDiscoveryCore.js";
 import type * as lib_conversationHistoryPaginationCore from "../lib/conversationHistoryPaginationCore.js";
 import type * as lib_dashboardReadCore from "../lib/dashboardReadCore.js";
@@ -537,6 +538,7 @@ declare const fullApi: ApiFromModules<{
   "lib/benchmarkConcurrency": typeof lib_benchmarkConcurrency;
   "lib/benchmarkLearningControl": typeof lib_benchmarkLearningControl;
   "lib/benchmarkLinkdApiCap": typeof lib_benchmarkLinkdApiCap;
+  "lib/benchmarkMatchLimit": typeof lib_benchmarkMatchLimit;
   "lib/contactDiscoveryCore": typeof lib_contactDiscoveryCore;
   "lib/conversationHistoryPaginationCore": typeof lib_conversationHistoryPaginationCore;
   "lib/dashboardReadCore": typeof lib_dashboardReadCore;

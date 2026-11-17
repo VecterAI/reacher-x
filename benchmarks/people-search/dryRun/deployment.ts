@@ -207,6 +207,15 @@ export function syntheticDeployment(
           : "default",
         error: null,
       }),
+      "benchmarkPeopleSearch:matchLimitStatus": () => ({
+        limit: env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE")
+          ? Number(env.get("BENCHMARK_MATCH_LIMIT_PER_CYCLE"))
+          : null,
+        source: env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE")
+          ? "benchmark"
+          : "default",
+        error: null,
+      }),
       "benchmarkPeopleSearch:deploymentActivity": (args) => ({
         workspaceIds: [...workspaces.values()]
           .filter(
@@ -301,6 +310,8 @@ export function syntheticDeployment(
             ).length,
             enrichmentWaiting: 0,
           },
+          // Synthetic qualification never reaches a match limit.
+          matchLimit: null,
           pendingLessonWrites: unfinished(LESSONS_MS),
           truncated: false,
         };

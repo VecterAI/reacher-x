@@ -104,9 +104,11 @@ export const workspaceRunRecordSchema: z.ZodType<WorkspaceRunRecord> = z.object(
             linkdApi: linkdApiUnitsSchema.nullable(),
           }),
           requeued: resumeResultSchema.nullable(),
+          matchLimitPerCycle: nullableNumber.optional(),
         })
       )
       .optional(),
+    matchLimitPerCycle: nullableNumber.optional(),
   }
 );
 
@@ -277,6 +279,21 @@ export async function heldForResume(
   return { ready, problems };
 }
 
+/** The record with `fields` added to its latest continuation. */
+function withLatestContinuation(
+  record: WorkspaceRunRecord,
+  fields: Partial<NonNullable<WorkspaceRunRecord["resumed"]>[number]>
+): WorkspaceRunRecord {
+  const resumed = record.resumed;
+  if (!resumed?.length) return record;
+  return {
+    ...record,
+    resumed: resumed.map((entry, index) =>
+      index === resumed.length - 1 ? { ...entry, ...fields } : entry
+    ),
+  };
+}
+
 export type WorkspaceUnitResult = Readonly<{
   slot: WorkspaceSlot;
   outcome: UnitOutcome<WorkspaceOutcome> | null;
@@ -374,28 +391,37 @@ export async function runWorkspaceUnits(
           track: phase.gate.tracking(session.trackWorkspace),
         };
         const watch = { ...phase.watch, signal: phase.signal };
+        // The match limit this session confirmed belongs to the run or the
+        // continuation it governed, since a step's sessions can differ.
+        const limit = { matchLimitPerCycle: session.matchLimitPerCycle };
         const record = held
-          ? await resumeWorkspace(
-              phase.driver,
-              held.outcome.record,
-              hooks,
-              watch,
-              phase.clock
+          ? withLatestContinuation(
+              await resumeWorkspace(
+                phase.driver,
+                held.outcome.record,
+                hooks,
+                watch,
+                phase.clock
+              ),
+              limit
             )
-          : await runWorkspace(
-              phase.driver,
-              {
-                label: slot.label,
-                userId: phase.userId,
-                prompt: slot.prompt,
-                useCaseKey: slot.useCaseKey,
-                learning: slot.learning,
-                cycles: slot.cycles,
-              },
-              hooks,
-              watch,
-              phase.clock
-            );
+          : {
+              ...(await runWorkspace(
+                phase.driver,
+                {
+                  label: slot.label,
+                  userId: phase.userId,
+                  prompt: slot.prompt,
+                  useCaseKey: slot.useCaseKey,
+                  learning: slot.learning,
+                  cycles: slot.cycles,
+                },
+                hooks,
+                watch,
+                phase.clock
+              )),
+              ...limit,
+            };
         ending = record.ending;
         finished = record;
         const after = await budget.read(dataIds).catch(() => []);

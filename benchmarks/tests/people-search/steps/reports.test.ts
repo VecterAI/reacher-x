@@ -7,6 +7,7 @@ import {
   decide,
   learningPairs,
   keywordSearchCapLine,
+  matchLimitLines,
   segmentOutcomeSchema,
   type ReportContext,
 } from "../../../people-search/steps/reports";
@@ -246,4 +247,69 @@ test("the step report states whether the keyword post-search cap was in force", 
   // Outcomes recorded before the cap existed still parse and say so.
   assert.match(keywordSearchCapLine(settings()), /not recorded/);
   assert.match(keywordSearchCapLine({ settings: null }), /not recorded/);
+});
+
+test("the step report states the match limit each workspace ran with, never one it lacked", () => {
+  // A continuation after a budget stop; `matchLimitPerCycle` absent as in
+  // records made before the limit existed.
+  const continuation = (resumedAt: number, matchLimitPerCycle?: number) => ({
+    after: "budget-stop",
+    afterDetail: null,
+    discoveryCompleted: true,
+    stoppedAt: resumedAt - 3_600_000,
+    resumedAt,
+    endedAt: resumedAt + 600_000,
+    ending: "planned-cycles",
+    spend: { atStopUsd: 0.5, atResumeUsd: 0.5, afterUsd: 0.7 },
+    recordedAtStop: { costs: null, linkdApi: null },
+    requeued: null,
+    ...(matchLimitPerCycle === undefined ? {} : { matchLimitPerCycle }),
+  });
+  const run = (
+    taskId: string,
+    fields: { matchLimitPerCycle?: number; resumed?: unknown[] }
+  ) => {
+    const item = workspace(taskId);
+    return { ...item, record: { ...item.record, ...fields } };
+  };
+
+  // Every run with the same limit: one step-level line.
+  const [same] = matchLimitLines(
+    outcome("smoke", [
+      run("p14", { matchLimitPerCycle: 20 }),
+      run("p06", {
+        matchLimitPerCycle: 20,
+        resumed: [continuation(Date.UTC(2026, 10, 17), 20)],
+      }),
+    ])
+  );
+  assert.match(
+    same,
+    /^Match limit: 20 per cycle, applied through the plan-limit gate \(agreed by the project lead, 17 Nov 2026/
+  );
+  assert.match(same, /Only the cycle's first 20 matches were enriched/);
+  // Records from before the limit existed ran without one.
+  assert.deepEqual(matchLimitLines(outcome("smoke", [workspace("p14")])), [
+    "Match limit: none; only the plan's own limit applied in this step.",
+  ]);
+
+  // The smoke workspace: its cycle and first continuation ran without a
+  // limit, its second continuation with 20.
+  const lines = matchLimitLines(
+    outcome("smoke", [
+      run("p14", {
+        resumed: [
+          continuation(Date.UTC(2026, 10, 16, 19)),
+          continuation(Date.UTC(2026, 10, 17, 9), 20),
+        ],
+      }),
+      run("p06", { matchLimitPerCycle: 20 }),
+    ])
+  );
+  assert.match(lines[0], /^Match limit: not the same for every workspace run/);
+  assert.deepEqual(lines.slice(1), [
+    "- synthetic_p14_on: no match limit during its cycle; match limit 20 per cycle from the 17 Nov resume.",
+    "- synthetic_p06_on: match limit 20 per cycle throughout.",
+  ]);
+  assert.ok(lines.every((line) => !line.startsWith("Match limit: 20")));
 });

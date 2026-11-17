@@ -45,7 +45,8 @@ export type WorkspacePlan = Readonly<{
 
 export type WatchOptions = Readonly<{
   pollMs: number;
-  // Consecutive polls without pending qualification or lesson writing that count as settled.
+  // Consecutive polls without pending qualification or lesson writing (and,
+  // under a match limit, unparked enrichment) that count as settled.
   settlePolls: number;
   startTimeoutMs: number;
   // Longest from a cycle's start until it settles or the next cycle starts.
@@ -131,6 +132,10 @@ export type ResumeRecord = Readonly<{
   }>;
   // What the deployment requeued; null when the resume call failed.
   requeued: ResumeResult | null;
+  // The match limit per cycle in force for this continuation, set by the
+  // step from its live session; absent in records made before the limit
+  // existed, when none could apply.
+  matchLimitPerCycle?: number | null;
 }>;
 
 export type WorkspaceRunRecord = Readonly<{
@@ -160,6 +165,10 @@ export type WorkspaceRunRecord = Readonly<{
   // Continuations after harness stops, oldest first; absent for a workspace
   // that ran without one.
   resumed?: readonly ResumeRecord[];
+  // The match limit per cycle in force from the workspace's start until any
+  // continuation, set by the step from its live session; absent in records
+  // made before the limit existed, when none could apply.
+  matchLimitPerCycle?: number | null;
 }>;
 
 export class WorkspaceRunError extends Error {}
@@ -188,6 +197,20 @@ const TERMINAL_STATES = new Set(["completed", "failed", "canceled"]);
 const LABEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 // Clock difference allowed when recovering a workspace whose creation timed out.
 const CLOCK_MARGIN_MS = 5 * 60_000;
+
+/**
+ * Qualification and enrichment still to finish. Work the match limit parked
+ * for the rest of the cycle counts as finished, so a cycle that reached its
+ * limit settles once the work already running is done.
+ */
+function openWork(status: NonNullable<RunStatus>) {
+  const parked = status.matchLimit?.parked;
+  return {
+    pending: status.counts.pending - (parked?.pending ?? 0),
+    enrichmentWaiting:
+      status.counts.enrichmentWaiting - (parked?.enrichmentWaiting ?? 0),
+  };
+}
 
 async function prepare(
   driver: ConvexReacherXDriver,
@@ -336,8 +359,12 @@ async function watchCycles(
       };
 
     if (cycle.discoveryEndedAt !== null && cycle.settledAt === null) {
+      const open = openWork(status);
+      // Under a match limit the cycle's own matches must also be enriched;
+      // without one, enrichment is not waited for, as before.
       const idle =
-        status.counts.pending === 0 &&
+        open.pending === 0 &&
+        (status.matchLimit === null || open.enrichmentWaiting === 0) &&
         status.pendingLessonWrites === 0 &&
         !status.truncated;
       if (!idle) quiet = null;
@@ -570,9 +597,10 @@ async function watchContinuation(
         }, so its remaining work stopped.`,
         settledAt: null,
       };
+    const open = openWork(status);
     const idle =
-      status.counts.pending === 0 &&
-      status.counts.enrichmentWaiting === 0 &&
+      open.pending === 0 &&
+      open.enrichmentWaiting === 0 &&
       status.pendingLessonWrites === 0 &&
       !status.truncated;
     if (!idle) quiet = null;
