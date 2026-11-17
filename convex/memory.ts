@@ -68,6 +68,7 @@ import {
   getCachedSharedMemorySemanticIds,
   setCachedSharedMemorySemanticIds,
 } from "./lib/sharedMemorySemanticCache";
+import { isBenchmarkLearningOff } from "./lib/benchmarkLearningControl";
 import {
   distillEnrichmentLearning,
   distillOutreachLearning,
@@ -311,6 +312,8 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
   handler: async (ctx, { workspaceId }) => {
     const workspace = await ctx.db.get(workspaceId);
     if (!workspace) throw new Error("Workspace not found");
+    // Benchmark control group: keep operator instructions, withhold learning.
+    const learningOff = isBenchmarkLearningOff(String(workspaceId));
     const memoryContext = buildCanonicalWorkspaceMemoryContext({
       request: {
         workspaceId: String(workspaceId),
@@ -325,7 +328,8 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
         })
       ).filter(
         (memory) =>
-          memory.authority === "operator" || isReusablePipelineLesson(memory)
+          memory.authority === "operator" ||
+          (!learningOff && isReusablePipelineLesson(memory))
       ),
     });
     const [
@@ -337,13 +341,15 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
       retiredCandidates,
       prospectSummaries,
     ] = await Promise.all([
-      ctx.db
-        .query("queryPerformance")
-        .withIndex("by_workspace_updated_at", (q) =>
-          q.eq("workspaceId", workspaceId)
-        )
-        .order("desc")
-        .take(MAX_LIST_LIMIT),
+      learningOff
+        ? []
+        : ctx.db
+            .query("queryPerformance")
+            .withIndex("by_workspace_updated_at", (q) =>
+              q.eq("workspaceId", workspaceId)
+            )
+            .order("desc")
+            .take(MAX_LIST_LIMIT),
       ctx.db
         .query("queryCandidates")
         .withIndex("by_workspace_status", (q) =>
@@ -383,12 +389,16 @@ export const getDiscoveryGenerationContextInternal = internalQuery({
         )
         .order("desc")
         .take(MAX_LIST_LIMIT),
-      ctx.db
-        .query("prospectSummaries")
-        .withIndex("by_workspace_ready_score", (q) =>
-          q.eq("workspaceId", workspaceId).eq("readyQualifiedEnriched", true)
-        )
-        .take(DISCOVERY_CONTEXT_LIMIT),
+      learningOff
+        ? []
+        : ctx.db
+            .query("prospectSummaries")
+            .withIndex("by_workspace_ready_score", (q) =>
+              q
+                .eq("workspaceId", workspaceId)
+                .eq("readyQualifiedEnriched", true)
+            )
+            .take(DISCOVERY_CONTEXT_LIMIT),
     ]);
 
     const currentWinners = await Promise.all(
@@ -1294,7 +1304,8 @@ const SHARED_MEMORY_SEMANTIC_NAMESPACES = [
 
 async function buildWorkspaceMemoryContextFromStore(
   ctx: ConvexActionCtx,
-  request: WorkspaceMemoryContextRequest
+  request: WorkspaceMemoryContextRequest,
+  { operatorOnly = false }: { operatorOnly?: boolean } = {}
 ): Promise<WorkspaceMemoryContext> {
   const ids = {
     workspaceId: request.workspaceId as Id<"workspaces">,
@@ -1394,6 +1405,15 @@ async function buildWorkspaceMemoryContextFromStore(
       }
     );
   const rolloutCandidates = [...legacyOperatorFallbacks, ...candidates];
+  if (operatorOnly) {
+    // Learned memories (including semantic matches) are withheld entirely.
+    return buildCanonicalWorkspaceMemoryContext({
+      request,
+      memories: [...exactMatches, ...rolloutCandidates].filter(
+        (memory) => memory.authority === "operator"
+      ),
+    });
+  }
   if (!request.query.trim()) {
     return buildCanonicalWorkspaceMemoryContext({
       request,
@@ -1593,15 +1613,21 @@ export const getQualificationLearningContextInternal = internalAction({
       additionalContext: args.evidenceHighlights,
     });
 
-    const sharedContext = await buildWorkspaceMemoryContextFromStore(ctx, {
-      workspaceId: args.workspaceId,
-      userId: args.userId,
-      query: queryText || "qualification policy",
-      surface: "qualification",
-      prospectId: args.prospectId,
-    });
+    // Benchmark control group: operator instructions only, no similar cases.
+    const learningOff = isBenchmarkLearningOff(args.workspaceId);
+    const sharedContext = await buildWorkspaceMemoryContextFromStore(
+      ctx,
+      {
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        query: queryText || "qualification policy",
+        surface: "qualification",
+        prospectId: args.prospectId,
+      },
+      { operatorOnly: learningOff }
+    );
 
-    if (!hasWorkspaceMemorySearchQuery(queryText)) {
+    if (learningOff || !hasWorkspaceMemorySearchQuery(queryText)) {
       return {
         queryText,
         policyPrompt: sharedContext.prompt,

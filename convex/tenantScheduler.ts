@@ -40,6 +40,7 @@ import {
   deriveHighLoadNotice,
 } from "./lib/tenantSchedulerCore";
 import { areAutonomousJobsPaused } from "./lib/autonomousJobHelpers";
+import { resolvePoolLimits } from "./lib/benchmarkConcurrency";
 import {
   completeTenantJob,
   markTenantJobNestedWorkflow,
@@ -318,27 +319,29 @@ async function configurePoolSplit(ctx: MutationCtx, enforced: boolean) {
       "Cannot change execution pools while manual outreach plans are queued or running"
     );
   }
+  // Production defaults unless a development benchmark sets Starter limits.
+  const { limits } = resolvePoolLimits();
   await Promise.all([
     ctx.runMutation(components.tenantExecutionPool.config.update, {
       maxParallelism: enforced ? TENANT_EXECUTION_POOL_MAX_PARALLELISM : 0,
     }),
     ctx.runMutation(components.qualificationPool.config.update, {
-      maxParallelism: enforced ? 0 : 10,
+      maxParallelism: enforced ? 0 : limits.qualification,
     }),
     ctx.runMutation(components.enrichmentPool.config.update, {
-      maxParallelism: enforced ? 0 : 10,
+      maxParallelism: enforced ? 0 : limits.enrichment,
     }),
     ctx.runMutation(components.previewQualificationPool.config.update, {
-      maxParallelism: enforced ? 0 : 4,
+      maxParallelism: enforced ? 0 : limits.previewQualification,
     }),
     ctx.runMutation(components.previewEnrichmentPool.config.update, {
-      maxParallelism: enforced ? 0 : 4,
+      maxParallelism: enforced ? 0 : limits.previewEnrichment,
     }),
     ctx.runMutation(components.outreachPlanPool.config.update, {
-      maxParallelism: enforced ? 0 : 5,
+      maxParallelism: enforced ? 0 : limits.outreachPlan,
     }),
     ctx.runMutation(components.memoryEvaluationPool.config.update, {
-      maxParallelism: enforced ? 0 : 2,
+      maxParallelism: enforced ? 0 : limits.memoryEvaluation,
     }),
   ]);
 }

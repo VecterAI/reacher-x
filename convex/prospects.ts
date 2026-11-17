@@ -70,6 +70,7 @@ import {
   checkProspectLimit,
   getProspectingRecoveryDelayMs,
 } from "./lib/prospectingHelpers";
+import { isParkedByBenchmarkMatchLimit } from "./lib/benchmarkMatchLimit";
 import {
   getQualificationFailureRetryAt,
   getQualificationFailureRetryDelayMs,
@@ -3695,13 +3696,18 @@ export const claimPendingQualificationRecoveryInternal = internalMutation({
     // Plan-limit gate: recovery must not restart qualification work for a
     // workspace whose match limit is exhausted — the work would be paid for
     // and then parked by the execution-time gate anyway. When the limit
-    // frees up (upgrade or cycle rollover), recovery re-arms normally.
+    // frees up (upgrade or cycle rollover), recovery re-arms normally. The
+    // development benchmark's match limit per cycle is held the same way
+    // (never set in production; see lib/benchmarkMatchLimit.ts).
     const limitState = await checkProspectLimit(
       ctx,
       workspace._id,
       workspace.userId
     );
-    if (limitState.limitReached) {
+    if (
+      limitState.limitReached ||
+      (await isParkedByBenchmarkMatchLimit(ctx, workspace, prospect._id))
+    ) {
       return {
         claimed: false,
         scheduled: false,

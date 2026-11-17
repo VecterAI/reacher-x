@@ -269,6 +269,8 @@ export interface QualificationCoreParams {
   routing?: ModelRouting;
   /** Per-attempt usage telemetry so billed model work stays visible. */
   telemetry?: StructuredGenerationTelemetry;
+  /** Evaluation time. Defaults to now; the benchmark replay passes the frozen capture time. */
+  now?: number;
 }
 
 export async function qualifyProspectCore(
@@ -293,8 +295,8 @@ export async function qualifyProspectCore(
     similarDisqualifiedCases,
     routing = "onboarding",
     telemetry,
+    now = getCurrentUTCTimestamp(),
   } = params;
-  const now = getCurrentUTCTimestamp();
   const candidates = prepareQualificationCandidates({
     platform,
     evidencePosts: evidencePosts.slice(0, MAX_EVIDENCE_POSTS),

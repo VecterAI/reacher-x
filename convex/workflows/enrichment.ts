@@ -50,6 +50,7 @@ import { TENANT_JOB_PRIORITY } from "../lib/tenantSchedulerCore";
 import { enqueueTenantJobWithRetry } from "../lib/tenantSchedulerEnqueue";
 import { completeTenantJob } from "../lib/tenantSchedulerHelpers";
 import { awaitRetriedActionResult } from "../lib/retrierWorkflow";
+import { KEYWORD_POST_SEARCH_PURPOSE } from "../lib/benchmarkLinkdApiCap";
 import type { UserPostsSearchResult } from "../integrations/linkedin/searchUserPosts";
 
 // ============================================================================
@@ -925,6 +926,9 @@ async function enrichLinkedInProspect(
             urn: resolvedProfileUrn,
             keywords: FINANCE_KEYWORDS,
             maxPosts: MAX_FINANCE_POSTS,
+            // The only LinkdAPI calls the development benchmark cap counts;
+            // a refusal ends the search with the posts already found.
+            purpose: KEYWORD_POST_SEARCH_PURPOSE,
           },
           label: "enrichment:linkedin-finance-posts",
         })
