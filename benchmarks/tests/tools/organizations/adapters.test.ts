@@ -135,3 +135,33 @@ test("Clay's unquoted-value rejection is retried with a hint to quote text value
   assert.equal(result.candidates.length, 1);
   assert.match(prompts[1], /unquoted: write it as a double-quoted string/);
 });
+
+test("a Clay query cut off at an unescaped quote is asked for again, not sent", async () => {
+  const fixture = organizationFixtures.clay;
+  const [reference, create, run] = fixture.exchanges;
+  const prompts: string[] = [];
+  const model = savedModel({
+    "query#1": { query: "select from companies where industry in (" },
+    "query#2": { query: "synthetic companies query" },
+  });
+  const result = await searchAdapters.clay.search(
+    companyTask,
+    fixtureContext(
+      // No create#1: the cut-off query never reaches Clay.
+      replayTransport([
+        reference,
+        { ...create, step: "create#2" },
+        { ...run, step: "run#2" },
+      ]),
+      fixture.topK,
+      fixture.secrets,
+      companyFilters,
+      async (step, id, request) => {
+        prompts.push(request.prompt);
+        return model(step, id, request);
+      }
+    )
+  );
+  assert.equal(result.candidates.length, 1);
+  assert.match(prompts[1], /cut off/);
+});

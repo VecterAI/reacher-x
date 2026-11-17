@@ -26,7 +26,21 @@ const INSTRUCTIONS = `Write one Clay search query for the request below, using t
 Select from people for a person request and from companies for a company request.
 Express every filter given; do not add requirements and do not widen any of them.
 Write every text value as a double-quoted string, in lists too: industry = "Software Development", country_name in ("United States", "Canada").
-Return JSON {"query": "<the Clay query>"}.`;
+Return JSON {"query": "<the Clay query>"}; inside that JSON string write each double quote as \\" so the query is not cut off.`;
+
+// A query cut off by an unescaped quote leaves a quote or bracket open.
+const isComplete = (query: string) => {
+  let depth = 0;
+  let quoted = false;
+  for (const char of query) {
+    if (char === '"') quoted = !quoted;
+    else if (!quoted && char === "(") depth += 1;
+    else if (!quoted && char === ")" && --depth < 0) return false;
+  }
+  return !quoted && depth === 0;
+};
+const CUT_OFF =
+  'The query was cut off: it ends with a quote or bracket left open. Inside the JSON string write each double quote as \\".';
 
 /**
  * Clay's query language is documented in its own reference, so a recorded
@@ -90,6 +104,14 @@ export const clayAdapter: SearchAdapter = {
         costUsd: written.costUsd,
       });
       queries.push(written.output.query);
+      // A cut-off query is asked for again instead of being sent to Clay.
+      if (!isComplete(written.output.query)) {
+        if (attempt === 1) {
+          rejection = CUT_OFF;
+          continue;
+        }
+        throw new ProviderError("The Clay query was cut off twice.");
+      }
       const created = await send(`create#${attempt}`, BASE, {
         query: written.output.query,
       });
