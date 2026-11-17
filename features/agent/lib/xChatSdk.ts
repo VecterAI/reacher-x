@@ -10,9 +10,10 @@ import type * as XChatSdk from "@xdevplatform/chat-xdk";
  * path made the bundler trace all of `node_modules` into every Vercel function
  * (upstream: vercel/next.js#100314, fix PR vercel/next.js#100391).
  *
- * Lint blocks static imports of the SDK elsewhere (type-only imports are fine,
- * they are erased), and `scripts/check-function-size.ts` fails the build if
- * the SDK sneaks back into the server another way.
+ * Lint blocks runtime imports (both static `import ... from` and dynamic
+ * `import()`) of the SDK elsewhere, while allowing erased `import type`
+ * declarations, and `scripts/check-function-size.ts` fails the build if the SDK
+ * sneaks back into a server bundle another way.
  */
 export function loadXChatSdk(): Promise<typeof XChatSdk> {
   return typeof window === "undefined"

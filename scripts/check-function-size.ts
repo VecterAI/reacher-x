@@ -8,11 +8,15 @@
  * tracing blowups (like a dynamic path pulling in all of `node_modules`)
  * with a readable report before deploy.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
 const BUDGET_MB = 150;
 const SERVER_DIR = path.join(".next", "server");
+const INSTRUMENTATION_TRACE = path.join(
+  SERVER_DIR,
+  "instrumentation.js.nft.json"
+);
 
 const fileSizes = new Map<string, number>();
 
@@ -38,16 +42,29 @@ function packageOf(file: string): string {
   return match?.[1] ?? "(app)";
 }
 
+function readTraceFiles(tracePath: string): string[] {
+  const entryPath = path.resolve(tracePath.replace(/\.nft\.json$/, ""));
+  const { files } = JSON.parse(readFileSync(tracePath, "utf8")) as {
+    files: string[];
+  };
+  return [
+    entryPath,
+    ...files.map((entry) => path.resolve(path.dirname(tracePath), entry)),
+  ];
+}
+
+// Vercel packs `instrumentation.js` and its traced files into every server function.
+const sharedInstrumentationFiles = existsSync(INSTRUMENTATION_TRACE)
+  ? readTraceFiles(INSTRUMENTATION_TRACE)
+  : [];
+
 const traces = readdirSync(SERVER_DIR, { recursive: true, encoding: "utf8" })
   .filter((file) => file.endsWith(".nft.json"))
   .map((file) => {
     const tracePath = path.join(SERVER_DIR, file);
-    const { files } = JSON.parse(readFileSync(tracePath, "utf8")) as {
-      files: string[];
-    };
-    const resolved = files.map((entry) =>
-      path.resolve(path.dirname(tracePath), entry)
-    );
+    const resolved = [
+      ...new Set([...sharedInstrumentationFiles, ...readTraceFiles(tracePath)]),
+    ];
     const bytes = resolved.reduce((total, entry) => total + sizeOf(entry), 0);
     return {
       route: file.replace(/\.nft\.json$/, ""),
