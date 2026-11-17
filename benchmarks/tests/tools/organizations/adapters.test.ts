@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { replayTransport } from "../../../core/calls/http";
 import { flagRepeats, identityKeys } from "../../../core/judging/identity";
+import { isComplete, toClayQuery } from "../../../people-search/tools/direct/clay";
 import { searchAdapters } from "../../../people-search/tools/registry";
 import { fixtureContext } from "../fixtures";
 import {
@@ -133,7 +134,7 @@ test("Clay's unquoted-value rejection is retried with a hint to quote text value
     )
   );
   assert.equal(result.candidates.length, 1);
-  assert.match(prompts[1], /unquoted: write it as a double-quoted string/);
+  assert.match(prompts[1], /unquoted: write it in single quotes/);
 });
 
 test("a Clay query cut off at an unescaped quote is asked for again, not sent", async () => {
@@ -164,4 +165,25 @@ test("a Clay query cut off at an unescaped quote is asked for again, not sent", 
   );
   assert.equal(result.candidates.length, 1);
   assert.match(prompts[1], /cut off/);
+});
+
+test("single-quoted Clay values become double-quoted strings, and an open value is cut off", () => {
+  assert.equal(
+    toClayQuery(
+      "select from companies where industry = 'Software Development' and country_name in ('United States','Canada')"
+    ),
+    'select from companies where industry = "Software Development" and country_name in ("United States","Canada")'
+  );
+  assert.equal(
+    toClayQuery("industry = 'Women''s Health'"),
+    'industry = "Women\'s Health"'
+  );
+  assert.equal(toClayQuery('industry = "Banking"'), 'industry = "Banking"');
+  assert.equal(toClayQuery("country_name in ('United"), null);
+  const quote = toClayQuery("name = '5\" Tools'");
+  assert.equal(quote, 'name = "5\\" Tools"');
+  assert.equal(isComplete(quote!), true);
+  assert.equal(isComplete('name = "5\\" Tools'), false);
+  const escaped = 'name = "The \\"Women\'s\\" Clinic"';
+  assert.equal(toClayQuery(escaped), escaped);
 });
