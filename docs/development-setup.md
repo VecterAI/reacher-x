@@ -103,6 +103,32 @@ The frontend reads `.env.local`. Convex functions do not: backend values are set
 
 Optional helpers (Exa, Bishopi, GitHub token) are listed in [configuration.md](./configuration.md#optional-product-services). You only need credentials for the area you work on.
 
+## Unlocking the dashboard on a budget (OpenRouter models)
+
+The #1 blocker for contributors and coding agents is getting past workspace setup and its background workflows without burning money on OpenRouter.
+
+To unlock the workspace dashboard, you must generate and approve example profiles during setup and have plan access. Once you approve the examples with plan access, the workspace is marked ready so you can open the dashboard immediately, while the core background workflows start right away to populate it:
+
+- **Discovery workflow**
+- **Qualification workflow**
+- **Enrichment workflow**
+
+By default, workspace setup example generation, discovery query planning, qualification, and the main chat agent use expensive production models (`openai/gpt-6-luna-pro`). When you are contributing to the project, you do not care about the quality of the lead matches. You only need setup and the background workflows to run cleanly so you can build or test your change.
+
+Swap the model roles in your dev Convex deployment to a very cheap model that still handles tool calling and structured outputs reliably, such as a budget Gemini model (`google/gemini-2.5-flash-lite` or `google/gemini-3.1-flash-lite`) or a GLM model (`z-ai/glm-5.3-flash` or `z-ai/glm-4.7-flash`):
+
+```bash
+npx convex env set AI_ONBOARDING_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_SETUP_AGENT_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_MAIN_AGENT_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_FAST_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_REASONING_MODEL google/gemini-2.5-flash-lite
+```
+
+You can substitute `z-ai/glm-5.3-flash` (or another cheap Gemini/GLM model on OpenRouter) in the commands above.
+
+**Do not use free OpenRouter models (such as Nvidia Nemotron `:free` variants).** Free models are low quality and fail to call tools or return structured outputs reliably, which stalls the setup, discovery, qualification, and enrichment workflows. Budget Gemini and GLM models cost fractions of a cent per run and handle tool calling properly.
+
 ## The system in one picture
 
 The full architecture walkthrough with the pipeline details lives in [docs/architecture.md](./architecture.md).

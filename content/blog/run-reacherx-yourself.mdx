@@ -3,7 +3,7 @@ title: "Set up ReacherX and start contributing"
 description: "Fork the repo, run the app, hand the setup to your coding agent, and open your first pull request."
 category: engineering
 date: "2026-09-09"
-updated: "2026-11-13"
+updated: "2026-11-17"
 related: ["how-reacherx-agent-works", "help-build-reacherx"]
 
 tags:
@@ -41,6 +41,22 @@ Three services have special access rules.
 - **Unipile** covers LinkedIn messaging and connected accounts, and uses standard signup.
 
 Everything else follows the standard flow: Convex and WorkOS dashboards for the core, OpenRouter for models, Polar for billing, Resend for email.
+
+### Unlock the dashboard without burning OpenRouter credits
+
+The biggest blocker contributors hit is OpenRouter cost during workspace setup and background runs. To unlock the workspace dashboard, you must generate and approve example profiles during setup and have plan access. Once you approve the examples with plan access, the workspace opens right away while the discovery, qualification, and enrichment workflows start in the background. Setup and those workflows default to expensive production models (`openai/gpt-6-luna-pro`). When you or your coding agent are building a contribution, you don't care about the quality of the lead matches. You just need setup and the background workflows to run cleanly.
+
+Swap the model roles in your dev Convex deployment to a very cheap model that still handles tool calling and structured outputs properly, such as a budget Gemini model (`google/gemini-2.5-flash-lite` or `google/gemini-3.1-flash-lite`) or a GLM model (`z-ai/glm-5.3-flash` or `z-ai/glm-4.7-flash`):
+
+```bash title="Use cheap tool-calling models in dev"
+npx convex env set AI_ONBOARDING_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_SETUP_AGENT_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_MAIN_AGENT_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_FAST_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_REASONING_MODEL google/gemini-2.5-flash-lite
+```
+
+Don't use free OpenRouter models (such as Nvidia Nemotron `:free` variants). Free models are low quality and fail to call tools properly, which breaks workspace setup and the discovery, qualification, and enrichment workflows. Budget Gemini and GLM models cost fractions of a cent per run and call tools reliably.
 
 ## Start the app
 
@@ -99,7 +115,7 @@ Read VISION.md first so the product vision is clear, then follow CONTRIBUTING.md
 6. Install dependencies with pnpm install, then copy .env.example to .env.local.
 7. Install agent tooling for this repo: the Convex plugin for Claude Code, Codex, or Cursor (or npx -y convex@latest mcp start), the Vercel MCP with vercel mcp, and npx convex ai-files install for repo AI files. The repo already ships Convex skills under skills/.
 8. Read docs/configuration.md. Configure only the services for my change area and ask me for missing keys. Special cases: SocialAPI.me access comes from the maintainer, and Renidly signup needs a work email address.
-9. Select a dev Convex deployment with npx convex dev --once. Set backend-only values with npx convex env set. Never commit .env.local and never upload it to Convex.
+9. Select a dev Convex deployment with npx convex dev --once. Set backend-only values with npx convex env set. Never commit .env.local and never upload it to Convex. If my change needs a completed workspace to unlock the dashboard (approving setup examples with plan access opens the workspace immediately and starts the background discovery, qualification, and enrichment workflows), override AI_ONBOARDING_MODEL, AI_SETUP_AGENT_MODEL, AI_MAIN_AGENT_MODEL, AI_FAST_MODEL, and AI_REASONING_MODEL on the dev Convex deployment with a cheap tool-calling model such as google/gemini-2.5-flash-lite or z-ai/glm-5.3-flash instead of expensive production defaults. Never use free OpenRouter models (such as Nvidia Nemotron :free variants) because they fail at tool calling and structured outputs and will break workspace setup and background workflows.
 10. Run npx convex dev and pnpm dev in separate terminals. The site is at http://localhost:3000. For marketing, blog, or demo work, also run cp demos/app/.env.example demos/app/.env.local and pnpm dev:demo in a third terminal; the demo app is at http://localhost:3001.
 11. Before committing, run: pnpm exec tsc --noEmit, pnpm lint:strict, pnpm test:convex, and pnpm exec prettier --check on changed files.
 12. Push to my fork and open a PR against VecterAI/reacher-x:main, referencing the issue from step 1 when there is one. If my change touches the interface, attach proof with the uploads.sh CLI (npm install -g @buildinternet/uploads, uploads login, then uploads put ./before.png --state before --destination screenshots and uploads put ./after.png --state after --destination screenshots), and paste the Markdown it prints into the PR description. For review bot comments (CodeRabbit), verify each suggestion before acting on it and ignore false positives with a short justification. Ask me before building anything bigger than a focused fix.
