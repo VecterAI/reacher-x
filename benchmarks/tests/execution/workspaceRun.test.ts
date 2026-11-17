@@ -787,7 +787,11 @@ test("a continuation that sees a new discovery cycle, or reaches the budget, sto
 test("only a stopped last cycle is continued, and never while its discovery is running or over budget", async () => {
   assert.match(
     resumeProblem({ ...heldRecord, ending: "timed-out" }) ?? "",
-    /only a budget stop or an interruption/
+    /only a budget stop, an interruption or unreadable status/
+  );
+  assert.equal(
+    resumeProblem({ ...heldRecord, ending: "status-unreadable" }),
+    null
   );
   assert.match(
     resumeProblem({

@@ -480,16 +480,18 @@ export async function runWorkspace(
   };
 }
 
-// Harness endings after which the same workspace may be continued.
+// Harness endings after which the same workspace may be continued. A run
+// whose status could not be read was stopped like any other, at its cycle.
 const RESUMABLE_ENDINGS: readonly WorkspaceEnding[] = [
   "budget-stop",
   "interrupted",
+  "status-unreadable",
 ];
 
 /** Why a held workspace cannot be continued, or null when it can. */
 export function resumeProblem(record: WorkspaceRunRecord): string | null {
   if (!RESUMABLE_ENDINGS.includes(record.ending))
-    return `it ended ${record.ending}; only a budget stop or an interruption can be continued.`;
+    return `it ended ${record.ending}; only a budget stop, an interruption or unreadable status can be continued.`;
   if (
     !record.stop.stopped ||
     record.stop.cancelFailed ||

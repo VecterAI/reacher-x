@@ -37,6 +37,8 @@ import {
 
 const LABEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 const MAX_STATUS_ROWS = 2000;
+const LESSON_STATUS_BYTES = 2_000_000;
+const PROCESSING_LESSON_ROWS = 50;
 const MAX_COST_EVENTS_READ = 5000;
 const EVIDENCE_POSTS_KEPT = 3;
 const EVIDENCE_TEXT_CHARS = 1500;
@@ -201,16 +203,31 @@ export const runStatus = internalQuery({
       else counts.unscored += 1;
     }
     // Lesson writing: memory events not yet processed, ignored or failed.
-    const [pendingLessons, processingLessons] = await Promise.all(
-      (["pending", "processing"] as const).map((status) =>
-        ctx.db
-          .query("memoryWorkflowEvents")
-          .withIndex("by_workspace_status_occurred_at", (q) =>
-            q.eq("workspaceId", workspaceId).eq("status", status)
-          )
-          .take(MAX_STATUS_ROWS + 1)
+    // Event payloads can be large, so each read is byte-capped; a partial
+    // read reports truncated and the runner keeps waiting.
+    // Convex allows one paginated query per function: pending events are
+    // paginated; the few in processing (a small pool) are read directly.
+    const pendingResult = await ctx.db
+      .query("memoryWorkflowEvents")
+      .withIndex("by_workspace_status_occurred_at", (q) =>
+        q.eq("workspaceId", workspaceId).eq("status", "pending")
       )
-    );
+      .paginate({
+        numItems: MAX_STATUS_ROWS + 1,
+        cursor: null,
+        maximumBytesRead: LESSON_STATUS_BYTES,
+      });
+    const pendingLessons = {
+      length: pendingResult.isDone
+        ? pendingResult.page.length
+        : Math.max(pendingResult.page.length, MAX_STATUS_ROWS + 1),
+    };
+    const processingLessons = await ctx.db
+      .query("memoryWorkflowEvents")
+      .withIndex("by_workspace_status_occurred_at", (q) =>
+        q.eq("workspaceId", workspaceId).eq("status", "processing")
+      )
+      .take(PROCESSING_LESSON_ROWS);
     return {
       workspaceStatus: workspace.prospectingWorkflowStatus ?? null,
       pauseReason: workspace.prospectingWorkflowPauseReason ?? null,
@@ -225,7 +242,7 @@ export const runStatus = internalQuery({
       truncated:
         prospects.length > MAX_STATUS_ROWS ||
         pendingLessons.length > MAX_STATUS_ROWS ||
-        processingLessons.length > MAX_STATUS_ROWS,
+        processingLessons.length >= PROCESSING_LESSON_ROWS,
     };
   },
 });
