@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "tsx scripts/validate-blog-assets.ts && BROWSERSLIST_IGNORE_OLD_DATA=true BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true next build",
+    "build": "tsx scripts/validate-blog-assets.ts && BROWSERSLIST_IGNORE_OLD_DATA=true BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true next build && tsx scripts/check-function-size.ts",
     "start": "next start",
     "lint": "oxlint --ignore-path .gitignore",
     "lint:fix": "oxlint --ignore-path .gitignore --fix",

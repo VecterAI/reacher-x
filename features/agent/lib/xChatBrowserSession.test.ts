@@ -1064,4 +1064,13 @@ describe("browser-only XChat session", () => {
 
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:optimistic-voice-note");
   });
+
+  it("refuses to load the XChat WASM SDK outside the browser", async () => {
+    const { loadXChatSdk } = await import("./xChatSdk");
+    vi.stubGlobal("window", undefined);
+
+    await expect(loadXChatSdk()).rejects.toThrow(
+      "XChat is only available in the browser."
+    );
+  });
 });
