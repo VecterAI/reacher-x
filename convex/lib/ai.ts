@@ -457,6 +457,20 @@ export function getOpenRouterExtraBody(
   return providerOptions.openrouter;
 }
 
+function getConfiguredProviderLabel(args: {
+  model: string;
+  defaultModel: string;
+  defaultLabel: string;
+}): string {
+  if (args.model === args.defaultModel) {
+    return args.defaultLabel;
+  }
+
+  return isPremiumOpenAIChatModel(args.model)
+    ? `${OPENROUTER_PROVIDERS.OPENAI}/${OPENROUTER_PROVIDERS.AZURE}`
+    : "openrouter";
+}
+
 function getModelForRouting(routing: ModelRouting): RoutingModelConfig {
   if (routing === "onboarding") {
     return {
@@ -467,7 +481,29 @@ function getModelForRouting(routing: ModelRouting): RoutingModelConfig {
     };
   }
 
-  return getRoutingPresetConfig()[routing];
+  if (routing === "fast") {
+    return {
+      model: FAST_MODEL,
+      providerOptions: FAST_PROVIDER_OPTIONS,
+      providerLabel: getConfiguredProviderLabel({
+        model: FAST_MODEL,
+        defaultModel: activeRoutingConfig.fast.model,
+        defaultLabel: activeRoutingConfig.fast.providerLabel,
+      }),
+      timeoutMs: activeRoutingConfig.fast.timeoutMs,
+    };
+  }
+
+  return {
+    model: REASONING_MODEL,
+    providerOptions: AGENT_PROVIDER_OPTIONS,
+    providerLabel: getConfiguredProviderLabel({
+      model: REASONING_MODEL,
+      defaultModel: activeRoutingConfig.reasoning.model,
+      defaultLabel: activeRoutingConfig.reasoning.providerLabel,
+    }),
+    timeoutMs: activeRoutingConfig.reasoning.timeoutMs,
+  };
 }
 
 export function getRoutingTelemetry(routing: ModelRouting): {

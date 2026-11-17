@@ -310,9 +310,9 @@ Role-specific model variables take precedence over the preset. A newly selected 
 
 ### Low-Cost Models For Local Development And Contributors
 
-Unlocking the full dashboard requires completing workspace setup, which runs the discovery, qualification, and enrichment workflows. Because `AI_ONBOARDING_MODEL` and `AI_MAIN_AGENT_MODEL` default to the expensive production model (`openai/gpt-6-luna-pro`), running setup on default settings is the #1 cost blocker for contributors and coding agents.
+Unlocking the workspace dashboard requires generating and approving setup examples with plan access; once approved, the workspace opens immediately and schedules the background discovery, qualification, and enrichment workflows. Because `AI_ONBOARDING_MODEL` and `AI_MAIN_AGENT_MODEL` default to the expensive production model (`openai/gpt-6-luna-pro`), running setup and its background workflows on default settings is the #1 cost blocker for contributors and coding agents.
 
-When developing locally or contributing a fix, match quality does not matter; the workflows only need to finish cleanly. Override the model roles in your dev Convex deployment with an ultra-cheap model that still handles tool calling and structured outputs reliably, such as a budget Gemini model (`google/gemini-2.5-flash-lite` or `google/gemini-3.1-flash-lite`) or a GLM model (`z-ai/glm-5.3-flash` or `z-ai/glm-4.7-flash`):
+When developing locally or contributing a fix, match quality does not matter; setup and the background workflows only need to run cleanly. Override the model roles in your dev Convex deployment with an ultra-cheap model that still handles tool calling and structured outputs reliably, such as a budget Gemini model (`google/gemini-2.5-flash-lite` or `google/gemini-3.1-flash-lite`) or a GLM model (`z-ai/glm-5.3-flash` or `z-ai/glm-4.7-flash`):
 
 ```bash
 npx convex env set AI_ONBOARDING_MODEL google/gemini-2.5-flash-lite
