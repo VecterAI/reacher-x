@@ -117,9 +117,14 @@ export function parseTregRows(
                 description: row.summary ?? row.headline,
               })
             : companyEntity({
-                // Some providers (Exa) keep the name in a title or entity.
+                // Some providers keep the name elsewhere: Hunter in
+                // organization, Exa in an entity or the page title.
                 name:
-                  row.name ?? row.company_name ?? entityName(row) ?? row.title,
+                  row.name ??
+                  row.company_name ??
+                  row.organization ??
+                  entityName(row) ??
+                  row.title,
                 profileUrl: linkedinUrl(urls) ?? row.website ?? row.domain,
                 domain: row.domain ?? row.website ?? row.primary_domain,
                 location: row.location ?? joinText([row.city, row.country]),

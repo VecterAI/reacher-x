@@ -254,3 +254,23 @@ test("a company row in Exa's shape keeps its name when served through Treg", () 
   );
   assert.equal(company.entity.name, "Vector Example");
 });
+
+test("a company row in Hunter's shape keeps its name and domain when served through Treg", () => {
+  const [company] = parseTregRows(
+    {
+      companies: [
+        {
+          domain: "vector.example",
+          emails_count: { generic: 2, personal: 5, total: 7 },
+          organization: "Vector Example",
+        },
+      ],
+      count: 1,
+    },
+    task("organization"),
+    "2026-11-14T00:00:00Z",
+    5
+  );
+  assert.equal(company.entity.name, "Vector Example");
+  assert.equal(company.entity.prospectType, "organization");
+});
