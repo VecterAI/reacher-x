@@ -89,3 +89,49 @@ test("the same company returned by every tool is flagged as a repeat by identity
     flags.every((flag) => flag.repeatsTools.length === results.length - 1)
   );
 });
+
+test("Clay's unquoted-value rejection is retried with a hint to quote text values", async () => {
+  const fixture = organizationFixtures.clay;
+  const [reference, , run] = fixture.exchanges;
+  const prompts: string[] = [];
+  const outputs: Record<string, unknown> = {
+    "query#1": { query: "unquoted query" },
+    "query#2": { query: "synthetic companies query" },
+  };
+  const model = savedModel(outputs);
+  const result = await searchAdapters.clay.search(
+    companyTask,
+    fixtureContext(
+      replayTransport([
+        reference,
+        {
+          step: "create#1",
+          request: {
+            method: "POST",
+            url: run.request.url.replace(/\/search-1\/run$/, ""),
+            body: { query: "unquoted query" },
+          },
+          response: {
+            status: 400,
+            body: {
+              message: "Expected value but got IDENT (at line 1, col 41)",
+            },
+            headers: {},
+          },
+          latencyMs: 100,
+        },
+        { ...fixture.exchanges[1], step: "create#2" },
+        { ...run, step: "run#2" },
+      ]),
+      fixture.topK,
+      fixture.secrets,
+      companyFilters,
+      async (step, id, request) => {
+        prompts.push(request.prompt);
+        return model(step, id, request);
+      }
+    )
+  );
+  assert.equal(result.candidates.length, 1);
+  assert.match(prompts[1], /unquoted: write it as a double-quoted string/);
+});

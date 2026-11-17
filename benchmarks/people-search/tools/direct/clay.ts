@@ -25,6 +25,7 @@ const rows = (value: unknown) =>
 const INSTRUCTIONS = `Write one Clay search query for the request below, using the reference above.
 Select from people for a person request and from companies for a company request.
 Express every filter given; do not add requirements and do not widen any of them.
+Write every text value as a double-quoted string, in lists too: industry = "Software Development", country_name in ("United States", "Canada").
 Return JSON {"query": "<the Clay query>"}.`;
 
 /**
@@ -94,7 +95,12 @@ export const clayAdapter: SearchAdapter = {
       });
       const message = text(asRecord(created.response.body).message);
       if (created.response.status === 400 && attempt === 1 && message) {
-        rejection = message.slice(0, 500);
+        // Clay reports an unquoted text value only as an unexpected IDENT.
+        rejection = `${message.slice(0, 500)}${
+          /got IDENT/.test(message)
+            ? " (a text value is probably unquoted: write it as a double-quoted string)"
+            : ""
+        }`;
         continue;
       }
       if (created.response.status !== 200)
