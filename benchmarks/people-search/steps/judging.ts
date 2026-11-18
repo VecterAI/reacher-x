@@ -143,7 +143,9 @@ export function reacherxTargets(
           (prospect) =>
             prospect.prospectType === "individual" &&
             cycleOf(prospect) === cycle.cycle
-        )
+        ),
+        // Every company is judged (agreed 18 Nov 2026); the top 5 count in the comparison.
+        Number.POSITIVE_INFINITY
       ).forEach(({ prospect, candidate }) =>
         targets.push({
           ...base,

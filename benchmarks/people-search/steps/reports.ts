@@ -449,6 +449,7 @@ function comparisonTable(
           "| Group | Tool | Prompts | ReacherX via people minus tool | 95% interval | Holm p |",
           "| --- | --- | ---: | ---: | --- | ---: |",
           ...comparisonRows(viaPeople),
+          ...viaPeopleShare(comparisonCases(outcomes)),
         ]
       : []),
     ...(atTen.length
@@ -473,6 +474,28 @@ function comparisonTable(
           }),
         ]
       : []),
+  ];
+}
+
+/** Every company behind ReacherX's people, judged: the share that fits, per prompt. */
+function viaPeopleShare(cases: readonly JudgedCase[]) {
+  const judged = cases.filter((item) => item.toolId === VIA_PEOPLE_TOOL_ID);
+  if (!judged.length) return [];
+  const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+  return [
+    "",
+    "All companies judged, not only the top 5 (a share, not compared with other tools):",
+    "",
+    "| Prompt | Companies judged | Verified | Verified share |",
+    "| --- | ---: | ---: | --- |",
+    ...[...new Set(judged.map((item) => item.taskId))].sort().map((taskId) => {
+      const rows = judged.filter((item) => item.taskId === taskId);
+      const verified = rows.filter(
+        (item) => item.record.panel.verifiedMatch
+      ).length;
+      const { interval } = wilson(verified, rows.length);
+      return `| ${taskId} | ${rows.length} | ${verified} | ${pct(verified / rows.length)} (95% CI ${pct(interval!.lower)}-${pct(interval!.upper)}) |`;
+    }),
   ];
 }
 
