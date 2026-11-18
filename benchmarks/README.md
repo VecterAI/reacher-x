@@ -93,6 +93,8 @@ benchmarks/
     analysis/
       decisions.ts               D1-D4 conditions and the one-page checkpoint report
       round1.ts                  Exact re-score of round one's saved verdicts
+    reports/
+      D1.md                      Decision point D1 after the smoke test (aggregate figures only)
     tools/
       types.ts                   Adapter contract: search context in, typed results and receipt out
       catalog.ts                 Nine tools, transports and judged top K
