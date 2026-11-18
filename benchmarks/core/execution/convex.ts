@@ -32,6 +32,7 @@ const PEOPLE_SEARCH_HOOKS = {
   keywordPostSearchLimitStatus:
     "benchmarkPeopleSearch:keywordPostSearchLimitStatus",
   matchLimitStatus: "benchmarkPeopleSearch:matchLimitStatus",
+  matchLimitPerQueryStatus: "benchmarkPeopleSearch:matchLimitPerQueryStatus",
   matchLimitParked: "benchmarkPeopleSearch:matchLimitParked",
   resumeHeldWorkspace: "benchmarkPeopleSearch:resumeHeldWorkspace",
 } as const satisfies Record<string, `benchmarkPeopleSearch:${string}`>;
@@ -133,6 +134,7 @@ export const RUNTIME_SETTINGS = [
   "BENCHMARK_KEYWORD_POST_SEARCH_LIMIT",
   "BENCHMARK_HALTED_WORKSPACE_ID",
   "BENCHMARK_MATCH_LIMIT_PER_CYCLE",
+  "BENCHMARK_MATCH_LIMIT_PER_QUERY",
 ] as const;
 export type RuntimeSetting = (typeof RUNTIME_SETTINGS)[number];
 export const LEARNING_OFF_SETTING = "BENCHMARK_LEARNING_OFF_WORKSPACE_IDS";
@@ -145,6 +147,24 @@ export const HALT_SETTING = "BENCHMARK_HALTED_WORKSPACE_ID";
 // Development only: most matches a benchmark workspace's cycle qualifies before
 // the plan-limit gate parks further qualification (convex/lib/benchmarkMatchLimit.ts).
 export const MATCH_LIMIT_SETTING = "BENCHMARK_MATCH_LIMIT_PER_CYCLE";
+// Development only: most matches a benchmark workspace qualifies across all its
+// cycles; once reached, the gate parks qualification and no further cycle runs.
+export const QUERY_MATCH_LIMIT_SETTING = "BENCHMARK_MATCH_LIMIT_PER_QUERY";
+
+// Each match limit: its setting, the hook confirming it, and its name in errors.
+const MATCH_LIMITS = {
+  cycle: {
+    setting: MATCH_LIMIT_SETTING,
+    status: PEOPLE_SEARCH_HOOKS.matchLimitStatus,
+    name: "match limit",
+  },
+  query: {
+    setting: QUERY_MATCH_LIMIT_SETTING,
+    status: PEOPLE_SEARCH_HOOKS.matchLimitPerQueryStatus,
+    name: "match limit per query",
+  },
+} as const;
+export type MatchLimitScope = keyof typeof MATCH_LIMITS;
 
 /** Development provider keys replaced by funded keys during a live step, then restored. */
 export const PROVIDER_KEYS = ["SOCIALAPI_API_KEY", "LINKDAPI_API_KEY"] as const;
@@ -197,9 +217,16 @@ const statusFields = {
   truncated: z.boolean(),
 };
 const matchLimitFields = {
+  // The cycle's limit: the lower of the limit per cycle and what the limit
+  // per query leaves after earlier cycles.
   limit: z.number(),
   qualifiedThisCycle: z.number(),
   reached: z.boolean(),
+  // The limit per query and the workspace's matches over all its cycles;
+  // null (and not reached) when none applies or the deployment predates it.
+  queryLimit: z.number().nullable().default(null),
+  queryMatches: z.number().nullable().default(null),
+  queryReached: z.boolean().default(false),
 };
 
 // What `runStatus` returns; the parked work is read page by page after it.
@@ -483,28 +510,28 @@ export class ConvexReacherXDriver {
   }
 
   /**
-   * Sets the match limit per benchmark workspace cycle (or clears it with
-   * null) and returns the limit in effect. A limit must be confirmed by the
-   * deployment's own resolver; a cleared one only needs the setting gone,
-   * because an unset value means no limit. Stops on any mismatch.
+   * Sets a match limit, per benchmark workspace cycle or per query (or clears
+   * it with null), and returns the limit in effect. A limit must be confirmed
+   * by the deployment's own resolver; a cleared one only needs the setting
+   * gone, because an unset value means no limit. Stops on any mismatch.
    */
-  async applyMatchLimit(limit: number | null) {
+  async applyMatchLimit(
+    limit: number | null,
+    scope: MatchLimitScope = "cycle"
+  ) {
+    const { setting, status: hook, name } = MATCH_LIMITS[scope];
     if (limit === null) {
-      if ((await this.getSetting(MATCH_LIMIT_SETTING)) !== null)
-        await this.env(["remove", MATCH_LIMIT_SETTING]);
-      if ((await this.getSetting(MATCH_LIMIT_SETTING)) !== null)
-        throw new ConvexCommandError("The match limit was not cleared.");
+      if ((await this.getSetting(setting)) !== null)
+        await this.env(["remove", setting]);
+      if ((await this.getSetting(setting)) !== null)
+        throw new ConvexCommandError(`The ${name} was not cleared.`);
       return null;
     }
-    await this.setSetting(MATCH_LIMIT_SETTING, String(limit));
-    const status = await this.call(
-      PEOPLE_SEARCH_HOOKS.matchLimitStatus,
-      {},
-      capStatusSchema
-    );
+    await this.setSetting(setting, String(limit));
+    const status = await this.call(hook, {}, capStatusSchema);
     if (status.error || status.limit !== limit || status.source !== "benchmark")
       throw new ConvexCommandError(
-        "The deployment did not confirm the requested match limit."
+        `The deployment did not confirm the requested ${name}.`
       );
     return status.limit;
   }

@@ -39,6 +39,7 @@ const config: LiveSessionConfig = {
   deploymentOpenRouterKey: "or-deployment",
   keywordPostSearchLimit: 50,
   matchLimitPerCycle: 20,
+  matchLimitPerQuery: 100,
 };
 const workspace = { workspaceId: "w1", createdAt: 1, label: "run-1_6_on" };
 const SECRETS = ["social-funded", "linkd-funded", "social-dev", "linkd-dev"];
@@ -58,6 +59,7 @@ test("a step runs with funded keys and run settings, then everything is restored
     assert.deepEqual(session.confirmed.poolLimits, STARTER);
     assert.equal(session.confirmed.keywordPostSearchLimit, 50);
     assert.equal(session.matchLimitPerCycle, 20);
+    assert.equal(session.matchLimitPerQuery, 100);
     return Object.fromEntries(env);
   });
   assert.equal(seen.SOCIALAPI_API_KEY, "social-funded");
@@ -68,6 +70,7 @@ test("a step runs with funded keys and run settings, then everything is restored
   assert.deepEqual(JSON.parse(seen.BENCHMARK_POOL_LIMITS), STARTER);
   assert.equal(seen.BENCHMARK_KEYWORD_POST_SEARCH_LIMIT, "50");
   assert.equal(seen.BENCHMARK_MATCH_LIMIT_PER_CYCLE, "20");
+  assert.equal(seen.BENCHMARK_MATCH_LIMIT_PER_QUERY, "100");
 
   // Exactly the original deployment afterwards.
   assert.deepEqual(Object.fromEntries(env), AT_REST);
@@ -156,6 +159,11 @@ test("nothing changes when the deployment is not ready for a step", async () => 
       { ...AT_REST, BENCHMARK_MATCH_LIMIT_PER_CYCLE: "20" },
       {},
       /match limit per cycle is still set/,
+    ],
+    [
+      { ...AT_REST, BENCHMARK_MATCH_LIMIT_PER_QUERY: "100" },
+      {},
+      /match limit per query is still set/,
     ],
     [{ ...AT_REST, OPENROUTER_API_KEY: "or-other" }, {}, /OpenRouter key/],
     [
@@ -287,36 +295,54 @@ test("a step without a match limit leaves none set and needs no deployment check
   await withLiveSession(
     driver,
     memoryFile(),
-    { ...config, matchLimitPerCycle: null },
+    { ...config, matchLimitPerCycle: null, matchLimitPerQuery: undefined },
     async (session) => {
       assert.equal(session.matchLimitPerCycle, null);
+      assert.equal(session.matchLimitPerQuery, null);
       assert.equal(env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE"), false);
+      assert.equal(env.has("BENCHMARK_MATCH_LIMIT_PER_QUERY"), false);
     }
   );
   assert.ok(
-    !functionCalls().includes("benchmarkPeopleSearch:matchLimitStatus")
+    !functionCalls().some((name) =>
+      name.startsWith("benchmarkPeopleSearch:matchLimit")
+    )
   );
   assert.deepEqual(Object.fromEntries(env), AT_REST);
 });
 
 test("a match limit the deployment does not confirm stops the step and resets it", async () => {
-  const { env, driver } = fakeDeployment(AT_REST, {
-    "benchmarkPeopleSearch:matchLimitStatus": () => ({
-      limit: null,
-      source: "default",
-      error: "BENCHMARK_MATCH_LIMIT_PER_CYCLE is not valid; no limit applies",
-    }),
-  });
-  let ran = false;
-  await assert.rejects(
-    withLiveSession(driver, memoryFile(), config, async () => {
-      ran = true;
-    }),
-    /did not confirm the requested match limit/
-  );
-  assert.equal(ran, false);
-  assert.equal(env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE"), false);
-  assert.equal(env.get("PAUSE_AUTONOMOUS_JOBS"), "true");
+  for (const [hook, setting, message] of [
+    [
+      "matchLimitStatus",
+      "BENCHMARK_MATCH_LIMIT_PER_CYCLE",
+      /did not confirm the requested match limit\./,
+    ],
+    [
+      "matchLimitPerQueryStatus",
+      "BENCHMARK_MATCH_LIMIT_PER_QUERY",
+      /did not confirm the requested match limit per query/,
+    ],
+  ] as const) {
+    const { env, driver } = fakeDeployment(AT_REST, {
+      [`benchmarkPeopleSearch:${hook}`]: () => ({
+        limit: null,
+        source: "default",
+        error: `${setting} is not valid; no limit applies`,
+      }),
+    });
+    let ran = false;
+    await assert.rejects(
+      withLiveSession(driver, memoryFile(), config, async () => {
+        ran = true;
+      }),
+      message
+    );
+    assert.equal(ran, false);
+    assert.equal(env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE"), false);
+    assert.equal(env.has("BENCHMARK_MATCH_LIMIT_PER_QUERY"), false);
+    assert.equal(env.get("PAUSE_AUTONOMOUS_JOBS"), "true");
+  }
 });
 
 test("a development key that was unset is removed again, not left funded", async () => {
@@ -334,6 +360,7 @@ test("run settings cannot take over what the runner manages", () => {
     { ...base, production: { BENCHMARK_LEARNING_OFF_WORKSPACE_IDS: "w1" } },
     { ...base, runOnly: { BENCHMARK_KEYWORD_POST_SEARCH_LIMIT: "100" } },
     { ...base, runOnly: { BENCHMARK_MATCH_LIMIT_PER_CYCLE: "20" } },
+    { ...base, runOnly: { BENCHMARK_MATCH_LIMIT_PER_QUERY: "100" } },
     {
       ...base,
       production: { AI_FAST_MODEL: "a" },

@@ -5,6 +5,7 @@ import {
   KEYWORD_SEARCH_CAP_SETTING,
   MATCH_LIMIT_SETTING,
   PROVIDER_KEYS,
+  QUERY_MATCH_LIMIT_SETTING,
   RUNTIME_SETTINGS,
   poolLimitsSchema,
   type BenchmarkWorkspace,
@@ -37,6 +38,7 @@ const MANAGED_SETTINGS: readonly RuntimeSetting[] = [
   KEYWORD_SEARCH_CAP_SETTING,
   HALT_SETTING,
   MATCH_LIMIT_SETTING,
+  QUERY_MATCH_LIMIT_SETTING,
 ];
 
 const settingValuesSchema = z.partialRecord(
@@ -107,6 +109,10 @@ export function atRestProblems(
   if (settings[MATCH_LIMIT_SETTING] !== null)
     problems.push(
       `A match limit per cycle is still set (${MATCH_LIMIT_SETTING}).`
+    );
+  if (settings[QUERY_MATCH_LIMIT_SETTING] !== null)
+    problems.push(
+      `A match limit per query is still set (${QUERY_MATCH_LIMIT_SETTING}).`
     );
   return problems;
 }
@@ -230,6 +236,9 @@ export type LiveSessionConfig = Readonly<{
   // Most matches a workspace cycle qualifies before the plan-limit gate parks
   // further qualification (step-only, never frozen), or null for no limit.
   matchLimitPerCycle: number | null;
+  // Most matches a workspace qualifies across its cycles, after which no
+  // further cycle runs (step-only, never frozen); absent or null for none.
+  matchLimitPerQuery?: number | null;
 }>;
 
 export type ConfirmedRunSettings = Readonly<{
@@ -249,6 +258,9 @@ export type LiveSession = Readonly<{
   // A step's sessions can differ (a continuation may add one), so it is
   // recorded on each workspace run it governs, never as a step setting.
   matchLimitPerCycle: number | null;
+  // The match limit per query the deployment confirmed, or null; recorded
+  // the same way.
+  matchLimitPerQuery: number | null;
   /** Records the workspace about to run (or null once it is stopped) before anything else happens. */
   trackWorkspace(workspace: BenchmarkWorkspace | null): Promise<void>;
 }>;
@@ -297,7 +309,9 @@ async function applyRunSettings(
   driver: ConvexReacherXDriver,
   config: LiveSessionConfig
 ): Promise<
-  Pick<LiveSession, "matchLimitPerCycle"> & { confirmed: ConfirmedRunSettings }
+  Pick<LiveSession, "matchLimitPerCycle" | "matchLimitPerQuery"> & {
+    confirmed: ConfirmedRunSettings;
+  }
 > {
   // Funded keys, confirmed by fingerprint so neither value is ever printed.
   for (const name of PROVIDER_KEYS) {
@@ -338,6 +352,10 @@ async function applyRunSettings(
   const matchLimitPerCycle = await driver.applyMatchLimit(
     config.matchLimitPerCycle
   );
+  const matchLimitPerQuery = await driver.applyMatchLimit(
+    config.matchLimitPerQuery ?? null,
+    "query"
+  );
 
   // Unpause last; pool limits are reconciled only while jobs run.
   await driver.setSetting("PAUSE_AUTONOMOUS_JOBS", "false");
@@ -354,6 +372,7 @@ async function applyRunSettings(
       keywordPostSearchLimit,
     },
     matchLimitPerCycle,
+    matchLimitPerQuery,
   };
 }
 
@@ -419,7 +438,7 @@ export async function withLiveSession<T>(
 
 /**
  * Proposal 5.3 step 6. Stops the tracked workspace, clears pool limits, the
- * keyword post-search cap and the match limit, pauses jobs, restores every
+ * keyword post-search cap and the match limits, pauses jobs, restores every
  * recorded setting, and restores the development keys;
  * the SocialAPI key only once the workspace's monitors are deleted, because
  * the funded key's account owns them. Each part is attempted even when an
@@ -485,6 +504,13 @@ export async function resetLiveSession(
   await attempt("The match limit was not confirmed cleared.", async () => {
     await driver.applyMatchLimit(null);
   });
+
+  await attempt(
+    "The match limit per query was not confirmed cleared.",
+    async () => {
+      await driver.applyMatchLimit(null, "query");
+    }
+  );
 
   await attempt("Autonomous jobs could not be paused.", () =>
     driver.setSetting(

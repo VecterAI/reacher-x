@@ -287,10 +287,13 @@ test("the step report states the match limit each workspace ran with, never one 
     same,
     /^Match limit: 20 per cycle, applied through the plan-limit gate \(agreed by the project lead, 17 Nov 2026/
   );
-  assert.match(same, /Only the cycle's first 20 matches were enriched/);
-  // Records from before the limit existed ran without one.
+  assert.match(same, /Only the cycle's first 20 matches at most were enriched/);
+  // Neither line rules out the other limit.
+  assert.doesNotMatch(same, /scheduled as usual|only the plan/);
+  // Records from before the limits existed ran without them.
   assert.deepEqual(matchLimitLines(outcome("smoke", [workspace("p14")])), [
-    "Match limit: none; only the plan's own limit applied in this step.",
+    "Match limit per cycle: none.",
+    "Match limit per query: none.",
   ]);
 
   // The smoke workspace: its cycle and first continuation ran without a
@@ -307,9 +310,76 @@ test("the step report states the match limit each workspace ran with, never one 
     ])
   );
   assert.match(lines[0], /^Match limit: not the same for every workspace run/);
-  assert.deepEqual(lines.slice(1), [
+  assert.deepEqual(lines.slice(1, 3), [
     "- synthetic_p14_on: no match limit during its cycle; match limit 20 per cycle from the 17 Nov resume.",
     "- synthetic_p06_on: match limit 20 per cycle throughout.",
   ]);
   assert.ok(lines.every((line) => !line.startsWith("Match limit: 20")));
+});
+
+test("the step report states the match limit per query, and ending at it is not a failure", () => {
+  const limited = (
+    taskId: string,
+    ending: string,
+    matchLimitPerQuery = 100
+  ) => {
+    const item = workspace(taskId);
+    return {
+      ...item,
+      record: {
+        ...item.record,
+        plannedCycles: 3,
+        ending,
+        matchLimitPerCycle: 20,
+        matchLimitPerQuery,
+      },
+    };
+  };
+  const [cycle, query] = matchLimitLines(
+    outcome("smoke", [
+      limited("p14", "match-limit-per-query"),
+      limited("p06", "planned-cycles"),
+    ])
+  );
+  assert.match(cycle, /^Match limit: 20 per cycle/);
+  assert.match(
+    query,
+    /^Match limit per query: 100 matches per workspace over all its cycles, applied through the plan-limit gate and the cycle-start limit check \(agreed by the project lead, 17 Nov 2026; development-only BENCHMARK_MATCH_LIMIT_PER_QUERY\)/
+  );
+  assert.match(query, /ended match-limit-per-query, with fewer cycles/);
+  // A limit per query alone: the per-cycle line claims nothing about it.
+  const [noCycle, onlyQuery] = matchLimitLines(
+    outcome("smoke", [
+      {
+        ...limited("p14", "match-limit-per-query"),
+        record: {
+          ...limited("p14", "match-limit-per-query").record,
+          matchLimitPerCycle: null,
+        },
+      },
+    ])
+  );
+  assert.equal(noCycle, "Match limit per cycle: none.");
+  assert.match(onlyQuery, /^Match limit per query: 100 matches/);
+  const differing = matchLimitLines(
+    outcome("smoke", [
+      limited("p14", "planned-cycles", 50),
+      limited("p06", "planned-cycles"),
+    ])
+  );
+  assert.deepEqual(differing.slice(-3), [
+    differing.at(-3)!,
+    "- synthetic_p14_on: match limit 50 per query throughout.",
+    "- synthetic_p06_on: match limit 100 per query throughout.",
+  ]);
+  assert.match(differing.at(-3)!, /^Match limit per query: not the same/);
+
+  const failures = (ending: string) =>
+    decide(
+      outcome("stage2-rest", [limited("p14", ending)]),
+      context([]),
+      "D4"
+    )?.rows.find((row) => row.condition === "Nothing has failed");
+  assert.equal(failures("match-limit-per-query")?.status, "pass");
+  assert.equal(failures("timed-out")?.status, "fail");
 });

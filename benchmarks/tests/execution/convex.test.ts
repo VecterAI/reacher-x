@@ -150,4 +150,13 @@ test("status adds up parked work page by page once the match limit is reached", 
     pending: 0,
     enrichmentWaiting: 0,
   });
+  // A deployment without the limit per query reports none.
+  assert.deepEqual(
+    {
+      queryLimit: open?.matchLimit?.queryLimit,
+      queryMatches: open?.matchLimit?.queryMatches,
+      queryReached: open?.matchLimit?.queryReached,
+    },
+    { queryLimit: null, queryMatches: null, queryReached: false }
+  );
 });

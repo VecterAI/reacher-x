@@ -32,6 +32,12 @@ export function fakeDeployment(
   const ignoredSets = new Set<string>();
   // runStatus scripts carry the parked work; the driver reads it by page.
   let parked: unknown = { pending: 0, enrichmentWaiting: 0 };
+  // A match limit as the deployment's resolver reports a valid setting.
+  const matchLimitStatus = (name: string) => ({
+    limit: env.has(name) ? Number(env.get(name)) : null,
+    source: env.has(name) ? "benchmark" : "default",
+    error: null,
+  });
   const defaults: Record<string, Handler> = {
     "tenantScheduler:reconcilePoolConfigurationInternal": () => ({
       enforced: false,
@@ -62,15 +68,10 @@ export function fakeDeployment(
       ...(parked as object),
       cursor: null,
     }),
-    "benchmarkPeopleSearch:matchLimitStatus": () => ({
-      limit: env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE")
-        ? Number(env.get("BENCHMARK_MATCH_LIMIT_PER_CYCLE"))
-        : null,
-      source: env.has("BENCHMARK_MATCH_LIMIT_PER_CYCLE")
-        ? "benchmark"
-        : "default",
-      error: null,
-    }),
+    "benchmarkPeopleSearch:matchLimitStatus": () =>
+      matchLimitStatus("BENCHMARK_MATCH_LIMIT_PER_CYCLE"),
+    "benchmarkPeopleSearch:matchLimitPerQueryStatus": () =>
+      matchLimitStatus("BENCHMARK_MATCH_LIMIT_PER_QUERY"),
     "benchmarkPeopleSearch:stopRun": () => ({
       stopped: true,
       cancelFailed: false,

@@ -63,6 +63,7 @@ import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { isWorkspaceInactive } from "../lib/workspaceSystem";
 import { getSystemRuntimeConfig } from "../lib/runtimeConfigHelpers";
+import { benchmarkQueryLimitState } from "../lib/benchmarkMatchLimit";
 import {
   attributeNewTwitterProspectsToQueries,
   getTwitterProspectingPageLimit,
@@ -253,6 +254,37 @@ export const prospectingWorkflow = workflow.define({
           currentCount: limitCheck.currentCount,
           limit: limitCheck.limit,
         }),
+        shouldContinue: false,
+      };
+    }
+
+    // Development benchmark only: the workspace already has every match its
+    // match limit per query allows, so the cycle ends as at a used-up plan.
+    // The capacity reconcile and plan-limit notification are left out: both
+    // are plan-based and would undo or misreport it. Never set in production
+    // (see lib/benchmarkMatchLimit.ts); results recorded before the field
+    // existed lack it.
+    const queryLimit = limitCheck.benchmarkQueryLimit;
+    if (queryLimit?.reached) {
+      await step.runMutation(
+        internal.memory.recordMemoryWorkflowEventInternal,
+        {
+          workspaceId: args.workspaceId,
+          eventType: "prospecting_cycle_limit_reached",
+          sourceType: "workflow_event",
+          sourceId: workflowSourceId,
+          workflowName: "prospectingWorkflow",
+          payload: {
+            reason: "benchmark_query_limit_reached",
+            currentCount: queryLimit.matches,
+            limit: queryLimit.limit,
+          },
+          eventKey: `prospecting:${workflowSourceId}:limit_reached`,
+        }
+      );
+      return {
+        status: "limit_reached",
+        reason: `This benchmark search has ${queryLimit.matches} matches, reaching its limit of ${queryLimit.limit}, so no more cycles run.`,
         shouldContinue: false,
       };
     }
@@ -978,6 +1010,7 @@ export const checkProspectLimitInternal = internalQuery({
         tier: "free" as const,
         cycleStart: 0,
         cycleEnd: 0,
+        benchmarkQueryLimit: null,
       };
     }
 
@@ -987,6 +1020,10 @@ export const checkProspectLimitInternal = internalQuery({
       workspace.userId
     );
     const { tier, currentCount, limit } = usage;
+    // Development benchmark only: the workspace's matches against the
+    // benchmark's match limit per query, for the cycle start. Null and
+    // reads nothing unless it is set (see lib/benchmarkMatchLimit.ts).
+    const benchmarkQueryLimit = await benchmarkQueryLimitState(ctx, workspace);
 
     // If unlimited, never reached
     if (limit === -1) {
@@ -997,6 +1034,7 @@ export const checkProspectLimitInternal = internalQuery({
         tier,
         cycleStart: usage.cycleStart,
         cycleEnd: usage.cycleEnd,
+        benchmarkQueryLimit,
       };
     }
 
@@ -1007,6 +1045,7 @@ export const checkProspectLimitInternal = internalQuery({
       tier,
       cycleStart: usage.cycleStart,
       cycleEnd: usage.cycleEnd,
+      benchmarkQueryLimit,
     };
   },
 });

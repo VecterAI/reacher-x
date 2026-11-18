@@ -105,10 +105,16 @@ export const workspaceRunRecordSchema: z.ZodType<WorkspaceRunRecord> = z.object(
           }),
           requeued: resumeResultSchema.nullable(),
           matchLimitPerCycle: nullableNumber.optional(),
+          matchLimitPerQuery: nullableNumber.optional(),
         })
       )
       .optional(),
     matchLimitPerCycle: nullableNumber.optional(),
+    matchLimitPerQuery: nullableNumber.optional(),
+    queryLimitReached: z
+      .object({ cycle: z.number().int(), limit: z.number().int() })
+      .optional(),
+    latestWorkflowId: z.string().optional(),
   }
 );
 
@@ -391,9 +397,12 @@ export async function runWorkspaceUnits(
           track: phase.gate.tracking(session.trackWorkspace),
         };
         const watch = { ...phase.watch, signal: phase.signal };
-        // The match limit this session confirmed belongs to the run or the
-        // continuation it governed, since a step's sessions can differ.
-        const limit = { matchLimitPerCycle: session.matchLimitPerCycle };
+        // The match limits this session confirmed belong to the run or the
+        // continuation they governed, since a step's sessions can differ.
+        const limit = {
+          matchLimitPerCycle: session.matchLimitPerCycle,
+          matchLimitPerQuery: session.matchLimitPerQuery,
+        };
         const record = held
           ? withLatestContinuation(
               await resumeWorkspace(

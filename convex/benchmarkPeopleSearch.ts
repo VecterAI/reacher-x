@@ -38,6 +38,7 @@ import {
   benchmarkMatchLimitState,
   firstMatchIds,
   resolveMatchLimitPerCycle,
+  resolveMatchLimitPerQuery,
 } from "./lib/benchmarkMatchLimit";
 
 const LABEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
@@ -192,8 +193,9 @@ export const runStatus = internalQuery({
       ...summary,
       _id: summary.prospectId,
     }));
-    // Development-only match limit per cycle; null when none applies. The
-    // work it parks is counted page by page by `matchLimitParked`.
+    // Development-only match limits (per cycle, per query); null when none
+    // applies. The work they park is counted page by page by
+    // `matchLimitParked`.
     const matchLimit = await benchmarkMatchLimitState(ctx, workspace);
     const counts = {
       total: 0,
@@ -263,6 +265,9 @@ export const runStatus = internalQuery({
         limit: matchLimit.limit,
         qualifiedThisCycle: matchLimit.qualifiedThisCycle,
         reached: matchLimit.reached,
+        queryLimit: matchLimit.queryLimit,
+        queryMatches: matchLimit.queryMatches,
+        queryReached: matchLimit.queryReached,
       },
       pendingLessonWrites: pendingLessons.length + processingLessons.length,
       truncated:
@@ -1023,6 +1028,12 @@ export const matchLimitParked = internalQuery({
 export const matchLimitStatus = internalQuery({
   args: {},
   handler: async () => resolveMatchLimitPerCycle(),
+});
+
+/** The match limit per query in effect, from the same resolver the plan-limit gate and the cycle start read. */
+export const matchLimitPerQueryStatus = internalQuery({
+  args: {},
+  handler: async () => resolveMatchLimitPerQuery(),
 });
 
 /** Clears a LinkedIn circuit breaker left open by an earlier run, before a new run. */

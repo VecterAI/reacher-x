@@ -118,6 +118,7 @@ function approval(segment: SegmentId, accounts: StepAccounts): SegmentApproval {
     credits: [{ accountId: accounts.renidly.accountId, maxCredits: 1_000 }],
     keywordPostSearchCallsPerCycle: DEFAULT_KEYWORD_POST_SEARCH_CALLS,
     matchLimitPerCycle: null,
+    matchLimitPerQuery: null,
     ...(segment.startsWith("stage2")
       ? {
           stage2: {

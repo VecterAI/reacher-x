@@ -16,9 +16,11 @@ import type { LearningCondition } from "../types";
 /**
  * Proposal 5.3 step 2: one ReacherX workspace from creation to pause. The
  * deployment schedules its own cycles; the runner counts them by workflow,
- * turns automatic cycles off once the last planned cycle has started, cancels
- * any next cycle scheduled anyway, waits for the last qualification and lesson
- * writing, and records each cycle's timing and the deployment key's spend.
+ * turns automatic cycles off once the last planned cycle has started (or the
+ * match limit per query is reached, which makes the current cycle the last),
+ * cancels any next cycle scheduled anyway, waits for the last qualification
+ * and lesson writing, and records each cycle's timing and the deployment
+ * key's spend.
  * Times come from the deployment where it reports them (cycle starts) and
  * from this machine's polls otherwise, so the machine clock must be synced.
  */
@@ -91,6 +93,9 @@ type MutableCycle = { -readonly [K in keyof CycleRecord]: CycleRecord[K] };
 
 export const WORKSPACE_ENDINGS = [
   "planned-cycles",
+  // Fewer cycles than planned ran, because the workspace reached the
+  // development-only match limit per query; a completed workspace.
+  "match-limit-per-query",
   "cycle-failed",
   "extra-cycle",
   "workspace-halted",
@@ -101,6 +106,15 @@ export const WORKSPACE_ENDINGS = [
   "interrupted",
 ] as const;
 export type WorkspaceEnding = (typeof WORKSPACE_ENDINGS)[number];
+
+// Endings of a workspace whose last cycle settled as the runner intended.
+export const COMPLETED_ENDINGS: readonly WorkspaceEnding[] = [
+  "planned-cycles",
+  "match-limit-per-query",
+];
+
+/** Where the match limit per query made the workspace's current cycle its last. */
+export type QueryLimitReached = Readonly<{ cycle: number; limit: number }>;
 
 /**
  * One continuation of a workspace the harness had stopped (`pnpm benchmark
@@ -136,6 +150,8 @@ export type ResumeRecord = Readonly<{
   // step from its live session; absent in records made before the limit
   // existed, when none could apply.
   matchLimitPerCycle?: number | null;
+  // The match limit per query in force for this continuation, the same way.
+  matchLimitPerQuery?: number | null;
 }>;
 
 export type WorkspaceRunRecord = Readonly<{
@@ -169,7 +185,23 @@ export type WorkspaceRunRecord = Readonly<{
   // continuation, set by the step from its live session; absent in records
   // made before the limit existed, when none could apply.
   matchLimitPerCycle?: number | null;
+  // The match limit per query in force the same way.
+  matchLimitPerQuery?: number | null;
+  // Set by the runner when that limit was reached before the last planned
+  // cycle, which made that cycle the workspace's last.
+  queryLimitReached?: QueryLimitReached;
+  // The deployment's workflow when it is not the last cycle's: a cycle it
+  // ended at its start because the query's matches were in, which is not
+  // counted as a cycle. A continuation resumes the workspace at it.
+  latestWorkflowId?: string;
 }>;
+
+/** What the runner learns about the match limit per query while it watches. */
+type QueryLimitProgress = {
+  reached: QueryLimitReached | null;
+  // The cycle the deployment ended at its start, if one started.
+  refusedWorkflowId: string | null;
+};
 
 export class WorkspaceRunError extends Error {}
 
@@ -194,6 +226,32 @@ async function stopWorkspace(
 }
 
 const TERMINAL_STATES = new Set(["completed", "failed", "canceled"]);
+
+/** How a workspace whose last cycle settled ends: early when the match limit per query cut its cycles. */
+function settledEnding(
+  plannedCycles: number,
+  reached: QueryLimitReached | null | undefined
+): { ending: WorkspaceEnding; detail: string | null } {
+  if (!reached) return { ending: "planned-cycles", detail: null };
+  return {
+    ending: "match-limit-per-query",
+    detail: `The match limit per query (${reached.limit}) was reached in cycle ${reached.cycle}, so ${reached.cycle} of ${plannedCycles} planned cycles ran.`,
+  };
+}
+
+/**
+ * Whether the current cycle began with the query's matches already in, so the
+ * deployment ended it at its start (convex/workflows/prospecting.ts).
+ */
+function startedAtQueryLimit(status: NonNullable<RunStatus>) {
+  const limit = status.matchLimit;
+  return (
+    limit?.queryLimit != null &&
+    limit.queryMatches != null &&
+    limit.queryMatches - limit.qualifiedThisCycle >= limit.queryLimit
+  );
+}
+
 const LABEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 // Clock difference allowed when recovering a workspace whose creation timed out.
 const CLOCK_MARGIN_MS = 5 * 60_000;
@@ -246,10 +304,14 @@ async function watchCycles(
   options: WatchOptions,
   clock: Clock,
   cycles: MutableCycle[],
-  firstCycleSpendUsd: number | null
+  firstCycleSpendUsd: number | null,
+  // Set once the match limit per query makes a cycle before the last
+  // planned one the last.
+  limit: QueryLimitProgress
 ): Promise<{ ending: WorkspaceEnding; detail: string | null }> {
   let deadline = clock.now() + options.startTimeoutMs;
   let automatic = plan.cycles > 1;
+  let finalCycle = plan.cycles;
   let failures = 0;
   // A streak of idle polls with an unchanged prospect count.
   let quiet = null as { since: number; polls: number; total: number } | null;
@@ -280,7 +342,26 @@ async function watchCycles(
     const now = clock.now();
 
     const previous = cycles.at(-1);
-    if (status.workflowId && status.workflowId !== previous?.workflowId) {
+    if (
+      previous &&
+      status.workflowId &&
+      status.workflowId !== previous.workflowId &&
+      status.workflowId !== limit.refusedWorkflowId &&
+      startedAtQueryLimit(status)
+    ) {
+      // Started although the query's matches were in, so it ended at once
+      // without discovery. The cycle before it stays the current one; its
+      // own workflow has finished.
+      limit.refusedWorkflowId = status.workflowId;
+      previous.outcome ??= "unknown";
+      previous.discoveryEndedAt ??= now;
+      previous.nextStartAt = status.workflowStartedAt ?? now;
+      previous.nextStartObserved = true;
+    } else if (
+      status.workflowId &&
+      status.workflowId !== previous?.workflowId &&
+      status.workflowId !== limit.refusedWorkflowId
+    ) {
       const spend = await hooks.readSpendUsd();
       const startedAt = status.workflowStartedAt ?? now;
       if (previous) {
@@ -303,10 +384,12 @@ async function watchCycles(
         spendAtEndUsd: null,
       });
       quiet = null;
-      if (cycles.length > plan.cycles)
+      if (cycles.length > finalCycle)
         return {
           ending: "extra-cycle",
-          detail: `Cycle ${cycles.length} started although ${plan.cycles} were planned.`,
+          detail: limit.reached
+            ? `Cycle ${cycles.length} started although the match limit per query made cycle ${finalCycle} the last.`
+            : `Cycle ${cycles.length} started although ${plan.cycles} were planned.`,
         };
       deadline = now + options.maxCycleMs;
       if (cycles.length === plan.cycles && automatic) {
@@ -325,7 +408,27 @@ async function watchCycles(
       await clock.sleep(options.pollMs, options.signal);
       continue;
     }
-    const final = cycle.cycle === plan.cycles;
+    const queryLimit = status.matchLimit?.queryLimit;
+    if (
+      status.matchLimit?.queryReached &&
+      queryLimit != null &&
+      cycle.cycle < finalCycle
+    ) {
+      // The query has all its matches, so this cycle is the last, as the
+      // last planned one would be.
+      finalCycle = cycle.cycle;
+      limit.reached = { cycle: cycle.cycle, limit: queryLimit };
+      if (automatic) {
+        await driver.setSetting("PROSPECTING_AUTO_RESCHEDULE", "0");
+        automatic = false;
+      }
+      if (cycle.discoveryEndedAt !== null) {
+        const scheduled = status.nextRunAt;
+        await driver.cancelScheduledCycles(workspace);
+        cycle.nextStartAt ??= scheduled ?? now + options.scheduledGapMs;
+      }
+    }
+    const final = cycle.cycle === finalCycle;
     if (
       cycle.discoveryEndedAt === null &&
       status.workflowState !== null &&
@@ -375,7 +478,7 @@ async function watchCycles(
         cycle.settledAt = quiet.since;
     }
     if (final && cycle.settledAt !== null)
-      return { ending: "planned-cycles", detail: null };
+      return settledEnding(plan.cycles, limit.reached);
     if (now > deadline)
       return {
         ending: "timed-out",
@@ -441,6 +544,7 @@ export async function runWorkspace(
   const startedAt = clock.now();
 
   const cycles: MutableCycle[] = [];
+  const limit: QueryLimitProgress = { reached: null, refusedWorkflowId: null };
   let watched: { ending: WorkspaceEnding; detail: string | null };
   try {
     await driver.start(workspace).catch((error: unknown) => {
@@ -457,7 +561,8 @@ export async function runWorkspace(
       options,
       clock,
       cycles,
-      beforeStartUsd
+      beforeStartUsd,
+      limit
     );
   } catch (error) {
     // Interrupted, the start failed or a driver call failed: still stop, measure and export.
@@ -504,6 +609,10 @@ export async function runWorkspace(
     recorded: { costs, linkdApi },
     stop,
     prospects,
+    ...(limit.reached && { queryLimitReached: limit.reached }),
+    ...(limit.refusedWorkflowId && {
+      latestWorkflowId: limit.refusedWorkflowId,
+    }),
   };
 }
 
@@ -527,8 +636,10 @@ export function resumeProblem(record: WorkspaceRunRecord): string | null {
     return "it was not confirmed stopped.";
   if (!record.cycles.length)
     return "its first cycle never started, so there is nothing to continue.";
-  if (record.cycles.length !== record.plannedCycles)
-    return `it stopped in cycle ${record.cycles.length} of ${record.plannedCycles}; only the last planned cycle can be continued.`;
+  // The match limit per query can make an earlier cycle the last.
+  const last = record.queryLimitReached?.cycle ?? record.plannedCycles;
+  if (record.cycles.length !== last)
+    return `it stopped in cycle ${record.cycles.length} of ${last}; only the last cycle can be continued.`;
   return null;
 }
 
@@ -539,7 +650,7 @@ export function resumeProblem(record: WorkspaceRunRecord): string | null {
  */
 async function watchContinuation(
   driver: ConvexReacherXDriver,
-  workspace: BenchmarkWorkspace,
+  { workspace, plannedCycles, queryLimitReached }: WorkspaceRunRecord,
   workflowId: string,
   hooks: WorkspaceHooks,
   options: WatchOptions,
@@ -608,7 +719,10 @@ async function watchContinuation(
       quiet = { ...quiet, polls: quiet.polls + 1 };
     else quiet = { since: now, polls: 1, total: status.counts.total };
     if (quiet && quiet.polls >= options.settlePolls)
-      return { ending: "planned-cycles", detail: null, settledAt: quiet.since };
+      return {
+        ...settledEnding(plannedCycles, queryLimitReached),
+        settledAt: quiet.since,
+      };
     if (now > deadline)
       return {
         ending: "timed-out",
@@ -642,6 +756,9 @@ export async function resumeWorkspace(
     throw new WorkspaceRunError(`This workspace cannot be resumed: ${problem}`);
   const { workspace } = held;
   const last = held.cycles.at(-1)!;
+  // The deployment's workflow, which a refused cycle can have moved past the
+  // last cycle's; the workspace is resumed and watched at it.
+  const workflowId = held.latestWorkflowId ?? last.workflowId;
   const activity = await driver.activity();
   if (activity.truncated || activity.workspaceIds.length)
     throw new WorkspaceRunError(
@@ -670,7 +787,7 @@ export async function resumeWorkspace(
   if (
     !before ||
     before.workspaceStatus !== "paused" ||
-    before.workflowId !== last.workflowId ||
+    before.workflowId !== workflowId ||
     before.workflowState === null ||
     !TERMINAL_STATES.has(before.workflowState)
   )
@@ -686,7 +803,7 @@ export async function resumeWorkspace(
   let watched: Awaited<ReturnType<typeof watchContinuation>>;
   try {
     requeued = await driver
-      .resume(workspace, last.workflowId)
+      .resume(workspace, workflowId)
       .catch((error: unknown) => {
         throw Object.assign(new WorkspaceRunError("The resume call failed."), {
           cause: error,
@@ -694,8 +811,8 @@ export async function resumeWorkspace(
       });
     watched = await watchContinuation(
       driver,
-      workspace,
-      last.workflowId,
+      held,
+      workflowId,
       hooks,
       options,
       clock

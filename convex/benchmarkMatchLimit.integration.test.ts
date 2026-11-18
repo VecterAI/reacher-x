@@ -257,10 +257,75 @@ describe.each([
       limit: 2,
       qualifiedThisCycle: 0,
       reached: false,
+      queryLimit: null,
+      queryMatches: null,
+      queryReached: false,
     });
     expect(await parkedWork(t, workspaceId)).toEqual({
       pending: 0,
       enrichmentWaiting: 0,
+    });
+  });
+  test("a limit per query leaves each cycle what earlier cycles left; the lower limit applies", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_CYCLE", "3");
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "5");
+    // Three matches earlier leave this cycle 2, under its own 3.
+    const { t, workspaceId, ids } = await fixture(
+      [earlier, earlier, earlier, matched(1), matched(0), pending],
+      { aggregate }
+    );
+    const [previous, , , second, first, undecided] = ids;
+    expect(await gate(t, workspaceId, undecided)).toEqual(PARKED);
+    for (const open of [first, second])
+      expect(await gate(t, workspaceId, open)).toEqual(ALLOWED);
+    expect(await gate(t, workspaceId, previous)).toEqual(PARKED);
+    const status = await t.query(internal.benchmarkPeopleSearch.runStatus, {
+      workspaceId,
+    });
+    expect(status?.matchLimit).toEqual({
+      limit: 2,
+      qualifiedThisCycle: 2,
+      reached: true,
+      queryLimit: 5,
+      queryMatches: 5,
+      queryReached: true,
+    });
+    expect(await parkedWork(t, workspaceId)).toEqual({
+      pending: 1,
+      enrichmentWaiting: 3,
+    });
+
+    // With room for more, the limit per cycle is the lower one.
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "10");
+    expect(await gate(t, workspaceId, undecided)).toEqual(ALLOWED);
+    expect(
+      (await t.query(internal.benchmarkPeopleSearch.runStatus, { workspaceId }))
+        ?.matchLimit
+    ).toMatchObject({ limit: 3, reached: false, queryReached: false });
+  });
+
+  test("with nothing left for the cycle, everything is parked", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "2");
+    const { t, workspaceId, ids } = await fixture(
+      [earlier, earlier, matched(0), pending],
+      { aggregate }
+    );
+    for (const id of ids)
+      expect(await gate(t, workspaceId, id)).toEqual(PARKED);
+    expect(
+      (await t.query(internal.benchmarkPeopleSearch.runStatus, { workspaceId }))
+        ?.matchLimit
+    ).toEqual({
+      limit: 0,
+      qualifiedThisCycle: 1,
+      reached: true,
+      queryLimit: 2,
+      queryMatches: 3,
+      queryReached: true,
+    });
+    expect(await parkedWork(t, workspaceId)).toEqual({
+      pending: 1,
+      enrichmentWaiting: 3,
     });
   });
 });
@@ -405,10 +470,96 @@ describe("benchmark match limit", () => {
       limit: 3,
       qualifiedThisCycle: 5,
       reached: true,
+      queryLimit: null,
+      queryMatches: null,
+      queryReached: false,
     });
     expect(await parkedWork(t, workspaceId)).toEqual({
       pending: 1,
       enrichmentWaiting: 2,
+    });
+  });
+  test("a limit per query alone limits the cycle to what earlier cycles left", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "4");
+    const under = await fixture([earlier, earlier, matched(0), pending]);
+    expect(await gate(under.t, under.workspaceId, under.ids[3])).toEqual(
+      ALLOWED
+    );
+    expect(
+      (
+        await under.t.query(internal.benchmarkPeopleSearch.runStatus, {
+          workspaceId: under.workspaceId,
+        })
+      )?.matchLimit
+    ).toEqual({
+      limit: 2,
+      qualifiedThisCycle: 1,
+      reached: false,
+      queryLimit: 4,
+      queryMatches: 3,
+      queryReached: false,
+    });
+    const at = await fixture([
+      earlier,
+      earlier,
+      matched(0),
+      matched(1),
+      pending,
+    ]);
+    expect(await gate(at.t, at.workspaceId, at.ids[4])).toEqual(PARKED);
+  });
+
+  test("a limit per query that is invalid or on another workspace limits nothing", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "0");
+    const seeds = [earlier, matched(0), pending];
+    const benchmark = await fixture(seeds);
+    expect(
+      await gate(benchmark.t, benchmark.workspaceId, benchmark.ids[2])
+    ).toEqual(ALLOWED);
+    const reported = await benchmark.t.query(
+      internal.benchmarkPeopleSearch.matchLimitPerQueryStatus,
+      {}
+    );
+    expect(reported).toEqual({
+      limit: null,
+      source: "default",
+      error: "BENCHMARK_MATCH_LIMIT_PER_QUERY is not valid; no limit applies",
+    });
+    expect(
+      await benchmark.t.query(
+        internal.workflows.prospecting.checkProspectLimitInternal,
+        { workspaceId: benchmark.workspaceId }
+      )
+    ).toMatchObject({ benchmarkQueryLimit: null });
+
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "1");
+    const ordinary = await fixture(seeds, { name: "Sales team" });
+    expect(
+      await gate(ordinary.t, ordinary.workspaceId, ordinary.ids[2])
+    ).toEqual(ALLOWED);
+    expect(
+      await ordinary.t.query(
+        internal.workflows.prospecting.checkProspectLimitInternal,
+        { workspaceId: ordinary.workspaceId }
+      )
+    ).toMatchObject({ limitReached: false, benchmarkQueryLimit: null });
+  });
+
+  test("the cycle-start check sees the limit per query over every cycle, not the plan", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "3");
+    const { t, workspaceId } = await fixture([earlier, earlier, matched(0)]);
+    const check = () =>
+      t.query(internal.workflows.prospecting.checkProspectLimitInternal, {
+        workspaceId,
+      });
+    expect(await check()).toMatchObject({
+      limitReached: false,
+      limit: -1,
+      benchmarkQueryLimit: { limit: 3, matches: 3, reached: true },
+    });
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "4");
+    expect(await check()).toMatchObject({
+      benchmarkQueryLimit: { limit: 4, matches: 3, reached: false },
     });
   });
 });

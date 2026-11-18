@@ -725,7 +725,242 @@ test("a held workspace continues its own cycle: no discovery, the pause left out
 const limited = (
   parked: { pending: number; enrichmentWaiting: number },
   qualifiedThisCycle = 325
-) => ({ limit: 20, qualifiedThisCycle, reached: true, parked });
+) => ({
+  limit: 20,
+  qualifiedThisCycle,
+  reached: true,
+  queryLimit: null,
+  queryMatches: null,
+  queryReached: false,
+  parked,
+});
+
+// Under a match limit per query of 100: the workspace's matches so far, and
+// how many of them its current cycle qualified.
+const perQuery = (
+  queryMatches: number,
+  qualifiedThisCycle = queryMatches
+): NonNullable<RunStatus>["matchLimit"] => ({
+  limit: Math.max(0, 100 - (queryMatches - qualifiedThisCycle)),
+  qualifiedThisCycle,
+  reached: queryMatches >= 100,
+  queryLimit: 100,
+  queryMatches,
+  queryReached: queryMatches >= 100,
+  parked: { pending: 0, enrichmentWaiting: 0 },
+});
+
+const autoWritesOf = (deployment: ReturnType<typeof fakeDeployment>) =>
+  deployment.calls
+    .filter(
+      (call) =>
+        call.args[2] === "PROSPECTING_AUTO_RESCHEDULE" && call.args[1] === "set"
+    )
+    .map((call) => call.stdin);
+
+test("the match limit per query makes the current cycle the last: automatic cycles off, the next canceled, a completed ending", async () => {
+  const scheduled = T + 20 * POLL;
+  const deployment = fakeDeployment(
+    {},
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        status({
+          workflowId: "wf1",
+          workflowState: "inProgress",
+          workflowStartedAt: T,
+          matchLimit: perQuery(60),
+        }),
+        status({
+          workflowId: "wf1",
+          workflowState: "inProgress",
+          counts: { total: 120, pending: 4 },
+          matchLimit: perQuery(100),
+        }),
+        // Scheduled before automatic cycles went off.
+        status({
+          workflowId: "wf1",
+          workflowState: "completed",
+          nextRunAt: scheduled,
+          counts: { total: 120 },
+          matchLimit: perQuery(101),
+        }),
+        status({
+          workflowId: "wf1",
+          workflowState: "completed",
+          counts: { total: 120 },
+          matchLimit: perQuery(101),
+        }),
+      ]),
+    }
+  );
+  const record = await runWorkspace(
+    deployment.driver,
+    { ...plan, cycles: 3 },
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(record.ending, "match-limit-per-query");
+  assert.match(record.detail ?? "", /reached in cycle 1, so 1 of 3 planned/);
+  assert.deepEqual(record.queryLimitReached, { cycle: 1, limit: 100 });
+  assert.equal(record.cycles.length, 1);
+  assert.deepEqual(autoWritesOf(deployment), ["1\n", "0\n"]);
+  assert.equal(
+    deployment
+      .functionCalls()
+      .filter((name) => name === "benchmarkPeopleSearch:cancelScheduledCycles")
+      .length,
+    1
+  );
+  assert.equal(record.cycles[0].nextStartAt, scheduled);
+  assert.equal(record.cycles[0].settledAt, T + 2 * POLL);
+  // A completed workspace with a stopped last cycle, so nothing to resume.
+  assert.match(resumeProblem(record) ?? "", /ended match-limit-per-query/);
+
+  // Reached in the last planned cycle, it is an ordinary planned end.
+  const last = await runWorkspace(
+    fakeDeployment(
+      {},
+      {
+        "benchmarkPeopleSearch:runStatus": scripted([
+          status({
+            workflowId: "wf1",
+            workflowState: "completed",
+            workflowStartedAt: T,
+            matchLimit: perQuery(100),
+          }),
+        ]),
+      }
+    ).driver,
+    { ...plan, cycles: 1 },
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(last.ending, "planned-cycles");
+  assert.equal(last.queryLimitReached, undefined);
+});
+
+test("a cycle the deployment ends at its start because the query's matches are in is not counted", async () => {
+  const wf2Start = T + 2 * POLL - 5_000;
+  const deployment = fakeDeployment(
+    {},
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        status({
+          workflowId: "wf1",
+          workflowState: "inProgress",
+          workflowStartedAt: T,
+          matchLimit: perQuery(40),
+        }),
+        status({
+          workflowId: "wf1",
+          workflowState: "completed",
+          counts: { total: 90, pending: 6 },
+          matchLimit: perQuery(95),
+        }),
+        // The 100th match came in after the next cycle was scheduled.
+        status({
+          workflowId: "wf2",
+          workflowState: "completed",
+          workflowStartedAt: wf2Start,
+          counts: { total: 90 },
+          matchLimit: perQuery(100, 0),
+          pendingLessonWrites: 1,
+        }),
+        status({
+          workflowId: "wf2",
+          workflowState: "completed",
+          workflowStartedAt: wf2Start,
+          counts: { total: 90 },
+          matchLimit: perQuery(100, 0),
+        }),
+      ]),
+    }
+  );
+  const record = await runWorkspace(
+    deployment.driver,
+    { ...plan, cycles: 3 },
+    hooks().value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(record.ending, "match-limit-per-query");
+  assert.deepEqual(record.queryLimitReached, { cycle: 1, limit: 100 });
+  assert.equal(record.cycles.length, 1);
+  assert.equal(record.cycles[0].outcome, "completed");
+  assert.equal(record.cycles[0].nextStartAt, wf2Start);
+  assert.equal(record.cycles[0].nextStartObserved, true);
+  // Settled once the refused cycle's lesson write was done.
+  assert.equal(record.cycles[0].settledAt, T + 3 * POLL);
+  assert.deepEqual(autoWritesOf(deployment), ["1\n", "0\n"]);
+  assert.equal(record.latestWorkflowId, "wf2");
+});
+
+test("a workspace stopped after a refused cycle is continued at the deployment's latest workflow", async () => {
+  const refused = status({
+    workflowId: "wf2",
+    workflowState: "completed",
+    workflowStartedAt: T + POLL,
+    counts: { total: 90, pending: 6 },
+    matchLimit: perQuery(100, 0),
+  });
+  const deployment = fakeDeployment(
+    {},
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        status({
+          workflowId: "wf1",
+          workflowState: "completed",
+          workflowStartedAt: T,
+          counts: { total: 90, pending: 6 },
+          matchLimit: perQuery(95),
+        }),
+        refused,
+      ]),
+    }
+  );
+  // The budget runs out while the last cycle's qualification settles.
+  let polls = 0;
+  const { value } = hooks([], () => {
+    if (++polls > 4) throw new BudgetStop("Synthetic budget reached.");
+  });
+  const held = await runWorkspace(
+    deployment.driver,
+    { ...plan, cycles: 3 },
+    value,
+    options,
+    fakeClock(T)
+  );
+  assert.equal(held.ending, "budget-stop");
+  assert.equal(held.cycles.length, 1);
+  assert.equal(held.latestWorkflowId, "wf2");
+  assert.equal(resumeProblem(held), null);
+
+  const settled = status({ ...refused, counts: { total: 90 } });
+  const continued = fakeDeployment(
+    {},
+    {
+      "benchmarkPeopleSearch:runStatus": scripted([
+        { ...settled, workspaceStatus: "paused" },
+        settled,
+      ]),
+    }
+  );
+  const record = await resumeWorkspace(
+    continued.driver,
+    held,
+    hooks().value,
+    options,
+    fakeClock(T + 10 * POLL)
+  );
+  assert.deepEqual(
+    argsOf(continued, "benchmarkPeopleSearch:resumeHeldWorkspace"),
+    [{ workspaceId: "w1", workflowId: "wf2" }]
+  );
+  assert.equal(record.ending, "match-limit-per-query");
+  assert.equal(record.cycles.length, 1);
+});
 
 test("a cycle that reached its match limit settles once only parked work is left", async () => {
   const run = (
@@ -966,6 +1201,15 @@ test("only a stopped last cycle is continued, and never while its discovery is r
   assert.match(
     resumeProblem({ ...heldRecord, plannedCycles: 2 }) ?? "",
     /cycle 1 of 2/
+  );
+  // The match limit per query made cycle 1 the last.
+  assert.equal(
+    resumeProblem({
+      ...heldRecord,
+      plannedCycles: 2,
+      queryLimitReached: { cycle: 1, limit: 100 },
+    }),
+    null
   );
   assert.match(
     resumeProblem({ ...heldRecord, cycles: [] }) ?? "",

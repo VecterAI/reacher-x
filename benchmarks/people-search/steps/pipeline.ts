@@ -134,6 +134,16 @@ export const segmentApprovalSchema = z.strictObject({
     .max(100_000)
     .nullable()
     .default(null),
+  // The development-only match limit per workspace over all its cycles (the
+  // query's total), applied the same way; once reached, no further cycle
+  // runs. Absent or null for none. Fixed for the step.
+  matchLimitPerQuery: z
+    .number()
+    .int()
+    .min(1)
+    .max(100_000)
+    .nullable()
+    .default(null),
 });
 export type SegmentApproval = z.infer<typeof segmentApprovalSchema>;
 
@@ -558,6 +568,7 @@ async function runSegment(
               ? approval.keywordPostSearchCallsPerCycle
               : DEFAULT_KEYWORD_POST_SEARCH_CALLS,
             matchLimitPerCycle: approval?.matchLimitPerCycle ?? null,
+            matchLimitPerQuery: approval?.matchLimitPerQuery ?? null,
             ...deps.session,
           },
           (session) => {

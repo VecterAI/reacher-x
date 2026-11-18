@@ -44,6 +44,7 @@ type Env = {
   readonly BENCHMARK_KEYWORD_POST_SEARCH_LIMIT: string | undefined;
   readonly BENCHMARK_LEARNING_OFF_WORKSPACE_IDS: string | undefined;
   readonly BENCHMARK_MATCH_LIMIT_PER_CYCLE: string | undefined;
+  readonly BENCHMARK_MATCH_LIMIT_PER_QUERY: string | undefined;
   readonly BENCHMARK_POOL_LIMITS: string | undefined;
   readonly ENRICHMENT_MAX_PARALLELISM: string | undefined;
   readonly ENRICHMENT_RETRY_INITIAL_BACKOFF_MS: string | undefined;

@@ -18,7 +18,10 @@ import {
   type UsageUnits,
 } from "../../core/calls/rates";
 import { summarizeUsage } from "../../core/execution/spend";
-import { cycleMeasurements } from "../../core/execution/workspaceRun";
+import {
+  COMPLETED_ENDINGS,
+  cycleMeasurements,
+} from "../../core/execution/workspaceRun";
 import { flagRepeats } from "../../core/judging/identity";
 import type { AgreementReport } from "../../core/judging/labels";
 import {
@@ -698,12 +701,16 @@ function learningSection(outcome: SegmentOutcome, context: ReportContext) {
   return lines;
 }
 
-/** Problems a decision point must see: units held for review and workspaces that did not end as planned. */
+/**
+ * Problems a decision point must see: units held for review and workspaces
+ * that did not end as planned. Ending early at the match limit per query is
+ * planned.
+ */
 function problemsOf(outcome: SegmentOutcome) {
   return [
     ...outcome.review.map((item) => `${item.unitId}: ${item.reason}`),
     ...outcome.workspaces
-      .filter((item) => item.record.ending !== "planned-cycles")
+      .filter((item) => !COMPLETED_ENDINGS.includes(item.record.ending))
       .map(
         (item) =>
           `${item.label} ended ${item.record.ending}${item.record.detail ? ` (${item.record.detail})` : ""}`
@@ -782,7 +789,7 @@ function resumedLines(outcome: SegmentOutcome) {
           ? "."
           : "; discovery had been cut off by the stop and was not repeated."
       } ${
-        resumed.at(-1)!.ending === "planned-cycles"
+        COMPLETED_ENDINGS.includes(resumed.at(-1)!.ending)
           ? "The continuation settled."
           : `The continuation ended ${resumed.at(-1)!.ending}.`
       }`,
@@ -1038,12 +1045,23 @@ export function keywordSearchCapLine(
   return `Keyword post-search cap: in force for this step, at most ${limit} LinkdAPI calls per workspace cycle for enrichment's search of each LinkedIn prospect's own posts for finance keywords (development-only BENCHMARK_KEYWORD_POST_SEARCH_LIMIT). Searches past it stopped early, so some enriched prospects show fewer finance posts than production would; discovery, profile and company reads and qualification were not capped.`;
 }
 
-// The decision behind the development-only match limit.
+// The decision behind the development-only match limits.
 const MATCH_LIMIT_AGREEMENT = "agreed by the project lead, 17 Nov 2026";
 const MATCH_LIMIT_HOW = `applied through the plan-limit gate (${MATCH_LIMIT_AGREEMENT}; development-only BENCHMARK_MATCH_LIMIT_PER_CYCLE)`;
+const QUERY_LIMIT_HOW = `applied through the plan-limit gate and the cycle-start limit check (${MATCH_LIMIT_AGREEMENT}; development-only BENCHMARK_MATCH_LIMIT_PER_QUERY)`;
 
-const describeMatchLimit = (limit: number | null) =>
-  limit === null ? "no match limit" : `match limit ${limit} per cycle`;
+type MatchLimitScope = "cycle" | "query";
+const MATCH_LIMIT_FIELD = {
+  cycle: "matchLimitPerCycle",
+  query: "matchLimitPerQuery",
+} as const;
+
+const describeMatchLimit = (limit: number | null, scope: MatchLimitScope) =>
+  limit === null
+    ? scope === "cycle"
+      ? "no match limit"
+      : "no match limit per query"
+    : `match limit ${limit} per ${scope}`;
 const dayOf = (time: number) =>
   new Date(time).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -1052,70 +1070,97 @@ const dayOf = (time: number) =>
   });
 
 /**
- * The match limit in force from a workspace's start, then in each
+ * A match limit in force from a workspace's start, then in each
  * continuation. Records made before the limit existed carry none, because
  * none could apply.
  */
-function matchLimitPhases(record: WorkspaceOutcome["record"]) {
+function matchLimitPhases(
+  record: WorkspaceOutcome["record"],
+  scope: MatchLimitScope
+) {
+  const field = MATCH_LIMIT_FIELD[scope];
   return {
-    start: record.matchLimitPerCycle ?? null,
+    start: record[field] ?? null,
     continuations: (record.resumed ?? []).map((entry) => ({
-      limit: entry.matchLimitPerCycle ?? null,
+      limit: entry[field] ?? null,
       resumedAt: entry.resumedAt,
     })),
   };
 }
 
 /** One workspace's match limit, naming each continuation that changed it. */
-function workspaceMatchLimit(record: WorkspaceOutcome["record"]) {
-  const { start, continuations } = matchLimitPhases(record);
+function workspaceMatchLimit(
+  record: WorkspaceOutcome["record"],
+  scope: MatchLimitScope
+) {
+  const { start, continuations } = matchLimitPhases(record, scope);
   const changes = continuations.filter(
     (phase, index) =>
       phase.limit !== (index ? continuations[index - 1].limit : start)
   );
-  if (!changes.length) return `${describeMatchLimit(start)} throughout`;
+  if (!changes.length) return `${describeMatchLimit(start, scope)} throughout`;
   const cycles =
     record.cycles.length === 1
       ? "its cycle"
       : `its ${record.cycles.length} cycles`;
   return [
-    `${describeMatchLimit(start)} during ${cycles}`,
+    `${describeMatchLimit(start, scope)} during ${cycles}`,
     ...changes.map(
       (phase) =>
-        `${describeMatchLimit(phase.limit)} from the ${dayOf(phase.resumedAt)} resume`
+        `${describeMatchLimit(phase.limit, scope)} from the ${dayOf(phase.resumedAt)} resume`
     ),
   ].join("; ");
 }
 
+// What each match limit did, for one limit shared by the step or several.
+// Each states only its own effect, since the other limit may also apply.
+const MATCH_LIMIT_TEXT = {
+  cycle: {
+    none: "Match limit per cycle: none.",
+    one: (limit: number) =>
+      `Match limit: ${limit} per cycle, ${MATCH_LIMIT_HOW}. Once a workspace's cycle had ${limit} matches, qualifying its other prospects was parked as at a plan limit; qualifications already running finished, so a cycle can hold a few more. Only the cycle's first ${limit} matches at most were enriched. This limit never stopped or delayed a cycle; each cycle counted from zero.`,
+    several: `Match limit: not the same for every workspace run, so stated per workspace. Where in force it was ${MATCH_LIMIT_HOW}: once a cycle had that many matches, qualifying its other prospects was parked as at a plan limit, qualifications already running finished, and only the cycle's first matches up to the limit were enriched.`,
+  },
+  query: {
+    none: "Match limit per query: none.",
+    one: (limit: number) =>
+      `Match limit per query: ${limit} matches per workspace over all its cycles, ${QUERY_LIMIT_HOW}. Each cycle could add only what earlier cycles left (the lower of this and any limit per cycle applied). Once a workspace had ${limit} matches, qualifying its other prospects was parked as at a plan limit; qualifications already running finished, so it can hold a few more. Only matches within its first ${limit} were enriched, and no further cycle ran: a workspace that got there early ended match-limit-per-query, with fewer cycles than planned.`,
+    several: `Match limit per query: not the same for every workspace run, so stated per workspace. Where in force it was ${QUERY_LIMIT_HOW}: once a workspace had that many matches over its cycles, qualifying its other prospects was parked as at a plan limit, only matches within the limit were enriched, and no further cycle ran.`,
+  },
+} as const;
+
 /**
- * The match limit per cycle the step's workspaces ran with. One line when
- * every workspace ran with the same value throughout; otherwise per
- * workspace, so no line claims a limit for a cycle that ran without it.
+ * One match limit the step's workspaces ran with. One line when every
+ * workspace ran with the same value throughout; otherwise per workspace, so
+ * no line claims a limit for a cycle that ran without it.
  */
-export function matchLimitLines(outcome: Pick<SegmentOutcome, "workspaces">) {
+function limitLines(
+  outcome: Pick<SegmentOutcome, "workspaces">,
+  scope: MatchLimitScope
+) {
+  const text = MATCH_LIMIT_TEXT[scope];
   const limits = new Set(
     outcome.workspaces.flatMap((item) => {
-      const { start, continuations } = matchLimitPhases(item.record);
+      const { start, continuations } = matchLimitPhases(item.record, scope);
       return [start, ...continuations.map((phase) => phase.limit)];
     })
   );
   if (limits.size <= 1) {
     const [limit = null] = limits;
-    if (limit === null)
-      return [
-        "Match limit: none; only the plan's own limit applied in this step.",
-      ];
-    return [
-      `Match limit: ${limit} per cycle, ${MATCH_LIMIT_HOW}. Once a workspace's cycle had ${limit} matches, qualifying its other prospects was parked as at a plan limit; qualifications already running finished, so a cycle can hold a few more. Only the cycle's first ${limit} matches were enriched. Cycles still started and were scheduled as usual, each counting from zero.`,
-    ];
+    return [limit === null ? text.none : text.one(limit)];
   }
   return [
-    `Match limit: not the same for every workspace run, so stated per workspace. Where in force it was ${MATCH_LIMIT_HOW}: once a cycle had that many matches, qualifying its other prospects was parked as at a plan limit, qualifications already running finished, and only the cycle's first matches up to the limit were enriched.`,
+    text.several,
     ...outcome.workspaces.map(
-      (item) => `- ${item.label}: ${workspaceMatchLimit(item.record)}.`
+      (item) => `- ${item.label}: ${workspaceMatchLimit(item.record, scope)}.`
     ),
   ];
 }
+
+/** The match limits per cycle and per query the step's workspaces ran with. */
+export const matchLimitLines = (
+  outcome: Pick<SegmentOutcome, "workspaces">
+) => [...limitLines(outcome, "cycle"), ...limitLines(outcome, "query")];
 
 /** Markdown for the console and the private run folder. */
 export function renderSegmentReport(
