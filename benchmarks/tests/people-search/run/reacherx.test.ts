@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ExportedProspect } from "../../../core/execution/convex";
 import {
+  companiesBehindPeople,
   sampleRejected,
   selectReacherXTopK,
   toCandidate,
@@ -132,4 +133,59 @@ test("a prospect of unknown type or without a name is not graded", () => {
   );
   assert.equal(person?.entity.prospectType, "individual");
   assert.equal(person?.entity.profileUrl, "https://x.com/p10");
+});
+
+test("the companies behind qualified people are typed companies, best-fit person first, each once", () => {
+  const person = (id: string, company: string | null, score: number) =>
+    prospect(id, {
+      prospectType: "individual",
+      company,
+      qualificationScore: score,
+    });
+  const picked = companiesBehindPeople(
+    [
+      person("p1", "Acme AI", 70),
+      person("p2", "acme ai", 95),
+      person("p3", "Stealth Startup", 99),
+      person("p4", null, 98),
+      person("p5", "Beta Labs", 90),
+      person("p8", "Independent AI Labs", 60),
+      person("p9", "Self-Employed", 97),
+      person("p10", "Cafe\u0301 Labs", 50),
+      person("p11", "Caf\u00e9 Labs", 40),
+      person("p12", "Acme AI, Inc.", 96),
+      person("p15", "Beta Labs Pty Ltd", 35),
+      person("p13", "C++ Labs", 30),
+      person("p14", "C Labs", 20),
+      prospect("p6", {
+        prospectType: "individual",
+        company: "Gamma",
+        qualificationStatus: "disqualified",
+      }),
+      prospect("p7", { company: "Delta" }),
+    ],
+    10
+  );
+  assert.deepEqual(
+    picked.map(({ prospect: source, candidate }) => [
+      source.id,
+      candidate.rank,
+      candidate.entity.name,
+      candidate.entity.prospectType,
+    ]),
+    [
+      ["p12", 1, "Acme AI, Inc.", "organization"],
+      ["p5", 2, "Beta Labs", "organization"],
+      ["p8", 3, "Independent AI Labs", "organization"],
+      ["p10", 4, "Cafe\u0301 Labs", "organization"],
+      ["p13", 5, "C++ Labs", "organization"],
+      ["p14", 6, "C Labs", "organization"],
+    ]
+  );
+  assert.equal(companiesBehindPeople([person("p1", "A", 1)], 0).length, 0);
+  assert.equal(
+    companiesBehindPeople([person("p1", "A", 1), person("p2", "B", 2)], 1)
+      .length,
+    1
+  );
 });

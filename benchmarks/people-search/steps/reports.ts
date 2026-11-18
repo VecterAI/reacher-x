@@ -29,6 +29,7 @@ import {
 } from "../analysis/decisions";
 import { peopleSearchPlan } from "../setup/plan";
 import { SEGMENTS } from "../setup/schedule";
+import { VIA_PEOPLE_TOOL_ID } from "../run/reacherx";
 import { toolCatalog } from "../tools/catalog";
 import {
   competitorOutcomeSchema,
@@ -280,13 +281,16 @@ const judgedRow = (item: JudgedCase): JudgedResult => ({
  * cycle with learning on (a single cycle for most prompts; for the pilot
  * prompts, the first cycle of their learning-on workspace).
  */
+const isReacherX = (toolId: string) =>
+  toolId === "reacherx" || toolId === VIA_PEOPLE_TOOL_ID;
+
 function comparisonCases(outcomes: readonly SegmentOutcome[]) {
   return outcomes
     .flatMap((outcome) => outcome.cases)
     .filter(
       (item) =>
         item.kind === "top" &&
-        (item.toolId !== "reacherx" ||
+        (!isReacherX(item.toolId) ||
           (item.cycle === 1 && item.learning !== "off"))
     );
 }
@@ -305,7 +309,12 @@ function aggregate(
       ...competitors.map((item) => `${item.taskId}\u0000${item.toolId}`),
       ...workspaces
         .filter((item) => item.learning === "on")
-        .map((item) => `${item.taskId}\u0000reacherx`),
+        .flatMap((item) => [
+          `${item.taskId}\u0000reacherx`,
+          ...(categoryOf(item.taskId).entityType === "organization"
+            ? [`${item.taskId}\u0000${VIA_PEOPLE_TOOL_ID}`]
+            : []),
+        ]),
       ...cases.map((item) => `${item.taskId}\u0000${item.toolId}`),
     ]),
   ].sort();
@@ -330,6 +339,7 @@ function aggregate(
       const firstCycle = workspace
         ? cycleMeasurements(taskId, workspace.record)[0]
         : null;
+      // The labelled measure's cost is ReacherX's own, counted once in its row.
       const usage =
         toolId === "reacherx"
           ? workspace
@@ -345,21 +355,19 @@ function aggregate(
         verifiedMatches: verified,
         precision: wilson(verified, top.length),
         speed: {
-          requestLatencyMs:
-            toolId === "reacherx"
-              ? workspace
-                ? workspace.record.startedAt - workspace.record.submittedAt
-                : 0
-              : (competitor?.requestLatencyMs ?? 0),
+          requestLatencyMs: isReacherX(toolId)
+            ? workspace
+              ? workspace.record.startedAt - workspace.record.submittedAt
+              : 0
+            : (competitor?.requestLatencyMs ?? 0),
           firstVerifiedMatchMs: timeToVerified(results, 1),
           fifthVerifiedMatchMs: timeToVerified(results, 5),
-          activeProcessingMs:
-            toolId === "reacherx"
-              ? (firstCycle?.activeMs ??
-                (workspace
-                  ? workspace.record.endedAt - workspace.record.startedAt
-                  : 0))
-              : (competitor?.completedAfterMs ?? 0),
+          activeProcessingMs: isReacherX(toolId)
+            ? (firstCycle?.activeMs ??
+              (workspace
+                ? workspace.record.endedAt - workspace.record.startedAt
+                : 0))
+            : (competitor?.completedAfterMs ?? 0),
           scheduledWaitMs: 0,
         },
         usage: summarizeUsage(priceUsage(usage, context.rates)),
@@ -375,18 +383,24 @@ function comparisonTable(
 ) {
   if (!report.rows.some((row) => row.toolId === "reacherx")) return [];
   // From the report's rows, so a search with no results counts as 0 verified.
-  const comparisons = compareToBaseline(
-    report.rows.map((row) => ({
-      toolId: row.toolId,
-      category: row.category,
-      taskId: row.taskId,
-      returned: row.returned,
-      verified: row.verifiedMatches,
-    })),
-    "reacherx",
-    peopleSearchPlan.headlineTopK,
-    context.seed
-  );
+  const rows = report.rows.map((row) => ({
+    toolId: row.toolId,
+    category: row.category,
+    taskId: row.taskId,
+    returned: row.returned,
+    verified: row.verifiedMatches,
+  }));
+  const compare = (baseline: string, leaveOut: string) =>
+    compareToBaseline(
+      rows.filter((row) => row.toolId !== leaveOut),
+      baseline,
+      peopleSearchPlan.headlineTopK,
+      context.seed
+    );
+  const comparisons = compare("reacherx", VIA_PEOPLE_TOOL_ID);
+  const viaPeople = rows.some((row) => row.toolId === VIA_PEOPLE_TOOL_ID)
+    ? compare(VIA_PEOPLE_TOOL_ID, "reacherx")
+    : [];
   const tenTools = toolCatalog
     .filter((tool) => tool.judgedTopK === 10)
     .map((tool): string => tool.id);
@@ -409,20 +423,34 @@ function comparisonTable(
       };
     });
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
-  return [
-    "",
-    "## ReacherX against each tool (top 5, paired by prompt)",
-    "",
-    "| Group | Tool | Prompts | ReacherX minus tool | 95% interval | Holm p |",
-    "| --- | --- | ---: | ---: | --- | ---: |",
-    ...comparisons.map(
+  const comparisonRows = (items: typeof comparisons) =>
+    items.map(
       (item) =>
         `| ${cell(item.category)} | ${item.other} | ${item.comparison.prompts} | ${pct(item.comparison.meanDifference)} | ${
           item.comparison.interval
             ? `${pct(item.comparison.interval.lower)} to ${pct(item.comparison.interval.upper)}`
             : "single observation"
         } | ${item.holmAdjustedP?.toFixed(3) ?? "-"} |`
-    ),
+    );
+  return [
+    "",
+    "## ReacherX against each tool (top 5, paired by prompt)",
+    "",
+    "| Group | Tool | Prompts | ReacherX minus tool | 95% interval | Holm p |",
+    "| --- | --- | ---: | ---: | --- | ---: |",
+    ...comparisonRows(comparisons),
+    ...(viaPeople.length
+      ? [
+          "",
+          `## ReacherX through the people it found (${VIA_PEOPLE_TOOL_ID}, company prompts)`,
+          "",
+          "ReacherX finds the people behind companies. Here up to five distinct companies its qualified people work at, taken in the people's best-fit order, are judged as companies, with the same judges and criteria as every tool. Agreed with the project lead on 18 Nov 2026; this is a labelled measure next to ReacherX's own results, which count only companies it returned itself. It shares ReacherX's workspace cost, shown in ReacherX's row; judging these companies is counted with the judges.",
+          "",
+          "| Group | Tool | Prompts | ReacherX via people minus tool | 95% interval | Holm p |",
+          "| --- | --- | ---: | ---: | --- | ---: |",
+          ...comparisonRows(viaPeople),
+        ]
+      : []),
     ...(atTen.length
       ? [
           "",

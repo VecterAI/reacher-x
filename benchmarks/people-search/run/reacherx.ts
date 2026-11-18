@@ -132,7 +132,14 @@ export function selectReacherXTopK(
   entityType: EntityType,
   k: 5 | 10 = 5
 ) {
-  return prospects
+  return rankQualified(prospects, entityType).slice(0, k);
+}
+
+const rankQualified = (
+  prospects: readonly ExportedProspect[],
+  entityType: EntityType
+) =>
+  prospects
     .filter(
       (prospect) =>
         prospect.qualificationStatus === "qualified" &&
@@ -142,8 +149,68 @@ export function selectReacherXTopK(
       (a, b) =>
         (b.qualificationScore ?? -1) - (a.qualificationScore ?? -1) ||
         a.createdAt - b.createdAt
-    )
-    .slice(0, k);
+    );
+
+/** The labelled measure below, reported apart from ReacherX's own results. */
+export const VIA_PEOPLE_TOOL_ID = "reacherx_via_people";
+
+// Employer placeholders that name no company a judge could look up, matched
+// whole so a named employer such as "Independent AI Labs" is kept.
+// Legal suffixes, so "Acme AI, Inc." and "Acme AI" are one company. The
+// export carries no employer ID or domain, so the name is the only key.
+const LEGAL_SUFFIX =
+  /(?: (?:inc|llc|ltd|limited|corp|corporation|co|company|gmbh|plc|ag|sa|bv|pty))+$/;
+
+const UNNAMED_COMPANY =
+  /^(?:stealth(?: (?:mode|startup|company|ai|ai startup))?|self employed|freelancer?|freelancing|independent(?: consultant| contractor)?|confidential|unemployed|n a|na|none)$/;
+
+/**
+ * Agreed with the project lead (18 Nov 2026): ReacherX finds the people behind
+ * companies, so on a company prompt the companies its qualified people work at
+ * are also judged as companies, as a separately labelled measure: up to `k`
+ * distinct companies, taken in the people's best-fit order; the person's verified sources go with it
+ * and the judges' web search covers the company itself.
+ */
+export function companiesBehindPeople(
+  prospects: readonly ExportedProspect[],
+  k = 5
+) {
+  if (k <= 0) return [];
+  const seen = new Set<string>();
+  const picked: { prospect: ExportedProspect; candidate: Candidate }[] = [];
+  for (const prospect of rankQualified(prospects, "individual")) {
+    const company = prospect.company?.trim();
+    const key = company
+      ?.normalize("NFC")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{M}\p{N}+#&]+/gu, " ")
+      .trim()
+      .replace(LEGAL_SUFFIX, "");
+    if (!company || !key || UNNAMED_COMPANY.test(key) || seen.has(key))
+      continue;
+    seen.add(key);
+    picked.push({
+      prospect,
+      candidate: {
+        sourceId: prospect.id,
+        rank: picked.length + 1,
+        discoveredAt: new Date(prospect.createdAt).toISOString(),
+        entity: entitySchema.parse({
+          prospectType: "organization",
+          name: company,
+          profileUrl: null,
+          location: null,
+          description: null,
+          evidence: sourcesAsEvidence(prospect.qualificationSources),
+          domain: null,
+          industry: null,
+          employeeCount: null,
+        }),
+      },
+    });
+    if (picked.length === k) break;
+  }
+  return picked;
 }
 
 /**

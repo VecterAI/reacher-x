@@ -29,9 +29,11 @@ import type { WorkspaceGate } from "../../core/steps/keyGate";
 import { toJson, untilStopped, type UnitLedger } from "../../core/steps/units";
 import type { BenchmarkTask, Candidate } from "../../core/types";
 import {
+  companiesBehindPeople,
   sampleRejected,
   selectReacherXTopK,
   toCandidate,
+  VIA_PEOPLE_TOOL_ID,
 } from "../run/reacherx";
 import { peopleSearchPlan } from "../setup/plan";
 import type { SegmentId } from "../setup/schedule";
@@ -92,7 +94,9 @@ export type JudgeTarget = Readonly<
  * cycle found, and up to three of that cycle's rejected prospects of the same
  * type. With one cycle this is the workspace's top 5; per cycle it gives the
  * cycle-by-cycle measures. Rejected prospects of the other type are not
- * judged, since they cannot meet the prompt.
+ * judged, since they cannot meet the prompt. On a company prompt, the
+ * companies behind the cycle's best-fit people are judged too, as a labelled
+ * measure of their own.
  */
 export function reacherxTargets(
   outcome: WorkspaceOutcome,
@@ -132,6 +136,26 @@ export function reacherxTargets(
           candidate,
         });
     });
+    // On a company prompt, also the companies behind the cycle's qualified people.
+    if (task.entityType === "organization")
+      companiesBehindPeople(
+        record.prospects.filter(
+          (prospect) =>
+            prospect.prospectType === "individual" &&
+            cycleOf(prospect) === cycle.cycle
+        )
+      ).forEach(({ prospect, candidate }) =>
+        targets.push({
+          ...base,
+          toolId: VIA_PEOPLE_TOOL_ID,
+          unitId: `${prefix}-c${cycle.cycle}-v${candidate.rank}`,
+          kind: "top",
+          cycle: cycle.cycle,
+          availableAfterMs:
+            (prospect.qualifiedAt ?? prospect.createdAt) - record.submittedAt,
+          candidate,
+        })
+      );
   }
   const perCycle = new Map<number, number>();
   for (const { cycle, prospect } of sampleRejected(
