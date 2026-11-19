@@ -322,4 +322,38 @@ describe("benchmark people-search hooks", () => {
     const workspace = await t.run((ctx) => ctx.db.get(ids.held));
     expect(workspace?.prospectingWorkflowStatus).toBe("paused");
   });
+  test("releaseStuckBenchmarkWorkspace frees only a benchmark workspace whose deletion started", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t);
+    const created = async (id: typeof ids.benchmark) =>
+      (await t.run((ctx) => ctx.db.get(id)))!._creationTime;
+    const args = async (id: typeof ids.benchmark, label: string) => ({
+      workspaceId: id,
+      label,
+      createdAt: await created(id),
+    });
+    await t.run((ctx) => ctx.db.patch(ids.benchmark, { setupCompletedAt: 1 }));
+    await expect(
+      t.mutation(
+        internal.benchmarkPeopleSearch.releaseStuckBenchmarkWorkspace,
+        await args(ids.benchmark, "run-1_6_on")
+      )
+    ).rejects.toThrow(/deletion already started/);
+    await expect(
+      t.mutation(
+        internal.benchmarkPeopleSearch.releaseStuckBenchmarkWorkspace,
+        await args(ids.ordinary, "run-1_6_on")
+      )
+    ).rejects.toThrow(/did not create/);
+    await t.run((ctx) => ctx.db.patch(ids.benchmark, { deletionStartedAt: 2 }));
+    expect(
+      await t.mutation(
+        internal.benchmarkPeopleSearch.releaseStuckBenchmarkWorkspace,
+        await args(ids.benchmark, "run-1_6_on")
+      )
+    ).toEqual({ released: true });
+    const workspace = await t.run((ctx) => ctx.db.get(ids.benchmark));
+    expect(workspace?.setupCompletedAt).toBeUndefined();
+    expect(workspace?.deletionStartedAt).toBe(2);
+  });
 });

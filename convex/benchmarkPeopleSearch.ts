@@ -1079,3 +1079,33 @@ export const deleteBenchmarkWorkspace = internalMutation({
     return { deleted: true };
   },
 });
+
+/**
+ * Manual, approved cleanup only: a benchmark workspace whose deletion started
+ * but failed (issue #158) keeps its plan slot. This releases the slot by
+ * clearing its setup completion; the rest of the workspace stays as it is.
+ */
+export const releaseStuckBenchmarkWorkspace = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    label: v.string(),
+    createdAt: v.number(),
+  },
+  handler: async (ctx, { workspaceId, label, createdAt }) => {
+    const workspace = await ctx.db.get(workspaceId);
+    if (!workspace) return { released: false };
+    if (
+      workspace.name !== benchmarkWorkspaceName(label) ||
+      Math.abs(workspace._creationTime - createdAt) > DELETE_WINDOW_MS
+    ) {
+      throw new Error(
+        "Refusing to release a workspace this benchmark run did not create"
+      );
+    }
+    if (workspace.deletionStartedAt === undefined) {
+      throw new Error("Only a workspace whose deletion already started");
+    }
+    await ctx.db.patch(workspaceId, { setupCompletedAt: undefined });
+    return { released: true };
+  },
+});
