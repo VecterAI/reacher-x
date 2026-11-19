@@ -68,12 +68,18 @@ test("Markdown charts each prompt category and never prices quota usage as zero"
       [
         "```",
         "people-static · verified share (1 prompt)",
-        "  exa ████████████████░░░░  80.0%  (8/10)  95% CI 49.0-94.3  $0.01",
+        "",
+        "  Tool  Match rate            Score  Hits  Priced usage  95% CI",
+        "  ────  ────────────────────  ─────  ────  ────────────  ─────────────",
+        "  exa   ████████████████░░░░  80.0%  8/10  $0.01         49.0% - 94.3%",
         "```",
         "",
         "```",
         "company-static · verified share (1 prompt)",
-        "  clay ░░░░░░░░░░░░░░░░░░░░  no results  $0.00 + unpriced units",
+        "",
+        "  Tool  Match rate            Score  Hits  Priced usage            95% CI",
+        "  ────  ────────────────────  ─────  ────  ──────────────────────  ──────────",
+        "  clay  ░░░░░░░░░░░░░░░░░░░░    n/a  0/0   $0.00 + unpriced units  no results",
         "```",
       ].join("\n")
     )
@@ -120,16 +126,19 @@ test("each group is one block, best first, with ReacherX's rows marked", () => {
       [
         "```",
         "Companies, static filters · verified in top 5 (1 prompt)",
-        "  context             ████████████████████  100.0%  (5/5)  95% CI 56.6-100.0  $0.00",
-        "  exa                 ████████████████████  100.0%  (5/5)  95% CI 56.6-100.0  $0.00",
-        "  crustdata           ████████████████░░░░   80.0%  (4/5)  95% CI 37.6-96.4   $0.00",
-        "→ reacherx_via_people ████████░░░░░░░░░░░░   40.0%  (2/5)  95% CI 11.8-76.9   $0.00",
-        "  treg                ████████░░░░░░░░░░░░   40.0%  (2/5)  95% CI 11.8-76.9   $0.00",
-        "  apollo              ░░░░░░░░░░░░░░░░░░░░    0.0%  (0/5)  95% CI 0.0-43.4    $0.00",
-        "  clay                ░░░░░░░░░░░░░░░░░░░░    0.0%  (0/5)  95% CI 0.0-43.4    $0.00",
-        "  firecrawl           ░░░░░░░░░░░░░░░░░░░░    0.0%  (0/1)  95% CI 0.0-79.3    $0.00",
-        "  lusha               ░░░░░░░░░░░░░░░░░░░░    0.0%  (0/5)  95% CI 0.0-43.4    $0.00",
-        "→ reacherx            ░░░░░░░░░░░░░░░░░░░░  no results                        $0.00",
+        "",
+        "  Tool                 Match rate             Score  Hits  Priced usage  95% CI",
+        "  ───────────────────  ────────────────────  ──────  ────  ────────────  ──────────────",
+        "  context              ████████████████████  100.0%  5/5   $0.00         56.6% - 100.0%",
+        "  exa                  ████████████████████  100.0%  5/5   $0.00         56.6% - 100.0%",
+        "  crustdata            ████████████████░░░░   80.0%  4/5   $0.00         37.6% - 96.4%",
+        "→ reacherx_via_people  ████████░░░░░░░░░░░░   40.0%  2/5   $0.00         11.8% - 76.9%",
+        "  treg                 ████████░░░░░░░░░░░░   40.0%  2/5   $0.00         11.8% - 76.9%",
+        "  apollo               ░░░░░░░░░░░░░░░░░░░░    0.0%  0/5   $0.00          0.0% - 43.4%",
+        "  clay                 ░░░░░░░░░░░░░░░░░░░░    0.0%  0/5   $0.00          0.0% - 43.4%",
+        "  firecrawl            ░░░░░░░░░░░░░░░░░░░░    0.0%  0/1   $0.00          0.0% - 79.3%",
+        "  lusha                ░░░░░░░░░░░░░░░░░░░░    0.0%  0/5   $0.00          0.0% - 43.4%",
+        "→ reacherx             ░░░░░░░░░░░░░░░░░░░░     n/a  0/0   $0.00         no results",
         "```",
       ].join("\n")
     )
@@ -149,13 +158,16 @@ test("a tool on fewer of the group's prompts says so, and a pooled row claims no
     ...smoke,
     rows: [row("p14", "exa", 5), row("p15", "exa", 3), row("p15", "clay", 1)],
   });
-  assert.match(
-    markdown,
-    /^ {2}exa {2}█{16}░{4} {2}80\.0% {2}\(8\/10\) +\$0\.00$/m
-  );
-  assert.match(
-    markdown,
-    /^ {2}clay █{4}░{16} {2}20\.0% {2}\(1\/5\) {3}1 of 2 prompts {2}95% CI 3\.6-62\.4 {2}\$0\.00$/m
+  assert.ok(
+    markdown.includes(
+      [
+        "  Tool  Match rate            Score  Hits  Prompts         Priced usage  95% CI",
+        "  ────  ────────────────────  ─────  ────  ──────────────  ────────────  ────────────",
+        "  exa   ████████████████░░░░  80.0%  8/10                  $0.00",
+        "  clay  ████░░░░░░░░░░░░░░░░  20.0%  1/5   1 of 2 prompts  $0.00         3.6% - 62.4%",
+      ].join("\n")
+    ),
+    markdown
   );
 });
 
@@ -193,8 +205,11 @@ test("people prompts are also charted together, and company prompts never join t
       [
         "```",
         "People, all prompts · verified in top 5 (2 prompts)",
-        "→ reacherx ██████████████░░░░░░  70.0%  (7/10)  $0.00",
-        "  exa      ██████░░░░░░░░░░░░░░  30.0%  (3/10)  $0.00",
+        "",
+        "  Tool      Match rate            Score  Hits  Priced usage",
+        "  ────────  ────────────────────  ─────  ────  ────────────",
+        "→ reacherx  ██████████████░░░░░░  70.0%  7/10  $0.00",
+        "  exa       ██████░░░░░░░░░░░░░░  30.0%  3/10  $0.00",
         "```",
       ].join("\n")
     ),

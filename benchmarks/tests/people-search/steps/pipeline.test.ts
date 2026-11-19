@@ -300,7 +300,7 @@ test("X and LinkedIn cost come from the deployment's records, and a tool with no
   };
   const exa = aggregate.rows.find((row) => row.toolId === "exa");
   assert.deepEqual([exa?.returned, exa?.verifiedMatches], [0, 0]);
-  assert.match(report, /^ {2}exa +░{20} {2}no results +\$/m);
+  assert.match(report, /^ {2}exa +░{20} +n\/a {2}0\/0 +\$.+ {2}no results$/m);
   const [workspace] = outcome.workspaces;
   const costs = workspaceCosts(workspace, rates());
   // 300 recorded tweets or users at $0.20 per 1,000.

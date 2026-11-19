@@ -31,58 +31,174 @@ test("a signed bar fills away from the centre line, half the width each side", (
 });
 
 test("a Wilson interval shows both of its bounds, never ±", () => {
-  assert.equal(wilsonText(wilson(5, 5).interval!), "95% CI 56.6-100.0");
-  assert.equal(wilsonText(wilson(0, 5).interval!), "95% CI 0.0-43.4");
+  assert.equal(wilsonText(wilson(5, 5).interval!), "56.6% - 100.0%");
+  assert.equal(wilsonText(wilson(0, 5).interval!), "0.0% - 43.4%");
 });
+
+const SHARE = ["Tool", "Match rate", "Score", "Hits", "95% CI"];
 
 test("a block lists rows best first, ties in order, marks ReacherX and puts nothing measured last", () => {
   assert.deepEqual(
-    chartBlock("Companies, static filters · verified in top 5 (1 prompt)", [
-      { label: "apollo", value: 0, shown: "0.0%", details: ["(0/5)"] },
-      {
-        label: "reacherx",
-        value: null,
-        shown: "no results",
-        details: [""],
-        marked: true,
-      },
-      { label: "context", value: 1, shown: "100.0%", details: ["(5/5)"] },
-      { label: "exa", value: 1, shown: "100.0%", details: ["(5/5)"] },
-      { label: "crustdata", value: 0.8, shown: "80.0%", details: ["(4/5)"] },
-    ]),
+    chartBlock(
+      "Companies, static filters · verified in top 5 (1 prompt)",
+      SHARE,
+      [
+        {
+          label: "apollo",
+          value: 0,
+          shown: "0.0%",
+          details: ["0/5", "0.0% - 43.4%"],
+        },
+        {
+          label: "reacherx",
+          value: null,
+          shown: "no results",
+          details: ["0/0", ""],
+          marked: true,
+        },
+        {
+          label: "context",
+          value: 1,
+          shown: "100.0%",
+          details: ["5/5", "56.6% - 100.0%"],
+        },
+        {
+          label: "exa",
+          value: 1,
+          shown: "100.0%",
+          details: ["5/5", "56.6% - 100.0%"],
+        },
+        {
+          label: "crustdata",
+          value: 0.8,
+          shown: "80.0%",
+          details: ["4/5", "37.6% - 96.4%"],
+        },
+      ]
+    ),
     [
       "```",
       "Companies, static filters · verified in top 5 (1 prompt)",
-      "  context   ████████████████████  100.0%  (5/5)",
-      "  exa       ████████████████████  100.0%  (5/5)",
-      "  crustdata ████████████████░░░░   80.0%  (4/5)",
-      "  apollo    ░░░░░░░░░░░░░░░░░░░░    0.0%  (0/5)",
-      "→ reacherx  ░░░░░░░░░░░░░░░░░░░░  no results",
+      "",
+      "  Tool       Match rate             Score  Hits  95% CI",
+      "  ─────────  ────────────────────  ──────  ────  ──────────────",
+      "  context    ████████████████████  100.0%  5/5   56.6% - 100.0%",
+      "  exa        ████████████████████  100.0%  5/5   56.6% - 100.0%",
+      "  crustdata  ████████████████░░░░   80.0%  4/5   37.6% - 96.4%",
+      "  apollo     ░░░░░░░░░░░░░░░░░░░░    0.0%  0/5    0.0% - 43.4%",
+      "→ reacherx   ░░░░░░░░░░░░░░░░░░░░     n/a  0/0   no results",
       "```",
     ]
   );
 });
 
-test("long labels pad every row, so bars and each column line up", () => {
-  const rows = chartBlock("Title", [
-    { label: "exa", value: 0.5, shown: "50.0%", details: ["(1/2)", "$0.01"] },
+test("nothing measured shows n/a and its wording in the last column; an empty column is left out", () => {
+  const rows = chartBlock(
+    "Title",
+    [
+      "Tool",
+      "Match rate",
+      "Score",
+      "Hits",
+      "Prompts",
+      "Priced usage",
+      "95% CI",
+    ],
+    [
+      {
+        label: "exa",
+        value: 0.5,
+        shown: "50.0%",
+        details: ["1/2", "", "$0.01", ""],
+      },
+      {
+        label: "reacherx_via_people",
+        value: 0.25,
+        shown: "25.0%",
+        details: ["10/40", "", "$0.00 + unpriced units", ""],
+        marked: true,
+      },
+      {
+        label: "clay",
+        value: null,
+        shown: "no results",
+        details: ["0/0", "", "$0.00", ""],
+      },
+    ]
+  ).slice(3, -1);
+  assert.deepEqual(rows, [
+    "  Tool                 Match rate            Score  Hits   Priced usage            95% CI",
+    "  ───────────────────  ────────────────────  ─────  ─────  ──────────────────────  ──────────",
+    "  exa                  ██████████░░░░░░░░░░  50.0%  1/2    $0.01",
+    "→ reacherx_via_people  █████░░░░░░░░░░░░░░░  25.0%  10/40  $0.00 + unpriced units",
+    "  clay                 ░░░░░░░░░░░░░░░░░░░░    n/a  0/0    $0.00                   no results",
+  ]);
+});
+
+test("the header and its underline line up with every column under a long label", () => {
+  const label = "reacherx_via_people (company prompts)";
+  const lines = chartBlock("Title", SHARE, [
     {
-      label: "reacherx_via_people",
-      value: 0.25,
-      shown: "25.0%",
-      details: ["(10/40)", "$0.00 + unpriced units"],
+      label: "exa",
+      value: 1,
+      shown: "100.0%",
+      details: ["5/5", "56.6% - 100.0%"],
+    },
+    {
+      label,
+      value: 0,
+      shown: "0.0%",
+      details: ["0/5", "0.0% - 43.4%"],
       marked: true,
     },
-    // Nothing measured: its wording runs on into the empty column after it.
-    { label: "clay", value: null, shown: "no results", details: ["", "$0.00"] },
-  ]).slice(2, -1);
-  assert.deepEqual(rows, [
-    "  exa                 ██████████░░░░░░░░░░  50.0%  (1/2)    $0.01",
-    "→ reacherx_via_people █████░░░░░░░░░░░░░░░  25.0%  (10/40)  $0.00 + unpriced units",
-    "  clay                ░░░░░░░░░░░░░░░░░░░░  no results      $0.00",
   ]);
-  const column = (pattern: RegExp) =>
-    new Set(rows.map((row) => row.search(pattern)));
-  assert.deepEqual(column(/[█░]/), new Set(["→ reacherx_via_people ".length]));
-  assert.equal(column(/\$/).size, 1);
+  assert.deepEqual(lines.slice(0, 3), ["```", "Title", ""]);
+  const [header, underline, ...rows] = lines.slice(3, -1);
+  // Each underline is exactly its column's width, two spaces from the next.
+  const columns = [...underline.matchAll(/─+/g)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+  assert.deepEqual(
+    columns.map(({ start, end }) => end - start),
+    [label.length, 20, "100.0%".length, "Hits".length, "56.6% - 100.0%".length]
+  );
+  assert.equal(columns[0].start, 2);
+  columns
+    .slice(1)
+    .forEach(({ start }, index) => assert.equal(start, columns[index].end + 2));
+  // Every header and cell sits within its column's underline: text to the
+  // left, the score to the right, the intervals lined up on their dash.
+  const cells = (line: string) =>
+    columns.map(({ start, end }) => line.slice(start, end));
+  assert.deepEqual(cells(header), [
+    "Tool".padEnd(label.length),
+    "Match rate          ",
+    " Score",
+    "Hits",
+    "95% CI",
+  ]);
+  assert.deepEqual(rows.map(cells), [
+    [
+      "exa".padEnd(label.length),
+      "████████████████████",
+      "100.0%",
+      "5/5 ",
+      "56.6% - 100.0%",
+    ],
+    [label, "░░░░░░░░░░░░░░░░░░░░", "  0.0%", "0/5 ", " 0.0% - 43.4%"],
+  ]);
+  assert.ok(rows[1].startsWith(`→ ${label}`));
+});
+
+test("every column needs a header", () => {
+  assert.throws(
+    () =>
+      chartBlock(
+        "Title",
+        ["Tool", "Match rate", "Score"],
+        [{ label: "exa", value: 1, shown: "100.0%", details: ["5/5"] }]
+      ),
+    /needs a header for every column/
+  );
 });

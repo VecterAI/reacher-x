@@ -486,10 +486,7 @@ function comparisonTable(
             label: toolId,
             value: share,
             shown: share === null ? "no results" : percent(share),
-            details: [
-              share === null ? "" : `(${verified}/${returned})`,
-              fewer(rows.length, prompts),
-            ],
+            details: [`${verified}/${returned}`, fewer(rows.length, prompts)],
             marked: isReacherX(toolId),
           };
         }
@@ -498,6 +495,7 @@ function comparisonTable(
         "",
         ...chartBlock(
           `${category} · verified in top 10 (${promptCount(prompts)})`,
+          ["Tool", "Match rate", "Score", "Hits", "Note"],
           tools
         ),
       ];
@@ -559,6 +557,7 @@ export function viaPeopleShare(
     "",
     ...chartBlock(
       `${VIA_PEOPLE_TOOL_ID} · verified of all companies judged (${promptCount(prompts.length)})`,
+      ["Prompt", "Match rate", "Score", "Hits", "95% CI"],
       prompts.map((taskId) => {
         const rows = judged.filter((item) => item.taskId === taskId);
         const verified = rows.filter(
@@ -570,7 +569,7 @@ export function viaPeopleShare(
           value: verified / rows.length,
           shown: percent(verified / rows.length),
           details: [
-            `(${verified}/${rows.length})`,
+            `${verified}/${rows.length}`,
             interval ? wilsonText(interval) : "",
           ],
         };

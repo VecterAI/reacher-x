@@ -43,8 +43,11 @@ test("the tested family shows Holm p, or says it was not tested; categories show
     tested.join("\n"),
     block(
       "People, all prompts · ReacherX minus tool (12 prompts)",
-      "  exa  ░░░░░░░░░░│███░░░░░░░  +25.0%                   95% interval +10.0% to +40.0%  Holm p 0.012",
-      "  clay ░░░░░░░░░█│░░░░░░░░░░  -10.0%  4 of 12 prompts  95% interval -30.0% to +10.0%  not tested (under 6 prompts)"
+      "",
+      "  Tool  Difference               Mean  Prompts          95% interval      Holm p",
+      "  ────  ─────────────────────  ──────  ───────────────  ────────────────  ────────────────────────────",
+      "  exa   ░░░░░░░░░░│███░░░░░░░  +25.0%                   +10.0% to +40.0%  0.012",
+      "  clay  ░░░░░░░░░█│░░░░░░░░░░  -10.0%  4 of 12 prompts  -30.0% to +10.0%  not tested (under 6 prompts)"
     )
   );
   const described = differenceChart(
@@ -61,7 +64,10 @@ test("the tested family shows Holm p, or says it was not tested; categories show
     described.join("\n"),
     block(
       "Companies, signals · ReacherX minus tool (3 prompts)",
-      "  exa ░░░░░░░░░░│██████████  +100.0%  95% interval +10.0% to +40.0%"
+      "",
+      "  Tool  Difference                Mean  95% interval",
+      "  ────  ─────────────────────  ───────  ────────────────",
+      "  exa   ░░░░░░░░░░│██████████  +100.0%  +10.0% to +40.0%"
     )
   );
   assert.doesNotMatch(described.join("\n"), /Holm|p /);
@@ -164,9 +170,12 @@ test("ReacherX's last cycle is shown beside its first, the last and never the be
     section.includes(
       block(
         "People with several cycles · verified in top 5 (2 prompts: p01, p08)",
-        "  exa                 ████████████░░░░░░░░  60.0%  (6/10)",
-        "→ reacherx last cycle ███████████░░░░░░░░░  55.6%  (5/9)   cycle 4",
-        "→ reacherx cycle 1    ████████░░░░░░░░░░░░  40.0%  (4/10)"
+        "",
+        "  Tool                 Match rate            Score  Hits  Note",
+        "  ───────────────────  ────────────────────  ─────  ────  ───────",
+        "  exa                  ████████████░░░░░░░░  60.0%  6/10",
+        "→ reacherx last cycle  ███████████░░░░░░░░░  55.6%  5/9   cycle 4",
+        "→ reacherx cycle 1     ████████░░░░░░░░░░░░  40.0%  4/10"
       )
     ),
     section

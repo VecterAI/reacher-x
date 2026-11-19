@@ -205,24 +205,36 @@ test("the step report charts each group, marks ReacherX, and draws comparisons e
   for (const expected of [
     block(
       "Companies, static filters · verified in top 5 (1 prompt)",
-      "  apollo              ░░░░░░░░░░░░░░░░░░░░  no results  $0.00",
-      "  exa                 ░░░░░░░░░░░░░░░░░░░░  no results  $0.00",
-      "→ reacherx            ░░░░░░░░░░░░░░░░░░░░  no results  $0.56 + unpriced units",
-      "→ reacherx_via_people ░░░░░░░░░░░░░░░░░░░░  no results  $0.00"
+      "",
+      "  Tool                 Match rate            Score  Hits  Priced usage            95% CI",
+      "  ───────────────────  ────────────────────  ─────  ────  ──────────────────────  ──────────",
+      "  apollo               ░░░░░░░░░░░░░░░░░░░░    n/a  0/0   $0.00                   no results",
+      "  exa                  ░░░░░░░░░░░░░░░░░░░░    n/a  0/0   $0.00                   no results",
+      "→ reacherx             ░░░░░░░░░░░░░░░░░░░░    n/a  0/0   $0.56 + unpriced units  no results",
+      "→ reacherx_via_people  ░░░░░░░░░░░░░░░░░░░░    n/a  0/0   $0.00                   no results"
     ),
     block(
       "Companies, static filters · ReacherX minus tool (1 prompt)",
-      "  apollo ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation",
-      "  exa    ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation"
+      "",
+      "  Tool    Difference             Mean  95% interval",
+      "  ──────  ─────────────────────  ────  ──────────────────",
+      "  apollo  ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation",
+      "  exa     ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation"
     ),
     block(
       "Companies, static filters · ReacherX via people minus tool (1 prompt)",
-      "  apollo ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation",
-      "  exa    ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation"
+      "",
+      "  Tool    Difference             Mean  95% interval",
+      "  ──────  ─────────────────────  ────  ──────────────────",
+      "  apollo  ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation",
+      "  exa     ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation"
     ),
     block(
       "Companies, static filters · verified in top 10 (1 prompt)",
-      "  exa ░░░░░░░░░░░░░░░░░░░░  no results"
+      "",
+      "  Tool  Match rate            Score  Hits  Note",
+      "  ────  ────────────────────  ─────  ────  ──────────",
+      "  exa   ░░░░░░░░░░░░░░░░░░░░    n/a  0/0   no results"
     ),
   ])
     assert.ok(report.includes(expected), expected);
@@ -253,8 +265,11 @@ test("the share of all companies behind ReacherX's people is charted per prompt,
       .endsWith(
         block(
           "reacherx_via_people · verified of all companies judged (2 prompts)",
-          "  p16 ████████████░░░░░░░░  60.0%  (3/5)    95% CI 23.1-88.2",
-          "  p14 █░░░░░░░░░░░░░░░░░░░   6.3%  (7/111)  95% CI 3.1-12.4"
+          "",
+          "  Prompt  Match rate            Score  Hits   95% CI",
+          "  ──────  ────────────────────  ─────  ─────  ─────────────",
+          "  p16     ████████████░░░░░░░░  60.0%  3/5    23.1% - 88.2%",
+          "  p14     █░░░░░░░░░░░░░░░░░░░   6.3%  7/111   3.1% - 12.4%"
         )
       )
   );

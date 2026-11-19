@@ -33,6 +33,7 @@ export function differenceChart(
 ) {
   return chartBlock(
     `${title} (${promptCount(prompts)})`,
+    ["Tool", "Difference", "Mean", "Prompts", "95% interval", "Holm p"],
     items.map(({ other, comparison, holmAdjustedP }) => ({
       label: other,
       value: comparison.meanDifference,
@@ -40,13 +41,13 @@ export function differenceChart(
       details: [
         fewer(comparison.prompts, prompts),
         comparison.interval
-          ? `95% interval ${signed(comparison.interval.lower)} to ${signed(comparison.interval.upper)}`
+          ? `${signed(comparison.interval.lower)} to ${signed(comparison.interval.upper)}`
           : "single observation",
         holmAdjustedP === undefined
           ? ""
           : holmAdjustedP === null
             ? `not tested (under ${MIN_TESTED_PROMPTS} prompts)`
-            : `Holm p ${holmAdjustedP.toFixed(3)}`,
+            : holmAdjustedP.toFixed(3),
       ],
       marked: marked(other),
     })),
@@ -111,7 +112,7 @@ const shareRow = (
     label,
     value: share,
     shown: share === null ? "no results" : percent(share),
-    details: [share === null ? "" : `(${verified}/${returned})`, extra],
+    details: [`${verified}/${returned}`, extra],
     marked,
   };
 };
@@ -200,6 +201,7 @@ export function lastCycleSection(
         "",
         ...chartBlock(
           `${entityType === "individual" ? "People" : "Companies"} with several cycles · verified in top ${options.topK} (${promptCount(prompts)}: ${taskIds.join(", ")})`,
+          ["Tool", "Match rate", "Score", "Hits", "Note"],
           [lastRow, firstRow, ...tools]
         ),
       ];

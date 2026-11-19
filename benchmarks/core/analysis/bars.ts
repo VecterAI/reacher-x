@@ -1,19 +1,24 @@
 import type { Interval } from "./stats";
 
 /**
- * Text bar charts for the Markdown reports, in the style of the TOON README's
- * accuracy tables: one fenced block per group, a title line, then one row per
- * tool, best first, with a 20-character bar and its figures aligned.
+ * Text bar charts for the Markdown reports: one fenced block per group, a
+ * title line, a header row with its underline, then one row per tool, best
+ * first, with a 20-character bar and its figures in aligned columns.
  *
  *   Companies, static filters · verified in top 5 (1 prompt)
- *     exa      ████████████████████  100.0%  (5/5)  95% CI 56.6-100.0
- *   → reacherx ░░░░░░░░░░░░░░░░░░░░  no results
+ *
+ *     Tool      Match rate             Score  Hits  95% CI
+ *     ────────  ────────────────────  ──────  ────  ──────────────
+ *     exa       ████████████████████  100.0%  5/5   56.6% - 100.0%
+ *     apollo    ░░░░░░░░░░░░░░░░░░░░    0.0%  0/5    0.0% - 43.4%
+ *   → reacherx  ░░░░░░░░░░░░░░░░░░░░     n/a  0/0   no results
  */
 
 export const BAR_WIDTH = 20;
 const FILLED = "█";
 const EMPTY = "░";
 const GAP = "  ";
+const RULE = "─";
 
 /** A share from 0 to 1 as BAR_WIDTH characters: round(share × 20) filled, the rest empty. */
 export function bar(share: number) {
@@ -43,7 +48,7 @@ export const percent = (share: number) => `${(share * 100).toFixed(1)}%`;
 
 /** A Wilson interval is asymmetric, so it shows both bounds, never ±. */
 export const wilsonText = ({ lower, upper }: Interval) =>
-  `95% CI ${(lower * 100).toFixed(1)}-${(upper * 100).toFixed(1)}`;
+  `${(lower * 100).toFixed(1)}% - ${(upper * 100).toFixed(1)}%`;
 
 export const promptCount = (prompts: number) =>
   `${prompts} prompt${prompts === 1 ? "" : "s"}`;
@@ -55,61 +60,101 @@ export type ChartRow = Readonly<{
   value: number | null;
   // The value as printed, or the wording for nothing measured ("no results").
   shown: string;
-  // Further figures, each in its own aligned column; "" leaves one empty.
+  // Further figures, one per column after the value; "" leaves one empty.
   details?: readonly string[];
   // ReacherX's rows, marked with an arrow so they are found first.
   marked?: boolean;
 }>;
 
+// The label, bar and value columns come before the details.
+const FIXED = 3;
+const VALUE = 2;
+const NOT_MEASURED = "n/a";
+// A range in a detail column, "lo% - hi%" or "lo% to hi%": its bounds line up.
+const RANGE = /% (?:-|to) /;
+
 /**
- * One group as the lines of a fenced block. Rows are sorted best first
- * (highest value, then rows with nothing measured), ties keeping their
- * order. Labels are padded so the bars line up; printed values are
- * right-aligned, and wording for nothing measured runs on into the empty
- * columns after it.
+ * One group as the lines of a fenced block: the title, a blank line, a
+ * header row with its underline, then one row per tool. `headers` names the
+ * label, bar and value columns, then one column per detail. Rows are sorted
+ * best first (highest value, then rows with nothing measured), ties keeping
+ * their order. Columns are two spaces apart and padded so they line up; the
+ * value is right-aligned and the rest left-aligned, a range lining up on its
+ * separator. A row with nothing measured shows n/a as its value and its
+ * wording in the last column. A detail column empty in every row is left
+ * out, header and all.
  */
 export function chartBlock(
   title: string,
+  headers: readonly string[],
   rows: readonly ChartRow[],
   options: { signed?: boolean } = {}
 ) {
+  if (
+    headers.length < FIXED ||
+    rows.some((row) => FIXED + (row.details?.length ?? 0) > headers.length)
+  )
+    throw new Error(`Chart "${title}" needs a header for every column.`);
   const order = (row: ChartRow) => row.value ?? -Infinity;
   const sorted = [...rows].sort((a, b) =>
     order(a) === order(b) ? 0 : order(b) - order(a)
   );
-  const labelWidth = Math.max(0, ...rows.map((row) => row.label.length));
-  const valueWidth = Math.max(
-    0,
-    ...rows.flatMap((row) => (row.value === null ? [] : [row.shown.length]))
-  );
-  const columns = Math.max(0, ...rows.map((row) => row.details?.length ?? 0));
-  // Where each detail column starts, after the printed value; a column
-  // empty in every row takes no space.
-  const starts: number[] = [];
-  for (let column = 0, at = valueWidth; column < columns; column++) {
-    const width = Math.max(
-      ...rows.map((row) => row.details?.[column]?.length ?? 0)
-    );
-    if (width) at += GAP.length;
-    starts.push(at);
-    at += width;
-  }
-  const figures = (row: ChartRow) => {
-    let line = row.value === null ? row.shown : row.shown.padStart(valueWidth);
-    row.details?.forEach((text, column) => {
-      if (text)
-        line =
-          line.padEnd(Math.max(starts[column], line.length + GAP.length)) +
-          text;
-    });
-    return line;
-  };
   const draw = options.signed ? signedBar : bar;
+  const last = headers.length - 1;
+  const cells = sorted.map((row) => {
+    const line = [
+      row.label,
+      draw(row.value ?? 0),
+      row.value === null ? NOT_MEASURED : row.shown,
+      ...headers.slice(FIXED).map((_, column) => row.details?.[column] ?? ""),
+    ];
+    // After anything the row already has there; with no detail columns,
+    // in place of n/a.
+    if (row.value === null)
+      line[last] =
+        last === VALUE
+          ? row.shown
+          : [line[last], row.shown].filter(Boolean).join(", ");
+    return line;
+  });
+  for (let column = FIXED; column < headers.length; column++) {
+    const at = (line: string[]) => line[column].search(RANGE);
+    const lower = Math.max(0, ...cells.map(at));
+    for (const line of cells)
+      if (at(line) >= 0)
+        line[column] = line[column].padStart(
+          line[column].length + lower - at(line)
+        );
+  }
+  const shown = headers.map(
+    (_, column) => column < FIXED || cells.some((line) => line[column])
+  );
+  const widths = headers.map((header, column) =>
+    Math.max(header.length, ...cells.map((line) => line[column].length))
+  );
+  const row = (prefix: string, line: readonly string[]) =>
+    `${prefix}${line
+      .flatMap((text, column) =>
+        shown[column]
+          ? [
+              column === VALUE
+                ? text.padStart(widths[column])
+                : text.padEnd(widths[column]),
+            ]
+          : []
+      )
+      .join(GAP)}`.trimEnd();
   return [
     "```",
     title,
-    ...sorted.map((row) =>
-      `${row.marked ? "→ " : "  "}${row.label.padEnd(labelWidth)} ${draw(row.value ?? 0)}${GAP}${figures(row)}`.trimEnd()
+    "",
+    row("  ", headers),
+    row(
+      "  ",
+      widths.map((width) => RULE.repeat(width))
+    ),
+    ...cells.map((line, index) =>
+      row(sorted[index].marked ? "→ " : "  ", line)
     ),
     "```",
   ];

@@ -34,6 +34,17 @@ export type AggregateReport = Readonly<{
   }[];
 }>;
 
+// The 95% CI comes last, where a row with nothing measured says so.
+const SHARE_HEADERS = [
+  "Tool",
+  "Match rate",
+  "Score",
+  "Hits",
+  "Prompts",
+  "Priced usage",
+  "95% CI",
+];
+
 // Keeps a label on its chart's title line.
 const oneLine = (text: string) => text.replace(/\s+/g, " ");
 
@@ -85,12 +96,12 @@ export function renderMarkdown(
           value: share,
           shown: share === null ? "no results" : percent(share),
           details: [
-            share === null ? "" : `(${total.verified}/${total.returned})`,
+            `${total.verified}/${total.returned}`,
             toolRows.length === prompts
               ? ""
               : `${toolRows.length} of ${promptCount(prompts)}`,
-            total.interval ? wilsonText(total.interval) : "",
             `$${total.pricedUsd.toFixed(2)}${total.hasUnpriced ? " + unpriced units" : ""}`,
+            total.interval ? wilsonText(total.interval) : "",
           ],
           marked: options.marked?.(toolId),
         };
@@ -100,6 +111,7 @@ export function renderMarkdown(
       "",
       ...chartBlock(
         `${oneLine(label)} · verified ${measure} (${promptCount(prompts)})`,
+        SHARE_HEADERS,
         tools
       )
     );
@@ -117,7 +129,7 @@ export function renderMarkdown(
   if (report.rows.length)
     lines.push(
       "",
-      "Each row: verified share, verified of returned, the 95% CI for a tool on a single prompt, and priced usage."
+      "Each row: verified share (Score), verified of returned (Hits), priced usage, and the 95% CI for a tool on a single prompt."
     );
   return `${lines.join("\n")}\n`;
 }
