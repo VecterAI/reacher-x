@@ -33,6 +33,8 @@ test("public quotes retain attribution", async () => {
   const html = renderToStaticMarkup(await MarketingProof());
   expect(html).toContain(`/status/${tweet.id_str}`);
   expect(html).not.toContain("Pause testimonials");
+  expect(html).not.toContain("Previous quotes");
+  expect(html).not.toContain("More quotes");
 });
 
 test("quote posts render their own text only, without embeds, dates, or metrics", async () => {

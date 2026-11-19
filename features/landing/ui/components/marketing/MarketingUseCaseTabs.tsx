@@ -5,12 +5,7 @@ import Link from "next/link";
 import { WheelGesturesPlugin } from "embla-carousel-wheel-gestures";
 import { MARKETING_USE_CASES } from "@/features/landing/lib/marketingUseCaseHelpers";
 import { PillSelector } from "@/shared/ui/components/pill-navigation/PillSelector";
-import {
-  ArrowOutwardIcon,
-  ArrowBackIcon,
-  ArrowForwardIcon,
-} from "@/shared/ui/components/icons";
-import { Button } from "@/shared/ui/components/Button";
+import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils";
 import {
   marketingButton,
@@ -46,26 +41,16 @@ export function MarketingUseCaseTabs() {
   const [activeSlug, setActiveSlug] = useState(TAB_ITEMS[0]?.value ?? "");
   const [api, setApi] = useState<CarouselApi>();
   const [plugins] = useState(() => [WheelGesturesPlugin()]);
-  const [canPrev, setCanPrev] = useState(false);
-  const [canNext, setCanNext] = useState(false);
 
   useEffect(() => {
     if (!api) return;
-    const update = () => {
-      setCanPrev(api.canScrollPrev());
-      setCanNext(api.canScrollNext());
-    };
     const onSelect = () => {
-      update();
       const slug = MARKETING_USE_CASES[api.selectedScrollSnap()]?.slug;
       if (slug) setActiveSlug((prev) => (prev === slug ? prev : slug));
     };
-    update();
     api.on("select", onSelect);
-    api.on("reInit", update);
     return () => {
       api.off("select", onSelect);
-      api.off("reInit", update);
     };
   }, [api]);
 
@@ -90,7 +75,7 @@ export function MarketingUseCaseTabs() {
         )}
       >
         {"Works and "}
-        <span className="font-pixel-square">adapts</span>
+        <span className="font-pixel-square font-semibold">adapts</span>
         {" to your use case."}
       </h2>
       <div className="mt-8 flex lg:justify-center">
@@ -110,7 +95,10 @@ export function MarketingUseCaseTabs() {
           onWheelCapture={preserveDemoWheelInteraction}
           aria-label="Use case demos"
         >
-          <CarouselContent className="touch-pan-y touch-pinch-zoom">
+          <CarouselContent
+            className="touch-pan-y touch-pinch-zoom"
+            viewportClassName="-my-16 overflow-x-clip overflow-y-visible py-16"
+          >
             {MARKETING_USE_CASES.map((item, index) => {
               const demoRight = index % 2 === 0;
               return (
@@ -165,28 +153,6 @@ export function MarketingUseCaseTabs() {
             })}
           </CarouselContent>
         </Carousel>
-        <div className="mt-8 flex justify-end gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Previous use case"
-            disabled={!canPrev}
-            onClick={() => api?.scrollPrev()}
-            className="size-10 rounded-full"
-          >
-            <ArrowBackIcon className="size-5 fill-current" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Next use case"
-            disabled={!canNext}
-            onClick={() => api?.scrollNext()}
-            className="size-10 rounded-full"
-          >
-            <ArrowForwardIcon className="size-5 fill-current" />
-          </Button>
-        </div>
       </div>
     </MarketingSection>
   );

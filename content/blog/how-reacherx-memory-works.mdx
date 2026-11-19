@@ -14,7 +14,7 @@ Those two kinds must not have equal authority. A pattern saying meeting requests
 
 ## Save an instruction the user asked for
 
-[convex/agents/tools/rememberWorkspaceMemory.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/agents/tools/rememberWorkspaceMemory.ts) is the tool the agent calls when you say "remember this". It takes a stable memory key, an instruction kind, a summary, a scope, and optional channels. The memory key matters most for corrections. Reusing the same key updates or supersedes the earlier instruction instead of stacking a second one on the same topic.
+[convex/agents/tools/rememberWorkspaceMemory.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/agents/tools/rememberWorkspaceMemory.ts) is the tool △ Agent calls when you say "remember this". It takes a stable memory key, an instruction kind, a summary, a scope, and optional channels. The memory key matters most for corrections. Reusing the same key updates or supersedes the earlier instruction instead of stacking a second one on the same topic.
 
 Scope decides who the instruction applies to. A general workspace rule is different from a rule about one specific person, and a prospect-scoped memory gets linked to that person.
 
@@ -35,7 +35,7 @@ return (
 
 `AUTO_PROMOTE_MEMORY_CONFIDENCE` is `0.78` in this revision. These numbers are implementation thresholds. They are not measured probabilities that a lesson is true. When you judge a memory's quality, read the evaluation result and the events behind it.
 
-Keep the records distinct in your head. An event, an evaluation run, a suggestion, and a promoted memory are four different things. Counting every recorded event as something the agent has learned will inflate every number you report.
+Keep the records distinct in your head. An event, an evaluation run, a suggestion, and a promoted memory are four different things. Counting every recorded event as something △ Agent has learned will inflate every number you report.
 
 ## Retrieve with the right authority
 

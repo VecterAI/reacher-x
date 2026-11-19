@@ -25,7 +25,7 @@ export function BlogIndexSkeleton({
 }) {
   return (
     <div className={cn(marketingPageWidth, "py-12 md:py-16")}>
-      <h1 className="mb-8 text-4xl font-normal text-balance md:text-5xl">
+      <h1 className="mb-8 text-4xl font-medium text-balance md:text-5xl">
         {title}
       </h1>
       <BlogToolbar

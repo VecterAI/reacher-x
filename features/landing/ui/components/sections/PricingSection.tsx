@@ -456,7 +456,7 @@ export function PricingSection({
       <header className="mb-12 text-center md:mb-16">
         <h1
           id="pricing-heading"
-          className="text-5xl leading-[1.1] font-normal tracking-[-0.03em] text-balance md:text-6xl"
+          className="text-5xl leading-[1.1] font-medium tracking-[-0.03em] text-balance md:text-6xl"
         >
           Pricing.
         </h1>

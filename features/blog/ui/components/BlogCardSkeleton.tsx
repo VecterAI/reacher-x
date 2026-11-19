@@ -8,7 +8,7 @@ import { Skeleton } from "@/shared/ui/components/Skeleton";
 export function BlogCardSkeleton() {
   return (
     <article aria-label="Loading ReacherX guide" className="h-full min-w-0">
-      <div className="blog-card bg-background relative flex h-full flex-col p-6 dark:bg-neutral-950">
+      <div className="blog-card relative flex h-full flex-col bg-neutral-50 p-6 dark:bg-neutral-950">
         <div className="text-muted-foreground flex items-center gap-x-2 text-sm">
           <Skeleton className="h-4 w-20" />
           <span aria-hidden="true">·</span>

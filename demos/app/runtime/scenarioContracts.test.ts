@@ -198,6 +198,15 @@ test("all eight use cases start with setup and create a matching workspace befor
       ).length,
       0
     );
+    const leadId = (
+      scenario === "find-candidates"
+        ? "use_case_demo_candidates_1"
+        : "use_case_demo_audience_1"
+    ) as Id<"prospects">;
+    assert.equal(
+      await client.query(api.outreach.getProspectPlan, { prospectId: leadId }),
+      null
+    );
     assert.equal(
       state.prospects.filter(
         (person) =>

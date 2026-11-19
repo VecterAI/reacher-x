@@ -25,7 +25,7 @@ export function BlogCard({
         className={cn(
           "blog-card relative flex h-full flex-col",
           featured &&
-            "bg-background transition-colors duration-200 hover:bg-neutral-50 motion-reduce:transition-none dark:bg-neutral-950 dark:hover:bg-neutral-900"
+            "bg-neutral-50 transition-colors duration-200 hover:bg-neutral-100 motion-reduce:transition-none dark:bg-neutral-950 dark:hover:bg-neutral-900"
         )}
       >
         {cover ? (
@@ -50,7 +50,7 @@ export function BlogCard({
           <BlogMetadata post={post} />
           <h2
             className={cn(
-              "mt-5 font-normal text-balance",
+              "mt-5 font-medium text-balance",
               featured
                 ? "text-2xl leading-8 lg:text-3xl lg:leading-9"
                 : "text-xl leading-7"

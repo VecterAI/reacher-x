@@ -145,7 +145,7 @@ export function marketingButton(
 export const marketingPageWidth = "mx-auto w-full max-w-[1440px] px-4 lg:px-10";
 export const marketingSection = "py-20 lg:py-28";
 export const marketingSectionTitle =
-  "max-w-3xl text-4xl leading-[1.1] font-normal tracking-[-0.03em] text-balance sm:text-5xl lg:text-6xl";
+  "max-w-3xl text-4xl leading-[1.1] font-medium tracking-[-0.03em] text-balance sm:text-5xl lg:text-6xl";
 export const marketingTextColumn = "max-w-md";
 
 export function MarketingSection({
