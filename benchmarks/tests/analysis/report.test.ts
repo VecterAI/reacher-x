@@ -61,16 +61,154 @@ const report: AggregateReport = {
   ],
 };
 
-test("Markdown groups by prompt category and never prices quota usage as zero", () => {
+test("Markdown charts each prompt category and never prices quota usage as zero", () => {
   const markdown = renderMarkdown(report);
+  assert.ok(
+    markdown.includes(
+      [
+        "```",
+        "people-static · verified share (1 prompt)",
+        "  exa ████████████████░░░░  80.0%  (8/10)  95% CI 49.0-94.3  $0.01",
+        "```",
+        "",
+        "```",
+        "company-static · verified share (1 prompt)",
+        "  clay ░░░░░░░░░░░░░░░░░░░░  no results  $0.00 + unpriced units",
+        "```",
+      ].join("\n")
+    )
+  );
+});
+
+// Top-5 counts as in the D1 smoke report (p14, one prompt); usage left out.
+const smoke: AggregateReport = {
+  runId: "smoke",
+  planSha256: "0".repeat(64),
+  rows: (
+    [
+      ["apollo", 5, 0],
+      ["clay", 5, 0],
+      ["context", 5, 5],
+      ["crustdata", 5, 4],
+      ["exa", 5, 5],
+      ["firecrawl", 1, 0],
+      ["lusha", 5, 0],
+      ["reacherx", 0, 0],
+      ["reacherx_via_people", 5, 2],
+      ["treg", 5, 2],
+    ] as const
+  ).map(([toolId, returned, verified]) => ({
+    taskId: "p14",
+    category: "Companies, static filters",
+    entityType: "organization",
+    toolId,
+    returned,
+    verifiedMatches: verified,
+    precision: wilson(verified, returned),
+    speed,
+    usage: summarizeUsage([]),
+  })),
+};
+
+test("each group is one block, best first, with ReacherX's rows marked", () => {
+  const markdown = renderMarkdown(smoke, {
+    topK: 5,
+    marked: (toolId) => toolId.startsWith("reacherx"),
+  });
+  assert.ok(
+    markdown.includes(
+      [
+        "```",
+        "Companies, static filters · verified in top 5 (1 prompt)",
+        "  context             ████████████████████  100.0%  (5/5)  95% CI 56.6-100.0  $0.00",
+        "  exa                 ████████████████████  100.0%  (5/5)  95% CI 56.6-100.0  $0.00",
+        "  crustdata           ████████████████░░░░   80.0%  (4/5)  95% CI 37.6-96.4   $0.00",
+        "→ reacherx_via_people ████████░░░░░░░░░░░░   40.0%  (2/5)  95% CI 11.8-76.9   $0.00",
+        "  treg                ████████░░░░░░░░░░░░   40.0%  (2/5)  95% CI 11.8-76.9   $0.00",
+        "  apollo              ░░░░░░░░░░░░░░░░░░░░    0.0%  (0/5)  95% CI 0.0-43.4    $0.00",
+        "  clay                ░░░░░░░░░░░░░░░░░░░░    0.0%  (0/5)  95% CI 0.0-43.4    $0.00",
+        "  firecrawl           ░░░░░░░░░░░░░░░░░░░░    0.0%  (0/1)  95% CI 0.0-79.3    $0.00",
+        "  lusha               ░░░░░░░░░░░░░░░░░░░░    0.0%  (0/5)  95% CI 0.0-43.4    $0.00",
+        "→ reacherx            ░░░░░░░░░░░░░░░░░░░░  no results                        $0.00",
+        "```",
+      ].join("\n")
+    )
+  );
+});
+
+test("a tool on fewer of the group's prompts says so, and a pooled row claims no interval", () => {
+  const row = (taskId: string, toolId: string, verified: number) => ({
+    ...smoke.rows[0],
+    taskId,
+    toolId,
+    returned: 5,
+    verifiedMatches: verified,
+    precision: wilson(verified, 5),
+  });
+  const markdown = renderMarkdown({
+    ...smoke,
+    rows: [row("p14", "exa", 5), row("p15", "exa", 3), row("p15", "clay", 1)],
+  });
   assert.match(
     markdown,
-    /## people-static[\s\S]*\| exa \| 1 \| 10 \| 8 \| 80\.0% \(95% CI 49\.0%-94\.3%\)/
+    /^ {2}exa {2}█{16}░{4} {2}80\.0% {2}\(8\/10\) +\$0\.00$/m
   );
-  assert.match(markdown, /`################\.\.\.\.`/);
   assert.match(
     markdown,
-    /## company-static[\s\S]*\| clay \| 1 \| 0 \| 0 \| no results/
+    /^ {2}clay █{4}░{16} {2}20\.0% {2}\(1\/5\) {3}1 of 2 prompts {2}95% CI 3\.6-62\.4 {2}\$0\.00$/m
   );
-  assert.match(markdown, /\$0\.00 \+ unpriced units/);
+});
+
+test("people prompts are also charted together, and company prompts never join them", () => {
+  const row = (
+    taskId: string,
+    category: string,
+    entityType: "individual" | "organization",
+    toolId: string,
+    verified: number
+  ) => ({
+    ...smoke.rows[0],
+    taskId,
+    category,
+    entityType,
+    toolId,
+    returned: 5,
+    verifiedMatches: verified,
+    precision: wilson(verified, 5),
+  });
+  const rows = [
+    row("p01", "People, static filters", "individual", "reacherx", 4),
+    row("p01", "People, static filters", "individual", "exa", 2),
+    row("p08", "People, signals", "individual", "reacherx", 3),
+    row("p08", "People, signals", "individual", "exa", 1),
+    row("p14", "Companies, static filters", "organization", "reacherx", 5),
+    row("p14", "Companies, static filters", "organization", "exa", 0),
+  ];
+  const markdown = renderMarkdown(
+    { ...smoke, rows },
+    { topK: 5, marked: (toolId) => toolId === "reacherx" }
+  );
+  assert.ok(
+    markdown.includes(
+      [
+        "```",
+        "People, all prompts · verified in top 5 (2 prompts)",
+        "→ reacherx ██████████████░░░░░░  70.0%  (7/10)  $0.00",
+        "  exa      ██████░░░░░░░░░░░░░░  30.0%  (3/10)  $0.00",
+        "```",
+      ].join("\n")
+    ),
+    markdown
+  );
+  // Before the groups it pools; each group keeps its own chart.
+  assert.ok(
+    markdown.indexOf("People, all prompts") <
+      markdown.indexOf("People, static filters")
+  );
+  assert.match(markdown, /Companies, static filters · verified in top 5/);
+  // One people group alone needs no pooled chart.
+  assert.doesNotMatch(
+    renderMarkdown({ ...smoke, rows: rows.slice(0, 2) }),
+    /People, all prompts/
+  );
 });

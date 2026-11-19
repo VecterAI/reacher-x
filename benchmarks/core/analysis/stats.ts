@@ -1,7 +1,7 @@
 /**
  * Statistics from proposal section 5.7. Wilson intervals are for binary
  * proportions only. Comparisons resample prompts (one paired value per prompt,
- * within a category), never individual candidates. Fewer than two prompts is a
+ * within a category or a pooled family), never individual candidates. Fewer than two prompts is a
  * single observation and stays descriptive.
  */
 
@@ -19,7 +19,7 @@ export type ProportionEstimate = Readonly<{
   interval: (Interval & { method: "wilson" }) | null;
 }>;
 
-// One paired observation per prompt, within a category, not per candidate.
+// One paired observation per prompt, not per candidate.
 export type PromptComparison = Readonly<{
   taskId: string;
   left: number;

@@ -42,6 +42,7 @@ import {
 import { CURRENT_SET_PATH } from "./people-search/quick-check/capture";
 import { PersonalDataError, writePublicResults } from "./core/analysis/publish";
 import { peopleSearchPublicVocabulary } from "./people-search/analysis/publicVocabulary";
+import { isReacherX } from "./people-search/steps/reports";
 
 const help = `ReacherX benchmark
 
@@ -329,7 +330,8 @@ async function main() {
       process.cwd(),
       peopleSearchPlan.artifacts.public,
       JSON.parse(text),
-      peopleSearchPublicVocabulary()
+      peopleSearchPublicVocabulary(),
+      { topK: peopleSearchPlan.headlineTopK, marked: isReacherX }
     );
     console.log(`Public results written: ${paths.markdown}, ${paths.json}.`);
   } else if (options.help) {

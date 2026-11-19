@@ -8,7 +8,9 @@ import {
   learningPairs,
   keywordSearchCapLine,
   matchLimitLines,
+  renderSegmentReport,
   segmentOutcomeSchema,
+  viaPeopleShare,
   type ReportContext,
 } from "../../../people-search/steps/reports";
 
@@ -171,6 +173,95 @@ const context = (earlier: ReportContext["earlier"]): ReportContext => ({
   rates: peopleSearchRates("2026-11-15T00:00:00.000Z"),
   earlier,
   plannedCycleCostUsd: null,
+});
+
+const block = (...lines: string[]) => ["```", ...lines, "```"].join("\n");
+
+test("the step report charts each group, marks ReacherX, and draws comparisons either side of a line", () => {
+  // A competitor that completed its search; nothing is judged yet.
+  const competitor = (toolId: string) => ({
+    taskId: "p14",
+    toolId,
+    submittedAt: "2026-11-18T00:00:00.000Z",
+    candidates: [],
+    usage: [],
+    requestLatencyMs: 1_000,
+    completedAfterMs: 1_000,
+    receipt: {
+      toolId,
+      taskId: "p14",
+      endpoints: [],
+      nativeFilters: null,
+      unexpressed: [],
+      servedBy: {},
+      notes: [],
+    },
+  });
+  const smoke = segmentOutcomeSchema.parse({
+    ...outcome("smoke", [workspace("p14")]),
+    competitors: ["apollo", "exa"].map(competitor),
+  });
+  const report = renderSegmentReport(smoke, context([]));
+  for (const expected of [
+    block(
+      "Companies, static filters · verified in top 5 (1 prompt)",
+      "  apollo              ░░░░░░░░░░░░░░░░░░░░  no results  $0.00",
+      "  exa                 ░░░░░░░░░░░░░░░░░░░░  no results  $0.00",
+      "→ reacherx            ░░░░░░░░░░░░░░░░░░░░  no results  $0.56 + unpriced units",
+      "→ reacherx_via_people ░░░░░░░░░░░░░░░░░░░░  no results  $0.00"
+    ),
+    block(
+      "Companies, static filters · ReacherX minus tool (1 prompt)",
+      "  apollo ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation",
+      "  exa    ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation"
+    ),
+    block(
+      "Companies, static filters · ReacherX via people minus tool (1 prompt)",
+      "  apollo ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation",
+      "  exa    ░░░░░░░░░░│░░░░░░░░░░  0.0%  single observation"
+    ),
+    block(
+      "Companies, static filters · verified in top 10 (1 prompt)",
+      "  exa ░░░░░░░░░░░░░░░░░░░░  no results"
+    ),
+  ])
+    assert.ok(report.includes(expected), expected);
+  // Tool results are charts; only spend and workspace tables stay tables.
+  const results = report.indexOf("## Verified matches in each tool's top 5");
+  assert.ok(results >= 0);
+  assert.doesNotMatch(report.slice(results), /^\|/m);
+  // Company prompts only: described, never tested, and no pooled people family.
+  assert.ok(report.includes("By category, descriptive only"));
+  assert.doesNotMatch(report, /Holm p|People, all prompts|last cycle/);
+});
+
+test("the share of all companies behind ReacherX's people is charted per prompt, best first", () => {
+  const judged = (taskId: string, verifiedMatch: boolean) => ({
+    taskId,
+    toolId: "reacherx_via_people",
+    record: { panel: { verifiedMatch } },
+  });
+  // p14 as in the D1 smoke report: 7 of 111 companies verified.
+  const cases = [
+    ...Array.from({ length: 111 }, (_, index) => judged("p14", index < 7)),
+    ...Array.from({ length: 4 }, (_, index) => judged("p16", index < 2)),
+    judged("p16", true),
+  ];
+  assert.ok(
+    viaPeopleShare(cases)
+      .join("\n")
+      .endsWith(
+        block(
+          "reacherx_via_people · verified of all companies judged (2 prompts)",
+          "  p16 ████████████░░░░░░░░  60.0%  (3/5)    95% CI 23.1-88.2",
+          "  p14 █░░░░░░░░░░░░░░░░░░░   6.3%  (7/111)  95% CI 3.1-12.4"
+        )
+      )
+  );
+  assert.deepEqual(
+    viaPeopleShare([{ ...judged("p14", true), toolId: "exa" }]),
+    []
+  );
 });
 
 test("projections stay unknown when a cost they need was never measured", () => {

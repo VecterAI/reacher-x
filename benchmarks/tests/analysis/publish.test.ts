@@ -73,7 +73,7 @@ test("aggregate results are written as Markdown and JSON to the public folder", 
   );
   assert.match(
     await readFile(join(root, paths.markdown), "utf8"),
-    /\| context \| 1 \| 10 \| 6 \|/
+    /^ {2}context █{12}░{8} {2}60\.0% {2}\(6\/10\)/m
   );
 });
 

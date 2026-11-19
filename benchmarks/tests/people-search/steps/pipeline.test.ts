@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -293,7 +300,7 @@ test("X and LinkedIn cost come from the deployment's records, and a tool with no
   };
   const exa = aggregate.rows.find((row) => row.toolId === "exa");
   assert.deepEqual([exa?.returned, exa?.verifiedMatches], [0, 0]);
-  assert.match(report, /\| exa \| 1 \| 0 \| 0 \| no results \|/);
+  assert.match(report, /^ {2}exa +░{20} {2}no results +\$/m);
   const [workspace] = outcome.workspaces;
   const costs = workspaceCosts(workspace, rates());
   // 300 recorded tweets or users at $0.20 per 1,000.
@@ -840,4 +847,213 @@ test("a raised approval file applies between polls; an invalid one keeps the app
     ).length,
     1
   );
+});
+
+test("a slice is step-only: none unless the approval names workspaces, with an optional cycle cap", () => {
+  const approval = {
+    segment: "pilot",
+    spend: {
+      approvalReference: "Synthetic approval",
+      approvedAt: "2026-11-19T09:00:00Z",
+      accountLimits: [{ accountId: "openrouter:a", maxAdditionalUsd: 1 }],
+    },
+  };
+  assert.equal(segmentApprovalSchema.parse(approval).slice, null);
+  assert.deepEqual(
+    segmentApprovalSchema.parse({
+      ...approval,
+      slice: { workspaces: ["w-p01-on"] },
+    }).slice,
+    { workspaces: ["w-p01-on"], cycles: null }
+  );
+  for (const slice of [
+    { workspaces: [] },
+    { workspaces: ["w-p01-on"], cycles: 0 },
+    { workspaces: ["w-p01-on"], cycles: 1.5 },
+    { workspaces: ["w-p01-on"], cycles: 1, extra: true },
+  ])
+    assert.equal(
+      segmentApprovalSchema.safeParse({ ...approval, slice }).success,
+      false
+    );
+});
+
+const sliced =
+  (
+    deps: StepDependencies,
+    slice: NonNullable<
+      Awaited<ReturnType<StepDependencies["readApproval"]>>
+    >["slice"]
+  ): StepDependencies["readApproval"] =>
+  async (segment) => {
+    const approval = await deps.readApproval(segment);
+    return (
+      approval && (segment === "pilot" ? { ...approval, slice } : approval)
+    );
+  };
+
+test("a pilot slice runs only the first cycle of one workspace, holds it, and leaves the rest pending", async (t) => {
+  const { root, deps, timeline, env, atRest } = await setup(t);
+  assert.equal((await runStep("smoke", deps)).outcome.status, "complete");
+  const runDir = join(
+    root,
+    "benchmarks/.local/runs",
+    segmentRunId(deps.frozen.planSha256, "pilot")
+  );
+  const frozenRun = () => readFile(join(runDir, "frozen-run.json"), "utf8");
+
+  timeline.length = 0;
+  const slice = await runStep("pilot", {
+    ...deps,
+    readApproval: sliced(deps, { workspaces: ["w-p01-on"], cycles: 1 }),
+  });
+  assert.equal(slice.outcome.status, "halted");
+  assert.match(
+    slice.outcome.stopReason ?? "",
+    /^Slice run .*only w-p01-on, at most 1 cycle\(s\) each/
+  );
+  assert.equal(slice.outcome.decision, null);
+  // One workspace, one cycle, no judges; the deployment is reset.
+  const prepared = (calls: readonly string[]) =>
+    calls.filter(
+      (call) => call === "run benchmarkPeopleSearch:prepareWorkspace"
+    ).length;
+  assert.equal(prepared(timeline), 1);
+  assert.ok(!timeline.some((call) => call.startsWith("model")));
+  assert.ok(timeline.includes("env set PROSPECTING_AUTO_RESCHEDULE"));
+  assert.deepEqual(Object.fromEntries(env), atRest);
+  assert.deepEqual(slice.outcome.workspaces, []);
+  assert.deepEqual(
+    slice.outcome.review.map((item) => item.unitId),
+    ["w-p01-on"]
+  );
+  assert.match(
+    slice.outcome.review[0].reason,
+    /Slice: ran 1 of 4 planned cycle\(s\)/
+  );
+  assert.deepEqual((await readdir(join(runDir, "checkpoints"))).sort(), [
+    "w-p01-on.json",
+  ]);
+  const held = JSON.parse(
+    await readFile(
+      join(
+        root,
+        JSON.parse(
+          await readFile(join(runDir, "checkpoints/w-p01-on.json"), "utf8")
+        ).receipt.path
+      ),
+      "utf8"
+    )
+  );
+  assert.equal(held.receipt.record.plannedCycles, 1);
+  assert.equal(held.receipt.record.cycles.length, 1);
+  // The frozen run record is the whole pilot's, unchanged by the slice.
+  const frozen = await frozenRun();
+  assert.equal(
+    JSON.parse(frozen).schedule.workspaces.length,
+    segmentSchedule("pilot", { runId: "x", seed: 7 }).workspaces.length
+  );
+
+  // Rerunning the slice contacts nothing; --resume-held cannot extend it.
+  timeline.length = 0;
+  const again = await runStep("pilot", {
+    ...deps,
+    readApproval: sliced(deps, { workspaces: ["w-p01-on"], cycles: 1 }),
+  });
+  assert.equal(again.outcome.status, "halted");
+  assert.deepEqual(changes(timeline), []);
+  await assert.rejects(
+    runStep("pilot", {
+      ...deps,
+      resumeHeld: true,
+      readApproval: sliced(deps, { workspaces: ["w-p01-on"], cycles: 1 }),
+    }),
+    /only a budget stop, an interruption or unreadable status can be continued/
+  );
+
+  // Its LinkedIn use counts against the step's approval although it is held.
+  const used: number = held.receipt.record.recorded.linkdApi.billableUnits;
+  assert.ok(used > 0);
+  timeline.length = 0;
+  const capped = await runStep("pilot", {
+    ...deps,
+    readApproval: async (segment) => {
+      const approval = await sliced(deps, {
+        workspaces: ["w-p01-off"],
+        cycles: null,
+      })(segment);
+      return (
+        approval && {
+          ...approval,
+          credits: approval.credits.map((item) => ({
+            ...item,
+            maxCredits: used,
+          })),
+        }
+      );
+    },
+  });
+  assert.equal(capped.outcome.status, "budget-stop");
+  assert.match(capped.outcome.stopReason ?? "", /renidly:/);
+  assert.equal(prepared(timeline), 0);
+
+  // Without a slice the step stops at the held workspace, so the pilot can
+  // never look complete without it.
+  timeline.length = 0;
+  const unsliced = await runStep("pilot", deps);
+  assert.equal(unsliced.outcome.status, "halted");
+  assert.match(
+    unsliced.outcome.stopReason ?? "",
+    /w-p01-on ran only as a slice \(1 of 4 cycles\)/
+  );
+  assert.equal(prepared(timeline), 0);
+
+  // The rest of the pilot runs as another slice under the same frozen record;
+  // the held workspace is not repeated.
+  timeline.length = 0;
+  const rest = await runStep("pilot", {
+    ...deps,
+    readApproval: sliced(deps, {
+      workspaces: ["w-p01-off", "w-p06-off", "w-p06-on"],
+      cycles: null,
+    }),
+  });
+  assert.equal(prepared(timeline), 3);
+  assert.equal(await frozenRun(), frozen);
+  assert.deepEqual(rest.outcome.review, []);
+  assert.deepEqual(
+    rest.outcome.workspaces.map((item) => item.record.cycles.length),
+    [4, 4, 4]
+  );
+
+  // Moved aside after review (never deleted), it runs again in full.
+  await mkdir(join(runDir, "held"), { recursive: true });
+  await rename(
+    join(runDir, "checkpoints/w-p01-on.json"),
+    join(runDir, "held/w-p01-on.slice.json")
+  );
+  timeline.length = 0;
+  const full = await runStep("pilot", deps);
+  assert.equal(prepared(timeline), 1);
+  assert.equal(full.outcome.status, "complete");
+  assert.deepEqual(full.outcome.review, []);
+  assert.deepEqual(
+    full.outcome.workspaces.map((item) => item.record.cycles.length),
+    [4, 4, 4, 4]
+  );
+  assert.deepEqual(Object.fromEntries(env), atRest);
+});
+
+test("a slice naming a workspace the step does not run is refused before anything changes", async (t) => {
+  const { deps, timeline } = await setup(t);
+  await runStep("smoke", deps);
+  timeline.length = 0;
+  await assert.rejects(
+    runStep("pilot", {
+      ...deps,
+      readApproval: sliced(deps, { workspaces: ["w-p02-on"], cycles: 1 }),
+    }),
+    /names w-p02-on, which pilot does not run; its workspaces are w-p01-on, w-p01-off, w-p06-off, w-p06-on/
+  );
+  assert.deepEqual(changes(timeline), []);
 });

@@ -30,6 +30,7 @@ import type {
 } from "../../core/steps/balances";
 import type { WorkspaceGate } from "../../core/steps/keyGate";
 import {
+  StepHalted,
   UnitFailed,
   toJson,
   untilStopped,
@@ -178,6 +179,23 @@ export const workspaceUnitId = (
   slot: Pick<WorkspaceSlot, "taskId" | "learning">
 ) => `w-${slot.taskId}-${slot.learning}`;
 
+/** Why a workspace the harness ended early is held for review, or null. */
+function harnessHold(record: WorkspaceRunRecord) {
+  return HARNESS_ENDINGS.includes(record.ending)
+    ? `The workspace ended early (${record.ending})${record.detail ? `: ${record.detail}` : "."}`
+    : null;
+}
+
+/**
+ * Why a workspace a slice ran for fewer cycles than its slot plans is held
+ * for review, or null. Its record is never reused as the complete workspace.
+ */
+function sliceHold(record: WorkspaceRunRecord, slot: WorkspaceSlot) {
+  return record.plannedCycles < slot.cycles
+    ? `Slice: ran ${record.cycles.length} of ${slot.cycles} planned cycle(s), so it is never reused as complete. No hook starts a stopped workspace's next cycle; to run it in full, move its checkpoint to the run's held/ folder.`
+    : null;
+}
+
 export type WorkspacePhase = Readonly<{
   ledger: UnitLedger;
   driver: ConvexReacherXDriver;
@@ -196,6 +214,12 @@ export type WorkspacePhase = Readonly<{
   linkedIn: AccountReader;
   // Re-reads the approval file between status polls and applies increases.
   refreshApproval?: () => Promise<void>;
+  // A slice of the step: only these workspace units run, each new one for at
+  // most `cycles` cycles (null for all planned). Null or absent runs them all.
+  slice?: Readonly<{
+    workspaces: readonly string[];
+    cycles: number | null;
+  }> | null;
   log(line: string): void;
 }>;
 
@@ -330,16 +354,19 @@ export async function runWorkspaceUnits(
       x: phase.x.accountId,
       linkedIn: phase.linkedIn.accountId,
     });
-  // Continuing held workspaces: every completed or held workspace's use
-  // counts from the start; each is replaced as its own turn finishes.
-  if (resumable.size)
-    for (const slot of slots) {
-      const id = workspaceUnitId(slot);
-      const done = await phase.ledger.completed(id, workspaceOutcomeSchema);
-      const held = resumable.get(id);
-      if (done) ran.set(id, done.record);
-      else if (held) ran.set(id, held.outcome.record);
-    }
+  // Every completed or held workspace's use counts from the start (a held
+  // one, such as a slice's, was paid for even if it is never continued);
+  // each is replaced as its own turn finishes.
+  for (const slot of slots) {
+    const id = workspaceUnitId(slot);
+    const done = await phase.ledger.completed(id, workspaceOutcomeSchema);
+    const held =
+      resumable.get(id)?.outcome ??
+      heldReceiptSchema.safeParse((await phase.ledger.held(id))?.value).data
+        ?.receipt;
+    if (done) ran.set(id, done.record);
+    else if (held) ran.set(id, held.record);
+  }
   const stopped = await untilStopped(async () => {
     for (const slot of slots) {
       const spec = {
@@ -350,9 +377,25 @@ export async function runWorkspaceUnits(
         cycle: null,
         input: { ...slot },
       };
+      // Outside the slice: left pending, though its use above still counts.
+      if (phase.slice && !phase.slice.workspaces.includes(spec.id)) continue;
       const state = await phase.ledger.state(spec.id);
+      const cycles = Math.min(slot.cycles, phase.slice?.cycles ?? slot.cycles);
       const held =
         state === "needs-review" ? resumable.get(spec.id) : undefined;
+      // A workspace a slice cut short must not leave the step looking
+      // complete without it, so a run without a slice stops here.
+      const slicedEarlier = ran.get(spec.id);
+      if (
+        state === "needs-review" &&
+        !held &&
+        !phase.slice?.cycles &&
+        slicedEarlier &&
+        sliceHold(slicedEarlier, slot)
+      )
+        throw new StepHalted(
+          `${spec.id} ran only as a slice (${slicedEarlier.cycles.length} of ${slot.cycles} cycles). Move its checkpoint to the run's held/ folder to run it in full, or name the step's other workspaces in a slice.`
+        );
       let before: z.infer<typeof accountReadingSchema>[] = [];
       if (state === "new" || state === "pending" || held) {
         if (phase.signal.aborted || !session) {
@@ -370,7 +413,9 @@ export async function runWorkspaceUnits(
         phase.log(
           held
             ? `Workspace ${slot.label}: resuming its cycle after ${held.outcome.record.ending}; no new discovery cycle.`
-            : `Workspace ${slot.label}: ${slot.cycles} cycle(s).`
+            : `Workspace ${slot.label}: ${cycles} cycle(s)${
+                cycles < slot.cycles ? ` of ${slot.cycles} planned (slice)` : ""
+              }.`
         );
       }
       let ending: WorkspaceEnding | null = null;
@@ -423,7 +468,7 @@ export async function runWorkspaceUnits(
                   prompt: slot.prompt,
                   useCaseKey: slot.useCaseKey,
                   learning: slot.learning,
-                  cycles: slot.cycles,
+                  cycles,
                 },
                 hooks,
                 watch,
@@ -445,9 +490,7 @@ export async function runWorkspaceUnits(
         };
       };
       const review = ({ record }: WorkspaceOutcome) =>
-        HARNESS_ENDINGS.includes(record.ending)
-          ? `The workspace ended early (${record.ending})${record.detail ? `: ${record.detail}` : "."}`
-          : null;
+        harnessHold(record) ?? sliceHold(record, slot);
       const outcome = held
         ? await phase.ledger.resume(
             spec,
@@ -493,8 +536,16 @@ export async function runWorkspaceUnits(
             : "The approved spend was reached."
         );
       // Each workspace is costly and a failure is often the deployment's, so
-      // the first one stops the step.
-      if (outcome.status === "needs-review" && !phase.signal.aborted)
+      // the first one stops the step. A slice's planned hold is no failure.
+      const slicedOnly: boolean =
+        finished !== null &&
+        harnessHold(finished) === null &&
+        sliceHold(finished, slot) !== null;
+      if (
+        outcome.status === "needs-review" &&
+        !phase.signal.aborted &&
+        !slicedOnly
+      )
         phase.ledger.haltAfter(1, spec.id, outcome.reason);
     }
   });

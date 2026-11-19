@@ -3,7 +3,11 @@ import test from "node:test";
 import type { BlindInput, PanelResult } from "../../core/judging/judges";
 import {
   compareToBaseline,
+  comparisonFamilies,
   costPerVerifiedMatch,
+  lastCompletedCycle,
+  MIN_TESTED_PROMPTS,
+  pooledComparison,
   freshness,
   matchesAtK,
   newestCitedEvidenceAgeDays,
@@ -14,6 +18,7 @@ import {
   speed,
   type JudgedResult,
 } from "../../core/analysis/metrics";
+import { holm, pairedBootstrap } from "../../core/analysis/stats";
 import { summarizeUsage } from "../../core/execution/spend";
 
 // Synthetic judged results only.
@@ -69,7 +74,127 @@ test("tools are compared on the same top-K slots, and empty slots count as misse
   assert.equal(comparison.comparison.prompts, 2);
   // (1 - 0.5) and (0.5 - 0) average to 0.5.
   assert.equal(comparison.comparison.meanDifference, 0.5);
-  assert.equal(comparison.holmAdjustedP, comparison.comparison.pValue);
+  // Descriptive: no p-value, no Holm.
+  assert.deepEqual(Object.keys(comparison.comparison).sort(), [
+    "interval",
+    "meanDifference",
+    "prompts",
+  ]);
+  assert.equal("holmAdjustedP" in comparison, false);
+});
+
+// One compared row: a tool's verified count in the top 5 on one prompt.
+const compared = (
+  toolId: string,
+  taskId: string,
+  verified: number,
+  category: string,
+  entityType: "individual" | "organization"
+) => ({ toolId, taskId, verified, returned: 5, category, entityType });
+
+test("the pooled family takes only people prompts, across both people categories, with Holm within it", () => {
+  const people = [1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => {
+    const category = n <= 4 ? "People, static filters" : "People, signals";
+    return [
+      compared(
+        "reacherx",
+        `p${n}`,
+        n % 3 === 0 ? 1 : 4,
+        category,
+        "individual"
+      ),
+      compared("a", `p${n}`, 2, category, "individual"),
+      compared("b", `p${n}`, n % 2 ? 5 : 1, category, "individual"),
+    ];
+  });
+  // A clean sweep on three company prompts, and a tool only on companies.
+  const companies = [11, 12, 13].flatMap((n) => [
+    compared("reacherx", `p${n}`, 5, "Companies, signals", "organization"),
+    compared("a", `p${n}`, 0, "Companies, signals", "organization"),
+    compared("c", `p${n}`, 0, "Companies, signals", "organization"),
+  ]);
+  const families = comparisonFamilies(
+    [...people, ...companies],
+    "reacherx",
+    5,
+    7
+  );
+  assert.deepEqual(
+    families.people.map((item) => [item.other, item.comparison.prompts]),
+    [
+      ["a", 8],
+      ["b", 8],
+    ]
+  );
+  // The same as pooling the people rows alone: companies never enter.
+  assert.deepEqual(families.people, pooledComparison(people, "reacherx", 5, 7));
+  // Holm over these two comparisons only.
+  const expected = holm(
+    families.people.map((item) => ({
+      comparisonId: item.other,
+      pValue: item.comparison.pValue!,
+    }))
+  );
+  assert.deepEqual(
+    families.people.map((item) => item.holmAdjustedP),
+    expected.map((item) => item.adjustedPValue)
+  );
+  // Each category is described, never tested.
+  assert.deepEqual(
+    [...new Set(families.byCategory.map((item) => item.category))],
+    ["People, static filters", "People, signals", "Companies, signals"]
+  );
+  for (const item of families.byCategory) {
+    assert.equal("pValue" in item.comparison, false);
+    assert.equal("holmAdjustedP" in item, false);
+  }
+});
+
+test("a clean sweep on three prompts is not reported as significant anywhere", () => {
+  const sweep = (prompts: number, entityType: "individual" | "organization") =>
+    Array.from({ length: prompts }, (_, index) => [
+      compared("reacherx", `p${index + 1}`, 5, "Group", entityType),
+      compared("other", `p${index + 1}`, 0, "Group", entityType),
+    ]).flat();
+  // The bootstrap alone would give it p = 0.
+  assert.equal(
+    pairedBootstrap(
+      [1, 2, 3].map((n) => ({ taskId: `p${n}`, left: 1, right: 0 })),
+      7
+    ).pValue,
+    0
+  );
+  for (const entityType of ["individual", "organization"] as const) {
+    const families = comparisonFamilies(sweep(3, entityType), "reacherx", 5, 7);
+    for (const item of families.people) {
+      assert.equal(item.comparison.pValue, null);
+      assert.equal(item.holmAdjustedP, null);
+      // Still described.
+      assert.equal(item.comparison.meanDifference, 1);
+    }
+    for (const item of families.byCategory)
+      assert.equal("pValue" in item.comparison, false);
+  }
+  // From six people prompts the pooled comparison is tested.
+  const [six] = pooledComparison(sweep(6, "individual"), "reacherx", 5, 7);
+  assert.equal(MIN_TESTED_PROMPTS, 6);
+  assert.equal(six.holmAdjustedP, 0);
+});
+
+test("the last finished cycle is the last by number, never the best", () => {
+  const cycle = (n: number, finished = true) => ({
+    cycle: n,
+    settledAt: finished && n === 4 ? 1 : null,
+    nextStartObserved: finished && n < 4,
+  });
+  assert.equal(lastCompletedCycle([1, 2, 3, 4].map((n) => cycle(n))), 4);
+  // A last cycle that never settled is not finished; the one before it is.
+  assert.equal(
+    lastCompletedCycle([cycle(1), cycle(2), cycle(3), cycle(4, false)]),
+    3
+  );
+  assert.equal(lastCompletedCycle([cycle(1, false)]), null);
+  assert.equal(lastCompletedCycle([]), null);
 });
 
 test("scoring mistakes count wrong acceptances and wrongly rejected matches", () => {

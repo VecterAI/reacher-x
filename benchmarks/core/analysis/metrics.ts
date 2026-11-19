@@ -7,7 +7,7 @@ import {
   type PairedComparison,
   type ProportionEstimate,
 } from "./stats";
-import type { BenchmarkEntity } from "../types";
+import type { BenchmarkEntity, EntityType } from "../types";
 
 /** Proposal section 4. Every function is pure; inputs come from judged checkpoints. */
 
@@ -78,64 +78,171 @@ export function matchesAtK(results: readonly JudgedResult[], topK: number) {
     );
 }
 
+type ComparedRow = ReturnType<typeof matchesAtK>[number];
+
+// Baseline minus other, descriptive only: a mean and interval, never a p-value.
+export type DescribedComparison = Omit<PairedComparison, "pValue">;
+
 export type ToolComparison = Readonly<{
   category: string;
   baseline: string;
   other: string;
   // Baseline minus other: mean difference in verified share of the top-K slots.
+  comparison: DescribedComparison;
+}>;
+
+export type TestedComparison = Readonly<{
+  baseline: string;
+  other: string;
+  // Baseline minus other; pValue is null when too few prompts to test.
   comparison: PairedComparison;
   holmAdjustedP: number | null;
 }>;
 
 /**
- * Paired bootstrap over the prompts both tools support within each group, on
- * the share of top-K slots holding verified matches (empty slots count as
- * misses), with Holm correction across every comparison in the report.
+ * Below this many prompts the pooled comparison stays descriptive. The
+ * bootstrap gives p = 0 to any clean sweep however few prompts it covers,
+ * while an exact sign test of a sweep first reaches p < 0.05 at 6 prompts.
+ */
+export const MIN_TESTED_PROMPTS = 6;
+
+/** Each other tool's prompts paired with the baseline's, on the share of top-K slots verified. */
+function pairsByTool(
+  rows: readonly ComparedRow[],
+  baseline: string,
+  topK: number
+) {
+  const base = new Map(
+    rows
+      .filter((row) => row.toolId === baseline)
+      .map((row) => [row.taskId, row.verified / topK])
+  );
+  const others = [
+    ...new Set(
+      rows.map((row) => row.toolId).filter((tool) => tool !== baseline)
+    ),
+  ].sort();
+  return others.map((other) => ({
+    other,
+    pairs: rows
+      .filter((row) => row.toolId === other && base.has(row.taskId))
+      .map((row) => ({
+        taskId: row.taskId,
+        left: base.get(row.taskId)!,
+        right: row.verified / topK,
+      })),
+  }));
+}
+
+/**
+ * Paired bootstrap over the prompts both tools support within each category,
+ * on the share of top-K slots holding verified matches (empty slots count as
+ * misses). Descriptive only (analysis amendment, 19 Nov 2026): a mean
+ * difference and its 95% interval, with no p-value and no Holm correction.
  */
 export function compareToBaseline(
-  rows: ReturnType<typeof matchesAtK>,
+  rows: readonly ComparedRow[],
   baseline: string,
   topK: number,
   seed: number
 ): ToolComparison[] {
-  const comparisons: Omit<ToolComparison, "holmAdjustedP">[] = [];
-  for (const [category, categoryRows] of groupBy(rows, (row) => row.category)) {
-    const base = new Map(
-      categoryRows
-        .filter((row) => row.toolId === baseline)
-        .map((row) => [row.taskId, row.verified / topK])
-    );
-    const others = new Set(
-      categoryRows.map((row) => row.toolId).filter((tool) => tool !== baseline)
-    );
-    for (const other of [...others].sort()) {
-      const pairs = categoryRows
-        .filter((row) => row.toolId === other && base.has(row.taskId))
-        .map((row) => ({
-          taskId: row.taskId,
-          left: base.get(row.taskId)!,
-          right: row.verified / topK,
-        }));
-      comparisons.push({
-        category,
+  return [...groupBy(rows, (row) => row.category)].flatMap(
+    ([category, categoryRows]) =>
+      pairsByTool(categoryRows, baseline, topK).map(({ other, pairs }) => {
+        const { prompts, meanDifference, interval } = pairedBootstrap(
+          pairs,
+          seed
+        );
+        return {
+          category,
+          baseline,
+          other,
+          comparison: { prompts, meanDifference, interval },
+        };
+      })
+  );
+}
+
+/**
+ * The one tested family (analysis amendment, 19 Nov 2026): the baseline
+ * against each tool over every prompt given, pooled across categories, one
+ * paired observation per prompt, with Holm correction across these
+ * comparisons only. A comparison over fewer than `minPrompts` prompts keeps
+ * its mean and interval but is not tested.
+ */
+export function pooledComparison(
+  rows: readonly ComparedRow[],
+  baseline: string,
+  topK: number,
+  seed: number,
+  minPrompts = MIN_TESTED_PROMPTS
+): TestedComparison[] {
+  const comparisons = pairsByTool(rows, baseline, topK).map(
+    ({ other, pairs }) => {
+      const comparison = pairedBootstrap(pairs, seed);
+      return {
         baseline,
         other,
-        comparison: pairedBootstrap(pairs, seed),
-      });
+        comparison:
+          comparison.prompts >= minPrompts
+            ? comparison
+            : { ...comparison, pValue: null },
+      };
     }
-  }
-  const tested = comparisons.flatMap((item, index) =>
-    item.comparison.pValue === null
-      ? []
-      : [{ comparisonId: String(index), pValue: item.comparison.pValue }]
   );
   const adjusted = new Map(
-    holm(tested).map((item) => [item.comparisonId, item.adjustedPValue])
+    holm(
+      comparisons.flatMap(({ other, comparison }) =>
+        comparison.pValue === null
+          ? []
+          : [{ comparisonId: other, pValue: comparison.pValue }]
+      )
+    ).map((item) => [item.comparisonId, item.adjustedPValue])
   );
-  return comparisons.map((item, index) => ({
+  return comparisons.map((item) => ({
     ...item,
-    holmAdjustedP: adjusted.get(String(index)) ?? null,
+    holmAdjustedP: adjusted.get(item.other) ?? null,
   }));
+}
+
+/**
+ * ReacherX's comparisons as the amendment of 19 Nov 2026 sets them: people
+ * prompts (by entity type) pooled into the only tested family, and every
+ * category, people or company, described on its own without a test.
+ * Company prompts are never pooled with people prompts.
+ */
+export function comparisonFamilies(
+  rows: readonly (ComparedRow & { entityType: EntityType })[],
+  baseline: string,
+  topK: number,
+  seed: number
+) {
+  return {
+    people: pooledComparison(
+      rows.filter((row) => row.entityType === "individual"),
+      baseline,
+      topK,
+      seed
+    ),
+    byCategory: compareToBaseline(rows, baseline, topK, seed),
+  };
+}
+
+/**
+ * The last cycle that finished (it settled, or handed over to the next),
+ * by cycle number: the last, never the best. Null when none finished.
+ */
+export function lastCompletedCycle(
+  cycles: readonly Readonly<{
+    cycle: number;
+    settledAt: number | null;
+    nextStartObserved: boolean;
+  }>[]
+) {
+  const finished = cycles
+    .filter((cycle) => cycle.settledAt !== null || cycle.nextStartObserved)
+    .map((cycle) => cycle.cycle);
+  return finished.length ? Math.max(...finished) : null;
 }
 
 // --- Search quality (ReacherX) ----------------------------------------------

@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { z } from "zod";
 import { identifierSchema, sha256Schema } from "../setup/manifest";
 import { entityTypeSchema } from "../types";
-import { renderJson, renderMarkdown, type AggregateReport } from "./report";
+import {
+  renderJson,
+  renderMarkdown,
+  type AggregateReport,
+  type MarkdownOptions,
+} from "./report";
 
 /**
  * Proposal 3.4: personal data never goes into the repository; only totals and
@@ -176,12 +181,13 @@ export async function writePublicResults(
   root: string,
   directory: string,
   report: unknown,
-  vocabulary: PublicVocabulary
+  vocabulary: PublicVocabulary,
+  options: MarkdownOptions = {}
 ) {
   if (directory.startsWith("benchmarks/.local") || directory.includes(".."))
     throw new PersonalDataError("Public results go to the public folder only.");
   const safe = assertAggregateOnly(report, vocabulary);
-  const markdown = renderMarkdown(safe);
+  const markdown = renderMarkdown(safe, options);
   const json = renderJson(safe);
   const leaked = IDENTIFYING_TEXT.find((pattern) => pattern.test(markdown));
   if (leaked)

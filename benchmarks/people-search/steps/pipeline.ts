@@ -30,7 +30,12 @@ import {
   type AccountReading,
 } from "../../core/steps/balances";
 import { WorkspaceGate } from "../../core/steps/keyGate";
-import { UnitLedger, toJson, type StepStop } from "../../core/steps/units";
+import {
+  StepHalted,
+  UnitLedger,
+  toJson,
+  type StepStop,
+} from "../../core/steps/units";
 import type { FrozenPlanRecord } from "../setup/freeze";
 import { peopleSearchPlan } from "../setup/plan";
 import {
@@ -144,6 +149,19 @@ export const segmentApprovalSchema = z.strictObject({
     .max(100_000)
     .nullable()
     .default(null),
+  // Runs only a first slice of the step: the named workspace units (for
+  // example "w-p1-on"), each for at most `cycles` cycles (null for all its
+  // planned cycles). The other workspaces stay pending, and competitors,
+  // judges, labels and the decision wait for a run without a slice. A
+  // workspace cut short of its planned cycles is held for review, never
+  // reused as complete. Absent or null runs the whole step.
+  slice: z
+    .strictObject({
+      workspaces: z.array(z.string().min(1)).min(1),
+      cycles: z.number().int().min(1).nullable().default(null),
+    })
+    .nullable()
+    .default(null),
 });
 export type SegmentApproval = z.infer<typeof segmentApprovalSchema>;
 
@@ -152,6 +170,36 @@ export const approvalPath = (segment: SegmentId) =>
 
 export const segmentRunId = (planSha256: string, segment: SegmentId) =>
   `ps-${planSha256.slice(0, 12)}-${segment}`;
+
+/**
+ * The workspaces an approval's slice lets this run start, with their cycle
+ * cap and the stop reason the run ends with; null for the whole step. The
+ * schedule itself, and so the frozen run record, is never changed. A slice
+ * naming a workspace the segment does not run is refused before anything runs.
+ */
+export function sliceOf(
+  schedule: SegmentSchedule,
+  slice: SegmentApproval["slice"]
+) {
+  if (!slice) return null;
+  const ids = schedule.workspaces.map(workspaceUnitId);
+  const unknown = slice.workspaces.filter((id) => !ids.includes(id));
+  if (unknown.length)
+    throw new RunnerStateError(
+      `The slice in ${approvalPath(schedule.segment)} names ${unknown.join(", ")}, which ${schedule.segment} does not run; its workspaces are ${ids.join(", ")}.`
+    );
+  const workspaces = schedule.workspaces.filter((slot) =>
+    slice.workspaces.includes(workspaceUnitId(slot))
+  );
+  const cycles = slice.cycles
+    ? `at most ${slice.cycles} cycle(s) each`
+    : "all planned cycles";
+  return {
+    workspaces,
+    cycles: slice.cycles,
+    reason: `Slice run (${approvalPath(schedule.segment)}): only ${workspaces.map(workspaceUnitId).join(", ")}, ${cycles}. The step's other workspaces, competitors, judges and decision are still pending.`,
+  };
+}
 
 export type StepAccounts = Readonly<{
   // Not shared with production: its spend is ReacherX's AI cost of record.
@@ -388,6 +436,9 @@ async function runSegment(
       approval,
       frozen.seed
     );
+    const slice = sliceOf(schedule, approval?.slice ?? null);
+    // The workspaces this run may start or continue; the schedule stays whole.
+    const slots = slice?.workspaces ?? schedule.workspaces;
     const ledger = new UnitLedger(store);
     await ledger.open(
       toJson({
@@ -531,13 +582,17 @@ async function runSegment(
         x: deps.accounts.socialApi,
         linkedIn: deps.accounts.renidly,
         refreshApproval,
+        slice: slice && {
+          workspaces: slice.workspaces.map(workspaceUnitId),
+          cycles: slice.cycles,
+        },
         log: deps.log,
       };
       const states = await Promise.all(
-        schedule.workspaces.map((slot) => ledger.state(workspaceUnitId(slot)))
+        slots.map((slot) => ledger.state(workspaceUnitId(slot)))
       );
       const held = deps.resumeHeld
-        ? await heldForResume(schedule.workspaces, ledger)
+        ? await heldForResume(slots, ledger)
         : { ready: new Map(), problems: [] };
       if (deps.resumeHeld) {
         for (const problem of held.problems)
@@ -591,9 +646,11 @@ async function runSegment(
         );
       workspaceResults = ran.results;
       stopWith(ran.stopped);
+      // A slice ends after its workspaces; nothing else in the step runs.
+      if (slice) stopWith(new StepHalted(slice.reason));
 
       competitors = await runCompetitorUnits(
-        schedule.competitorTasks.map((id) => tasks.get(id)!),
+        (slice ? [] : schedule.competitorTasks).map((id) => tasks.get(id)!),
         {
           ledger,
           signal,
@@ -612,7 +669,7 @@ async function runSegment(
 
       await saveBudget();
 
-      if (schedule.judges) {
+      if (schedule.judges && !slice) {
         const ownWorkspaces = completed(workspaceResults);
         const judgedWorkspaces = [
           ...earlier

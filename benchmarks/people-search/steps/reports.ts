@@ -1,12 +1,20 @@
 import { z } from "zod";
 import {
   compareToBaseline,
+  comparisonFamilies,
   freshness,
   scoringMistakes,
   selfImprovement,
   timeToVerified,
   type JudgedResult,
 } from "../../core/analysis/metrics";
+import {
+  chartBlock,
+  percent,
+  promptCount,
+  wilsonText,
+  type ChartRow,
+} from "../../core/analysis/bars";
 import {
   renderMarkdown,
   type AggregateReport,
@@ -30,6 +38,12 @@ import {
   type CycleMeasurement,
   type DecisionInputs,
 } from "../analysis/decisions";
+import {
+  DESCRIPTIVE_NOTE,
+  differenceChart,
+  lastCycleSection,
+  TESTED_NOTE,
+} from "../analysis/comparisons";
 import { peopleSearchPlan } from "../setup/plan";
 import { SEGMENTS } from "../setup/schedule";
 import { VIA_PEOPLE_TOOL_ID } from "../run/reacherx";
@@ -170,7 +184,6 @@ const mean = (values: readonly number[]) =>
   values.length
     ? values.reduce((sum, value) => sum + value, 0) / values.length
     : null;
-const cell = (text: string) => text.replace(/\s+/g, " ").replace(/\|/g, "\\|");
 
 export function cyclesOf(
   workspaces: readonly WorkspaceOutcome[]
@@ -284,7 +297,8 @@ const judgedRow = (item: JudgedCase): JudgedResult => ({
  * cycle with learning on (a single cycle for most prompts; for the pilot
  * prompts, the first cycle of their learning-on workspace).
  */
-const isReacherX = (toolId: string) =>
+// ReacherX's own rows, marked with an arrow in charts.
+export const isReacherX = (toolId: string) =>
   toolId === "reacherx" || toolId === VIA_PEOPLE_TOOL_ID;
 
 function comparisonCases(outcomes: readonly SegmentOutcome[]) {
@@ -389,21 +403,33 @@ function comparisonTable(
   const rows = report.rows.map((row) => ({
     toolId: row.toolId,
     category: row.category,
+    entityType: row.entityType,
     taskId: row.taskId,
     returned: row.returned,
     verified: row.verifiedMatches,
   }));
-  const compare = (baseline: string, leaveOut: string) =>
-    compareToBaseline(
-      rows.filter((row) => row.toolId !== leaveOut),
-      baseline,
-      peopleSearchPlan.headlineTopK,
-      context.seed
-    );
-  const comparisons = compare("reacherx", VIA_PEOPLE_TOOL_ID);
+  const topK = peopleSearchPlan.headlineTopK;
+  // Analysis amendment, 19 Nov 2026: only the pooled people family is tested.
+  const families = comparisonFamilies(
+    rows.filter((row) => row.toolId !== VIA_PEOPLE_TOOL_ID),
+    "reacherx",
+    topK,
+    context.seed
+  );
+  const comparisons = families.byCategory;
   const viaPeople = rows.some((row) => row.toolId === VIA_PEOPLE_TOOL_ID)
-    ? compare(VIA_PEOPLE_TOOL_ID, "reacherx")
+    ? compareToBaseline(
+        rows.filter((row) => row.toolId !== "reacherx"),
+        VIA_PEOPLE_TOOL_ID,
+        topK,
+        context.seed
+      )
     : [];
+  const peoplePrompts = new Set(
+    report.rows
+      .filter((row) => row.entityType === "individual")
+      .map((row) => row.taskId)
+  ).size;
   const tenTools = toolCatalog
     .filter((tool) => tool.judgedTopK === 10)
     .map((tool): string => tool.id);
@@ -419,29 +445,85 @@ function comparisonTable(
           result.rank <= 10
       );
       return {
+        taskId: item.taskId,
         category: categoryOf(item.taskId).label,
         toolId: item.toolId,
         returned: judged.length,
         verified: judged.filter((result) => result.verifiedMatch).length,
       };
     });
-  const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
-  const comparisonRows = (items: typeof comparisons) =>
-    items.map(
-      (item) =>
-        `| ${cell(item.category)} | ${item.other} | ${item.comparison.prompts} | ${pct(item.comparison.meanDifference)} | ${
-          item.comparison.interval
-            ? `${pct(item.comparison.interval.lower)} to ${pct(item.comparison.interval.upper)}`
-            : "single observation"
-        } | ${item.holmAdjustedP?.toFixed(3) ?? "-"} |`
-    );
+  // Prompts in a group over every tool, so a row with fewer can say so.
+  const promptsIn = (category: string) =>
+    new Set(
+      report.rows
+        .filter((row) => row.category === category)
+        .map((row) => row.taskId)
+    ).size;
+  const fewer = (count: number, prompts: number) =>
+    count === prompts ? "" : `${count} of ${promptCount(prompts)}`;
+  // Descriptive per category: a mean and interval, never a p-value.
+  const comparisonBlocks = (items: typeof comparisons, measure: string) =>
+    [...new Set(items.map((item) => item.category))].flatMap((category) => [
+      "",
+      ...differenceChart(
+        `${category} · ${measure}`,
+        promptsIn(category),
+        items.filter((item) => item.category === category),
+        isReacherX
+      ),
+    ]);
+  const topTen = [...new Set(atTen.map((row) => row.category))].flatMap(
+    (category) => {
+      const group = atTen.filter((row) => row.category === category);
+      const prompts = new Set(group.map((row) => row.taskId)).size;
+      const tools = [...new Set(group.map((row) => row.toolId))].map(
+        (toolId): ChartRow => {
+          const rows = group.filter((row) => row.toolId === toolId);
+          const returned = rows.reduce((sum, row) => sum + row.returned, 0);
+          const verified = rows.reduce((sum, row) => sum + row.verified, 0);
+          const share = returned ? verified / returned : null;
+          return {
+            label: toolId,
+            value: share,
+            shown: share === null ? "no results" : percent(share),
+            details: [
+              share === null ? "" : `(${verified}/${returned})`,
+              fewer(rows.length, prompts),
+            ],
+            marked: isReacherX(toolId),
+          };
+        }
+      );
+      return [
+        "",
+        ...chartBlock(
+          `${category} · verified in top 10 (${promptCount(prompts)})`,
+          tools
+        ),
+      ];
+    }
+  );
   return [
     "",
     "## ReacherX against each tool (top 5, paired by prompt)",
+    ...(families.people.length
+      ? [
+          "",
+          TESTED_NOTE,
+          "",
+          ...differenceChart(
+            "People, all prompts · ReacherX minus tool",
+            peoplePrompts,
+            families.people,
+            isReacherX
+          ),
+        ]
+      : []),
     "",
-    "| Group | Tool | Prompts | ReacherX minus tool | 95% interval | Holm p |",
-    "| --- | --- | ---: | ---: | --- | ---: |",
-    ...comparisonRows(comparisons),
+    DESCRIPTIVE_NOTE,
+    ...comparisonBlocks(comparisons, "ReacherX minus tool"),
+    "",
+    "Right of the line, ReacherX found more verified matches; left of it, the tool did. Each side spans 100 percentage points.",
     ...(viaPeople.length
       ? [
           "",
@@ -449,56 +531,51 @@ function comparisonTable(
           "",
           "ReacherX finds the people behind companies. Here up to five distinct companies its qualified people work at, taken in the people's best-fit order, are judged as companies, with the same judges and criteria as every tool. Agreed with the project lead on 18 Nov 2026; this is a labelled measure next to ReacherX's own results, which count only companies it returned itself. It shares ReacherX's workspace cost, shown in ReacherX's row; judging these companies is counted with the judges.",
           "",
-          "| Group | Tool | Prompts | ReacherX via people minus tool | 95% interval | Holm p |",
-          "| --- | --- | ---: | ---: | --- | ---: |",
-          ...comparisonRows(viaPeople),
+          "Descriptive only, like the categories above: no p-value and no Holm correction.",
+          ...comparisonBlocks(viaPeople, "ReacherX via people minus tool"),
           ...viaPeopleShare(comparisonCases(outcomes)),
         ]
       : []),
-    ...(atTen.length
-      ? [
-          "",
-          "Top 10, where judged:",
-          "",
-          "| Group | Tool | Prompts | Verified of returned |",
-          "| --- | --- | ---: | ---: |",
-          ...[
-            ...new Set(
-              atTen.map((row) => `${row.category}\u0000${row.toolId}`)
-            ),
-          ].map((key) => {
-            const [category, toolId] = key.split("\u0000");
-            const rows = atTen.filter(
-              (row) => row.category === category && row.toolId === toolId
-            );
-            const returned = rows.reduce((sum, row) => sum + row.returned, 0);
-            const verified = rows.reduce((sum, row) => sum + row.verified, 0);
-            return `| ${cell(category)} | ${toolId} | ${rows.length} | ${verified} of ${returned} |`;
-          }),
-        ]
-      : []),
+    ...(topTen.length ? ["", "Top 10, where judged:", ...topTen] : []),
+    ...lastCycleSection(
+      outcomes.flatMap((outcome) => outcome.workspaces),
+      outcomes.flatMap((outcome) => outcome.cases),
+      report.rows,
+      { topK, baseline: "reacherx", isOwn: isReacherX }
+    ),
   ];
 }
 
 /** Every company behind ReacherX's people, judged: the share that fits, per prompt. */
-function viaPeopleShare(cases: readonly JudgedCase[]) {
+export function viaPeopleShare(
+  cases: readonly Pick<LearningCase, "taskId" | "toolId" | "record">[]
+) {
   const judged = cases.filter((item) => item.toolId === VIA_PEOPLE_TOOL_ID);
   if (!judged.length) return [];
-  const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+  const prompts = [...new Set(judged.map((item) => item.taskId))].sort();
   return [
     "",
     "All companies judged, not only the top 5 (a share, not compared with other tools):",
     "",
-    "| Prompt | Companies judged | Verified | Verified share |",
-    "| --- | ---: | ---: | --- |",
-    ...[...new Set(judged.map((item) => item.taskId))].sort().map((taskId) => {
-      const rows = judged.filter((item) => item.taskId === taskId);
-      const verified = rows.filter(
-        (item) => item.record.panel.verifiedMatch
-      ).length;
-      const { interval } = wilson(verified, rows.length);
-      return `| ${taskId} | ${rows.length} | ${verified} | ${pct(verified / rows.length)} (95% CI ${pct(interval!.lower)}-${pct(interval!.upper)}) |`;
-    }),
+    ...chartBlock(
+      `${VIA_PEOPLE_TOOL_ID} · verified of all companies judged (${promptCount(prompts.length)})`,
+      prompts.map((taskId) => {
+        const rows = judged.filter((item) => item.taskId === taskId);
+        const verified = rows.filter(
+          (item) => item.record.panel.verifiedMatch
+        ).length;
+        const { interval } = wilson(verified, rows.length);
+        return {
+          label: taskId,
+          value: verified / rows.length,
+          shown: percent(verified / rows.length),
+          details: [
+            `(${verified}/${rows.length})`,
+            interval ? wilsonText(interval) : "",
+          ],
+        };
+      })
+    ),
   ];
 }
 
@@ -1286,7 +1363,10 @@ export function renderSegmentReport(
     if (report.rows.length)
       lines.push(
         "",
-        renderMarkdown(report)
+        renderMarkdown(report, {
+          topK: peopleSearchPlan.headlineTopK,
+          marked: isReacherX,
+        })
           .trimEnd()
           .replace(
             /^# .*\n\nFrozen plan: .*$/m,

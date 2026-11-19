@@ -119,6 +119,7 @@ function approval(segment: SegmentId, accounts: StepAccounts): SegmentApproval {
     keywordPostSearchCallsPerCycle: DEFAULT_KEYWORD_POST_SEARCH_CALLS,
     matchLimitPerCycle: null,
     matchLimitPerQuery: null,
+    slice: null,
     ...(segment.startsWith("stage2")
       ? {
           stage2: {
