@@ -6,11 +6,27 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import schema from "./schema";
 import { firstMatchIds } from "./lib/benchmarkMatchLimit";
 import { PLAN_LIMITS } from "./lib/planConstants";
 import { buildProspectSummaryRecord } from "./lib/readModelHelpers";
+import { buildLegacyWorkspaceTargetingSpec } from "./lib/targetingSpecCore";
 import { WORKSPACE_REPORTING_AGGREGATE_VERSION } from "./lib/workspaceReportingAggregate";
+
+// No provider or model is called: the qualification step's evidence and
+// model calls are stubs that record each call.
+type Stub = (ctx: ActionCtx, ...rest: unknown[]) => Promise<unknown>;
+const evaluation = vi.hoisted(() => ({
+  evaluate: vi.fn<Stub>(),
+  gather: vi.fn<Stub>(),
+  qualify: vi.fn<Stub>(),
+}));
+vi.mock("./lib/qualificationEvaluationCore", () => ({
+  evaluateQualificationWithExternalArticles: evaluation.evaluate,
+  gatherQualificationEvidence: evaluation.gather,
+  qualifyGatheredEvidence: evaluation.qualify,
+}));
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -43,6 +59,7 @@ const cycleStart = now - 3_600_000;
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.useRealTimers();
+  for (const stub of Object.values(evaluation)) stub.mockReset();
 });
 
 type ProspectSeed = Readonly<{
@@ -51,6 +68,8 @@ type ProspectSeed = Readonly<{
   enrichmentStatus?: "pending" | "enriched";
   qualificationWorkflowId?: string;
   enrichmentWorkflowId?: string;
+  // The qualifiedAt of a verdict the qualification step recorded.
+  decidedAt?: number;
 }>;
 
 /**
@@ -131,6 +150,12 @@ async function fixture(
         buildProspectSummaryRecord((await ctx.db.get(id))!)
       );
       ids.push(id);
+      if (seed.decidedAt !== undefined)
+        await ctx.db.insert("benchmarkDecidedMatches", {
+          workspaceId,
+          prospectId: id,
+          qualifiedAt: seed.decidedAt,
+        });
       if (options.aggregate && !seed.pending && seed.qualifiedAt)
         await aggregate.insert(ctx, {
           namespace: [
@@ -160,6 +185,45 @@ const earlier: ProspectSeed = {
   enrichmentStatus: "pending",
 };
 const pending: ProspectSeed = { pending: true };
+// Decided qualified by the step in this cycle; its workflow has not
+// committed the verdict yet, so the prospect is still pending.
+const decided = (index: number): ProspectSeed => ({
+  pending: true,
+  qualificationWorkflowId: `wf-decided-${index}`,
+  decidedAt: cycleStart + (index + 1) * 60_000,
+});
+// A match both committed and recorded, as every match decided by the step is.
+const recorded = (index: number): ProspectSeed =>
+  matched(index, { decidedAt: cycleStart + (index + 1) * 60_000 });
+
+/** Runs the qualification step (the paid one) for a prospect. */
+const qualificationStep = (
+  t: ReturnType<typeof convexTest>,
+  workspaceId: Id<"workspaces">,
+  prospectId: Id<"prospects">
+) =>
+  t.action(internal.workflows.qualification.runQualificationCore, {
+    evidencePosts: [],
+    platform: "linkedin",
+    discoveryQueries: [],
+    totalKeywords: 1,
+    profileData: {},
+    targetingSpec: buildLegacyWorkspaceTargetingSpec({
+      description: "Synthetic workspace",
+      profiles: [],
+    }),
+    workspaceId,
+    prospectId,
+  });
+
+// The parts of a verdict read here; the step's result is not validated.
+const verdict = (qualified: boolean) => ({
+  qualified,
+  status: qualified ? "qualified" : "disqualified",
+  score: qualified ? 80 : 20,
+  qualifiedAt: qualified ? now : undefined,
+});
+const STEP_PARKED = { benchmarkMatchLimitParked: true };
 
 const gate = (
   t: ReturnType<typeof convexTest>,
@@ -199,6 +263,39 @@ describe.each([
       { aggregate }
     );
     expect(await gate(at.t, at.workspaceId, at.ids[4])).toEqual(PARKED);
+  });
+
+  test("a match counts from the step's verdict, before its workflow commits it", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_CYCLE", "3");
+    // One match committed, two decided and still waiting for their workflow
+    // to commit them (the pilot's commits lagged 15 minutes).
+    const { t, workspaceId, ids } = await fixture(
+      [recorded(0), decided(1), decided(2), pending],
+      { aggregate }
+    );
+    expect(await gate(t, workspaceId, ids[3])).toEqual(PARKED);
+    const prospect = await t.run((ctx) => ctx.db.get(ids[3]));
+    expect(
+      await t.mutation(
+        internal.prospects.claimPendingQualificationRecoveryInternal,
+        {
+          prospectId: ids[3],
+          expectedUpdatedAt: prospect!.updatedAt,
+          expectedWorkflowId: undefined,
+          expectedFailureAt: undefined,
+          now,
+        }
+      )
+    ).toMatchObject({ claimed: false, reason: "ineligible" });
+    expect(
+      (await t.query(internal.benchmarkPeopleSearch.runStatus, { workspaceId }))
+        ?.matchLimit
+    ).toMatchObject({ limit: 3, qualifiedThisCycle: 3, reached: true });
+    // The decided ones still hold their workflows; only the undecided is parked.
+    expect(await parkedWork(t, workspaceId)).toEqual({
+      pending: 1,
+      enrichmentWaiting: 0,
+    });
   });
 
   test("the cycle's first N matches stay open for enrichment; later ones and earlier cycles are parked", async () => {
@@ -560,6 +657,147 @@ describe("benchmark match limit", () => {
     vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "4");
     expect(await check()).toMatchObject({
       benchmarkQueryLimit: { limit: 4, matches: 3, reached: false },
+    });
+  });
+});
+
+describe("the qualification step under a match limit", () => {
+  test("re-checks the limit when it starts, after its gate let it through, and spends nothing", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_CYCLE", "2");
+    // The gate passed this check while the cycle had fewer matches; the step
+    // ran after the queue let it, with the limit reached by then.
+    const { t, workspaceId, ids } = await fixture([
+      matched(0),
+      matched(1),
+      pending,
+    ]);
+    expect(await qualificationStep(t, workspaceId, ids[2])).toEqual(
+      STEP_PARKED
+    );
+    expect(evaluation.evaluate).not.toHaveBeenCalled();
+    expect(evaluation.gather).not.toHaveBeenCalled();
+    expect(evaluation.qualify).not.toHaveBeenCalled();
+  });
+
+  test("records a match when it decides it, so the gate parks the next check before the workflow commits it", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_CYCLE", "1");
+    const { t, workspaceId, ids } = await fixture([pending, pending]);
+    evaluation.gather.mockResolvedValue({ evidencePosts: [], profileData: {} });
+    evaluation.qualify.mockResolvedValue(verdict(true));
+    evaluation.evaluate.mockResolvedValue(verdict(true));
+
+    expect(await qualificationStep(t, workspaceId, ids[0])).toMatchObject({
+      qualified: true,
+    });
+    // Its workflow has not committed the verdict (the prospect is pending),
+    // yet the cycle has its match.
+    expect(await gate(t, workspaceId, ids[1])).toEqual(PARKED);
+    expect(await qualificationStep(t, workspaceId, ids[1])).toEqual(
+      STEP_PARKED
+    );
+    const state = await t.run(async (ctx) => ({
+      first: await ctx.db.get(ids[0]),
+      recorded: await ctx.db.query("benchmarkDecidedMatches").collect(),
+    }));
+    expect(state.first?.qualificationStatus).toBe("pending");
+    expect(state.recorded).toMatchObject([
+      { workspaceId, prospectId: ids[0], qualifiedAt: now },
+    ]);
+  });
+
+  test("re-checks before the model call when the limit is reached while it gathers evidence", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_CYCLE", "2");
+    const { t, workspaceId, ids } = await fixture([
+      recorded(0),
+      pending,
+      pending,
+    ]);
+    // Another check decides the cycle's second match meanwhile.
+    evaluation.gather.mockImplementation(async (ctx) => {
+      await ctx.runMutation(
+        internal.lib.benchmarkMatchLimit.recordDecidedMatchInternal,
+        { prospectId: ids[2], qualifiedAt: now }
+      );
+      return { evidencePosts: [], profileData: {} };
+    });
+    expect(await qualificationStep(t, workspaceId, ids[1])).toEqual(
+      STEP_PARKED
+    );
+    expect(evaluation.gather).toHaveBeenCalledTimes(1);
+    expect(evaluation.qualify).not.toHaveBeenCalled();
+  });
+
+  test("unset, it evaluates as in production and records nothing; other workspaces are never limited", async () => {
+    evaluation.evaluate.mockResolvedValue(verdict(true));
+    const unset = await fixture([matched(0), pending]);
+    expect(
+      await qualificationStep(unset.t, unset.workspaceId, unset.ids[1])
+    ).toMatchObject({ qualified: true });
+    expect(evaluation.evaluate).toHaveBeenCalledTimes(1);
+    expect(evaluation.gather).not.toHaveBeenCalled();
+
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_CYCLE", "1");
+    evaluation.gather.mockResolvedValue({ evidencePosts: [], profileData: {} });
+    evaluation.qualify.mockResolvedValue(verdict(true));
+    const ordinary = await fixture([matched(0), pending], {
+      name: "Sales team",
+    });
+    expect(
+      await qualificationStep(ordinary.t, ordinary.workspaceId, ordinary.ids[1])
+    ).toMatchObject({ qualified: true });
+    for (const { t } of [unset, ordinary])
+      expect(
+        await t.run((ctx) => ctx.db.query("benchmarkDecidedMatches").collect())
+      ).toEqual([]);
+  });
+
+  test("keeps one record per prospect with its latest verdict", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_CYCLE", "5");
+    const { t, ids } = await fixture([pending]);
+    for (const qualifiedAt of [now - 1_000, now])
+      await t.mutation(
+        internal.lib.benchmarkMatchLimit.recordDecidedMatchInternal,
+        { prospectId: ids[0], qualifiedAt }
+      );
+    expect(
+      await t.run((ctx) => ctx.db.query("benchmarkDecidedMatches").collect())
+    ).toMatchObject([{ prospectId: ids[0], qualifiedAt: now }]);
+  });
+
+  test("enrichment stays open only for the first N decided, even when a later match commits first", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_CYCLE", "2");
+    // The first match is decided but not committed; two later ones are.
+    const { t, workspaceId, ids } = await fixture([
+      decided(0),
+      recorded(1),
+      recorded(2),
+    ]);
+    const [, second, third] = ids;
+    expect(await gate(t, workspaceId, second)).toEqual(ALLOWED);
+    expect(await gate(t, workspaceId, third)).toEqual(PARKED);
+    // runStatus splits the work the same way.
+    expect(await parkedWork(t, workspaceId)).toEqual({
+      pending: 0,
+      enrichmentWaiting: 1,
+    });
+  });
+
+  test("a limit per query counts recorded matches of earlier cycles", async () => {
+    vi.stubEnv("BENCHMARK_MATCH_LIMIT_PER_QUERY", "3");
+    // Two matches before this cycle (one still uncommitted) leave it 1.
+    const { t, workspaceId, ids } = await fixture([
+      { ...earlier, decidedAt: cycleStart - 60_000 },
+      { pending: true, decidedAt: cycleStart - 30_000 },
+      recorded(0),
+      pending,
+    ]);
+    expect(await gate(t, workspaceId, ids[3])).toEqual(PARKED);
+    expect(
+      await t.query(internal.workflows.prospecting.checkProspectLimitInternal, {
+        workspaceId,
+      })
+    ).toMatchObject({
+      benchmarkQueryLimit: { limit: 3, matches: 3, reached: true },
     });
   });
 });
