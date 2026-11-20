@@ -68,6 +68,7 @@ import type * as autoPlanGroundingCache from "../autoPlanGroundingCache.js";
 import type * as autoPlanRuns from "../autoPlanRuns.js";
 import type * as autocomplete from "../autocomplete.js";
 import type * as autocompleteControl from "../autocompleteControl.js";
+import type * as benchmarkPeopleSearch from "../benchmarkPeopleSearch.js";
 import type * as billing from "../billing.js";
 import type * as chat from "../chat.js";
 import type * as connectedAccounts from "../connectedAccounts.js";
@@ -474,6 +475,7 @@ declare const fullApi: ApiFromModules<{
   autoPlanRuns: typeof autoPlanRuns;
   autocomplete: typeof autocomplete;
   autocompleteControl: typeof autocompleteControl;
+  benchmarkPeopleSearch: typeof benchmarkPeopleSearch;
   billing: typeof billing;
   chat: typeof chat;
   connectedAccounts: typeof connectedAccounts;

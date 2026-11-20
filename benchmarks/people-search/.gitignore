@@ -1,0 +1,5 @@
+.venv/
+.upstream/
+__pycache__/
+# Raw answers, caches and verdicts hold personal data. Only redacted results get committed.
+data/

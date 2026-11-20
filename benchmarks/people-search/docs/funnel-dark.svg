@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="182" viewBox="0 0 820 182" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img">
+<rect width="100%" height="100%" fill="#0d1117" rx="8"/>
+<text x="20.0" y="24.0" font-size="15" fill="#e6edf3" text-anchor="start" font-weight="600" dominant-baseline="middle">ReacherX on the 6 questions about people asking for help</text>
+<text x="200.0" y="66.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">People ReacherX found</text>
+<rect x="210" y="54" width="540.0" height="24" rx="3" fill="#3d444d"/>
+<text x="758.0" y="66.0" font-size="13" fill="#e6edf3" text-anchor="start" font-weight="600" dominant-baseline="middle">598</text>
+<text x="200.0" y="106.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Shown to the user</text>
+<rect x="210" y="94" width="3.0" height="24" rx="3" fill="#3987e5"/>
+<text x="221.0" y="106.0" font-size="13" fill="#e6edf3" text-anchor="start" font-weight="600" dominant-baseline="middle">1</text>
+<text x="200.0" y="146.0" font-size="13" fill="#e6edf3" text-anchor="end" font-weight="400" dominant-baseline="middle">Shown with a real post</text>
+<rect x="210" y="134" width="3.0" height="24" rx="3" fill="#3987e5"/>
+<text x="221.0" y="146.0" font-size="13" fill="#e6edf3" text-anchor="start" font-weight="600" dominant-baseline="middle">1</text>
+</svg>
