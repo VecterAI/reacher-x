@@ -118,7 +118,7 @@ export function MarketingFinish() {
     <MarketingSection className="pt-8 pb-24 lg:pt-12 lg:pb-32">
       <div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-3xl leading-tight font-normal tracking-tight sm:text-4xl">
+          <h2 className="text-3xl leading-tight font-medium tracking-tight sm:text-4xl">
             {MARKETING_COPY.workflow.finishHeading}
           </h2>
         </div>

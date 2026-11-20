@@ -68,34 +68,36 @@ export function TestimonialCard({ tweet }: { tweet: Tweet }) {
       }}
       className="focus-visible:outline-ring group flex h-full cursor-pointer flex-col rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-4"
     >
-      <article className="flex h-full flex-col">
-        <span
-          aria-hidden="true"
-          className="text-muted-foreground -mb-1 block text-3xl leading-none font-medium select-none"
-        >
-          “
-        </span>
-        <p
-          lang="auto"
-          className="font-pixel-square text-foreground word-break [&_a]:text-muted-foreground mt-3 text-base leading-7 font-normal text-pretty hyphens-auto [&_a]:hover:underline dark:[&_a]:text-neutral-400"
-        >
-          {parseText(text)}
-        </p>
-        <footer className="mt-auto flex items-center gap-2.5 pt-5">
+      <article className="flex h-full flex-col gap-8">
+        <div>
+          <span
+            aria-hidden="true"
+            className="text-muted-foreground -mb-1 block text-3xl leading-none font-medium select-none"
+          >
+            “
+          </span>
+          <p
+            lang="auto"
+            className="text-foreground word-break [&_a]:text-muted-foreground mt-3 text-lg/7 font-normal text-pretty hyphens-auto [&_a]:hover:underline dark:[&_a]:text-neutral-400"
+          >
+            {parseText(text)}
+          </p>
+        </div>
+        <footer className="mt-auto flex items-center gap-3">
           {avatar ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={avatar}
               alt=""
-              width={32}
-              height={32}
+              width={36}
+              height={36}
               loading="lazy"
-              className="size-8 shrink-0 rounded-full object-cover grayscale transition duration-200 group-hover:grayscale-0 motion-reduce:transition-none"
+              className="bg-muted outline-foreground/5 size-9 shrink-0 rounded-full object-cover outline-1 -outline-offset-1 grayscale transition duration-200 group-hover:grayscale-0 motion-reduce:transition-none"
             />
           ) : null}
           <span className="min-w-0">
             {name ? (
-              <span className="text-foreground block truncate text-sm font-medium">
+              <span className="text-foreground block truncate text-sm/5">
                 {name}
               </span>
             ) : null}
@@ -103,7 +105,7 @@ export function TestimonialCard({ tweet }: { tweet: Tweet }) {
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-muted-foreground block truncate text-xs hover:underline"
+              className="text-muted-foreground block truncate text-[13px]/4 hover:underline"
             >
               @{handle}
             </a>

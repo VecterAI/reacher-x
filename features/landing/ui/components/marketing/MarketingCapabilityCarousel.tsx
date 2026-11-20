@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import Link from "next/link";
 import { WheelGesturesPlugin } from "embla-carousel-wheel-gestures";
 import {
@@ -9,7 +9,6 @@ import {
   CarouselItem,
   type CarouselApi,
 } from "@/shared/ui/components/Carousel";
-import { Button } from "@/shared/ui/components/Button";
 import {
   PersonCheckIcon,
   GroupIcon,
@@ -19,8 +18,6 @@ import {
   ForumIcon,
   EditIcon,
   AutorenewIcon,
-  ArrowBackIcon,
-  ArrowForwardIcon,
 } from "@/shared/ui/components/icons";
 import { useDemoVisibility } from "@/features/blog/ui/components/app-demo/useDemoVisibility";
 import { BlogAppDemo } from "@/features/blog/ui/components/app-demo/BlogAppDemo";
@@ -31,6 +28,7 @@ import {
   preserveDemoWheelInteraction,
 } from "@/features/landing/lib/marketingCarouselHelpers";
 import { MARKETING_CAPABILITY_CONTENT } from "@/features/landing/lib/marketingContentHelpers";
+import { MarketingCarouselEdgeFades } from "./MarketingCarouselEdgeFades";
 
 export type CapabilityItem = {
   icon: ComponentType<{ className?: string }>;
@@ -59,26 +57,9 @@ export const MARKETING_CAPABILITIES: CapabilityItem[] =
 export function MarketingCapabilityCarousel() {
   const [api, setApi] = useState<CarouselApi>();
   const [plugins] = useState(() => [WheelGesturesPlugin()]);
-  const [canPrev, setCanPrev] = useState(false);
-  const [canNext, setCanNext] = useState(false);
-
-  useEffect(() => {
-    if (!api) return;
-    const update = () => {
-      setCanPrev(api.canScrollPrev());
-      setCanNext(api.canScrollNext());
-    };
-    update();
-    api.on("select", update);
-    api.on("reInit", update);
-    return () => {
-      api.off("select", update);
-      api.off("reInit", update);
-    };
-  }, [api]);
 
   return (
-    <div>
+    <div className="relative">
       <Carousel
         setApi={setApi}
         plugins={plugins}
@@ -102,28 +83,7 @@ export function MarketingCapabilityCarousel() {
           ))}
         </CarouselContent>
       </Carousel>
-      <div className="mt-8 flex justify-end gap-3">
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="Previous capabilities"
-          disabled={!canPrev}
-          onClick={() => api?.scrollPrev()}
-          className="size-10 rounded-full"
-        >
-          <ArrowBackIcon className="size-5 fill-current" />
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="More capabilities"
-          disabled={!canNext}
-          onClick={() => api?.scrollNext()}
-          className="size-10 rounded-full"
-        >
-          <ArrowForwardIcon className="size-5 fill-current" />
-        </Button>
-      </div>
+      <MarketingCarouselEdgeFades api={api} />
     </div>
   );
 }
@@ -138,12 +98,6 @@ export function CapabilityCard({
   const { root, visible, mounted } = useDemoVisibility(preloadRoot);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  useEffect(() => {
-    if (!visible) {
-      setHovered(false);
-      setFocused(false);
-    }
-  }, [visible]);
   return (
     <article
       ref={root}
@@ -169,7 +123,7 @@ export function CapabilityCard({
         <div className="mb-5" aria-hidden="true">
           <item.icon className="size-6 fill-current" />
         </div>
-        <h3 className="text-2xl leading-8 font-normal">{item.title}</h3>
+        <h3 className="text-2xl leading-8 font-medium">{item.title}</h3>
         <p className="text-muted-foreground mt-4 text-base leading-7">
           {item.body}
         </p>
@@ -180,7 +134,7 @@ export function CapabilityCard({
             scenario={item.demo}
             title={item.title}
             caption={item.body}
-            playbackActive={hovered || focused}
+            playbackActive={visible && (hovered || focused)}
             interaction="expanded"
             loading="eager"
           />

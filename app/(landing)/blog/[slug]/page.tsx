@@ -7,13 +7,18 @@ import { getBlogPost, getBlogPosts } from "@/features/blog/lib/blogPosts";
 import { blogPostMetadata } from "@/features/blog/lib/blogMetadata";
 import { BlogArticle } from "@/features/blog/ui/components/BlogArticle";
 type Props = { params: Promise<{ slug: string }> };
+
+// Blog posts prerender every published slug via generateStaticParams and "use cache".
+// Resolving params directly avoids flashing a blank or skeleton shell on client navigation.
+export const instant = false;
+
 export async function generateStaticParams() {
   return (await getBlogPosts()).map(({ slug }) => ({ slug }));
 }
 export async function generateMetadata({ params }: Props) {
-  const post = await getBlogPost((await params).slug);
-  if (!post) notFound();
-  return blogPostMetadata(post);
+  const article = await getBlogArticleData((await params).slug);
+  if (!article) notFound();
+  return blogPostMetadata(article.post);
 }
 export default function BlogPostPage({ params }: Props) {
   return <BlogPostContent params={params} author={<BlogAuthor />} />;

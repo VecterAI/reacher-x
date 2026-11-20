@@ -10,7 +10,7 @@ tags: ["CRM", "architecture", "use cases", "contributing", "pipeline"]
 
 Open a candidate who was marked Hired and look at the stored status. You will find `converted`, not `hired`. A customer can carry that same stored value. The workspace tells the app what the value means to the person using it.
 
-That is the first thing to understand before you change a use case in ReacherX. The app does not need a new table for every kind of person a user might look for. One shared definition supplies the labels and gives the agent its context for the job.
+That is the first thing to understand before you change a use case in ReacherX. The app does not need a new table for every kind of person a user might look for. One shared definition supplies the labels and gives △ Agent its context for the job.
 
 ## One definition, many meanings
 
@@ -28,7 +28,7 @@ stageLabels: {
 
 Suppose you want a different word for Interviewing. Change the label, then check the places that display it. Keep `in_progress` as the key. Replacing a stored value would touch the schema and every reader and writer of that field.
 
-The same entry also defines entity names, route slugs, and page labels, plus a `promptContext` with `searchIntent`, `qualificationLens`, `outreachGoal`, and `successDefinition`. Those lines tell the agent what this use case is for. Looking for someone to hire calls for different evidence than looking for someone who might buy a product.
+The same entry also defines entity names, route slugs, and page labels, plus a `promptContext` with `searchIntent`, `qualificationLens`, `outreachGoal`, and `successDefinition`. Those lines tell △ Agent what this use case is for. Looking for someone to hire calls for different evidence than looking for someone who might buy a product.
 
 This command finds the code that reads the labels and the prompt context:
 
@@ -52,6 +52,6 @@ Your workspace description supplies the specific requirements. Saved memories ad
 
 ## What to check after a change
 
-Ask for a plan in a hiring workspace, a partnership workspace, and a fresh setup draft. Does the agent still ask for buying intent in a recruiting workspace? Then check the list, the profile, the stage menu, the success page, and Analytics for label mix-ups.
+Ask for a plan in a hiring workspace, a partnership workspace, and a fresh setup draft. Does △ Agent still ask for buying intent in a recruiting workspace? Then check the list, the profile, the stage menu, the success page, and Analytics for label mix-ups.
 
 The use-case label coverage in [tests/ui-consistency-regressions.test.ts](https://github.com/VecterAI/reacher-x/blob/main/tests/ui-consistency-regressions.test.ts) and the prospect status coverage in [convex/readModelStripes.integration.test.ts](https://github.com/VecterAI/reacher-x/blob/main/convex/readModelStripes.integration.test.ts) protect nearby behavior. Include an older workspace with no use-case key and an archived person when your change touches those paths. Read the [generated Convex guidelines](https://github.com/VecterAI/reacher-x/blob/main/convex/_generated/ai/guidelines.md) before changing the mutation. The [architecture overview](/blog/how-reacherx-agent-works) connects this path to the rest of the app.

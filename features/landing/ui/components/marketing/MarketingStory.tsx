@@ -121,11 +121,11 @@ function CommunityCard({
   linkLabel: string;
 }) {
   return (
-    <div className="blog-card bg-background relative flex h-full min-w-0 flex-col p-6 transition-colors duration-200 hover:bg-neutral-50 motion-reduce:transition-none lg:p-8 dark:bg-neutral-950 dark:hover:bg-neutral-900">
+    <div className="blog-card relative flex h-full min-w-0 flex-col bg-neutral-50 p-6 transition-colors duration-200 hover:bg-neutral-100 motion-reduce:transition-none lg:p-8 dark:bg-neutral-950 dark:hover:bg-neutral-900">
       <div className="mb-5" aria-hidden="true">
         {icon}
       </div>
-      <h3 className="text-2xl leading-8 font-normal">{title}</h3>
+      <h3 className="text-2xl leading-8 font-medium">{title}</h3>
       <p className="text-muted-foreground mt-4 text-base leading-7">
         {description}
       </p>

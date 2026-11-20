@@ -359,6 +359,7 @@ export function seedAgentHistory(
   agent: AgentServices,
   state: ReturnType<typeof createAppFixtures>
 ) {
+  historyPlans.clear();
   // Waiting-state workflows (pending approvals, live batch progress) resolve
   // through their own demo records so the inline controls work end to end.
   registerHistoryWorkflowServices(client, state);
@@ -383,10 +384,14 @@ function seedWorkspaceHistory(
   const people = state.prospects.filter(
     (person) => person.workspaceId === workspace._id
   );
+  const isWalkthroughLead = (id: string) =>
+    /^use_case_demo_(audience|candidates)_[123]$/.test(id);
   const person =
     people.find((item) => item._id === "use_case_demo_audience_30") ??
     people.find((item) => item._id === "use_case_demo_candidates_30") ??
-    people.find((item) => item.status === "new");
+    people.find(
+      (item) => item.status === "new" && !isWalkthroughLead(item._id)
+    );
   const second =
     people.find(
       (item) => item.status === "contacted" && item._id !== person?._id
@@ -971,6 +976,7 @@ function seedWorkspaceHistory(
       (item) =>
         item._id !== person._id &&
         item._id !== second._id &&
+        !isWalkthroughLead(item._id) &&
         item.status === "new"
     )
     .sort((a, b) => (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0))

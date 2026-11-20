@@ -126,7 +126,10 @@ import {
   type ToolIconKey,
 } from "@/features/agent/lib/toolPresentation";
 import { AgentProspectEmptyState } from "./components/AgentProspectEmptyState";
-import { AgentWorkspaceEmptyState } from "./components/AgentWorkspaceEmptyState";
+import {
+  AgentWorkspaceEmptyState,
+  SetupAgentHeadline,
+} from "./components/AgentWorkspaceEmptyState";
 import {
   OutreachPlanCard,
   type OutreachPlanCardTask,
@@ -4001,7 +4004,7 @@ export function AgentChat({
                             workspaceStatusQuery.isPending
                           }
                           headline={
-                            isSetupRoute ? "Who should Agent find?" : undefined
+                            isSetupRoute ? <SetupAgentHeadline /> : undefined
                           }
                         >
                           {composerContent}
