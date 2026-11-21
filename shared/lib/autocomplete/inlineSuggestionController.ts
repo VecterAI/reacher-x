@@ -163,7 +163,14 @@ export class InlineSuggestionController {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private nextRequestId = 0;
   private suggestionCount = 0;
-  private suppressedSignature: string | null = null;
+  /** Text the user dismissed with Escape or blur; no re-request until it changes. */
+  private suppressed: { signature: string; fullText: string } | null = null;
+  /**
+   * Thread-helper requests still running on the server, by request id. Kept
+   * apart from `inFlight` so a request whose answer will be ignored (after
+   * disable) can still be canceled on blur or teardown.
+   */
+  private remoteOutstanding = new Map<number, InlineAutocompleteRequest>();
   private cache = new Map<string, InlineAutocompleteResponse>();
   private lastEmitted: InlineSuggestionSnapshot | null = null;
 
@@ -184,6 +191,11 @@ export class InlineSuggestionController {
   };
 
   getSnapshot = () => this.snapshot;
+
+  /** A ghost is showing, a request is running, or one is about to start. */
+  hasPendingSuggestion() {
+    return this.snapshot.status !== "idle" || this.debounceTimer !== null;
+  }
 
   /** Number of cached responses (for tests and diagnostics). */
   getCacheSize() {
@@ -227,6 +239,11 @@ export class InlineSuggestionController {
       return;
     }
 
+    // A dismissal holds only while the text is the same; caret moves keep it.
+    if (next && this.suppressed && this.suppressed.fullText !== next.fullText) {
+      this.suppressed = null;
+    }
+
     if (this.active) {
       const remainder = next ? this.getActiveRemainder(next) : null;
       if (remainder) {
@@ -253,7 +270,7 @@ export class InlineSuggestionController {
       return;
     }
 
-    if (this.suppressedSignature === next.signature) {
+    if (this.suppressed?.signature === next.signature) {
       this.emit();
       return;
     }
@@ -261,6 +278,8 @@ export class InlineSuggestionController {
     const cached = this.cache.get(next.signature);
     if (cached) {
       this.touchCache(next.signature, cached);
+      // The cache satisfies this text: drop any request queued for older text.
+      this.needsRequestAfterInFlight = false;
       this.activate(next, cached);
       return;
     }
@@ -288,7 +307,7 @@ export class InlineSuggestionController {
       model: active.response.model,
     });
     this.active = null;
-    this.suppressedSignature = null;
+    this.suppressed = null;
     this.setIdle();
     this.emit();
     return text;
@@ -323,7 +342,10 @@ export class InlineSuggestionController {
   dismiss(reason: InlineSuggestionDismissReason) {
     this.clearDebounce();
     if (this.current) {
-      this.suppressedSignature = this.current.signature;
+      this.suppressed = {
+        signature: this.current.signature,
+        fullText: this.current.fullText,
+      };
     }
     if (reason === "escape" || reason === "blur") {
       this.cancelInFlightRemotely();
@@ -376,7 +398,7 @@ export class InlineSuggestionController {
     if (!this.enabled || !current) {
       return;
     }
-    if (!shouldRequestInlineAutocomplete(current.request)) {
+    if (!shouldRequestInlineAutocomplete(current.request) || this.active) {
       return;
     }
     if (this.inFlight) {
@@ -391,6 +413,9 @@ export class InlineSuggestionController {
       request: current.request,
     };
     this.inFlight = inFlight;
+    if (current.request.threadId) {
+      this.remoteOutstanding.set(inFlight.id, current.request);
+    }
     this.needsRequestAfterInFlight = false;
     this.snapshot = REQUESTING_SNAPSHOT;
     this.emit();
@@ -405,6 +430,7 @@ export class InlineSuggestionController {
         response = null;
       })
       .finally(() => {
+        this.remoteOutstanding.delete(inFlight.id);
         if (this.inFlight?.id !== inFlight.id) {
           return;
         }
@@ -544,10 +570,15 @@ export class InlineSuggestionController {
   }
 
   private cancelInFlightRemotely() {
-    const inFlight = this.inFlight;
-    if (inFlight?.request.threadId) {
-      this.options.cancelRemote?.(inFlight.request);
+    const canceledThreads = new Set<string>();
+    for (const request of this.remoteOutstanding.values()) {
+      // The server cancel is per thread; one call covers all its requests.
+      if (request.threadId && !canceledThreads.has(request.threadId)) {
+        canceledThreads.add(request.threadId);
+        this.options.cancelRemote?.(request);
+      }
     }
+    this.remoteOutstanding.clear();
   }
 
   private dropInFlight() {

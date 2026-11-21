@@ -129,10 +129,11 @@ describe("request lifecycle", () => {
 
   test("does not request for text the prefix rules reject", async () => {
     const ctx = setup();
-    ctx.controller.update(req("short"));
-    ctx.controller.update(req("Check https://exa"));
-    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 2);
-    expect(ctx.calls).toHaveLength(0);
+    for (const text of ["short", "Check https://exa", "Ping me @"]) {
+      ctx.controller.update(req(text));
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 2);
+      expect(ctx.calls, text).toHaveLength(0);
+    }
   });
 
   test("an empty or failed response shows nothing", async () => {
@@ -169,6 +170,32 @@ describe("request lifecycle", () => {
     ctx.calls[1].resolve("are you");
     await settle();
     expect(ctx.controller.getSnapshot().ghostText).toBe(" are you");
+  });
+
+  test("a cached answer reached while a request is queued stays acceptable", async () => {
+    const ctx = setup();
+    await showSuggestion(ctx, "Thanks for the", "quick reply");
+
+    // Request A runs; while it runs, the debounce for later text expires and
+    // queues another request.
+    ctx.controller.update(req("Hello there, how"));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    ctx.controller.update(req("Hello there, how are"));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(ctx.calls).toHaveLength(2);
+
+    // Back to text with a cached answer: it shows, and the queued request
+    // must not replace it with a "requesting" state when A settles.
+    ctx.controller.update(req("Thanks for the"));
+    ctx.calls[1].resolve("you doing");
+    await settle();
+
+    expect(ctx.calls).toHaveLength(2);
+    expect(ctx.controller.getSnapshot()).toMatchObject({
+      status: "showing",
+      ghostText: " quick reply",
+    });
+    expect(ctx.controller.acceptAll()).toBe(" quick reply");
   });
 
   test("a late answer still shows when the user typed a prefix of it", async () => {
@@ -222,13 +249,26 @@ describe("prefix reuse", () => {
     expect(eventNames(ctx)).toEqual(["inline_autocomplete_shown"]);
   });
 
-  test("a change of context (other prospect, text after caret) is not reused", async () => {
+  test("another prospect is not reused", async () => {
     const ctx = setup();
     await showSuggestion(ctx, "Thanks for the", "quick reply", {
       prospectId: "p1",
     });
     ctx.controller.update(req("Thanks for the q", { prospectId: "p2" }));
     expect(ctx.controller.getSnapshot().ghostText).toBe("");
+  });
+
+  test("different text after the caret is not reused", async () => {
+    const ctx = setup();
+    await showSuggestion(ctx, "Thanks for the", "quick reply", {
+      prospectId: "p1",
+      afterCursor: "",
+    });
+    ctx.controller.update(
+      req("Thanks for the q", { prospectId: "p1", afterCursor: " today" })
+    );
+    expect(ctx.controller.getSnapshot().ghostText).toBe("");
+    expect(ctx.events.at(-1)?.props.reason).toBe("input_changed");
   });
 
   test("reuses a cached answer when the text returns to an earlier prefix", async () => {
@@ -307,6 +347,27 @@ describe("dismiss", () => {
     expect(ctx.calls).toHaveLength(2);
   });
 
+  test("the Escape hold ends once the text changes", async () => {
+    const ctx = setup();
+    await showSuggestion(ctx, "Thanks for the", "quick reply");
+    ctx.controller.dismiss("escape");
+
+    ctx.controller.update(req("Thanks for thex"));
+    ctx.controller.update(req("Thanks for the"));
+    expect(ctx.controller.getSnapshot().ghostText).toBe(" quick reply");
+  });
+
+  test("hasPendingSuggestion covers debounce, request and ghost", async () => {
+    const ctx = setup();
+    expect(ctx.controller.hasPendingSuggestion()).toBe(false);
+    ctx.controller.update(req("Thanks for the"));
+    expect(ctx.controller.hasPendingSuggestion()).toBe(true);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(ctx.controller.hasPendingSuggestion()).toBe(true);
+    ctx.controller.dismiss("escape");
+    expect(ctx.controller.hasPendingSuggestion()).toBe(false);
+  });
+
   test("disabling (IME composition, read-only) dismisses with disabled", async () => {
     const ctx = setup();
     await showSuggestion(ctx, "Thanks for the", "quick reply");
@@ -355,6 +416,28 @@ describe("cancellation", () => {
     ctx.calls[0].resolve("quick reply");
     await settle();
     expect(ctx.controller.getSnapshot().status).toBe("idle");
+  });
+
+  test("a thread request outlived by a disable is still canceled on teardown", async () => {
+    const ctx = setup();
+    ctx.controller.update(req("Thanks for the", { threadId: "thread_1" }));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    ctx.controller.setEnabled(false);
+    expect(ctx.cancelRemote).not.toHaveBeenCalled();
+
+    ctx.controller.dispose();
+    expect(ctx.cancelRemote).toHaveBeenCalledTimes(1);
+
+    // Once the server answered, there is nothing left to cancel.
+    const settled = setup();
+    settled.controller.update(req("Thanks for the", { threadId: "thread_1" }));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    settled.controller.setEnabled(false);
+    settled.calls[0].resolve("quick reply");
+    await settle();
+    settled.controller.dispose();
+    expect(settled.cancelRemote).not.toHaveBeenCalled();
   });
 
   test("no server cancel without a thread helper or without a request in flight", async () => {

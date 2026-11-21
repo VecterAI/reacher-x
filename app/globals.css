@@ -327,6 +327,10 @@ body {
  */
 [data-inline-suggestion]::after {
   content: attr(data-inline-suggestion);
+  /* Empty alt text: screen readers get the suggestion once, from the plugin's
+     status region, not again as if it were part of the draft. Browsers
+     without alt-text support keep the declaration above. */
+  content: attr(data-inline-suggestion) / "";
   color: hsl(var(--muted-foreground));
   font-weight: 400;
   font-style: normal;

@@ -59,32 +59,42 @@ export function InlineAutocompletePlugin({
     acceptSuggestion,
     acceptNextWord,
     dismissSuggestion,
+    hasPendingSuggestion,
+    isGloballyEnabled,
   } = useInlineAutocomplete({
     request: undefined,
     enabled:
       editable && inlineAutocompleteContext?.enabled !== false && !isComposing,
   });
+  // `aria-autocomplete` states the capability, so it does not follow the
+  // ghost or transient states such as IME composition.
+  const supportsInlineAutocomplete =
+    editable &&
+    inlineAutocompleteContext?.enabled !== false &&
+    isGloballyEnabled;
   const contextRef = useRef(inlineAutocompleteContext);
   const decoratedElementRef = useRef<HTMLElement | null>(null);
 
   const decorate = useCallback(
     (text: string) => {
-      const rootElement = editor.getRootElement();
       decoratedElementRef.current = applyInlineSuggestionDecoration({
         previous: decoratedElementRef.current,
         target: text ? getInlineSuggestionAnchorElement(editor) : null,
         ghostText: text,
       });
-      if (rootElement) {
-        if (text) {
-          rootElement.setAttribute("aria-autocomplete", "inline");
-        } else {
-          rootElement.removeAttribute("aria-autocomplete");
-        }
-      }
     },
     [editor]
   );
+
+  useEffect(() => {
+    if (!supportsInlineAutocomplete) {
+      return;
+    }
+    return editor.registerRootListener((nextRoot, prevRoot) => {
+      prevRoot?.removeAttribute("aria-autocomplete");
+      nextRoot?.setAttribute("aria-autocomplete", "inline");
+    });
+  }, [editor, supportsInlineAutocomplete]);
 
   /**
    * Reports the caret to the controller and re-attaches the ghost. Runs
@@ -178,11 +188,17 @@ export function InlineAutocompletePlugin({
       editor.registerCommand(
         KEY_ESCAPE_COMMAND,
         (event) => {
-          if (!getGhostText()) {
+          if (!hasPendingSuggestion()) {
+            return false;
+          }
+          const hadGhost = Boolean(getGhostText());
+          dismissSuggestion("escape");
+          if (!hadGhost) {
+            // Only a pending request was canceled; nothing visible changed,
+            // so let Escape keep its usual meaning (close a dialog, a menu).
             return false;
           }
           event?.preventDefault();
-          dismissSuggestion("escape");
           return true;
         },
         COMMAND_PRIORITY_HIGH
@@ -207,6 +223,7 @@ export function InlineAutocompletePlugin({
     dismissSuggestion,
     editor,
     getGhostText,
+    hasPendingSuggestion,
     syncCaret,
   ]);
 

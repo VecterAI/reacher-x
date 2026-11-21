@@ -81,11 +81,12 @@ export function useInlineAutocomplete(args: {
   };
   const [controller] = useState(() => new InlineSuggestionController(options));
 
-  useEffect(() => {
+  // Layout effects: a prefix-extending keystroke trims the ghost before paint.
+  // Options first, so a request in this commit uses the current callbacks.
+  useLayoutEffect(() => {
     controller.setOptions(options);
   });
 
-  // Layout effects: a prefix-extending keystroke trims the ghost before paint.
   useLayoutEffect(() => {
     controller.setEnabled(effectivelyEnabled);
   }, [controller, effectivelyEnabled]);
@@ -118,6 +119,8 @@ export function useInlineAutocomplete(args: {
       acceptSuggestion: () => controller.acceptAll(),
       /** Returns the next word to insert, or "" when nothing is shown. */
       acceptNextWord: () => controller.acceptNextWord(),
+      /** A ghost is showing or a request is pending (Escape should cancel). */
+      hasPendingSuggestion: () => controller.hasPendingSuggestion(),
       dismissSuggestion: (reason: InlineSuggestionDismissReason) =>
         controller.dismiss(reason),
     }),
@@ -126,6 +129,12 @@ export function useInlineAutocomplete(args: {
 
   return {
     ...actions,
+    /**
+     * The global autocomplete switch. Surfaces combine it with their own
+     * static settings for `aria-autocomplete`, which describes the
+     * capability, not whether a suggestion is showing right now.
+     */
+    isGloballyEnabled: globallyEnabled === true,
     /** Text to render after the caret; empty when nothing is shown. */
     ghostText: snapshot.status === "showing" ? snapshot.ghostText : "",
     announcement: snapshot.status === "showing" ? snapshot.announcement : "",

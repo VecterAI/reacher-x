@@ -314,6 +314,7 @@ function PromptInputTextarea({
   const autocompleteEnabled =
     Boolean(inlineAutocompleteContext) &&
     !disabled &&
+    !props.readOnly &&
     !isComposing &&
     hasTextareaFocus &&
     inlineAutocompleteContext?.enabled !== false &&
@@ -344,10 +345,19 @@ function PromptInputTextarea({
     acceptSuggestion: takeSuggestion,
     acceptNextWord: takeNextSuggestionWord,
     dismissSuggestion,
+    hasPendingSuggestion,
+    isGloballyEnabled,
   } = useInlineAutocomplete({
     request,
     enabled: autocompleteEnabled,
   });
+  // `aria-autocomplete` states the capability, not whether a ghost shows.
+  const supportsInlineAutocomplete =
+    Boolean(inlineAutocompleteContext) &&
+    inlineAutocompleteContext?.enabled !== false &&
+    !disabled &&
+    !props.readOnly &&
+    isGloballyEnabled;
   const showGhost =
     Boolean(ghostText) && hasTextareaFocus && selectionStart === selectionEnd;
   const mentionMenuOpen =
@@ -557,7 +567,34 @@ function PromptInputTextarea({
     if (el && ghostMirrorRef.current) {
       ghostMirrorRef.current.scrollTop = el.scrollTop;
     }
-  });
+    // `ghostMirrorStyle` re-runs this once the mirror has mounted, so the
+    // field can grow for a wrapped ghost; the equality check above ends it.
+  }, [
+    adjustHeight,
+    ghostMirrorStyle,
+    ghostText,
+    selectionStart,
+    showGhost,
+    textareaRef,
+    value,
+  ]);
+
+  // A width change without a React render (window resize, sidebar toggle)
+  // re-wraps the textarea; re-measure so the mirror wraps at the same column.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || !showGhost || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      const nextStyle = buildTextareaGhostMirrorStyle(el);
+      setGhostMirrorStyle((current) =>
+        isSameTextareaGhostMirrorStyle(current, nextStyle) ? current : nextStyle
+      );
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [showGhost, textareaRef]);
 
   useLayoutEffect(() => {
     if (!mentionMenuOpen) {
@@ -775,6 +812,12 @@ function PromptInputTextarea({
       return;
     }
 
+    if (e.key === "Escape" && !ghostText && hasPendingSuggestion()) {
+      // Cancel a pending request; nothing visible changed, so the key keeps
+      // its usual meaning for the caller.
+      dismissSuggestion("escape");
+    }
+
     if (ghostText && e.key === "Escape") {
       e.preventDefault();
       dismissSuggestion("escape");
@@ -877,10 +920,10 @@ function PromptInputTextarea({
         role={mentionAutocomplete ? "combobox" : undefined}
         aria-autocomplete={
           mentionAutocomplete
-            ? showGhost
+            ? supportsInlineAutocomplete
               ? "both"
               : "list"
-            : showGhost
+            : supportsInlineAutocomplete
               ? "inline"
               : undefined
         }

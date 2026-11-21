@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
@@ -48,7 +48,9 @@ let editor: LexicalEditor;
 
 function CaptureEditor() {
   const [lexicalEditor] = useLexicalComposerContext();
-  editor = lexicalEditor;
+  useEffect(() => {
+    editor = lexicalEditor;
+  }, [lexicalEditor]);
   return null;
 }
 
@@ -200,9 +202,6 @@ test("Tab inserts the whole suggestion", async () => {
   expect(event.defaultPrevented).toBe(true);
   expect(editorText()).toBe("Thanks for the quick reply");
   expect(ghostElement()).toBeNull();
-  expect(editor.getRootElement()!.hasAttribute("aria-autocomplete")).toBe(
-    false
-  );
   expect(mocks.capture).toHaveBeenCalledWith(
     "inline_autocomplete_accepted",
     expect.anything()
@@ -261,6 +260,45 @@ test("Escape dismisses", async () => {
     "inline_autocomplete_dismissed",
     expect.objectContaining({ reason: "escape" })
   );
+});
+
+test("aria-autocomplete states the capability, not the current ghost", async () => {
+  const rootElement = editor.getRootElement()!;
+  expect(rootElement.getAttribute("aria-autocomplete")).toBe("inline");
+  await showGhost();
+  expect(rootElement.getAttribute("aria-autocomplete")).toBe("inline");
+  await press("Escape");
+  expect(rootElement.getAttribute("aria-autocomplete")).toBe("inline");
+
+  act(() => root.unmount());
+  expect(rootElement.hasAttribute("aria-autocomplete")).toBe(false);
+  host.remove();
+  await mount();
+});
+
+test("Escape while a request runs cancels it without taking the key", async () => {
+  let answer!: (value: unknown) => void;
+  mocks.fetchSuggestion.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    })
+  );
+  await type("Thanks for the");
+  await wait(400);
+  expect(mocks.fetchSuggestion).toHaveBeenCalledTimes(1);
+
+  const event = await press("Escape");
+  expect(event.defaultPrevented).toBe(false);
+
+  await act(async () => {
+    answer({
+      suggestion: "quick reply",
+      latencyMs: 90,
+      model: "test-model",
+      styleProfileApplied: false,
+    });
+  });
+  expect(ghostElement()).toBeNull();
 });
 
 test("a divergent edit dismisses without a server cancel", async () => {

@@ -37,7 +37,7 @@ const textarea = () => host.querySelector("textarea")!;
 const mirror = () =>
   host.querySelector<HTMLDivElement>('div[aria-hidden="true"]');
 
-async function mount() {
+async function mount(options: { readOnly?: boolean } = {}) {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -46,6 +46,7 @@ async function mount() {
       <PromptInput>
         <PromptInputTextarea
           inlineAutocompleteContext={{ surfaceLabel: "prompt-test" }}
+          readOnly={options.readOnly}
         />
       </PromptInput>
     );
@@ -188,4 +189,82 @@ test("scrolling keeps the ghost; Escape and blur dismiss", async () => {
     "inline_autocomplete_dismissed",
     expect.objectContaining({ reason: "blur" })
   );
+});
+
+test("aria-autocomplete is set before any suggestion and kept after it", async () => {
+  expect(textarea().getAttribute("aria-autocomplete")).toBe("inline");
+  await showGhost("Thanks for the", "quick reply");
+  await press("Escape");
+  expect(textarea().getAttribute("aria-autocomplete")).toBe("inline");
+});
+
+test("Escape while a request runs cancels it and leaves the key to the caller", async () => {
+  let answer!: (value: unknown) => void;
+  mocks.fetchSuggestion.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    })
+  );
+  await type("Thanks for the");
+  await wait(400);
+
+  const event = await press("Escape");
+  expect(event.defaultPrevented).toBe(false);
+
+  await act(async () => {
+    answer({
+      suggestion: "quick reply",
+      latencyMs: 90,
+      model: "test-model",
+      styleProfileApplied: false,
+    });
+  });
+  expect(mirror()).toBeNull();
+});
+
+test("a read-only field never requests or accepts", async () => {
+  act(() => root.unmount());
+  host.remove();
+  await mount({ readOnly: true });
+
+  expect(textarea().hasAttribute("aria-autocomplete")).toBe(false);
+  await type("Thanks for the");
+  await wait(1000);
+  expect(mocks.fetchSuggestion).not.toHaveBeenCalled();
+  expect((await press("ArrowRight", { ctrlKey: true })).defaultPrevented).toBe(
+    false
+  );
+});
+
+test("the mirror re-measures when the textarea is resized without a render", async () => {
+  const observers: { callback: () => void; disconnected: boolean }[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      entry = { callback: () => {}, disconnected: false };
+      constructor(callback: () => void) {
+        this.entry.callback = callback;
+        observers.push(this.entry);
+      }
+      observe() {}
+      disconnect() {
+        this.entry.disconnected = true;
+      }
+    }
+  );
+  await showGhost("Thanks for the", "quick reply");
+  const live = observers.find((entry) => !entry.disconnected);
+  expect(live).toBeDefined();
+
+  Object.defineProperty(textarea(), "offsetWidth", {
+    value: 517,
+    configurable: true,
+  });
+  await act(async () => {
+    live!.callback();
+  });
+  expect(mirror()?.style.width).toBe("517px");
+
+  await press("Escape");
+  expect(observers.every((entry) => entry.disconnected)).toBe(true);
 });
