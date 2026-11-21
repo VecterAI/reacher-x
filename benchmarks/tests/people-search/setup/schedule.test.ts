@@ -3,6 +3,7 @@ import test from "node:test";
 import { peopleSearchPlan } from "../../../people-search/setup/plan";
 import {
   PILOT_PROMPTS,
+  PILOT_PROMPTS_DROPPED,
   SMOKE_PROMPT,
   plannedCycles,
   segmentSchedule,
@@ -15,15 +16,18 @@ const runId = "ps-0123456789ab-smoke";
 const options = { runId, seed: 7 };
 const LABEL = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 
-test("stage 1 plans 34 cycles and runs competitors on all 20 prompts", () => {
+test("stage 1 plans 35 cycles (pilot amended 20 Nov 2026) and runs competitors on all 20 prompts", () => {
   const smoke = segmentSchedule("smoke", options);
   const pilot = segmentSchedule("pilot", options);
   const main = segmentSchedule("main", options);
-  // 1 company smoke test + 2 people prompts x 4 cycles x 2 conditions + 17 first cycles.
+  // 1 company smoke test + the pilot's frozen 16 (prompt 6's 8 dropped by
+  // approval) + 18 first cycles, prompt 6's among them.
   assert.deepEqual(
     [plannedCycles(smoke), plannedCycles(pilot), plannedCycles(main)],
-    [1, 16, 17]
+    [1, 16, 18]
   );
+  assert.ok(main.workspaces.some((slot) => slot.promptId === 6));
+  const dropped: readonly number[] = PILOT_PROMPTS_DROPPED;
   const smokePrompt = peopleSearchPlan.prompts.find(
     (item) => item.id === SMOKE_PROMPT
   )!;
@@ -41,9 +45,12 @@ test("stage 1 plans 34 cycles and runs competitors on all 20 prompts", () => {
   // Every prompt gets exactly one first cycle in stage 1.
   const firstCycles = [
     ...smoke.workspaces,
-    ...pilot.workspaces.filter((slot) => slot.learning === "on"),
+    ...pilot.workspaces.filter(
+      (slot) => slot.learning === "on" && !dropped.includes(slot.promptId)
+    ),
     ...main.workspaces,
   ].map((slot) => slot.taskId);
+  assert.equal(firstCycles.length, 20);
   assert.equal(new Set(firstCycles).size, 20);
   assert.deepEqual(
     [smoke.decisionPoint, pilot.decisionPoint, main.decisionPoint],

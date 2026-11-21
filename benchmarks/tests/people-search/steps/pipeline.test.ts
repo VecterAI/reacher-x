@@ -24,6 +24,7 @@ import {
 } from "../../../people-search/setup/schedule";
 import {
   DEFAULT_KEYWORD_POST_SEARCH_CALLS,
+  checkMainAgainstPilot,
   runStep,
   segmentApprovalSchema,
   segmentRunId,
@@ -1056,4 +1057,224 @@ test("a slice naming a workspace the step does not run is refused before anythin
     /names w-p02-on, which pilot does not run; its workspaces are w-p01-on, w-p01-off, w-p06-off, w-p06-on/
   );
   assert.deepEqual(changes(timeline), []);
+});
+
+const PILOT_DROP = {
+  workspaces: ["w-p06-off", "w-p06-on"],
+  reason: "Budget: the pilot finishes with prompt 1 only",
+};
+
+const dropping =
+  (
+    deps: StepDependencies,
+    extra: Partial<
+      NonNullable<Awaited<ReturnType<StepDependencies["readApproval"]>>>
+    > = {}
+  ): StepDependencies["readApproval"] =>
+  async (segment) => {
+    const approval = await deps.readApproval(segment);
+    return (
+      approval &&
+      (segment === "pilot"
+        ? { ...approval, drop: PILOT_DROP, ...extra }
+        : approval)
+    );
+  };
+
+test("a drop needs workspaces and a reason", () => {
+  const approval = {
+    segment: "pilot",
+    spend: {
+      approvalReference: "Synthetic approval",
+      approvedAt: "2026-11-20T09:00:00Z",
+      accountLimits: [{ accountId: "openrouter:a", maxAdditionalUsd: 1 }],
+    },
+  };
+  assert.equal(segmentApprovalSchema.parse(approval).drop, null);
+  assert.deepEqual(
+    segmentApprovalSchema.parse({ ...approval, drop: PILOT_DROP }).drop,
+    PILOT_DROP
+  );
+  for (const drop of [
+    { workspaces: ["w-p06-on"] },
+    { workspaces: ["w-p06-on"], reason: "  " },
+    { workspaces: [], reason: "Budget" },
+    ["w-p06-on"],
+  ])
+    assert.equal(
+      segmentApprovalSchema.safeParse({ ...approval, drop }).success,
+      false
+    );
+});
+
+test("a pilot dropping prompt 6 finishes w-p01-off's interrupted cycle with --resume-held, then completes with judges and D2", async (t) => {
+  const { deps, controller, timeline, env, atRest } = await setup(t);
+  assert.equal((await runStep("smoke", deps)).outcome.status, "complete");
+
+  // Unknown or slice-overlapping units are refused before anything changes.
+  timeline.length = 0;
+  await assert.rejects(
+    runStep("pilot", {
+      ...deps,
+      readApproval: dropping(deps, {
+        drop: { ...PILOT_DROP, workspaces: ["w-p02-on"] },
+      }),
+    }),
+    /drop in .*pilot\.json names w-p02-on, which pilot does not run/
+  );
+  await assert.rejects(
+    runStep("pilot", {
+      ...deps,
+      readApproval: dropping(deps, {
+        slice: { workspaces: ["w-p06-on"], cycles: null },
+      }),
+    }),
+    /both drops and slices w-p06-on/
+  );
+  assert.deepEqual(changes(timeline), []);
+
+  // Interrupted once w-p01-off (the second workspace) is in its cycle 2.
+  let prepared = 0;
+  const cycles = new Set<string>();
+  const interrupting: StepDependencies = {
+    ...deps,
+    readApproval: dropping(deps),
+    driver: new Proxy(deps.driver, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (typeof value !== "function") return value;
+        if (property === "prepare")
+          return (...args: unknown[]) => {
+            prepared += 1;
+            return value.apply(target, args);
+          };
+        if (property !== "status") return value;
+        return async (...args: unknown[]) => {
+          const status = await value.apply(target, args);
+          if (prepared === 2 && status?.workflowId) {
+            cycles.add(status.workflowId);
+            if (cycles.size === 2) controller.abort();
+          }
+          return status;
+        };
+      },
+    }),
+  };
+  const first = await runStep("pilot", interrupting);
+  assert.equal(first.outcome.status, "interrupted");
+  assert.deepEqual(
+    first.outcome.review.map((item) => item.unitId),
+    ["w-p01-off"]
+  );
+  assert.equal(prepared, 2);
+
+  // A unit that already ran can no longer be dropped.
+  await assert.rejects(
+    runStep("pilot", {
+      ...deps,
+      signal: new AbortController().signal,
+      readApproval: dropping(deps, {
+        drop: { ...PILOT_DROP, workspaces: ["w-p01-on"] },
+      }),
+    }),
+    /names w-p01-on \(completed\); only a workspace that never started can be dropped/
+  );
+
+  timeline.length = 0;
+  const resumed = await runStep("pilot", {
+    ...deps,
+    signal: new AbortController().signal,
+    resumeHeld: true,
+    readApproval: dropping(deps),
+  });
+  assert.ok(!timeline.includes("run benchmarkPeopleSearch:prepareWorkspace"));
+  assert.ok(timeline.includes("run benchmarkPeopleSearch:resumeHeldWorkspace"));
+  assert.equal(resumed.outcome.status, "complete");
+  assert.deepEqual(resumed.outcome.review, []);
+  assert.deepEqual(
+    resumed.outcome.dropped.map((item) => item.unitId),
+    PILOT_DROP.workspaces
+  );
+  const off = resumed.outcome.workspaces.find(
+    (item) => item.learning === "off"
+  )!;
+  assert.equal(off.record.ending, "fewer-cycles");
+  assert.equal(off.record.cycles.length, 2);
+  assert.ok(
+    resumed.outcome.cases.some(
+      (item) => item.toolId === "reacherx" && item.learning === "off"
+    )
+  );
+  assert.equal(resumed.outcome.decision?.point, "D2");
+  assert.match(resumed.decision ?? "", /# D2 checkpoint/);
+  assert.match(resumed.report, /Units: .*2 dropped by approval\./);
+  assert.match(
+    resumed.report,
+    /Dropped by approval: w-p06-off, w-p06-on never ran and are not held for review\. Reason: Budget: the pilot finishes with prompt 1 only\./
+  );
+  assert.match(
+    resumed.report,
+    /_p01_off: 2 of 4 cycles; it was resumed after an interruption in cycle 2.*cycles 3 to 4 never ran/
+  );
+  assert.match(
+    resumed.report,
+    /- p01: learning on 4 cycle\(s\), learning off 2 cycle\(s\)\./
+  );
+  assert.match(resumed.report, /Human labels: /);
+  assert.deepEqual(Object.fromEntries(env), atRest);
+});
+
+test("the main step runs prompt 6's first cycle when the pilot dropped it, and refuses a pilot that ran it", () => {
+  const main = segmentSchedule("main", { runId: "x", seed: 7 });
+  assert.ok(main.workspaces.some((slot) => slot.taskId === "p06"));
+  assert.ok(!main.workspaces.some((slot) => slot.taskId === "p01"));
+  const pilot = { workspaces: [], review: [], dropped: [] };
+  const ranP01 = {
+    ...pilot,
+    review: [{ unitId: "w-p01-on", reason: "held" }],
+    dropped: PILOT_DROP.workspaces.map((unitId) => ({
+      unitId,
+      taskId: "p06",
+      learning: unitId.endsWith("on") ? ("on" as const) : ("off" as const),
+      reason: PILOT_DROP.reason,
+    })),
+  };
+  checkMainAgainstPilot(main, ranP01);
+  assert.throws(
+    () =>
+      checkMainAgainstPilot(main, {
+        ...pilot,
+        review: [{ unitId: "w-p06-on", reason: "held" }],
+      }),
+    /The pilot ran p06, which the main step would run again/
+  );
+  assert.throws(
+    () =>
+      checkMainAgainstPilot(
+        {
+          ...main,
+          workspaces: main.workspaces.filter((slot) => slot.taskId !== "p06"),
+        },
+        ranP01
+      ),
+    /The pilot dropped p06, but the main step does not run its first cycle/
+  );
+  // Only learning-on covers a prompt: main reuses the pilot's learning-on cycle 1.
+  assert.throws(
+    () =>
+      checkMainAgainstPilot(main, {
+        ...ranP01,
+        review: [{ unitId: "w-p01-off", reason: "held" }],
+        dropped: [
+          ...ranP01.dropped,
+          {
+            unitId: "w-p01-on",
+            taskId: "p01",
+            learning: "on" as const,
+            reason: PILOT_DROP.reason,
+          },
+        ],
+      }),
+    /The pilot dropped p01, but the main step does not run its first cycle/
+  );
 });

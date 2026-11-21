@@ -45,7 +45,7 @@ import {
   TESTED_NOTE,
 } from "../analysis/comparisons";
 import { peopleSearchPlan } from "../setup/plan";
-import { SEGMENTS } from "../setup/schedule";
+import { SEGMENTS, segmentSchedule } from "../setup/schedule";
 import { VIA_PEOPLE_TOOL_ID } from "../run/reacherx";
 import { toolCatalog } from "../tools/catalog";
 import {
@@ -120,6 +120,17 @@ export const segmentOutcomeSchema = z.object({
     .nullable(),
   units: z.object({ executed: z.number(), reused: z.number() }),
   workspaces: z.array(workspaceOutcomeSchema),
+  // Workspace units the approval dropped: never started and never held.
+  dropped: z
+    .array(
+      z.object({
+        unitId: z.string(),
+        taskId: z.string(),
+        learning: z.enum(["on", "off"]),
+        reason: z.string(),
+      })
+    )
+    .default([]),
   translations: z.array(
     translationOutcomeSchema.omit({ modelExchanges: true })
   ),
@@ -867,13 +878,67 @@ function resumedLines(outcome: SegmentOutcome) {
       } ${
         COMPLETED_ENDINGS.includes(resumed.at(-1)!.ending)
           ? "The continuation settled."
-          : `The continuation ended ${resumed.at(-1)!.ending}.`
+          : resumed.at(-1)!.ending === "fewer-cycles"
+            ? "The continuation settled, short of the planned cycles (see Fewer cycles than planned)."
+            : `The continuation ended ${resumed.at(-1)!.ending}.`
       }`,
       `  - AI on the deployment key: ${money(beforeStop)} before the stop (with setup), ${money(between)} between the stop and the resume, ${money(continued)} in the continuation; combined for the workspace ${money(combined)} (the resumed cycle's own cost is in the cycle table).`,
       `  - LinkedIn credits (recorded): ${credits(creditsAtStop)} before the stop, ${credits(difference(creditsTotal, creditsAtStop))} since, ${credits(creditsTotal)} combined. X items (recorded): ${credits(xAtStop)} before the stop, ${credits(difference(xTotal, xAtStop))} since, ${credits(xTotal)} combined.`,
       `  - Time: ${minutes(first.stoppedAt - item.record.startedAt)} from the start to the stop, ${minutes(resumed.reduce((sum, entry) => sum + (entry.endedAt - entry.resumedAt), 0))} in the continuation; active time leaves out the ${minutes(pausedMs)} the workspace stood stopped.`,
     ];
   });
+}
+
+/** Workspaces the approval dropped, by reason, in plain words. */
+function droppedLines(outcome: SegmentOutcome) {
+  const reasons = [...new Set(outcome.dropped.map((item) => item.reason))];
+  return reasons.flatMap((reason) => [
+    "",
+    `Dropped by approval: ${outcome.dropped
+      .filter((item) => item.reason === reason)
+      .map((item) => item.unitId)
+      .join(", ")} never ran and are not held for review. Reason: ${reason.replace(/\.$/, "")}.`,
+  ]);
+}
+
+/**
+ * Workspaces that ran fewer cycles than planned, other than at the match
+ * limit per query, and per prompt how many cycles each condition has. Their
+ * results are used, labelled here; no later cycle can be added, because a
+ * stopped workspace cannot start new cycles.
+ */
+function fewerCyclesLines(outcome: SegmentOutcome) {
+  const short = outcome.workspaces.filter(
+    (item) =>
+      item.record.cycles.length < item.record.plannedCycles &&
+      item.record.ending !== "match-limit-per-query"
+  );
+  if (!short.length) return [];
+  const prompts = [...new Set(short.map((item) => item.taskId))];
+  return [
+    "",
+    "Fewer cycles than planned (results used as they ran):",
+    "",
+    ...short.map(({ label, record }) => {
+      const ran = record.cycles.length;
+      const how = record.resumed?.length
+        ? `it was ${resumedLabel(record.resumed)} in cycle ${ran}, and the continuation finished only that cycle`
+        : `it ended ${record.ending} in cycle ${ran}${record.detail ? ` (${record.detail.replace(/\.$/, "")})` : ""} and was stopped`;
+      return `- ${label}: ${ran} of ${record.plannedCycles} cycles; ${how}. A stopped workspace cannot start new cycles, so cycles ${ran + 1} to ${record.plannedCycles} never ran.`;
+    }),
+    ...prompts.map((taskId) => {
+      const counts = outcome.workspaces
+        .filter((item) => item.taskId === taskId)
+        .map((item) => ({
+          learning: item.learning,
+          cycles: item.record.cycles.length,
+        }));
+      const same = counts.every((item) => item.cycles === counts[0].cycles);
+      return same && counts.length > 1
+        ? `- ${taskId}: ${counts[0].cycles} cycles per condition (learning ${counts.map((item) => item.learning).join(" and ")}); its learning comparison covers those cycles only.`
+        : `- ${taskId}: ${counts.map((item) => `learning ${item.learning} ${item.cycles} cycle(s)`).join(", ")}.`;
+    }),
+  ];
 }
 
 const knownCosts = (outcomes: readonly SegmentOutcome[]) =>
@@ -910,8 +975,12 @@ function projectMainRun(outcome: SegmentOutcome, context: ReportContext) {
       item.record.panel.costUsd === null ? [] : [item.record.panel.costUsd]
     )
   );
-  const mainPrompts = peopleSearchPlan.prompts.length - 1 - 2;
-  const competitorPrompts = peopleSearchPlan.prompts.length - 1;
+  const main = segmentSchedule("main", {
+    runId: outcome.runId,
+    seed: context.seed,
+  });
+  const mainPrompts = main.workspaces.length;
+  const competitorPrompts = main.competitorTasks.length;
   const competitorResults = toolCatalog
     .filter((tool) => tool.id !== "reacherx")
     .reduce((sum, tool) => sum + tool.judgedTopK, 0);
@@ -1247,9 +1316,10 @@ export function renderSegmentReport(
     `# Step ${outcome.segment}: ${outcome.status}`,
     "",
     `Run ${outcome.runId}, frozen plan \`${context.planSha256}\`.`,
-    `Units: ${outcome.units.executed} run now, ${outcome.units.reused} reused, ${outcome.review.length} held for review, ${outcome.notReached} not reached.`,
+    `Units: ${outcome.units.executed} run now, ${outcome.units.reused} reused, ${outcome.review.length} held for review, ${outcome.notReached} not reached${outcome.dropped.length ? `, ${outcome.dropped.length} dropped by approval` : ""}.`,
   ];
   if (outcome.stopReason) lines.push(`Stopped: ${outcome.stopReason}`);
+  lines.push(...droppedLines(outcome));
   if (outcome.review.length)
     lines.push(
       "",
@@ -1347,6 +1417,7 @@ export function renderSegmentReport(
         )
       )
     );
+    lines.push(...fewerCyclesLines(outcome));
     const resumed = resumedLines(outcome);
     if (resumed.length)
       lines.push(

@@ -96,6 +96,10 @@ export const WORKSPACE_ENDINGS = [
   // Fewer cycles than planned ran, because the workspace reached the
   // development-only match limit per query; a completed workspace.
   "match-limit-per-query",
+  // A continuation settled a cycle before the last planned one. A stopped
+  // workspace cannot start new cycles, so fewer cycles ran than planned; not
+  // a completed ending, so reports and decisions list it.
+  "fewer-cycles",
   "cycle-failed",
   "extra-cycle",
   "workspace-halted",
@@ -636,11 +640,29 @@ export function resumeProblem(record: WorkspaceRunRecord): string | null {
     return "it was not confirmed stopped.";
   if (!record.cycles.length)
     return "its first cycle never started, so there is nothing to continue.";
-  // The match limit per query can make an earlier cycle the last.
-  const last = record.queryLimitReached?.cycle ?? record.plannedCycles;
-  if (record.cycles.length !== last)
-    return `it stopped in cycle ${record.cycles.length} of ${last}; only the last cycle can be continued.`;
+  // A cycle before the last planned one can be continued too; it then ends
+  // fewer-cycles, since no later cycle starts (see watchContinuation).
   return null;
+}
+
+/**
+ * How a continuation whose cycle settled ends: as a workspace that ran its
+ * cycles when the cycle was its last (planned, or made last by the match
+ * limit per query), otherwise fewer-cycles, since a stopped workspace cannot
+ * start new cycles.
+ */
+function continuationEnding({
+  cycles,
+  plannedCycles,
+  queryLimitReached,
+}: WorkspaceRunRecord): { ending: WorkspaceEnding; detail: string | null } {
+  const last = queryLimitReached?.cycle ?? plannedCycles;
+  if (cycles.length >= last)
+    return settledEnding(plannedCycles, queryLimitReached);
+  return {
+    ending: "fewer-cycles",
+    detail: `Cycle ${cycles.length} settled in the continuation. A stopped workspace cannot start new cycles, so ${cycles.length} of ${last} planned cycles ran.`,
+  };
 }
 
 /**
@@ -650,7 +672,7 @@ export function resumeProblem(record: WorkspaceRunRecord): string | null {
  */
 async function watchContinuation(
   driver: ConvexReacherXDriver,
-  { workspace, plannedCycles, queryLimitReached }: WorkspaceRunRecord,
+  held: WorkspaceRunRecord,
   workflowId: string,
   hooks: WorkspaceHooks,
   options: WatchOptions,
@@ -660,6 +682,7 @@ async function watchContinuation(
   detail: string | null;
   settledAt: number | null;
 }> {
+  const { workspace } = held;
   const deadline = clock.now() + options.maxCycleMs;
   let failures = 0;
   let quiet = null as { since: number; polls: number; total: number } | null;
@@ -719,10 +742,7 @@ async function watchContinuation(
       quiet = { ...quiet, polls: quiet.polls + 1 };
     else quiet = { since: now, polls: 1, total: status.counts.total };
     if (quiet && quiet.polls >= options.settlePolls)
-      return {
-        ...settledEnding(plannedCycles, queryLimitReached),
-        settledAt: quiet.since,
-      };
+      return { ...continuationEnding(held), settledAt: quiet.since };
     if (now > deadline)
       return {
         ending: "timed-out",

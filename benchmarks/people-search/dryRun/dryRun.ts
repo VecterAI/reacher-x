@@ -22,7 +22,14 @@ import {
 import type { BenchmarkEntity, EntityType } from "../../core/types";
 import { freezePlan, loadFrozenPlan } from "../setup/freeze";
 import { peopleSearchPlan } from "../setup/plan";
-import { STEPS, type SegmentId, type StepId } from "../setup/schedule";
+import {
+  PILOT_PROMPTS_DROPPED,
+  STEPS,
+  segmentSchedule,
+  type PromptId,
+  type SegmentId,
+  type StepId,
+} from "../setup/schedule";
 import { WATCH_OPTIONS } from "../steps/live";
 import {
   DEFAULT_KEYWORD_POST_SEARCH_CALLS,
@@ -32,6 +39,7 @@ import {
   type StepAccounts,
   type StepDependencies,
 } from "../steps/pipeline";
+import { workspaceUnitId } from "../steps/workspaces";
 import { syntheticDeployment } from "./deployment";
 import {
   SyntheticAccounts,
@@ -97,6 +105,17 @@ function example(entityType: EntityType): BenchmarkEntity {
       };
 }
 
+const droppedPrompts: readonly PromptId[] = PILOT_PROMPTS_DROPPED;
+
+/** The pilot's drop as approved on 20 Nov 2026, so the dry run follows the amended plan. */
+export const PILOT_DROP = {
+  workspaces: segmentSchedule("pilot", { runId: "dry-run", seed: 0 })
+    .workspaces.filter((slot) => droppedPrompts.includes(slot.promptId))
+    .map(workspaceUnitId),
+  reason:
+    "Budget: the pilot finishes with prompt 1 only (project lead, 20 Nov 2026); prompt 6's first cycle runs in the main step",
+};
+
 // Segments whose competitors run, and so spend on Treg.
 const WITH_COMPETITORS: readonly SegmentId[] = ["smoke", "main"];
 
@@ -120,6 +139,7 @@ function approval(segment: SegmentId, accounts: StepAccounts): SegmentApproval {
     matchLimitPerCycle: null,
     matchLimitPerQuery: null,
     slice: null,
+    drop: null,
     ...(segment.startsWith("stage2")
       ? {
           stage2: {
@@ -265,7 +285,16 @@ export type DryRunOptions = SyntheticOptions &
 export async function dryRun(options: DryRunOptions) {
   const root = await mkdtemp(join(tmpdir(), "reacherx-dry-run-"));
   try {
-    const { deps } = await syntheticDependencies(root, options);
+    const built = await syntheticDependencies(root, options);
+    const deps: StepDependencies = {
+      ...built.deps,
+      readApproval: async (segment) => {
+        const approval = await built.deps.readApproval(segment);
+        return approval && segment === "pilot"
+          ? { ...approval, drop: PILOT_DROP }
+          : approval;
+      },
+    };
     const through = options.through ?? STEPS.at(-1)!;
     const steps = STEPS.slice(0, STEPS.indexOf(through) + 1);
     const results: { step: StepId; result: SegmentResult }[] = [];

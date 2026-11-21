@@ -1182,7 +1182,7 @@ test("a continuation that sees a new discovery cycle, or reaches the budget, sto
   assert.equal(budget.env.get("BENCHMARK_HALTED_WORKSPACE_ID"), "w1");
 });
 
-test("only a stopped last cycle is continued, and never while its discovery is running or over budget", async () => {
+test("a stopped cycle is continued, and never while its discovery is running or over budget", async () => {
   assert.match(
     resumeProblem({ ...heldRecord, ending: "timed-out" }) ?? "",
     /only a budget stop, an interruption or unreadable status/
@@ -1198,10 +1198,8 @@ test("only a stopped last cycle is continued, and never while its discovery is r
     }) ?? "",
     /not confirmed stopped/
   );
-  assert.match(
-    resumeProblem({ ...heldRecord, plannedCycles: 2 }) ?? "",
-    /cycle 1 of 2/
-  );
+  // An earlier cycle too; it then ends fewer-cycles (tested below).
+  assert.equal(resumeProblem({ ...heldRecord, plannedCycles: 2 }), null);
   // The match limit per query made cycle 1 the last.
   assert.equal(
     resumeProblem({

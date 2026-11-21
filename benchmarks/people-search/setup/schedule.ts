@@ -11,7 +11,9 @@ import {
  * What each live step runs (proposal 6 and 7.2), derived from the approved
  * plan. Stage 1: 1 company smoke test + 2 people prompts x 4 cycles x 2
  * learning conditions + 17 first cycles = 34 cycles, with competitors on the
- * smoke prompt and then the 19 remaining prompts. Stage 2: 7 to 10 people
+ * smoke prompt and then the 19 remaining prompts. Amended 20 Nov 2026 (see
+ * PILOT_PROMPTS_DROPPED): the pilot runs prompt 1 only, so the main step runs
+ * 18 first cycles. Stage 2: 7 to 10 people
  * prompts x 5 to 8 cycles x 2 conditions, in fresh workspaces, paused for D4
  * a third of the way in. Workspaces run one at a time, in this order.
  */
@@ -46,6 +48,29 @@ export const SEGMENTS: readonly SegmentId[] = STEPS.flatMap(
  */
 export const SMOKE_PROMPT = 14 satisfies PromptId;
 export const PILOT_PROMPTS = [1, 6] as const satisfies readonly PromptId[];
+
+/**
+ * Amendment approved by the project lead 20 Nov 2026, to save budget: the
+ * pilot finishes with prompt 1 only. Prompt 6's pilot workspaces are dropped
+ * by the pilot's approval (`drop`), so its frozen work order is unchanged,
+ * and its first cycle runs in the main step like the other prompts'. The main
+ * step refuses to start if the pilot's outcome disagrees.
+ */
+export const PILOT_PROMPTS_DROPPED = [
+  6,
+] as const satisfies readonly (typeof PILOT_PROMPTS)[number][];
+
+/** Prompts whose first cycle the main step runs: all but the smoke prompt and the pilot prompts the pilot ran. */
+export function mainPrompts(): PromptId[] {
+  const dropped: readonly PromptId[] = PILOT_PROMPTS_DROPPED;
+  const done: readonly PromptId[] = [
+    SMOKE_PROMPT,
+    ...PILOT_PROMPTS.filter((id) => !dropped.includes(id)),
+  ];
+  return peopleSearchPlan.prompts
+    .map((prompt): PromptId => prompt.id)
+    .filter((id) => !done.includes(id));
+}
 
 /**
  * The workspace use case passed to ReacherX's setup. Following round 1:
@@ -279,9 +304,8 @@ export function segmentSchedule(
         humanLabels: peopleSearchPlan.judging.pilotHumanLabels,
       };
     case "main": {
-      const done: PromptId[] = [SMOKE_PROMPT, ...PILOT_PROMPTS];
-      // First cycles of the 17 remaining prompts, as the product runs them.
-      const first = all.filter((id) => !done.includes(id));
+      // First cycles of the remaining prompts, as the product runs them.
+      const first = mainPrompts();
       return {
         ...base,
         step: "main",

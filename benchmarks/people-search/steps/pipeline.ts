@@ -162,6 +162,18 @@ export const segmentApprovalSchema = z.strictObject({
     })
     .nullable()
     .default(null),
+  // Workspace units this step will not run, with the reason (for example
+  // the pilot's prompt 6, dropped by the project lead on 20 Nov 2026 to save
+  // budget). They are recorded as dropped by approval: never started and
+  // never held, so the step completes over the units that ran. Only units
+  // that never started can be dropped; the frozen work order is unchanged.
+  drop: z
+    .strictObject({
+      workspaces: z.array(z.string().min(1)).min(1),
+      reason: z.string().trim().min(1),
+    })
+    .nullable()
+    .default(null),
 });
 export type SegmentApproval = z.infer<typeof segmentApprovalSchema>;
 
@@ -199,6 +211,95 @@ export function sliceOf(
     cycles: slice.cycles,
     reason: `Slice run (${approvalPath(schedule.segment)}): only ${workspaces.map(workspaceUnitId).join(", ")}, ${cycles}. The step's other workspaces, competitors, judges and decision are still pending.`,
   };
+}
+
+/**
+ * The workspaces an approval drops, each with its reason; empty when it
+ * drops none. A unit the segment does not run, one that already started
+ * (any checkpoint), or one also named in a slice is refused before anything
+ * runs.
+ */
+export async function droppedBy(
+  schedule: SegmentSchedule,
+  approval: Pick<SegmentApproval, "drop" | "slice"> | null,
+  ledger: Pick<UnitLedger, "state">
+): Promise<SegmentOutcome["dropped"]> {
+  const drop = approval?.drop;
+  if (!drop) return [];
+  const path = approvalPath(schedule.segment);
+  const ids = schedule.workspaces.map(workspaceUnitId);
+  const unknown = drop.workspaces.filter((id) => !ids.includes(id));
+  if (unknown.length)
+    throw new RunnerStateError(
+      `The drop in ${path} names ${unknown.join(", ")}, which ${schedule.segment} does not run; its workspaces are ${ids.join(", ")}.`
+    );
+  const started: string[] = [];
+  for (const id of drop.workspaces) {
+    const state = await ledger.state(id);
+    if (state !== "new") started.push(`${id} (${state})`);
+  }
+  if (started.length)
+    throw new RunnerStateError(
+      `The drop in ${path} names ${started.join(", ")}; only a workspace that never started can be dropped.`
+    );
+  const sliced = drop.workspaces.filter((id) =>
+    approval?.slice?.workspaces.includes(id)
+  );
+  if (sliced.length)
+    throw new RunnerStateError(
+      `${path} both drops and slices ${sliced.join(", ")}.`
+    );
+  return schedule.workspaces
+    .filter((slot) => drop.workspaces.includes(workspaceUnitId(slot)))
+    .map((slot) => ({
+      unitId: workspaceUnitId(slot),
+      taskId: slot.taskId,
+      learning: slot.learning,
+      reason: drop.reason,
+    }));
+}
+
+/**
+ * The main step runs a first cycle for every prompt the pilot did not run
+ * (schedule.ts, amended 20 Nov 2026). Refused before anything runs when the
+ * pilot's outcome disagrees: a prompt the pilot dropped that main does not
+ * run, or one both would run.
+ */
+export function checkMainAgainstPilot(
+  schedule: SegmentSchedule,
+  pilot: Pick<SegmentOutcome, "workspaces" | "review" | "dropped">
+) {
+  // Main reuses the pilot's learning-on cycle 1 for a pilot prompt, so only
+  // a prompt whose learning-on workspace ran counts as covered.
+  const ran = new Set([
+    ...pilot.workspaces
+      .filter((item) => item.learning === "on")
+      .map((item) => item.taskId),
+    ...pilot.review.flatMap(
+      (item) => /^w-(p\d+)-on$/.exec(item.unitId)?.[1] ?? []
+    ),
+  ]);
+  const main = new Set(schedule.workspaces.map((slot) => slot.taskId));
+  const missing = [...new Set(pilot.dropped.map((item) => item.taskId))].filter(
+    (taskId) => !ran.has(taskId) && !main.has(taskId)
+  );
+  const twice = [...ran].filter((taskId) => main.has(taskId));
+  if (missing.length || twice.length)
+    throw new RunnerStateError(
+      [
+        ...(missing.length
+          ? [
+              `The pilot dropped ${missing.join(", ")}, but the main step does not run its first cycle.`,
+            ]
+          : []),
+        ...(twice.length
+          ? [
+              `The pilot ran ${twice.join(", ")}, which the main step would run again.`,
+            ]
+          : []),
+        "Update PILOT_PROMPTS_DROPPED in benchmarks/people-search/setup/schedule.ts to match the pilot before the main step.",
+      ].join(" ")
+    );
 }
 
 export type StepAccounts = Readonly<{
@@ -436,10 +537,27 @@ async function runSegment(
       approval,
       frozen.seed
     );
+    if (segment === "main") {
+      const pilot = earlier.find((item) => item.segment === "pilot");
+      if (pilot) checkMainAgainstPilot(schedule, pilot);
+    }
     const slice = sliceOf(schedule, approval?.slice ?? null);
-    // The workspaces this run may start or continue; the schedule stays whole.
-    const slots = slice?.workspaces ?? schedule.workspaces;
     const ledger = new UnitLedger(store);
+    // Drops recorded by an earlier run of this step stay dropped, so a
+    // report-only rerun never turns them back into runnable work.
+    const approved = await droppedBy(schedule, approval, ledger);
+    const dropped = [
+      ...(previous?.dropped ?? []).filter(
+        (item) => !approved.some((next) => next.unitId === item.unitId)
+      ),
+      ...approved,
+    ];
+    // The schedule stays whole in the frozen record; dropped units never run.
+    const runnable = schedule.workspaces.filter(
+      (slot) => !dropped.some((item) => item.unitId === workspaceUnitId(slot))
+    );
+    // The workspaces this run may start or continue.
+    const slots = slice?.workspaces ?? runnable;
     await ledger.open(
       toJson({
         schemaVersion: 1,
@@ -630,7 +748,7 @@ async function runSegment(
             // Production parity and the pool limits in effect, as confirmed (proposal 5.5).
             settingsInEffect = session.confirmed;
             return runWorkspaceUnits(
-              schedule.workspaces,
+              runnable,
               workspacePhase,
               session,
               held.ready
@@ -638,12 +756,7 @@ async function runSegment(
           },
           () => new Date(deps.clock.now())
         );
-      } else
-        ran = await runWorkspaceUnits(
-          schedule.workspaces,
-          workspacePhase,
-          null
-        );
+      } else ran = await runWorkspaceUnits(runnable, workspacePhase, null);
       workspaceResults = ran.results;
       stopWith(ran.stopped);
       // A slice ends after its workspaces; nothing else in the step runs.
@@ -853,6 +966,7 @@ async function runSegment(
       stage2: schedule.stage2,
       units: { ...ledger.tally },
       workspaces,
+      dropped,
       translations: competitors?.translations ?? [],
       competitors: competitorOutcomes,
       cases,

@@ -14,7 +14,13 @@ test("the dry run reaches D2 with synthetic labels read back and the learning me
   });
   assert.equal(pilot.outcome.segment, "pilot");
   assert.equal(pilot.outcome.status, "complete");
-  assert.equal(pilot.outcome.workspaces.length, 4);
+  // Prompt 6 dropped by approval (20 Nov 2026): prompt 1's two workspaces.
+  assert.equal(pilot.outcome.workspaces.length, 2);
+  assert.deepEqual(
+    pilot.outcome.dropped.map((item) => item.unitId),
+    ["w-p06-off", "w-p06-on"]
+  );
+  assert.match(pilot.report, /Dropped by approval: w-p06-off, w-p06-on never ran/);
   const agreement = pilot.outcome.decision?.rows[0];
   assert.match(agreement?.condition ?? "", /Judges agree with people/);
   assert.notEqual(agreement?.status, "waiting");
