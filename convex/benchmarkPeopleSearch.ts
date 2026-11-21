@@ -606,6 +606,48 @@ export const cancelScheduledCycles = internalMutation({
   },
 });
 
+/** Schedules the held next cycle via `startNextCycle`, replacing any pending start. */
+export const releaseNextCycle = internalMutation({
+  args: { workspaceId: v.id("workspaces"), notBefore: v.number() },
+  returns: v.object({
+    scheduledAt: v.number(),
+    canceled: v.number(),
+    truncated: v.boolean(),
+  }),
+  handler: async (ctx, { workspaceId, notBefore }) => {
+    const workspace = await ctx.db.get(workspaceId);
+    if (!workspace?.name.startsWith(BENCHMARK_NAME_PREFIX)) {
+      throw new Error("Only benchmark workspaces can be released here");
+    }
+    if (workspace.prospectingWorkflowStatus !== "running") {
+      throw new Error("The benchmark workspace is not running");
+    }
+    if (workspace.prospectingWorkflowId) {
+      const status = await workflow.status(
+        ctx,
+        workspace.prospectingWorkflowId as WorkflowId
+      );
+      if (status.type === "inProgress") {
+        throw new Error("The current cycle's discovery is still running");
+      }
+    }
+    // The runner canceled the deployment's own start when it held the cycle;
+    // this scan only covers recent jobs, so a truncated one is reported, not refused.
+    const { canceled, truncated } = await cancelPendingCycleStarts(
+      ctx,
+      workspaceId
+    );
+    const scheduledAt = Math.max(Date.now(), notBefore);
+    await ctx.scheduler.runAt(
+      scheduledAt,
+      internal.workflows.prospecting.startNextCycle,
+      { workspaceId }
+    );
+    await ctx.db.patch(workspaceId, { prospectingNextRunAt: scheduledAt });
+    return { scheduledAt, canceled, truncated };
+  },
+});
+
 /** Cancels the workspace's pending next-cycle starts and automatic restarts. */
 async function cancelPendingCycleStarts(
   ctx: MutationCtx,

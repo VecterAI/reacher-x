@@ -122,6 +122,60 @@ describe("benchmark people-search hooks", () => {
     ).rejects.toThrow(/Only benchmark workspaces/);
   });
 
+  test("releaseNextCycle leaves one start pending, not before the given time", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.scheduler.runAfter(
+        60_000,
+        internal.workflows.prospecting.startNextCycle,
+        { workspaceId: ids.benchmark }
+      );
+    });
+    const notBefore = Date.now() + 600_000;
+
+    const result = await t.mutation(
+      internal.benchmarkPeopleSearch.releaseNextCycle,
+      { workspaceId: ids.benchmark, notBefore }
+    );
+
+    expect(result).toEqual({
+      scheduledAt: notBefore,
+      canceled: 1,
+      truncated: false,
+    });
+    expect(await pendingNextCycles(t)).toEqual([ids.benchmark]);
+    const scheduled = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").collect()).filter(
+        (job) => job.state.kind === "pending"
+      )
+    );
+    expect(scheduled.map((job) => job.scheduledTime)).toEqual([notBefore]);
+    const workspace = await t.run((ctx) => ctx.db.get(ids.benchmark));
+    expect(workspace?.prospectingNextRunAt).toBe(notBefore);
+  });
+
+  test("releaseNextCycle refuses a workspace the benchmark did not create or one not running", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t);
+    await expect(
+      t.mutation(internal.benchmarkPeopleSearch.releaseNextCycle, {
+        workspaceId: ids.ordinary,
+        notBefore: 0,
+      })
+    ).rejects.toThrow(/Only benchmark workspaces/);
+    await t.run((ctx) =>
+      ctx.db.patch(ids.benchmark, { prospectingWorkflowStatus: "stopped" })
+    );
+    await expect(
+      t.mutation(internal.benchmarkPeopleSearch.releaseNextCycle, {
+        workspaceId: ids.benchmark,
+        notBefore: 0,
+      })
+    ).rejects.toThrow(/not running/);
+    expect(await pendingNextCycles(t)).toEqual([]);
+  });
+
   test("deploymentActivity lists running workspaces and pending restarts, except the named one", async () => {
     const t = convexTest(schema, modules);
     const ids = await seed(t);

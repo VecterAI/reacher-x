@@ -94,7 +94,9 @@ export type JudgeTarget = Readonly<
  * cycle found, and up to three of that cycle's rejected prospects of the same
  * type. With one cycle this is the workspace's top 5; per cycle it gives the
  * cycle-by-cycle measures. Rejected prospects of the other type are not
- * judged, since they cannot meet the prompt. On a company prompt, the
+ * judged, since they cannot meet the prompt. ReacherX types only accepted
+ * prospects, so untyped rejected ones count as people on a people prompt. On
+ * a company prompt, the
  * companies behind the cycle's best-fit people are judged too, as a labelled
  * measure of their own.
  */
@@ -159,9 +161,23 @@ export function reacherxTargets(
         })
       );
   }
+  const untyped = (prospect: (typeof record.prospects)[number]) =>
+    prospect.prospectType == null || prospect.prospectType === "unknown";
+  const rejectable = record.prospects
+    .filter(
+      (prospect) =>
+        Boolean(prospect.displayName?.trim()) &&
+        (prospect.prospectType === task.entityType ||
+          (task.entityType === "individual" && untyped(prospect)))
+    )
+    .map((prospect) =>
+      untyped(prospect)
+        ? { ...prospect, prospectType: task.entityType }
+        : prospect
+    );
   const perCycle = new Map<number, number>();
   for (const { cycle, prospect } of sampleRejected(
-    eligible,
+    rejectable,
     cycleOf,
     seed,
     peopleSearchPlan.judging.rejectedSamplePerPromptCycle

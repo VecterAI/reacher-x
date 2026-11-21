@@ -91,6 +91,11 @@ export function fakeDeployment(
       canceled: 0,
       truncated: false,
     }),
+    "benchmarkPeopleSearch:releaseNextCycle": (args) => ({
+      scheduledAt: args.notBefore as number,
+      canceled: 0,
+      truncated: false,
+    }),
     "benchmarkPeopleSearch:prepareWorkspace": () => ({
       workspaceId: "w1",
       createdAt: 1_000,

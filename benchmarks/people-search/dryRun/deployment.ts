@@ -323,6 +323,14 @@ export function syntheticDeployment(
         if (workspace) workspace.nextRunAt = null;
         return { canceled, truncated: false };
       },
+      "benchmarkPeopleSearch:releaseNextCycle": (args) => {
+        const workspace = find(args);
+        if (!workspace) throw new Error("Unknown workspace.");
+        const canceled = workspace.nextRunAt ? 1 : 0;
+        const scheduledAt = Math.max(clock.now(), args.notBefore as number);
+        workspace.nextRunAt = scheduledAt;
+        return { scheduledAt, canceled, truncated: false };
+      },
       "benchmarkPeopleSearch:resumeHeldWorkspace": (args) => {
         // Same cycle, no discovery: only its remaining work runs and charges.
         const workspace = find(args);

@@ -319,6 +319,8 @@ async function watchCycles(
   let failures = 0;
   // A streak of idle polls with an unchanged prospect count.
   let quiet = null as { since: number; polls: number; total: number } | null;
+  // The cycle whose next start waits until it settles, so lessons are written first.
+  let holding = null as number | null;
   for (;;) {
     options.signal?.throwIfAborted();
     try {
@@ -446,6 +448,9 @@ async function watchCycles(
         const scheduled = status.nextRunAt;
         await driver.cancelScheduledCycles(workspace);
         cycle.nextStartAt = scheduled ?? now + options.scheduledGapMs;
+      } else {
+        await driver.cancelScheduledCycles(workspace);
+        holding = cycle.cycle;
       }
       if (status.workflowState !== "completed")
         return {
@@ -480,6 +485,18 @@ async function watchCycles(
       else quiet = { since: now, polls: 1, total: status.counts.total };
       if (quiet && quiet.polls >= options.settlePolls)
         cycle.settledAt = quiet.since;
+    }
+    if (holding === cycle.cycle && final) holding = null;
+    if (holding === cycle.cycle) {
+      if (cycle.settledAt !== null) {
+        await driver.releaseNextCycle(
+          workspace,
+          cycle.discoveryEndedAt! + options.scheduledGapMs
+        );
+        holding = null;
+      } else if (status.nextRunAt !== null && cycle.discoveryEndedAt !== now) {
+        await driver.cancelScheduledCycles(workspace);
+      }
     }
     if (final && cycle.settledAt !== null)
       return settledEnding(plan.cycles, limit.reached);

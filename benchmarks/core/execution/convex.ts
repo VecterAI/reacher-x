@@ -25,6 +25,7 @@ const PEOPLE_SEARCH_HOOKS = {
   exportCandidates: "benchmarkPeopleSearch:exportCandidates",
   stopRun: "benchmarkPeopleSearch:stopRun",
   cancelScheduledCycles: "benchmarkPeopleSearch:cancelScheduledCycles",
+  releaseNextCycle: "benchmarkPeopleSearch:releaseNextCycle",
   deploymentActivity: "benchmarkPeopleSearch:deploymentActivity",
   runCosts: "benchmarkPeopleSearch:runCosts",
   linkdApiUnitsSince: "benchmarkPeopleSearch:linkdApiUnitsSince",
@@ -668,6 +669,19 @@ export class ConvexReacherXDriver {
       PEOPLE_SEARCH_HOOKS.cancelScheduledCycles,
       { workspaceId: workspace.workspaceId },
       z.object({ canceled: z.number(), truncated: z.boolean() })
+    );
+  }
+
+  /** Schedules the held next cycle at `notBefore`, or now if later. */
+  releaseNextCycle(workspace: BenchmarkWorkspace, notBefore: number) {
+    return this.call(
+      PEOPLE_SEARCH_HOOKS.releaseNextCycle,
+      { workspaceId: workspace.workspaceId, notBefore },
+      z.object({
+        scheduledAt: z.number(),
+        canceled: z.number(),
+        truncated: z.boolean(),
+      })
     );
   }
 
