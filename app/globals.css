@@ -318,6 +318,22 @@ body {
   line-height: 1.2em;
 }
 
+/*
+ * Inline autocomplete ghost text in the Lexical composer. The plugin sets
+ * data-inline-suggestion on the node that ends at the caret, so the
+ * suggestion flows and wraps with the text instead of floating over it.
+ * Muted-foreground on background passes WCAG AA in both themes
+ * (light #737373 on #fff = 4.74:1, dark #a3a3a3 on #000 = 8.3:1); no opacity.
+ */
+[data-inline-suggestion]::after {
+  content: attr(data-inline-suggestion);
+  color: hsl(var(--muted-foreground));
+  font-weight: 400;
+  font-style: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
 .rx-code-block .shiki,
 .rx-code-block .shiki span {
   background-color: transparent !important;

@@ -18,10 +18,12 @@ import {
 } from "@/shared/ui/components/Tooltip";
 import { cn } from "@/shared/lib/utils";
 import { getTextareaCaretCoordinates } from "@/shared/lib/autocomplete/getTextareaCaretCoordinates";
+import type { InlineAutocompleteContext } from "@/shared/lib/autocomplete/inlineAutocomplete";
+import { isInlineSuggestionWordAcceptKey } from "@/shared/lib/autocomplete/inlineSuggestionKeys";
 import {
-  getInlineAutocompleteInsertionText,
-  type InlineAutocompleteContext,
-} from "@/shared/lib/autocomplete/inlineAutocomplete";
+  buildTextareaGhostMirrorStyle,
+  isSameTextareaGhostMirrorStyle,
+} from "@/shared/lib/autocomplete/textareaGhostMirror";
 import { useInlineAutocomplete } from "@/shared/hooks/useInlineAutocomplete";
 import type { MentionEntitySearchResult } from "@/shared/lib/mentions/mentionEntities";
 import { MentionEntityMenu } from "@/shared/ui/components/mentions/MentionEntityMenu";
@@ -277,9 +279,9 @@ function PromptInputTextarea({
   const pendingAutocompleteValueRef = useRef<string | null>(null);
   const suppressMentionAutocompleteRef = useRef(false);
   const mentionCloseSuppressionTimeoutRef = useRef<number | null>(null);
-  const [overlayStyle, setOverlayStyle] = useState<React.CSSProperties | null>(
-    null
-  );
+  const ghostMirrorRef = useRef<HTMLDivElement | null>(null);
+  const [ghostMirrorStyle, setGhostMirrorStyle] =
+    useState<React.CSSProperties | null>(null);
   const hasTextareaFocus =
     isFocused ||
     (typeof document !== "undefined" &&
@@ -336,11 +338,18 @@ function PromptInputTextarea({
       value,
     ]
   );
-  const { suggestion, dismissSuggestion, recordAccepted, isLoading } =
-    useInlineAutocomplete({
-      request,
-      enabled: autocompleteEnabled,
-    });
+  const {
+    ghostText,
+    announcement,
+    acceptSuggestion: takeSuggestion,
+    acceptNextWord: takeNextSuggestionWord,
+    dismissSuggestion,
+  } = useInlineAutocomplete({
+    request,
+    enabled: autocompleteEnabled,
+  });
+  const showGhost =
+    Boolean(ghostText) && hasTextareaFocus && selectionStart === selectionEnd;
   const mentionMenuOpen =
     Boolean(activeMentionMatch && mentionAutocomplete) &&
     hasTextareaFocus &&
@@ -481,10 +490,18 @@ function PromptInputTextarea({
 
       el.style.height = "auto";
 
+      // The ghost is part of the text flow: when it wraps onto a new line the
+      // field grows for it, as it would for typed text.
+      const mirror = ghostMirrorRef.current;
+      const contentHeight = Math.max(
+        el.scrollHeight,
+        mirror?.scrollHeight ?? 0
+      );
+
       if (typeof maxHeight === "number") {
-        el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+        el.style.height = `${Math.min(contentHeight, maxHeight)}px`;
       } else {
-        el.style.height = `min(${el.scrollHeight}px, ${maxHeight})`;
+        el.style.height = `min(${contentHeight}px, ${maxHeight})`;
       }
     },
     [disableAutosize, maxHeight]
@@ -520,70 +537,27 @@ function PromptInputTextarea({
   );
 
   useLayoutEffect(() => {
-    if (!textareaRef.current || disableAutosize) return;
+    adjustHeight(textareaRef.current);
+  }, [value, ghostText, adjustHeight, textareaRef]);
 
-    const el = textareaRef.current;
-    el.style.height = "auto";
-
-    if (typeof maxHeight === "number") {
-      el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-    } else {
-      el.style.height = `min(${el.scrollHeight}px, ${maxHeight})`;
-    }
-  }, [value, maxHeight, disableAutosize, textareaRef]);
-
+  // Lay the ghost mirror over the textarea (after autosize, so it copies the
+  // final box) and keep it scrolled with the textarea.
   useLayoutEffect(() => {
     const el = textareaRef.current;
-
-    if (
-      !el ||
-      !suggestion ||
-      !hasTextareaFocus ||
-      selectionStart !== selectionEnd
-    ) {
-      setOverlayStyle((current) => (current === null ? current : null));
-      return;
+    if (el && showGhost && ghostMirrorRef.current) {
+      // Grow for a ghost that wraps onto a new line before copying the box.
+      adjustHeight(el);
     }
+    const nextStyle =
+      el && showGhost ? buildTextareaGhostMirrorStyle(el) : null;
 
-    const caret = getTextareaCaretCoordinates(el, selectionStart);
-    const computed = window.getComputedStyle(el);
-    const paddingRight = Number.parseFloat(computed.paddingRight) || 0;
-    const nextOverlayStyle: React.CSSProperties = {
-      top: caret.top,
-      left: caret.left,
-      maxWidth: Math.max(64, el.clientWidth - caret.left - paddingRight - 4),
-      fontFamily: computed.fontFamily,
-      fontSize: computed.fontSize,
-      fontWeight: computed.fontWeight,
-      lineHeight: computed.lineHeight,
-      letterSpacing: computed.letterSpacing,
-    };
-
-    setOverlayStyle((current) => {
-      if (
-        current &&
-        current.top === nextOverlayStyle.top &&
-        current.left === nextOverlayStyle.left &&
-        current.maxWidth === nextOverlayStyle.maxWidth &&
-        current.fontFamily === nextOverlayStyle.fontFamily &&
-        current.fontSize === nextOverlayStyle.fontSize &&
-        current.fontWeight === nextOverlayStyle.fontWeight &&
-        current.lineHeight === nextOverlayStyle.lineHeight &&
-        current.letterSpacing === nextOverlayStyle.letterSpacing
-      ) {
-        return current;
-      }
-
-      return nextOverlayStyle;
-    });
-  }, [
-    hasTextareaFocus,
-    selectionEnd,
-    selectionStart,
-    suggestion,
-    value,
-    textareaRef,
-  ]);
+    setGhostMirrorStyle((current) =>
+      isSameTextareaGhostMirrorStyle(current, nextStyle) ? current : nextStyle
+    );
+    if (el && ghostMirrorRef.current) {
+      ghostMirrorRef.current.scrollTop = el.scrollTop;
+    }
+  });
 
   useLayoutEffect(() => {
     if (!mentionMenuOpen) {
@@ -638,49 +612,41 @@ function PromptInputTextarea({
     syncSelection(e.target);
   };
 
-  const acceptSuggestion = useCallback(() => {
-    const el = textareaRef.current;
-    if (!suggestion || !el) {
-      return;
-    }
+  const insertGhostText = useCallback(
+    (text: string) => {
+      const el = textareaRef.current;
+      if (!text || !el) {
+        return;
+      }
 
-    const insertionText = getInlineAutocompleteInsertionText({
-      beforeCursor: value.slice(0, selectionStart),
-      suggestion,
-    });
+      const result = insertTextareaTextWithUndo({
+        textarea: el,
+        text,
+        selectionStart,
+        selectionEnd,
+      });
 
-    if (!insertionText) {
-      return;
-    }
+      adjustHeight(el);
+      pendingAutocompleteValueRef.current = result.value;
+      setValue(result.value);
+      setSelectionStart(result.selectionStart);
+      setSelectionEnd(result.selectionEnd);
 
-    const result = insertTextareaTextWithUndo({
-      textarea: el,
-      text: insertionText,
-      selectionStart,
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(result.selectionStart, result.selectionEnd);
+        syncSelection(el);
+      });
+    },
+    [
+      adjustHeight,
       selectionEnd,
-    });
-
-    adjustHeight(el);
-    pendingAutocompleteValueRef.current = result.value;
-    setValue(result.value);
-    recordAccepted();
-
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(result.selectionStart, result.selectionEnd);
-      syncSelection(el);
-    });
-  }, [
-    adjustHeight,
-    recordAccepted,
-    selectionEnd,
-    selectionStart,
-    setValue,
-    suggestion,
-    syncSelection,
-    textareaRef,
-    value,
-  ]);
+      selectionStart,
+      setValue,
+      syncSelection,
+      textareaRef,
+    ]
+  );
 
   const acceptMentionSelection = useCallback(
     (item: MentionEntitySearchResult) => {
@@ -795,14 +761,21 @@ function PromptInputTextarea({
       return;
     }
 
-    if (suggestion && e.key === "Tab") {
+    if (ghostText && e.key === "Tab") {
       e.preventDefault();
-      acceptSuggestion();
+      insertGhostText(takeSuggestion());
       onKeyDown?.(e);
       return;
     }
 
-    if (suggestion && e.key === "Escape") {
+    if (ghostText && isInlineSuggestionWordAcceptKey(e)) {
+      e.preventDefault();
+      insertGhostText(takeNextSuggestionWord());
+      onKeyDown?.(e);
+      return;
+    }
+
+    if (ghostText && e.key === "Escape") {
       e.preventDefault();
       dismissSuggestion("escape");
       onKeyDown?.(e);
@@ -841,20 +814,18 @@ function PromptInputTextarea({
           </div>
         </FloatingPortal>
       ) : null}
-      {suggestion && overlayStyle && !isLoading ? (
-        <div
-          className="text-muted-foreground pointer-events-none absolute z-10 overflow-hidden whitespace-nowrap opacity-55 select-none"
-          style={{
-            ...overlayStyle,
-            WebkitMaskImage:
-              "linear-gradient(to right, black 0%, black 82%, transparent 100%)",
-            maskImage:
-              "linear-gradient(to right, black 0%, black 82%, transparent 100%)",
-          }}
-        >
-          {suggestion}
+      {showGhost && ghostMirrorStyle ? (
+        <div ref={ghostMirrorRef} aria-hidden="true" style={ghostMirrorStyle}>
+          {value.slice(0, selectionStart)}
+          <span className="text-muted-foreground">{ghostText}</span>
+          {value.slice(selectionStart)}
+          {/* Keeps a trailing newline's empty last line in the layout. */}
+          {"\u200b"}
         </div>
       ) : null}
+      <span role="status" className="sr-only">
+        {announcement}
+      </span>
       <Textarea
         ref={handleRef}
         {...props}
@@ -874,7 +845,9 @@ function PromptInputTextarea({
           props.onKeyUp?.(e);
         }}
         onScroll={(e) => {
-          dismissSuggestion("manual");
+          if (ghostMirrorRef.current) {
+            ghostMirrorRef.current.scrollTop = e.currentTarget.scrollTop;
+          }
           syncSelection(e.currentTarget);
           props.onScroll?.(e);
         }}
@@ -882,7 +855,6 @@ function PromptInputTextarea({
         onBlur={handleBlur}
         onCompositionStart={(e) => {
           setIsComposing((current) => (current ? current : true));
-          dismissSuggestion("manual");
           mentionAutocomplete?.onQueryChange(null);
           props.onCompositionStart?.(e);
         }}
@@ -895,8 +867,23 @@ function PromptInputTextarea({
           "text-primary min-h-11 w-full resize-none border-none bg-transparent shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
           className
         )}
+        style={
+          showGhost && ghostMirrorStyle
+            ? // The mirror draws the text with the ghost in flow; the textarea
+              // keeps the caret and input but hides its own glyphs meanwhile.
+              { ...props.style, WebkitTextFillColor: "transparent" }
+            : props.style
+        }
         role={mentionAutocomplete ? "combobox" : undefined}
-        aria-autocomplete={mentionAutocomplete ? "list" : undefined}
+        aria-autocomplete={
+          mentionAutocomplete
+            ? showGhost
+              ? "both"
+              : "list"
+            : showGhost
+              ? "inline"
+              : undefined
+        }
         aria-controls={mentionMenuOpen ? mentionListboxId : undefined}
         aria-expanded={mentionAutocomplete ? mentionMenuOpen : undefined}
         aria-activedescendant={activeMentionOptionId}
