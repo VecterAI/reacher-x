@@ -4,7 +4,10 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useDebouncedValue } from "@/shared/lib/utils/useDebouncedValue";
 import { QUERY_CHAR_LIMIT } from "@/shared/lib/utils/validation/queryLimit";
-import { dedupeProspectListResults } from "@/features/prospects/lib/prospectListResults";
+import {
+  dedupeProspectListResults,
+  type ProspectListRow,
+} from "@/features/prospects/lib/prospectListResults";
 
 export const PROSPECTS_PER_PAGE = 10;
 
@@ -25,7 +28,7 @@ export type ProspectListSearchArgs = {
   createdAfterMs?: number;
   createdBeforeMs?: number;
   searchQuery: string;
-  browseResults: Doc<"prospectSummaries">[];
+  browseResults: ProspectListRow[];
   browseStatus: PaginationStatus;
   onBrowseLoadMore: (numItems: number) => void;
 };
@@ -53,9 +56,7 @@ export function useProspectListSearch({
   const browseMode = searchQuery.trim() === "";
   const isDebouncing = !browseMode && debouncedSearch !== searchQuery;
 
-  const [unifiedResults, setUnifiedResults] = useState<
-    Doc<"prospectSummaries">[]
-  >([]);
+  const [unifiedResults, setUnifiedResults] = useState<ProspectListRow[]>([]);
   const [unifiedCursor, setUnifiedCursor] = useState<string | undefined>(
     undefined
   );
@@ -218,7 +219,6 @@ export function useProspectListSearch({
     [browseMode, browseResults, isDebouncing, unifiedResults]
   );
 
-  const prospectIdsForMap = displayProspects.map((p) => p.prospectId);
   const paginationResultCount = browseMode
     ? browseResults.length
     : unifiedResults.length;
@@ -235,6 +235,17 @@ export function useProspectListSearch({
     ? browseStatus === "LoadingMore"
     : unifiedLoadingMore;
 
+  // Search rows aren't reactive, so mark an opened one read here.
+  const markSearchResultOpened = useCallback((prospectId: Id<"prospects">) => {
+    setUnifiedResults((rows) =>
+      rows.some((row) => row.prospectId === prospectId && !row.opened)
+        ? rows.map((row) =>
+            row.prospectId === prospectId ? { ...row, opened: true } : row
+          )
+        : rows
+    );
+  }, []);
+
   const loadMore = useCallback(() => {
     if (browseMode) {
       onBrowseLoadMore(PROSPECTS_PER_PAGE);
@@ -246,7 +257,7 @@ export function useProspectListSearch({
   return {
     browseMode,
     displayProspects,
-    prospectIdsForMap,
+    markSearchResultOpened,
     paginationResultCount,
     isSearchLoading,
     isLoadingMore,

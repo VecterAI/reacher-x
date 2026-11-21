@@ -11,8 +11,11 @@ import {
   isTerminalStableFeedBuffer,
   normalizeProspectListSort,
 } from "./lib/prospectListFeedUtils";
-import { mutation, query } from "./lib/functionBuilders";
-import { listWorkspaceProspectSummariesPage } from "./prospectSummaries";
+import { internalQuery, mutation, query } from "./lib/functionBuilders";
+import {
+  getProspectSummariesByProspectIds,
+  listWorkspaceProspectSummariesPage,
+} from "./prospectSummaries";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   prospectListSortValidator,
@@ -455,6 +458,30 @@ async function getPendingFeedState(
   };
 }
 
+export type OpenedProspectSummary = Doc<"prospectSummaries"> & {
+  opened: boolean;
+};
+
+/** Adds whether the user has opened each row's prospect. */
+async function withOpenedState<T extends { page: Doc<"prospectSummaries">[] }>(
+  db: QueryCtx["db"],
+  userId: Id<"users">,
+  result: T
+): Promise<Omit<T, "page"> & { page: OpenedProspectSummary[] }> {
+  const page = await Promise.all(
+    result.page.map(async (row) => {
+      const view = await db
+        .query("prospectViews")
+        .withIndex("by_user_prospect", (q) =>
+          q.eq("userId", userId).eq("prospectId", row.prospectId)
+        )
+        .first();
+      return { ...row, opened: view !== null };
+    })
+  );
+  return { ...result, page };
+}
+
 export const listStableWorkspaceProspectSummaries = query({
   args: {
     workspaceId: v.id("workspaces"),
@@ -479,20 +506,24 @@ export const listStableWorkspaceProspectSummaries = query({
     });
 
     if (args.searchQuery?.trim()) {
-      return await listWorkspaceProspectSummariesPage(ctx.db, {
-        workspaceId: args.workspaceId,
-        sortBy: args.sortBy,
-        platform: args.platform,
-        prospectType: args.prospectType,
-        status: args.status,
-        fitScoreMin: args.fitScoreMin,
-        fitScoreMax: args.fitScoreMax,
-        createdAfterMs: args.createdAfterMs,
-        createdBeforeMs: args.createdBeforeMs,
-        visibilityMode: args.visibilityMode,
-        searchQuery: args.searchQuery.trim(),
-        paginationOpts: args.paginationOpts,
-      });
+      return await withOpenedState(
+        ctx.db,
+        user._id,
+        await listWorkspaceProspectSummariesPage(ctx.db, {
+          workspaceId: args.workspaceId,
+          sortBy: args.sortBy,
+          platform: args.platform,
+          prospectType: args.prospectType,
+          status: args.status,
+          fitScoreMin: args.fitScoreMin,
+          fitScoreMax: args.fitScoreMax,
+          createdAfterMs: args.createdAfterMs,
+          createdBeforeMs: args.createdBeforeMs,
+          visibilityMode: args.visibilityMode,
+          searchQuery: args.searchQuery.trim(),
+          paginationOpts: args.paginationOpts,
+        })
+      );
     }
     const sortBy = normalizeProspectListSort(args.sortBy);
     const scopeKey = buildFeedScopeKey(args);
@@ -504,35 +535,43 @@ export const listStableWorkspaceProspectSummaries = query({
     const snapshot = resolveFeedSnapshotState(snapshotCandidates, scopeKey, []);
 
     if (!snapshot) {
-      return await listWorkspaceProspectSummariesPage(ctx.db, {
+      return await withOpenedState(
+        ctx.db,
+        user._id,
+        await listWorkspaceProspectSummariesPage(ctx.db, {
+          workspaceId: args.workspaceId,
+          sortBy,
+          platform: args.platform,
+          prospectType: args.prospectType,
+          status: args.status,
+          fitScoreMin: args.fitScoreMin,
+          fitScoreMax: args.fitScoreMax,
+          createdAfterMs: args.createdAfterMs,
+          createdBeforeMs: args.createdBeforeMs,
+          visibilityMode: args.visibilityMode,
+          paginationOpts: args.paginationOpts,
+        })
+      );
+    }
+
+    return await withOpenedState(
+      ctx.db,
+      user._id,
+      await listStableFeedPage(ctx.db, {
         workspaceId: args.workspaceId,
+        status: args.status,
         sortBy,
         platform: args.platform,
         prospectType: args.prospectType,
-        status: args.status,
         fitScoreMin: args.fitScoreMin,
         fitScoreMax: args.fitScoreMax,
         createdAfterMs: args.createdAfterMs,
         createdBeforeMs: args.createdBeforeMs,
         visibilityMode: args.visibilityMode,
+        snapshot,
         paginationOpts: args.paginationOpts,
-      });
-    }
-
-    return await listStableFeedPage(ctx.db, {
-      workspaceId: args.workspaceId,
-      status: args.status,
-      sortBy,
-      platform: args.platform,
-      prospectType: args.prospectType,
-      fitScoreMin: args.fitScoreMin,
-      fitScoreMax: args.fitScoreMax,
-      createdAfterMs: args.createdAfterMs,
-      createdBeforeMs: args.createdBeforeMs,
-      visibilityMode: args.visibilityMode,
-      snapshot,
-      paginationOpts: args.paginationOpts,
-    });
+      })
+    );
   },
 });
 
@@ -601,31 +640,16 @@ export const getProspectListFeedState = query({
   },
 });
 
-export const getProspectOpenedMap = query({
+/** Summary rows for search results, with the user's opened state. */
+export const getOpenedProspectSummariesInternal = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
     prospectIds: v.array(v.id("prospects")),
   },
-  handler: async (ctx, { workspaceId, prospectIds }) => {
+  handler: async (ctx, args) => {
     const user = await requireUser(ctx, { notFoundMessage: "User not found" });
-    await requireOwnedWorkspace(ctx, workspaceId, {
-      user,
-      notFoundMessage: "Workspace not found",
-      notAuthorizedMessage: "Not authorized to view this workspace",
-    });
-
-    const capped = prospectIds.slice(0, 50);
-    const opened: Record<string, boolean> = {};
-    for (const prospectId of capped) {
-      const row = await ctx.db
-        .query("prospectViews")
-        .withIndex("by_user_prospect", (q) =>
-          q.eq("userId", user._id).eq("prospectId", prospectId)
-        )
-        .first();
-      opened[prospectId] = !!row;
-    }
-    return opened;
+    const rows = await getProspectSummariesByProspectIds(ctx.db, args);
+    return (await withOpenedState(ctx.db, user._id, { page: rows })).page;
   },
 });
 

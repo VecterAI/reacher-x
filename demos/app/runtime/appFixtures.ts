@@ -436,6 +436,7 @@ export function createAppFixtures(
       [...plans].map(([id, data]) => [id, data.plan.version])
     ),
     selectedWorkspaceId: workspaces[0]._id,
+    openedProspectIds: new Set<string>(),
     lifecycle: {
       activity: [],
       interactions: [],

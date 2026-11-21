@@ -11,6 +11,7 @@ import {
 import { action } from "./lib/functionBuilders";
 import { mergeTierOrderedProspectIds } from "./lib/prospectSearchMerge";
 import { logRagSearch } from "./lib/ragSearchHelpers";
+import type { OpenedProspectSummary } from "./prospectListFeed";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   prospectPlatformValidator,
@@ -72,7 +73,7 @@ function decodeUnifiedCursor(raw: string | undefined): UnifiedCursorV1 | null {
 }
 
 type UnifiedSearchResult = {
-  page: Doc<"prospectSummaries">[];
+  page: OpenedProspectSummary[];
   isDone: boolean;
   continueCursor: string;
 };
@@ -245,24 +246,21 @@ export const searchProspectsUnified = action({
       }
     }
 
-    const rows: Doc<"prospectSummaries">[] =
+    const rows: OpenedProspectSummary[] =
       pageIds.length === 0
         ? []
-        : ((await ctx.runQuery(
-            internal.prospectSummaries
-              .getProspectSummariesByProspectIdsInternal,
+        : await ctx.runQuery(
+            internal.prospectListFeed.getOpenedProspectSummariesInternal,
             {
               workspaceId: args.workspaceId,
               prospectIds: pageIds,
             }
-          )) as Doc<"prospectSummaries">[]);
+          );
 
-    const byId = new Map(
-      rows.map((r: Doc<"prospectSummaries">) => [String(r.prospectId), r])
-    );
-    const page: Doc<"prospectSummaries">[] = pageIds
+    const byId = new Map(rows.map((r) => [String(r.prospectId), r]));
+    const page: OpenedProspectSummary[] = pageIds
       .map((id) => byId.get(String(id)))
-      .filter((x): x is Doc<"prospectSummaries"> => x !== undefined);
+      .filter((x): x is OpenedProspectSummary => x !== undefined);
 
     const isDone = ftDone && pending.length === 0;
     const continueCursor = isDone
