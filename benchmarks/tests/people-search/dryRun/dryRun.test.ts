@@ -20,7 +20,10 @@ test("the dry run reaches D2 with synthetic labels read back and the learning me
     pilot.outcome.dropped.map((item) => item.unitId),
     ["w-p06-off", "w-p06-on"]
   );
-  assert.match(pilot.report, /Dropped by approval: w-p06-off, w-p06-on never ran/);
+  assert.match(
+    pilot.report,
+    /Dropped by approval: w-p06-off, w-p06-on never ran/
+  );
   const agreement = pilot.outcome.decision?.rows[0];
   assert.match(agreement?.condition ?? "", /Judges agree with people/);
   assert.notEqual(agreement?.status, "waiting");

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { replayTransport } from "../../../core/calls/http";
 import { flagRepeats, identityKeys } from "../../../core/judging/identity";
-import { isComplete, toClayQuery } from "../../../people-search/tools/direct/clay";
+import {
+  isComplete,
+  toClayQuery,
+} from "../../../people-search/tools/direct/clay";
 import { searchAdapters } from "../../../people-search/tools/registry";
 import { fixtureContext } from "../fixtures";
 import {

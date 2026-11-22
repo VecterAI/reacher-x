@@ -897,7 +897,9 @@ function droppedLines(outcome: SegmentOutcome) {
     `Dropped by approval: ${outcome.dropped
       .filter((item) => item.reason === reason)
       .map((item) => item.unitId)
-      .join(", ")} never ran and are not held for review. Reason: ${reason.replace(/\.$/, "")}.`,
+      .join(
+        ", "
+      )} never ran and are not held for review. Reason: ${reason.replace(/\.$/, "")}.`,
   ]);
 }
 

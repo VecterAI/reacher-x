@@ -60,9 +60,7 @@ const outcome = (prospects: ExportedProspect[]) =>
 
 const prospects = [
   // Cycle 1: four untyped rejected, one typed rejected, one qualified person.
-  ...["a1", "a2", "a3", "a4"].map((id, index) =>
-    prospect(id, 10 + index, {})
-  ),
+  ...["a1", "a2", "a3", "a4"].map((id, index) => prospect(id, 10 + index, {})),
   prospect("a5", 20, { prospectType: "unknown" }),
   prospect("a6", 30, { prospectType: "individual" }),
   prospect("a7", 40, {
@@ -93,7 +91,11 @@ test("on a people prompt, untyped rejected prospects are sampled and judged as p
   );
   assert.deepEqual(
     rejected.map((target) => target.unitId),
-    ["j-reacherx-p99-on-c1-x1", "j-reacherx-p99-on-c1-x2", "j-reacherx-p99-on-c1-x3"]
+    [
+      "j-reacherx-p99-on-c1-x1",
+      "j-reacherx-p99-on-c1-x2",
+      "j-reacherx-p99-on-c1-x3",
+    ]
   );
   // The top results are unchanged: only the qualified, typed person.
   assert.deepEqual(

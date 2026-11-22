@@ -137,7 +137,9 @@ test("two cycles: automatic cycles stop at the last one, and the run waits for q
   const functions = deployment.functionCalls();
   // Cycle 1's next start is held, then released once it settles; cycle 2's is canceled.
   assert.deepEqual(
-    functions.filter((name) => /cancelScheduledCycles|releaseNextCycle/.test(name)),
+    functions.filter((name) =>
+      /cancelScheduledCycles|releaseNextCycle/.test(name)
+    ),
     [
       "benchmarkPeopleSearch:cancelScheduledCycles",
       "benchmarkPeopleSearch:releaseNextCycle",
