@@ -34,13 +34,12 @@ test("terms outside the text are skipped and repeats each get an icon", () => {
   ).toBe(2);
 });
 
-test("icons are rendered as filled platform badge tiles", () => {
+test("platform icons render bare in the text color, without brand colors", () => {
   const markup = renderToStaticMarkup(
     <p>{inlinePlatformIcons("X/Twitter and LinkedIn")}</p>
   );
-  expect(markup).toContain("bg-platform-twitter-badge");
-  expect(markup).toContain("text-platform-twitter-badge-foreground");
-  expect(markup).toContain("bg-platform-linkedin-badge");
-  expect(markup).toContain("text-platform-linkedin-badge-foreground");
-  expect(markup).toContain("rounded-[4px]");
+  expect(markup).not.toContain("bg-platform-twitter-badge");
+  expect(markup).not.toContain("bg-platform-linkedin-badge");
+  expect(markup).not.toContain("text-muted-foreground");
+  expect(markup.match(/<svg/g)?.length).toBe(2);
 });

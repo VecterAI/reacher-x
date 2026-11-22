@@ -9,7 +9,7 @@ export const homepageFaqItems: FaqItem[] = [
     id: "what-is-reacherx",
     question: "What is ReacherX?",
     answer:
-      "ReacherX is an open-source △ Agent that combines real-time prospecting, a light CRM, and outreach in one product. It finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
+      "ReacherX is an open-source △ Agent that combines real-time people search, a light CRM, and outreach in one product. It finds relevant people on X/Twitter and LinkedIn, researches their background, and helps you plan outreach.",
   },
   {
     id: "why-not-diy",
@@ -96,7 +96,7 @@ export const pricingFaqItems: FaqItem[] = [
     id: "credit-card",
     question: "Do I need a credit card to get started?",
     answer:
-      "Yes. A paid plan is required to start △ Agent during launch. Every plan comes with a 30-day money-back guarantee.",
+      "Yes. A paid plan is required to start △ Agent during launch. Every plan comes with a full refund in the first 30 days.",
   },
   {
     id: "plan-limits",

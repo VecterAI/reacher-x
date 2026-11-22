@@ -46,3 +46,9 @@ jobs:
 
       - name: Benchmark tests
         run: pnpm test:benchmark
+
+      - name: Build and check function size
+        env:
+          NEXT_PUBLIC_CONVEX_URL: https://example.convex.cloud
+          NEXT_PUBLIC_BLOG_DEMO_ORIGIN: https://demos.reacherx.com
+        run: pnpm build

@@ -71,7 +71,7 @@ export function BlogArticle({
               Content preview · Not a published post
             </p>
           )}
-          <h1 className="text-4xl leading-tight font-normal text-balance md:text-5xl md:leading-14">
+          <h1 className="text-4xl leading-tight font-medium text-balance md:text-5xl md:leading-14">
             {post.title}
           </h1>
           <p className="text-muted-foreground mt-5 text-lg leading-7 text-pretty">
@@ -114,7 +114,7 @@ export function BlogArticle({
           aria-labelledby="related-posts"
           className="mx-auto mt-20 max-w-180"
         >
-          <h2 id="related-posts" className="mb-6 text-3xl font-normal">
+          <h2 id="related-posts" className="mb-6 text-3xl font-medium">
             Explore
           </h2>
           <div className="grid gap-8 md:grid-cols-2">
@@ -130,7 +130,7 @@ export function BlogArticle({
         </section>
       )}
       <section className="border-border mt-20 flex flex-wrap items-center justify-between gap-6 border-t pt-12">
-        <h2 className="text-3xl font-normal text-balance">
+        <h2 className="text-3xl font-medium text-balance">
           Find the network you need.
         </h2>
         <div className="grid w-full grid-cols-2 items-center gap-3 sm:flex sm:w-auto">

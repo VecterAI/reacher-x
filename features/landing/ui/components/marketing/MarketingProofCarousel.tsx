@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { WheelGesturesPlugin } from "embla-carousel-wheel-gestures";
 import {
   Carousel,
@@ -8,35 +8,18 @@ import {
   CarouselItem,
   type CarouselApi,
 } from "@/shared/ui/components/Carousel";
-import { Button } from "@/shared/ui/components/Button";
-import { ArrowBackIcon, ArrowForwardIcon } from "@/shared/ui/components/icons";
+import { cn } from "@/shared/lib/utils";
+import { MarketingCarouselEdgeFades } from "./MarketingCarouselEdgeFades";
 import { TestimonialCard } from "./TestimonialCard";
 import type { Tweet } from "@/features/threads/types";
 
-/** Same drag-and-arrow pattern as the capability carousels; no auto-drift. */
+/** Drag-and-wheel testimonials carousel with Vercel-style column dividers and edge fades. */
 export function MarketingProofCarousel({ tweets }: { tweets: Tweet[] }) {
   const [api, setApi] = useState<CarouselApi>();
   const [plugins] = useState(() => [WheelGesturesPlugin()]);
-  const [canPrev, setCanPrev] = useState(false);
-  const [canNext, setCanNext] = useState(false);
-
-  useEffect(() => {
-    if (!api) return;
-    const update = () => {
-      setCanPrev(api.canScrollPrev());
-      setCanNext(api.canScrollNext());
-    };
-    update();
-    api.on("select", update);
-    api.on("reInit", update);
-    return () => {
-      api.off("select", update);
-      api.off("reInit", update);
-    };
-  }, [api]);
 
   return (
-    <div>
+    <div className="relative">
       <Carousel
         setApi={setApi}
         plugins={plugins}
@@ -46,47 +29,47 @@ export function MarketingProofCarousel({ tweets }: { tweets: Tweet[] }) {
         aria-label="Early user quotes"
       >
         <CarouselContent
-          className="-ml-12 touch-pan-y touch-pinch-zoom"
+          className="ml-0 touch-pan-y touch-pinch-zoom"
           viewportClassName="overflow-visible"
         >
-          {tweets.map((tweet, index) => (
-            <CarouselItem
-              key={tweet.id_str}
-              className="relative basis-[86%] pl-12 sm:basis-[400px] lg:basis-[440px]"
-            >
-              {index > 0 ? (
+          {tweets.map((tweet, index) => {
+            const isFirst = index === 0;
+            const isLast = index > 0 && index === tweets.length - 1;
+            return (
+              <CarouselItem
+                key={tweet.id_str}
+                className={cn(
+                  "relative basis-auto pl-0",
+                  isFirst || isLast ? "w-78 sm:w-95" : "w-86 sm:w-107"
+                )}
+              >
+                {!isFirst ? (
+                  <div
+                    aria-hidden="true"
+                    className="bg-border pointer-events-none absolute -inset-y-5 left-0 w-px mask-[linear-gradient(rgba(0,0,0,0),rgb(0,0,0)_27px,rgb(0,0,0)_calc(100%-24px),rgba(0,0,0,0))]"
+                  />
+                ) : null}
                 <div
-                  aria-hidden="true"
-                  className="bg-border absolute inset-y-0 left-6 w-px"
-                />
-              ) : null}
-              <TestimonialCard tweet={tweet} />
-            </CarouselItem>
-          ))}
+                  className={cn(
+                    "h-full",
+                    isFirst
+                      ? "pr-8 sm:pr-12"
+                      : isLast
+                        ? "pl-8 sm:pl-12"
+                        : "px-8 sm:px-12"
+                  )}
+                >
+                  <TestimonialCard tweet={tweet} />
+                </div>
+              </CarouselItem>
+            );
+          })}
         </CarouselContent>
       </Carousel>
-      <div className="mt-8 flex justify-end gap-3">
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="Previous quotes"
-          disabled={!canPrev}
-          onClick={() => api?.scrollPrev()}
-          className="size-10 rounded-full"
-        >
-          <ArrowBackIcon className="size-5 fill-current" />
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="More quotes"
-          disabled={!canNext}
-          onClick={() => api?.scrollNext()}
-          className="size-10 rounded-full"
-        >
-          <ArrowForwardIcon className="size-5 fill-current" />
-        </Button>
-      </div>
+      <MarketingCarouselEdgeFades
+        api={api}
+        defaultRightFade={tweets.length > 1}
+      />
     </div>
   );
 }

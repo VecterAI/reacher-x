@@ -9,6 +9,7 @@ import type { createAppFixtures } from "./appFixtures";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import { getProspectMatchReasoning } from "@/shared/lib/prospectMatchReasoningHelpers";
 import { recordDemoActivity } from "./lifecycleHelpers";
+import { findHistoryPlanByProspect } from "./demoHistoryPlans";
 
 export function registerProspectServices(
   client: LocalClient,
@@ -103,7 +104,12 @@ export function registerProspectServices(
   client.register(api.chat.getActiveThreadForProspect, () => null);
   client.register(
     api.outreach.getProspectPlan,
-    ({ prospectId }) => state.plans.get(prospectId) ?? null
+    ({ prospectId }) =>
+      // Fixture plans win; history-only plans keep their chat card and panel
+      // consistent for people without a live plan.
+      state.plans.get(prospectId) ??
+      findHistoryPlanByProspect(prospectId) ??
+      null
   );
   client.register(api.linkedinEngagement.getEngagementsForPostKeys, () => ({}));
   client.register(api.twitterEngagement.getEngagementsForPosts, () => ({}));

@@ -1,5 +1,6 @@
 import { getPublicTestimonials } from "@/features/landing/lib/getPublicTestimonials";
-import { marketingPageWidth } from "./MarketingLayout";
+import { cn } from "@/shared/lib/utils";
+import { MarketingSection, marketingSectionTitle } from "./MarketingLayout";
 import { MarketingProofCarousel } from "./MarketingProofCarousel";
 import { FilledHeartIcon } from "@/shared/ui/components/icons";
 
@@ -16,23 +17,24 @@ export async function MarketingProof() {
   );
   if (!tweets.length) return null;
   return (
-    <section aria-labelledby="marketing-proof-title" className="py-10 lg:py-14">
-      <div className={`${marketingPageWidth} mb-8`}>
-        <h2
-          id="marketing-proof-title"
-          className="text-muted-foreground flex items-center justify-center gap-1.5 text-sm"
-        >
-          Loved
-          <FilledHeartIcon
-            className="text-primary size-3.5 shrink-0"
-            aria-hidden="true"
-          />
-          by our early community
-        </h2>
-      </div>
-      <div className={marketingPageWidth}>
+    <MarketingSection labelledBy="marketing-proof-title">
+      <h2
+        id="marketing-proof-title"
+        className={cn(
+          marketingSectionTitle,
+          "mx-auto text-center lg:max-w-none"
+        )}
+      >
+        Loved{" "}
+        <FilledHeartIcon
+          className="text-primary inline size-[0.72em] shrink-0 align-[-0.06em]"
+          aria-hidden="true"
+        />{" "}
+        by our early community.
+      </h2>
+      <div className="mt-14">
         <MarketingProofCarousel tweets={tweets} />
       </div>
-    </section>
+    </MarketingSection>
   );
 }

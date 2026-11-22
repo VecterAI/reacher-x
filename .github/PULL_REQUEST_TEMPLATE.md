@@ -17,7 +17,7 @@ Explain the problem being solved, the goal of the change, or the user impact.
 
 ## Screenshots Or Recordings
 
-If this changes UI, include before or after screenshots or a short recording.
+If this changes UI, include before or after screenshots or a short recording. The easy way is [uploads.sh](https://uploads.sh): run `uploads put ./screenshot.png --destination screenshots`, then paste the Markdown it prints here. No files committed, and each upload prints its own fresh link. See [Show your changes](https://github.com/VecterAI/reacher-x/blob/main/CONTRIBUTING.md#show-your-changes).
 
 ## Testing
 

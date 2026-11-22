@@ -27,6 +27,24 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    ignores: [
+      "features/agent/lib/xChatSdk.ts",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "ImportDeclaration[importKind!='type'][source.value='@xdevplatform/chat-xdk'], ImportExpression[source.value='@xdevplatform/chat-xdk']",
+          message:
+            "Load the XChat SDK with loadXChatSdk() from features/agent/lib/xChatSdk.ts so its WASM stays out of server bundles.",
+        },
+      ],
+    },
+  },
+  {
     files: ["convex/**/*.ts"],
     ignores: ["convex/lib/functionBuilders.ts"],
     rules: {

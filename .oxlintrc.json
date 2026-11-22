@@ -2,8 +2,28 @@
   "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxc-project.github.io/refs/heads/json-schemas/oxlint/v0.16.6/configuration_file.json",
   "rules": {
     "no-unused-vars": "warn",
-    "no-console": "off"
+    "no-console": "off",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "@xdevplatform/chat-xdk",
+            "allowTypeImports": true,
+            "message": "Load the XChat SDK with loadXChatSdk() from features/agent/lib/xChatSdk.ts so its WASM stays out of server bundles."
+          }
+        ]
+      }
+    ]
   },
+  "overrides": [
+    {
+      "files": ["features/agent/lib/xChatSdk.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
   "ignorePatterns": [
     ".next/**",
     "out/**",

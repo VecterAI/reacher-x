@@ -308,6 +308,22 @@ Values are OpenRouter model IDs unless otherwise noted.
 
 Role-specific model variables take precedence over the preset. A newly selected model uses generic OpenRouter provider fallback unless the code has a model-specific optimized route.
 
+### Low-Cost Models For Local Development And Contributors
+
+Unlocking the workspace dashboard requires generating and approving setup examples with plan access; once approved, the workspace opens immediately and schedules the background discovery, qualification, and enrichment workflows. Because `AI_ONBOARDING_MODEL` and `AI_MAIN_AGENT_MODEL` default to the expensive production model (`openai/gpt-6-luna-pro`), running setup and its background workflows on default settings is the #1 cost blocker for contributors and coding agents.
+
+When developing locally or contributing a fix, match quality does not matter; setup and the background workflows only need to run cleanly. Override the model roles in your dev Convex deployment with an ultra-cheap model that still handles tool calling and structured outputs reliably, such as a budget Gemini model (`google/gemini-2.5-flash-lite` or `google/gemini-3.1-flash-lite`) or a GLM model (`z-ai/glm-5.3-flash` or `z-ai/glm-4.7-flash`):
+
+```bash
+npx convex env set AI_ONBOARDING_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_SETUP_AGENT_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_MAIN_AGENT_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_FAST_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_REASONING_MODEL google/gemini-2.5-flash-lite
+```
+
+Do **not** use free OpenRouter models (such as Nvidia Nemotron `:free` variants). Free models fail to call tools and generate structured outputs reliably, which breaks the setup, discovery, qualification, and enrichment workflows.
+
 ### Jev Decision Model And Qualification Pre-Filter
 
 `AI_JEV_MODEL` selects the TypeSafe Jev System One decision model, reached through the OpenRouter Decisions API with the shared `OPENROUTER_API_KEY`. Unlike the generative roles above, Jev returns typed answers with probabilities instead of generated text, and output tokens are not billed. It is used by the read-only replay evaluation (`npx convex run jevEvalActions:runJevReplayEval`) and by the qualification pre-filter.
@@ -337,7 +353,7 @@ The RAG component is configured for exactly 1536 dimensions. Any value assigned 
 
 Onboarding generates targeting criteria, ideal profiles, and fictional example people with AI. These examples let the user review the intended audience without waiting for real prospect searches. They are not discovered people or evidence of real activity.
 
-The visible flow is audience input and example review, followed by plan selection when needed. Account connections are not an onboarding step; users can connect accounts later in Settings. A confirmed paid subscription or active complimentary plan grant satisfies the plan requirement. Real discovery starts in the background when setup finishes with approved examples and plan access. Unpaid users can generate and review examples before selecting a plan.
+The visible flow is audience input and example review, followed by plan selection when needed. Account connections are not an onboarding step; users can connect accounts later in Settings. A confirmed paid subscription or active complimentary plan grant satisfies the plan requirement. Real discovery starts in the background when setup finishes with approved examples and plan access. Unpaid users can generate and review examples before selecting a plan. For local development and contributor testing, see [Low-Cost Models For Local Development And Contributors](#low-cost-models-for-local-development-and-contributors) so completing setup and its discovery, qualification, and enrichment workflows does not use expensive production models.
 
 Example generation is scheduled directly through Convex, outside the shared 36-slot tenant background queue. The setup workflow still coordinates progress. Session state and generated profiles are persisted: leaving and returning reuses saved examples or pending work. Revision and attempt checks reject duplicate execution and late results. This removes contention with background admission, but Convex capacity and AI provider latency/rate limits still apply.
 

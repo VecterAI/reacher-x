@@ -41,6 +41,17 @@ test("onboarding has a dedicated GPT-6 Luna Pro route", () => {
   assert.match(qualificationSource, /routing: "onboarding"/);
 });
 
+test("structured generation routing honors AI_FAST_MODEL and AI_REASONING_MODEL overrides", () => {
+  assert.match(
+    aiSource,
+    /if \(routing === "fast"\) \{[\s\S]*?model: FAST_MODEL,[\s\S]*?providerOptions: FAST_PROVIDER_OPTIONS/
+  );
+  assert.match(
+    aiSource,
+    /model: REASONING_MODEL,[\s\S]*?providerOptions: AGENT_PROVIDER_OPTIONS/
+  );
+});
+
 test("keyword generation uses the onboarding route and receives original intent", () => {
   assert.match(
     readFileSync("convex/agents/internal.ts", "utf8"),

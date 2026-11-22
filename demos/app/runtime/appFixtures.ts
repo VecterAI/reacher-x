@@ -49,6 +49,23 @@ export const workosViewer = {
   metadata: {},
 };
 
+/**
+ * Article walkthroughs resume mid-conversation, so the people their shots open
+ * must already sit in the tab the shots click. Audience demos and the
+ * find-potential-customers walkthrough keep the story defaults.
+ */
+export const ARTICLE_STORY_STATUS_OVERRIDES: Partial<
+  Record<BlogDemoId, Record<string, "new" | "contacted" | "in_progress">>
+> = {
+  "write-with-autocomplete": { use_case_demo_audience_1: "in_progress" },
+  "manage-dm-conversations": {
+    use_case_demo_audience_1: "in_progress",
+    use_case_demo_audience_3: "in_progress",
+  },
+  "send-voice-notes": { use_case_demo_audience_1: "in_progress" },
+  "outreach-with-images-and-video": { use_case_demo_audience_1: "in_progress" },
+};
+
 export function createAppFixtures(
   scenario: BlogDemoId = "manage-people-with-reacherx"
 ) {
@@ -163,17 +180,25 @@ export function createAppFixtures(
         editorial,
         "linkedin"
       );
-      return dataset.prospects.slice(0, 8).map((prospect) =>
-        applyDemoPortrait({
-          ...prospect,
-          workspaceId: workspace._id,
-          userId: viewer._id,
-          enrichmentStatus: "enriched" as const,
-          qualifiedAt: prospect._creationTime,
-          enrichedAt: prospect._creationTime,
-          readyAt: prospect._creationTime,
-        })
-      );
+      // find-candidates keeps the clean-start contract: a fresh workspace has
+      // no converted people yet.
+      return dataset.prospects
+        .filter(
+          (prospect) =>
+            scenario !== "find-candidates" || prospect.status !== "converted"
+        )
+        .slice(0, scenario === "read-your-reacherx-analytics" ? 8 : 37)
+        .map((prospect) =>
+          applyDemoPortrait({
+            ...prospect,
+            workspaceId: workspace._id,
+            userId: viewer._id,
+            enrichmentStatus: "enriched" as const,
+            qualifiedAt: prospect._creationTime,
+            enrichedAt: prospect._creationTime,
+            readyAt: prospect._creationTime,
+          })
+        );
     }
   );
   Object.assign(workspaces[1], {
@@ -202,6 +227,12 @@ export function createAppFixtures(
       person.qualificationStatus === "qualified"
         ? person._creationTime
         : undefined;
+    const statusOverride =
+      ARTICLE_STORY_STATUS_OVERRIDES[scenario]?.[person._id];
+    if (statusOverride) {
+      person.status = statusOverride;
+      person.pipelineStage = statusOverride;
+    }
     if (!story && person._id === "use_case_demo_candidates_7")
       person.location = "Lyon, France";
     if (!story && person._id === "use_case_demo_candidates_10") {

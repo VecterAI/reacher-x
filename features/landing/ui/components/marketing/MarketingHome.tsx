@@ -41,9 +41,11 @@ function HeroReveal() {
           {line}
         </span>
       ))}
-      <span className="block font-medium">
+      <span className="block">
         {"for "}
-        <span className="font-pixel-square">everyone</span>
+        {/* The pixel face ships only weight 400, so 600 relies on the
+        browser's synthetic bold to keep up with the medium Geist around it. */}
+        <span className="font-pixel-square font-semibold">everyone</span>
         {"."}
       </span>
     </>
@@ -61,18 +63,23 @@ function HeroTagline() {
   return (
     <>
       <span>{inlinePlatformIcons(rest.slice(0, index))}</span>
+      {/* The repo link always sits on its own line below the tagline. */}
+      <br />
       <a
         href={GITHUB_REPO_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="whitespace-nowrap hover:underline"
+        className="text-muted-foreground whitespace-nowrap hover:underline"
       >
         <GitHubIcon
           className="mr-1 inline size-4 fill-current align-[-2px]"
           aria-hidden="true"
         />
         {phrase}
-        <span aria-hidden="true"> ↗</span>
+        <span aria-hidden="true" className="text-foreground">
+          {" "}
+          ↗
+        </span>
       </a>
       <span>{inlinePlatformIcons(rest.slice(index + phrase.length))}</span>
     </>
@@ -91,7 +98,7 @@ export function MarketingHome() {
           <p className="text-foreground flex flex-wrap items-center justify-center gap-2 text-center text-sm font-medium">
             <span>
               {highlightTerms(MARKETING_COPY.home.guaranteeNote, [
-                "30-day money-back guarantee",
+                "Full refund in 30 days",
               ])}
             </span>
             <Link

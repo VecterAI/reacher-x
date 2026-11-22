@@ -8,7 +8,11 @@ interface AgentWorkspaceEmptyStateProps {
   children: ReactNode;
   isResolving: boolean;
   /** Optional visible headline above the composer (setup empty entry). */
-  headline?: string;
+  headline?: ReactNode;
+}
+
+export function SetupAgentHeadline() {
+  return "Tell △ Agent who you're looking for.";
 }
 
 export function AgentWorkspaceEmptyState({
@@ -31,7 +35,7 @@ export function AgentWorkspaceEmptyState({
         id="agent-empty-state-title"
         className={
           headline
-            ? "font-pixel-square text-foreground mb-4 text-center text-2xl font-medium tracking-tight text-pretty sm:text-3xl"
+            ? "text-foreground mb-4 text-center text-2xl font-medium tracking-tight text-pretty sm:text-3xl"
             : "sr-only"
         }
       >

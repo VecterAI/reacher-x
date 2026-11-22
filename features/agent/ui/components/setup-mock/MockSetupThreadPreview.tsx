@@ -46,7 +46,10 @@ import {
   PageLayout,
 } from "@/features/webapp/ui/components";
 import { MockConnectionsStep } from "./MockConnectionsStep";
-import { AgentWorkspaceEmptyState } from "@/features/agent/ui/components/AgentWorkspaceEmptyState";
+import {
+  AgentWorkspaceEmptyState,
+  SetupAgentHeadline,
+} from "@/features/agent/ui/components/AgentWorkspaceEmptyState";
 import { OnboardingProgressCard } from "@/features/agent/ui/components/OnboardingProgressCard";
 import { InlineProgressCard } from "@/features/agent/ui/components/InlineProgressCard";
 import { PlanStep } from "@/features/agent/ui/components/onboarding/PlanStep";
@@ -566,7 +569,7 @@ export function MockSetupThreadPreview() {
                       {caseId === "empty" ? (
                         <AgentWorkspaceEmptyState
                           isResolving={false}
-                          headline="Who should Agent find?"
+                          headline={<SetupAgentHeadline />}
                         >
                           {composer}
                         </AgentWorkspaceEmptyState>

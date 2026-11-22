@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Next.js 16: Enable Cache Components (PPR + "use cache" directive)
+  // Next.js 16: Enable Cache Components (PPR + "use cache" directive) and
+  // Partial Prefetching so Link prefetches static shells without dynamic data.
   cacheComponents: true,
+  partialPrefetching: true,
 
   // Keep Flight headers visible to proxy.ts so Markdown negotiation cannot
   // rewrite a React navigation/prefetch response into plain text.

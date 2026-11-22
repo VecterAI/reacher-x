@@ -15,6 +15,8 @@ Supporting repo policies:
 
 ## Before you start
 
+Read [VISION.md](./VISION.md) first. It explains what ReacherX is for, what it is not, and where it is going, so product decisions make sense.
+
 Please talk to me before working on:
 
 - new features
@@ -45,7 +47,9 @@ Small bug fixes, typo fixes, and focused polish PRs are fine without a long pre-
 
 ## Local setup
 
-Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned.
+The complete guide for humans and coding agents is [docs/development-setup.md](./docs/development-setup.md). It covers every service and where its key goes, dev vs production environments, the system diagram, agent tools such as the Convex MCP server, and the ready-made agent prompt shown in the [README](./README.md#hand-this-prompt-to-a-coding-agent).
+
+Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned. Node.js 25 and later no longer bundle Corepack, so if `corepack enable pnpm` fails, run `npm install -g corepack` first.
 
 Contributors do not have push access to the main repo, so start by forking it on GitHub. Clone your fork and add the main repo as a second remote so you can stay in sync:
 
@@ -58,7 +62,7 @@ cd reacher-x
 git remote add upstream https://github.com/VecterAI/reacher-x.git
 git fetch upstream
 
-corepack enable pnpm
+corepack enable pnpm # on Node.js 25+, run npm install -g corepack first
 pnpm install
 cp .env.example .env.local
 npx convex dev --once
@@ -96,9 +100,14 @@ Depending on what you work on, you may need:
 
 You only need the provider credentials for the feature area you are developing. Do not upload the whole `.env.local` file to Convex. It contains frontend and local-only values as well as secrets intended for other runtimes.
 
+To unlock the workspace dashboard locally, you must generate and approve setup examples with plan access; the workspace then opens immediately while the discovery, qualification, and enrichment workflows run in the background. Those steps default to expensive production models on OpenRouter. Since you do not need high match quality when building or testing a contribution, swap the model roles in your dev Convex deployment to a cheap model that handles tool calling reliably (such as `google/gemini-2.5-flash-lite` or `z-ai/glm-5.3-flash`), and avoid free models (like Nvidia Nemotron) because broken tool calling will stall setup and background workflows. See [docs/development-setup.md](./docs/development-setup.md#unlocking-the-dashboard-on-a-budget-openrouter-models) for the commands.
+
 ## How the codebase is organized
 
 - `app/`: route structure and page-level entry points.
+
+The complete architecture walkthrough with the pipeline, workflows, memory, and reporting lives in [docs/architecture.md](./docs/architecture.md).
+
 - `features/`: product features and UI modules.
 - `shared/`: shared UI, hooks, types, and utilities.
 - `convex/agents/tools/`: thin tool wrappers exposed to agents.
@@ -224,6 +233,30 @@ Keep one PR focused on one change. If `main` has moved and your PR conflicts, re
 
 CI runs on every pull request and checks types, lint, formatting on the changed files, and the Convex tests. Run the same checks locally before opening the PR so it goes green on the first push.
 
+## Show your changes
+
+Screenshots and short recordings make interface changes much easier to review, and [uploads.sh](https://uploads.sh) hosts them at a stable public URL so nothing has to be committed to the repository.
+
+Set it up once:
+
+```bash
+npm install -g @buildinternet/uploads
+uploads login
+```
+
+Upload what you changed as you work. Every upload prints a Markdown line that renders inline in a pull request or issue:
+
+```bash
+uploads put ./before.png --state before --destination screenshots
+uploads put ./after.png --state after --destination screenshots
+```
+
+Paste that line into the pull request description or a comment. If a screenshot changes, upload the new version and swap the link in your PR.
+
+Maintainers with push access to this repository can also run `uploads attach ./after.png`, which posts one comment on the pull request that stays up to date. Contributions from forks use the paste flow above.
+
+Uploaded files are public to anyone with the URL, so keep secrets and credentials out of your captures. If you use a coding agent, it can run these commands for you.
+
 ## PR checklist
 
 Before opening a PR:
@@ -231,7 +264,7 @@ Before opening a PR:
 - explain what changed
 - explain why it changed
 - mention any env var, schema, or integration impact
-- include screenshots for UI changes
+- include screenshots for UI changes, following [Show your changes](#show-your-changes)
 - run the checks that apply
 
 Useful commands:
@@ -247,6 +280,15 @@ pnpm build
 Run the focused test commands that cover your change as well. Keep editor/LSP diagnostics clean for every touched code file.
 
 CI must pass on your PR before it can be merged.
+
+## Labeling issues
+
+External contributors cannot set GitHub labels directly. To tag an issue you open:
+
+- Select any matching checkboxes under **Areas** in the bug report or feature request form, or
+- Comment `/label backend, prospecting` on your own issue.
+
+Supported tags: `bug`, `enhancement`, `documentation`, `question`, `backend`, `ui`, `prospecting`, `benchmark`, `performance`, and `architecture`. Priority and triage labels stay maintainer-only.
 
 ## Where to ask questions
 

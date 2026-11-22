@@ -191,6 +191,7 @@ const DAY_MS = 24 * HOUR_MS;
 const BASE_TIME = USE_CASE_DEMO_REFERENCE_TIME;
 
 const SHOWCASE_THREAD_ID = "demo-thread-plan-update";
+const MEDIA_THREAD_ID = "demo-thread-web-media";
 
 function firstName(displayName: string | undefined): string {
   return displayName?.split(" ")[0] ?? "there";
@@ -233,6 +234,25 @@ function buildShowcasePlan(dataset: UseCaseDemoDataset): DemoOutreachPlan {
         description: `DM ${firstName(p0.displayName)} with a specific opener`,
         status: "pending",
         content: `Hi ${firstName(p0.displayName)}, saw your post: "${signalSnippet(p0)}" We help teams reach the people who are already asking for what they sell. Happy to show you what that looks like for you.`,
+      },
+    ],
+    outreachProgress: undefined,
+  };
+}
+
+function buildMediaPlan(dataset: UseCaseDemoDataset): DemoOutreachPlan {
+  const p2 = dataset.prospects[2];
+  return {
+    status: "draft",
+    rationale: `Their own post shows the problem better than any pitch, so the screenshot from their thread opens the DM and the note stays short. Media only when it clarifies the message.`,
+    tasks: [
+      {
+        _id: "demo-task-media-1",
+        order: 1,
+        type: "dm",
+        description: `DM ${firstName(p2.displayName)} with the screenshot and a short note`,
+        status: "pending",
+        content: `Hi ${firstName(p2.displayName)}, the screenshot is from your own post: "${signalSnippet(p2)}" That is the exact problem we built for. Happy to show you what a single trail looks like for your projects.`,
       },
     ],
     outreachProgress: undefined,
@@ -405,6 +425,112 @@ function buildDemoThreads(
             {
               type: "text",
               text: `Done. ${bulkCount} tailored plans are ready for review. Each follows your copy rules and uses the tutorial only where it adds clear value.`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "demo-thread-engage",
+      firstMessage: "Engage with the latest posts first",
+      createdAt: BASE_TIME - 26 * HOUR_MS,
+      messages: [
+        {
+          id: "demo-msg-15",
+          role: "user",
+          segments: [
+            "Like and comment on ",
+            { mention: p1.displayName ?? "" },
+            "'s latest post. Keep the comment about their work, not about us.",
+          ],
+        },
+        {
+          id: "demo-msg-16",
+          role: "agent",
+          parts: [
+            {
+              type: "tools",
+              toolNames: ["getSocialContext", "likePost", "postReply"],
+            },
+            {
+              type: "text",
+              text: `Done. I liked the post and left a comment about their approach, no product mention: "The way you separated signal from noise here is rare. Curious what you do next."\n\nThe like is live and the comment is posted from your account. I left the DM out of this step, as you asked.`,
+            },
+          ],
+        },
+        {
+          id: "demo-msg-17",
+          role: "user",
+          segments: [
+            "Good. Do the same for the other two people from that thread.",
+          ],
+        },
+        {
+          id: "demo-msg-18",
+          role: "agent",
+          parts: [
+            {
+              type: "tools",
+              toolNames: ["getSocialContext", "likePost", "postReply"],
+            },
+            {
+              type: "progress",
+              title: "2 of 2 posts engaged",
+              status: "Liked and commented on both posts",
+            },
+            {
+              type: "text",
+              text: "Both done. Each comment references the person's own work, so the engagement reads as genuine. When you are ready, I can draft the first DMs while the posts are still fresh in their notifications.",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "demo-thread-web-media",
+      firstMessage: "Send her a relevant image with the DM",
+      createdAt: BASE_TIME - 4 * DAY_MS,
+      messages: [
+        {
+          id: "demo-msg-19",
+          role: "user",
+          segments: [
+            "For ",
+            { mention: p2.displayName ?? "" },
+            ": find a screenshot or image online that fits their post and send it with a short DM.",
+          ],
+        },
+        {
+          id: "demo-msg-20",
+          role: "agent",
+          parts: [
+            { type: "tools", toolNames: ["webSearch", "displayEntity"] },
+            {
+              type: "text",
+              text: `I found a public screenshot from ${firstName(p2.displayName)}'s own thread showing the exact workflow problem they described. Draft below: the image goes first so the context is visible before my line.`,
+            },
+            {
+              type: "plan",
+            },
+          ],
+        },
+        {
+          id: "demo-msg-21",
+          role: "user",
+          segments: ["Looks right. Send it once I approve."],
+        },
+        {
+          id: "demo-msg-22",
+          role: "agent",
+          parts: [
+            {
+              type: "text",
+              text: "Saved. The DM waits for your approval with the image attached, and your media preference applies: media only when it makes the message clearer, never as decoration.",
+            },
+            {
+              type: "memory",
+              title:
+                "Attach web-found media only when it clarifies the message",
             },
           ],
         },
@@ -1018,6 +1144,7 @@ export function DemoAgentPage({
     () => buildShowcasePlan(dataset),
     [dataset]
   );
+  const mediaPlan = React.useMemo(() => buildMediaPlan(dataset), [dataset]);
   const [threads, setThreads] = React.useState<DemoThread[]>(() =>
     buildDemoThreads(dataset, entityPluralLower)
   );
@@ -1027,6 +1154,7 @@ export function DemoAgentPage({
   const [historyOpen, setHistoryOpen] = React.useState(true);
   const [planPanelOpen, setPlanPanelOpen] = React.useState(false);
   const [planStatus, setPlanStatus] = React.useState("draft");
+  const [mediaPlanStatus, setMediaPlanStatus] = React.useState("draft");
   const [input, setInput] = React.useState("");
   const editorApiRef = React.useRef<ComposerEditorAPI | null>(null);
   const nextIdRef = React.useRef(100);
@@ -1035,6 +1163,14 @@ export function DemoAgentPage({
     threads.find((thread) => thread.id === activeThreadId) ?? null;
   const messages = activeThread?.messages ?? [];
   const isEmpty = messages.length === 0;
+  // The media thread reviews its own one-DM plan, separate from the
+  // showcase thread's three-person plan.
+  const isMediaThread = activeThread?.id === MEDIA_THREAD_ID;
+  const reviewPlan = isMediaThread ? mediaPlan : showcasePlan;
+  const reviewPlanStatus = isMediaThread ? mediaPlanStatus : planStatus;
+  const setReviewPlanStatus = isMediaThread
+    ? setMediaPlanStatus
+    : setPlanStatus;
 
   const handleNewThread = React.useCallback(() => {
     setActiveThreadId(null);
@@ -1234,10 +1370,10 @@ export function DemoAgentPage({
                               ) : (
                                 <DemoAgentMessageRow
                                   message={message}
-                                  plan={showcasePlan}
-                                  planStatus={planStatus}
+                                  plan={reviewPlan}
+                                  planStatus={reviewPlanStatus}
                                   onApprovePlan={() =>
-                                    setPlanStatus("approved")
+                                    setReviewPlanStatus("approved")
                                   }
                                   onShowPlan={() => {
                                     setHistoryOpen(false);
@@ -1292,34 +1428,34 @@ export function DemoAgentPage({
               onBack={() => setPlanPanelOpen(false)}
               titleSuffix={
                 <Badge variant="outline" className="text-xs font-normal">
-                  {getOutreachPlanStatusLabel(planStatus)}
+                  {getOutreachPlanStatusLabel(reviewPlanStatus)}
                 </Badge>
               }
               actions={
                 <div className="flex items-center gap-1">
-                  {planStatus === "draft" ? (
+                  {reviewPlanStatus === "draft" ? (
                     <Button
                       size="xs"
                       variant="secondary"
-                      onClick={() => setPlanStatus("executing")}
+                      onClick={() => setReviewPlanStatus("executing")}
                     >
                       Approve
                     </Button>
                   ) : null}
-                  {planStatus === "executing" ? (
+                  {reviewPlanStatus === "executing" ? (
                     <Button
                       size="xs"
                       variant="secondary"
-                      onClick={() => setPlanStatus("paused")}
+                      onClick={() => setReviewPlanStatus("paused")}
                     >
                       Pause
                     </Button>
                   ) : null}
-                  {planStatus === "paused" ? (
+                  {reviewPlanStatus === "paused" ? (
                     <Button
                       size="xs"
                       variant="secondary"
-                      onClick={() => setPlanStatus("executing")}
+                      onClick={() => setReviewPlanStatus("executing")}
                     >
                       Resume
                     </Button>
@@ -1337,12 +1473,17 @@ export function DemoAgentPage({
                 <OutreachPlanCard
                   variant="panel"
                   showHeader={false}
-                  status={planStatus}
-                  rationale={showcasePlan.rationale}
+                  status={reviewPlanStatus}
+                  rationale={reviewPlan.rationale}
                   strategyLabel="Strategy"
                   tasksLabel="Tasks"
-                  tasks={showcasePlan.tasks}
-                  prospectId={dataset.prospects[0]._id}
+                  tasks={reviewPlan.tasks}
+                  prospectId={
+                    (isMediaThread
+                      ? dataset.prospects[2]
+                      : dataset.prospects[0]
+                    )._id
+                  }
                   className="mt-4 rounded-none border-none"
                 />
               </PageContent>
