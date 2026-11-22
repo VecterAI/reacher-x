@@ -1,0 +1,5 @@
+# Private benchmark responses and round-one local dependencies
+benchmarks/.local/
+benchmarks/people-search/data/
+benchmarks/people-search/.venv/
+benchmarks/people-search/.upstream/

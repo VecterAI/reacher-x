@@ -44,6 +44,7 @@ import {
   prioritizeQueries,
   type QueryPriority,
 } from "./lib/queryPrioritizationCore";
+import { isBenchmarkLearningOff } from "./lib/benchmarkLearningControl";
 import { getStricterDiscoveryStage } from "./lib/targetingSpecCore";
 import {
   resolveTwitterProspectingSearchMode,
@@ -154,6 +155,9 @@ async function getPrioritizedSocialQueries(
 > {
   const workspace = await ctx.db.get(args.workspaceId);
   if (!workspace) return [];
+  // Benchmark control group: no ranking by past results and no cold-query
+  // pause, so every query rotates by oldest use.
+  const learningOff = isBenchmarkLearningOff(String(args.workspaceId));
   const [keywords, performanceRows] = await Promise.all([
     ctx.db
       .query("keywords")
@@ -161,12 +165,14 @@ async function getPrioritizedSocialQueries(
         q.eq("workspaceId", args.workspaceId).eq("type", "social_query")
       )
       .collect(),
-    ctx.db
-      .query("queryPerformance")
-      .withIndex("by_workspace_updated_at", (q) =>
-        q.eq("workspaceId", args.workspaceId)
-      )
-      .collect(),
+    learningOff
+      ? []
+      : ctx.db
+          .query("queryPerformance")
+          .withIndex("by_workspace_updated_at", (q) =>
+            q.eq("workspaceId", args.workspaceId)
+          )
+          .collect(),
   ]);
   const performanceByQueryId = new Map(
     performanceRows
@@ -232,7 +238,8 @@ async function getPrioritizedSocialQueries(
     candidates,
     limit: args.limit,
     now: getCurrentUTCTimestamp(),
-    retireAfterUnqualifiedSearches: args.platform === "twitter" ? 3 : undefined,
+    retireAfterUnqualifiedSearches:
+      args.platform === "twitter" && !learningOff ? 3 : undefined,
   }).map((candidate) => ({
     id: candidate.id,
     value: candidate.value,

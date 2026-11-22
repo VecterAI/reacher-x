@@ -12,6 +12,11 @@ import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { requestLinkdApiData } from "./linkdapiClient";
 import {
+  isKeywordPostSearchCapRefusal,
+  linkdApiPurposeValidator,
+  type LinkdApiPurpose,
+} from "../../lib/benchmarkLinkdApiCap";
+import {
   normalizeLinkedInProfileQueryUrn,
   requireLinkedInProfileQueryUrn,
 } from "./profileIdentity";
@@ -80,6 +85,9 @@ interface InternalSearchResult {
   success: boolean;
   posts: LinkedInPost[];
   error?: string;
+  // The development benchmark cap refused a later page; `posts` holds the
+  // pages fetched before it.
+  capped?: boolean;
 }
 
 // ============================================================================
@@ -110,6 +118,8 @@ export const searchUserPostsInternal = internalAction({
     keyword: v.optional(v.string()),
     datePosted: v.optional(v.string()), // "past-24h", "past-week", "past-month", "past-year"
     maxPosts: v.optional(v.number()), // Default 20, max posts to collect
+    // Enrichment's keyword post search only (development benchmark cap).
+    purpose: v.optional(linkdApiPurposeValidator),
   },
   handler: async (ctx, args): Promise<InternalSearchResult> => {
     const profileUrn = requireLinkedInProfileQueryUrn(args.urn);
@@ -124,6 +134,7 @@ export const searchUserPostsInternal = internalAction({
     const allPosts: LinkedInPost[] = [];
     let start = 0;
     let page = 0;
+    let capped = false;
 
     // Pagination loop: fetch pages until we have enough posts or no more pages
     while (allPosts.length < maxPosts && page < MAX_PAGES) {
@@ -134,20 +145,27 @@ export const searchUserPostsInternal = internalAction({
         );
         break;
       }
-      const data = await requestLinkdApiData<{
-        posts?: LinkedInPost[];
-        hasMore?: boolean;
-      }>(ctx, {
-        path: "/api/v1/search/posts",
-        query: {
-          fromMember: profileUrn,
-          sortBy: "date_posted",
-          start,
-          keyword: args.keyword,
-          datePosted: args.datePosted,
-        },
-        consumer: `linkedin.searchUserPosts:${profileUrn}:${args.keyword ?? "all"}:${start}`,
-      });
+      let data: { posts?: LinkedInPost[]; hasMore?: boolean };
+      try {
+        data = await requestLinkdApiData(ctx, {
+          path: "/api/v1/search/posts",
+          query: {
+            fromMember: profileUrn,
+            sortBy: "date_posted",
+            start,
+            keyword: args.keyword,
+            datePosted: args.datePosted,
+          },
+          consumer: `linkedin.searchUserPosts:${profileUrn}:${args.keyword ?? "all"}:${start}`,
+          purpose: args.purpose,
+        });
+      } catch (error) {
+        // Keep the pages already fetched when the benchmark cap refuses a later one.
+        if (allPosts.length === 0 || !isKeywordPostSearchCapRefusal(error))
+          throw error;
+        capped = true;
+        break;
+      }
 
       const posts = data.posts ?? [];
       allPosts.push(...posts);
@@ -164,6 +182,7 @@ export const searchUserPostsInternal = internalAction({
     return {
       success: true,
       posts: allPosts.slice(0, maxPosts),
+      ...(capped ? { capped } : {}),
     };
   },
 });
@@ -198,6 +217,8 @@ export const searchUserPostsCore = internalAction({
     urn: v.string(),
     keywords: v.array(v.string()),
     maxPosts: v.optional(v.number()),
+    // Enrichment's keyword post search only (development benchmark cap).
+    purpose: v.optional(linkdApiPurposeValidator),
   },
   handler: async (ctx, args): Promise<UserPostsSearchResult> => {
     const startTime = getCurrentUTCTimestamp();
@@ -256,6 +277,7 @@ export const searchUserPostsCore = internalAction({
           keyword,
           maxPosts: postsNeeded,
           datePosted: "past-month",
+          purpose: args.purpose,
         });
 
         // Only fall back to a full-history search when the filtered search
@@ -269,6 +291,7 @@ export const searchUserPostsCore = internalAction({
             urn: profileUrn,
             keyword,
             maxPosts: fallbackPostsNeeded,
+            purpose: args.purpose,
           });
           keywordAttempt = fallbackAttempt;
         }
@@ -279,10 +302,16 @@ export const searchUserPostsCore = internalAction({
         } else if (keywordAttempt.error) {
           searchErrors.push(keywordAttempt.error);
         }
+        // The development benchmark cap refused a later page; every later
+        // keyword would be refused too.
+        if (keywordAttempt.capped) break;
       } catch (error) {
         searchErrors.push(
           error instanceof Error ? error.message : "LinkedIn search failed"
         );
+        // The development benchmark cap refuses every later keyword too, so
+        // stop here and keep the posts already found.
+        if (isKeywordPostSearchCapRefusal(error)) break;
         linkedInSearchUserPostsLogger.warn(
           "Failed to search keyword",
           { urn: profileUrn, keyword },
@@ -411,8 +440,9 @@ async function searchUserPostsForKeyword(
     keyword: string;
     maxPosts: number;
     datePosted?: string;
+    purpose?: LinkdApiPurpose;
   }
-): Promise<{ posts: LinkedInPost[]; error?: string }> {
+): Promise<{ posts: LinkedInPost[]; error?: string; capped?: boolean }> {
   const result: InternalSearchResult = await ctx.runAction(
     internal.integrations.linkedin.searchUserPosts.searchUserPostsInternal,
     {
@@ -420,10 +450,11 @@ async function searchUserPostsForKeyword(
       keyword: args.keyword,
       maxPosts: args.maxPosts,
       ...(args.datePosted !== undefined ? { datePosted: args.datePosted } : {}),
+      ...(args.purpose !== undefined ? { purpose: args.purpose } : {}),
     }
   );
   if (result.success) {
-    return { posts: result.posts };
+    return { posts: result.posts, ...(result.capped ? { capped: true } : {}) };
   }
   return {
     posts: [],

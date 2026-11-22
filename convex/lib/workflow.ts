@@ -3,6 +3,7 @@
 
 import { WorkflowManager } from "@convex-dev/workflow";
 import { components } from "../_generated/api";
+import { resolvePoolLimits } from "./benchmarkConcurrency";
 
 /**
  * Shared WorkflowManager instance for all workflows.
@@ -29,7 +30,11 @@ export const workflow = new WorkflowManager(components.workflow, {
   workpoolOptions: {
     // In enforced mode the remaining 36 recommended Pro workpool slots belong
     // to tenantExecutionPool, keeping the documented combined total at 100.
-    maxParallelism: 64,
+    // Read on each start so a development benchmark's Starter limit applies
+    // without a redeploy; production always gets 64.
+    get maxParallelism() {
+      return resolvePoolLimits().limits.workflow;
+    },
     // Keep retries bounded and explicit. Individual steps opt-in with retry:true.
     defaultRetryBehavior: {
       maxAttempts: 3,

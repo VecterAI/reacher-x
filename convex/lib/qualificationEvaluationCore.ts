@@ -22,6 +22,12 @@ type EvaluationArgs = Omit<QualificationCoreParams, "externalArticles"> & {
   prospectId: Id<"prospects">;
 };
 
+/** The evidence a qualification verdict is based on. */
+export type GatheredQualificationEvidence = Pick<
+  QualificationCoreParams,
+  "evidencePosts" | "profileData" | "profileEvidence" | "externalArticles"
+>;
+
 /**
  * Evaluates persisted social evidence plus any readable linked articles.
  * People-search seeds acquire and cache real profile/activity evidence first.
@@ -31,6 +37,22 @@ export async function evaluateQualificationWithExternalArticles(
   ctx: ActionCtx,
   args: EvaluationArgs
 ): Promise<QualificationResult> {
+  return await qualifyGatheredEvidence(
+    ctx,
+    args,
+    await gatherQualificationEvidence(ctx, args)
+  );
+}
+
+/**
+ * The evidence step of `evaluateQualificationWithExternalArticles`: the
+ * people-search seed's profile and activity (provider calls, cached on the
+ * prospect) or its stored posts, plus readable linked articles.
+ */
+export async function gatherQualificationEvidence(
+  ctx: ActionCtx,
+  args: EvaluationArgs
+): Promise<GatheredQualificationEvidence> {
   // Workflow steps carry Unicode-safe previews. Read full persisted text here,
   // outside the workflow journal, and only for the selected source identities.
   let evidencePosts = args.evidencePosts;
@@ -100,12 +122,18 @@ export async function evaluateQualificationWithExternalArticles(
     );
   });
 
+  return { evidencePosts, profileData, profileEvidence, externalArticles };
+}
+
+/** The model step of `evaluateQualificationWithExternalArticles`: the paid verdict. */
+export async function qualifyGatheredEvidence(
+  ctx: ActionCtx,
+  args: EvaluationArgs,
+  evidence: GatheredQualificationEvidence
+): Promise<QualificationResult> {
   return await qualifyProspectCore({
     ...args,
-    evidencePosts,
-    profileData,
-    profileEvidence,
-    externalArticles,
+    ...evidence,
     telemetry: {
       ctx,
       agentName: "Qualification Evaluator",

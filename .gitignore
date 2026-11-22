@@ -31,6 +31,9 @@ yarn-error.log*
 .env.prod
 .env.production
 
+# Private benchmark responses, evidence, checkpoints and replay inputs
+/benchmarks/.local/
+
 # # docs folders (private)
 # /docs
 
