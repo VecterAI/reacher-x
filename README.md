@@ -217,6 +217,7 @@ The full system walkthrough, from the discovery pipeline to memory and reporting
 - `convex/agents/tools/`: thin agent-facing tool layer.
 - `convex/workflows/`: orchestration and durable workflows.
 - `convex/lib/`: core business logic and integrations.
+- `benchmarks/`: evaluation and benchmark harnesses (see [benchmarks/README.md](./benchmarks/README.md)).
 
 ## License
 

@@ -274,8 +274,11 @@ pnpm exec tsc --noEmit
 pnpm lint:strict
 pnpm exec prettier --check path/to/changed-file
 pnpm test:convex
+pnpm test:benchmark
 pnpm build
 ```
+
+For benchmark harness setup and CLI usage, see [benchmarks/README.md](./benchmarks/README.md).
 
 Run the focused test commands that cover your change as well. Keep editor/LSP diagnostics clean for every touched code file.
 
