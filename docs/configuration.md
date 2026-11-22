@@ -610,14 +610,14 @@ Reserved variables remain in `.env.example` so intended future integration point
 
 These Convex variables are managed automatically by the benchmark CLI against a development deployment. Leave all of them unset in production; when unset, production behavior is unchanged.
 
-| Variable                               | Purpose                                                                                                  |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `BENCHMARK_LEARNING_OFF_WORKSPACE_IDS` | Comma-separated workspace IDs for the benchmark's learning-off control group                             |
-| `BENCHMARK_POOL_LIMITS`                | JSON overriding workflow and worker pool concurrency for a Convex Starter dev deployment                 |
-| `BENCHMARK_KEYWORD_POST_SEARCH_LIMIT`  | Caps LinkdAPI keyword post-search calls per benchmark workspace cycle during enrichment                  |
-| `BENCHMARK_HALTED_WORKSPACE_ID`        | Kill switch while stopping a benchmark workspace; refuses in-flight LinkdAPI calls during teardown       |
-| `BENCHMARK_MATCH_LIMIT_PER_CYCLE`      | Caps matches qualified in a single benchmark workspace cycle before parking extra qualification work     |
-| `BENCHMARK_MATCH_LIMIT_PER_QUERY`      | Caps total matches qualified across all cycles for a benchmark prompt; stops further cycles once reached |
+| Variable                               | Purpose                                                                                                                                                                                   |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BENCHMARK_LEARNING_OFF_WORKSPACE_IDS` | Comma-separated workspace IDs for the benchmark's learning-off control group                                                                                                              |
+| `BENCHMARK_POOL_LIMITS`                | JSON overriding workflow and worker pool concurrency for a Convex Starter dev deployment                                                                                                  |
+| `BENCHMARK_KEYWORD_POST_SEARCH_LIMIT`  | Caps LinkdAPI keyword post-search calls per benchmark workspace cycle during enrichment                                                                                                   |
+| `BENCHMARK_HALTED_WORKSPACE_ID`        | Kill switch while stopping a benchmark workspace; refuses new LinkdAPI reservations during teardown (calls that already hold a reservation still complete)                                |
+| `BENCHMARK_MATCH_LIMIT_PER_CYCLE`      | Match threshold per benchmark workspace cycle; once reached, parks subsequent qualification work (in-flight qualifications that already passed the gate may still finish above the limit) |
+| `BENCHMARK_MATCH_LIMIT_PER_QUERY`      | Match threshold across all cycles for a benchmark prompt; once reached, stops further cycles (in-flight qualifications that already passed the gate may still finish above the limit)     |
 
 Local CLI inputs for running benchmarks live in `.env.benchmark.local` (copied from `.env.benchmark.example`). See [benchmarks/README.md](../benchmarks/README.md) for setup and usage.
 
