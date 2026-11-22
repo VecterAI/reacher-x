@@ -606,6 +606,21 @@ Logging overrides affect metadata, not deployment selection or feature flags. Fo
 
 Reserved variables remain in `.env.example` so intended future integration points are explicit without implying that they currently change application behavior.
 
+## Development-Only Benchmark Variables
+
+These Convex variables are managed automatically by the benchmark CLI against a development deployment. Leave all of them unset in production; when unset, production behavior is unchanged.
+
+| Variable                               | Purpose                                                                                                                                                                                   |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BENCHMARK_LEARNING_OFF_WORKSPACE_IDS` | Comma-separated workspace IDs for the benchmark's learning-off control group                                                                                                              |
+| `BENCHMARK_POOL_LIMITS`                | JSON overriding workflow and worker pool concurrency for a Convex Starter dev deployment                                                                                                  |
+| `BENCHMARK_KEYWORD_POST_SEARCH_LIMIT`  | Caps LinkdAPI keyword post-search calls per benchmark workspace cycle during enrichment                                                                                                   |
+| `BENCHMARK_HALTED_WORKSPACE_ID`        | Kill switch while stopping a benchmark workspace; refuses new LinkdAPI reservations during teardown (calls that already hold a reservation still complete)                                |
+| `BENCHMARK_MATCH_LIMIT_PER_CYCLE`      | Match threshold per benchmark workspace cycle; once reached, parks subsequent qualification work (in-flight qualifications that already passed the gate may still finish above the limit) |
+| `BENCHMARK_MATCH_LIMIT_PER_QUERY`      | Match threshold across all cycles for a benchmark prompt; once reached, stops further cycles (in-flight qualifications that already passed the gate may still finish above the limit)     |
+
+Local CLI inputs for running benchmarks live in `.env.benchmark.local` (copied from `.env.benchmark.example`). See [benchmarks/README.md](../benchmarks/README.md) for setup and usage.
+
 ## Deployment Checklist
 
 Before enabling a feature in development or production:
