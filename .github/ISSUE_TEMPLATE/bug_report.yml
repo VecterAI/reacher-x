@@ -63,6 +63,20 @@ body:
       render: shell
 
   - type: checkboxes
+    id: areas
+    attributes:
+      label: Areas
+      description: Optional. Select any matching tags and they will be applied automatically.
+      options:
+        - label: backend
+        - label: ui
+        - label: prospecting
+        - label: benchmark
+        - label: performance
+        - label: architecture
+        - label: documentation
+
+  - type: checkboxes
     id: checks
     attributes:
       label: Checks

@@ -1,0 +1,99 @@
+name: External Issue Labeler
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  label:
+    name: Apply allowlisted labels
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      !github.event.issue.pull_request
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Parse and apply allowlisted labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { pathToFileURL } = require("node:url");
+            const path = require("node:path");
+            const helperUrl = pathToFileURL(
+              path.resolve(".github/scripts/issue-labeler.mjs")
+            ).href;
+            const {
+              canAuthorApplyCommentLabels,
+              extractLabelsFromComment,
+              extractLabelsFromIssueBody,
+              selectLabelsToAdd,
+            } = await import(helperUrl);
+
+            const issue = context.payload.issue;
+            if (!issue || issue.pull_request) {
+              return;
+            }
+
+            let requestedLabels = [];
+            if (context.eventName === "issues") {
+              requestedLabels = extractLabelsFromIssueBody(issue.body ?? "");
+            } else if (context.eventName === "issue_comment") {
+              const comment = context.payload.comment;
+              if (!comment) {
+                return;
+              }
+              const allowed = canAuthorApplyCommentLabels({
+                commentAuthorId: comment.user?.id,
+                issueAuthorId: issue.user?.id,
+                authorAssociation: comment.author_association,
+              });
+              if (!allowed) {
+                core.info(
+                  "Skipping /label comment from user who is neither the issue author nor a collaborator."
+                );
+                return;
+              }
+              requestedLabels = extractLabelsFromComment(comment.body ?? "");
+            }
+
+            if (requestedLabels.length === 0) {
+              core.info("No allowlisted labels requested.");
+              return;
+            }
+
+            const repoLabelObjects = await github.paginate(
+              github.rest.issues.listLabelsForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              }
+            );
+
+            const toAdd = selectLabelsToAdd({
+              requestedLabels,
+              existingIssueLabels: (issue.labels ?? []).map((item) => item.name),
+              repoLabels: repoLabelObjects.map((item) => item.name),
+            });
+
+            if (toAdd.length === 0) {
+              core.info("All requested labels are already applied or unavailable.");
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: toAdd,
+            });
+            core.info(`Applied labels to #${issue.number}: ${toAdd.join(", ")}`);
