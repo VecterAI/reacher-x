@@ -34,9 +34,6 @@ yarn-error.log*
 # Private benchmark responses, evidence, checkpoints and replay inputs
 /benchmarks/.local/
 
-# Local third-party vendor API docs (unzipped privately for benchmark/integration work)
-/docs/vendor-local/
-
 # # docs folders (private)
 # /docs
 
