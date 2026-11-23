@@ -302,6 +302,23 @@ describe("shared workspace memory semantic context", () => {
     expect(workspaceLoaded.snapshot?.ownsWorkspace).toBe(true);
     expect(workspaceLoaded.snapshot?.candidatesComplete).toBe(true);
     expect(workspaceLoaded.snapshot?.candidates.length).toBeGreaterThan(0);
+    const loadedCandidateIds = new Set(
+      workspaceLoaded.snapshot?.candidates.map((memory) => memory.memoryId) ??
+        []
+    );
+    expect(
+      workspaceLoaded.snapshot?.exactMatches.some((memory) =>
+        loadedCandidateIds.has(memory.memoryId)
+      )
+    ).toBe(false);
+    const loadedCanonicalLegacyIds = new Set(
+      workspaceLoaded.snapshot?.canonicalLegacyIds ?? []
+    );
+    expect(
+      workspaceLoaded.snapshot?.legacyOperatorRows.some((row) =>
+        loadedCanonicalLegacyIds.has(row.memoryId)
+      )
+    ).toBe(false);
 
     const promptOnlyComplete = await buildWorkspaceMemoryContextFromStore(
       {

@@ -1323,17 +1323,26 @@ async function loadWorkspaceMemoryContextSnapshot(
       limit: 120,
     }),
   ]);
-  const legacyOperatorRows = legacyRecords.map((record) => ({
-    memoryId: record.memoryId,
-    createdAt: record.createdAt,
-    parsed: record.parsed,
-  }));
-  const canonicalLegacyIds = legacyOperatorRows.length
+  const candidateIds = new Set(
+    candidateLoad.candidates.map((memory) => memory.memoryId)
+  );
+  const deduplicatedExactMatches = exactMatches.filter(
+    (memory) => !candidateIds.has(memory.memoryId)
+  );
+  const canonicalLegacyIds = legacyRecords.length
     ? await listCanonicalLegacyMemoryIds(db, {
         ...ids,
-        legacyMemoryIds: legacyOperatorRows.map((memory) => memory.memoryId),
+        legacyMemoryIds: legacyRecords.map((memory) => memory.memoryId),
       })
     : [];
+  const canonicalLegacyIdSet = new Set(canonicalLegacyIds);
+  const legacyOperatorRows = legacyRecords
+    .filter((record) => !canonicalLegacyIdSet.has(record.memoryId))
+    .map((record) => ({
+      memoryId: record.memoryId,
+      createdAt: record.createdAt,
+      parsed: record.parsed,
+    }));
 
   return {
     workspaceId: String(args.workspaceId),
@@ -1341,7 +1350,7 @@ async function loadWorkspaceMemoryContextSnapshot(
     ownsWorkspace: true,
     candidates: candidateLoad.candidates,
     candidatesComplete: candidateLoad.candidatesComplete,
-    exactMatches,
+    exactMatches: deduplicatedExactMatches,
     legacyOperatorRows,
     canonicalLegacyIds,
   };

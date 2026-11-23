@@ -119,7 +119,7 @@ export const workspaceVisionLanguageModel = createWorkspaceLanguageModel(
   PINNED_VISION_PROVIDER_OPTIONS
 );
 
-const WORKSPACE_AGENT_MAX_RETRIES = 0;
+const WORKSPACE_AGENT_MAX_RETRIES = 1;
 
 const mainAgentBaseTools = {
   // Workspace context. Global discovery is intentionally setup-only.
@@ -163,8 +163,8 @@ export const mainAgent = new Agent(components.agent, {
     stopOnDeferredAgentExecution<typeof mainAgentBaseTools>(),
   ],
   callSettings: {
-    // OpenRouter already performs provider failover; retrying the full HTTP
-    // request here adds another upstream wait before the user sees text.
+    // Allow one bounded client-side retry for transient OpenRouter errors
+    // (such as 503s) without adding extra retries on interactive turns.
     maxRetries: WORKSPACE_AGENT_MAX_RETRIES,
   },
   contextOptions: {
