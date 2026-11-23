@@ -284,6 +284,7 @@ import type * as lib_workspaceEntitlements from "../lib/workspaceEntitlements.js
 import type * as lib_workspaceIcpSignalsCore from "../lib/workspaceIcpSignalsCore.js";
 import type * as lib_workspaceMemoryCaptureCore from "../lib/workspaceMemoryCaptureCore.js";
 import type * as lib_workspaceMemoryCompliance from "../lib/workspaceMemoryCompliance.js";
+import type * as lib_workspaceMemoryContextRuntime from "../lib/workspaceMemoryContextRuntime.js";
 import type * as lib_workspaceMemoryCore from "../lib/workspaceMemoryCore.js";
 import type * as lib_workspaceMemoryScope from "../lib/workspaceMemoryScope.js";
 import type * as lib_workspaceNameHelpers from "../lib/workspaceNameHelpers.js";
@@ -696,6 +697,7 @@ declare const fullApi: ApiFromModules<{
   "lib/workspaceIcpSignalsCore": typeof lib_workspaceIcpSignalsCore;
   "lib/workspaceMemoryCaptureCore": typeof lib_workspaceMemoryCaptureCore;
   "lib/workspaceMemoryCompliance": typeof lib_workspaceMemoryCompliance;
+  "lib/workspaceMemoryContextRuntime": typeof lib_workspaceMemoryContextRuntime;
   "lib/workspaceMemoryCore": typeof lib_workspaceMemoryCore;
   "lib/workspaceMemoryScope": typeof lib_workspaceMemoryScope;
   "lib/workspaceNameHelpers": typeof lib_workspaceNameHelpers;

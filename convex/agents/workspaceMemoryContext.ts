@@ -3,57 +3,72 @@
 import type { ContextHandler } from "@convex-dev/agent";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { buildSafeAgentContext } from "../lib/agentContextHelpers";
 import { getLatestPlanBatchUserPrompt } from "../lib/planBatchCore";
-import { resolveWorkspaceMemoryScope } from "../lib/workspaceMemoryScope";
+import { buildWorkspaceMemoryContextFromStore } from "../lib/workspaceMemoryContextRuntime";
 
+/**
+ * Normalizes completed-turn reasoning for stateful Main/Setup threads and
+ * injects applicable workspace memory inline (1 batched DB query + single-embed
+ * semantic lookup) without an extra `ctx.runAction` hop.
+ */
 export function createWorkspaceMemoryContextHandler(
   surface: string
 ): ContextHandler {
   return async (ctx, args) => {
+    const safeMessages = buildSafeAgentContext(args);
     if (!args.userId) {
-      return args.allMessages;
+      return safeMessages;
     }
 
     try {
-      const scope = await resolveWorkspaceMemoryScope(ctx, {
-        userId: args.userId as Id<"users">,
-        threadId: args.threadId,
-        allowDefaultWorkspace: surface === "main",
-        onWarning: (message) =>
-          console.warn(`[WorkspaceMemoryContext] ${message}`),
-      });
-      if (!scope.workspaceId) {
-        return args.allMessages;
-      }
-
       const query =
         getLatestPlanBatchUserPrompt(args.inputPrompt) ??
-        getLatestPlanBatchUserPrompt(args.allMessages) ??
+        getLatestPlanBatchUserPrompt(safeMessages) ??
         `${surface} workspace policy`;
-      const memoryContext = await ctx.runAction(
-        internal.memory.buildWorkspaceMemoryContextInternal,
+      const loaded = await ctx.runQuery(
+        internal.memory.loadWorkspaceMemoryContextSnapshotForThreadInternal,
         {
-          workspaceId: scope.workspaceId,
-          userId: scope.userId,
+          userId: args.userId as Id<"users">,
+          threadId: args.threadId,
+          allowDefaultWorkspace: surface === "main",
+          query,
+        }
+      );
+      if (!loaded.scope.workspaceId || !loaded.snapshot) {
+        return safeMessages;
+      }
+
+      const memoryContext = await buildWorkspaceMemoryContextFromStore(
+        ctx,
+        {
+          workspaceId: String(loaded.scope.workspaceId),
+          userId: String(loaded.scope.userId),
           query,
           surface,
-          prospectId: scope.prospectId ?? undefined,
+          prospectId: loaded.scope.prospectId
+            ? String(loaded.scope.prospectId)
+            : undefined,
+        },
+        {
+          preloadedSnapshot: loaded.snapshot,
+          skipSemanticWhenComplete: true,
         }
       );
       if (!memoryContext.prompt) {
-        return args.allMessages;
+        return safeMessages;
       }
 
       return [
         { role: "system" as const, content: memoryContext.prompt },
-        ...args.allMessages,
+        ...safeMessages,
       ];
     } catch (error) {
       console.warn(
         "[WorkspaceMemoryContext] Failed to inject workspace memory",
         error
       );
-      return args.allMessages;
+      return safeMessages;
     }
   };
 }

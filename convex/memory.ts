@@ -8,8 +8,11 @@ import {
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx as ConvexActionCtx } from "./_generated/server";
-import { internal } from "./_generated/api";
+import type {
+  ActionCtx as ConvexActionCtx,
+  QueryCtx as ConvexQueryCtx,
+} from "./_generated/server";
+import { components, internal } from "./_generated/api";
 import {
   getAgentMemoryRag,
   getWorkspaceNamespace,
@@ -31,7 +34,6 @@ import {
 import {
   buildKeywordCanonicalRecord,
   buildQueryCandidateCanonicalRecord,
-  createStableHash,
   getNamespaceKindForQueryCandidate,
 } from "./lib/memoryHelpers";
 import {
@@ -54,20 +56,25 @@ import {
   buildWorkspaceMemoryContext as buildCanonicalWorkspaceMemoryContext,
   claimFailedCanonicalWorkspaceMemoryIndexRetries,
   listCanonicalWorkspaceMemoryCandidates,
+  listCanonicalWorkspaceMemoryCandidatesWithCompleteness,
   listCanonicalLegacyMemoryIds,
   listCanonicalWorkspaceMemoriesByStoredIds,
   markCanonicalWorkspaceMemoryIndexResult,
   searchCanonicalWorkspaceMemories,
   type CanonicalWorkspaceMemory,
   type WorkspaceMemoryContext,
-  type WorkspaceMemoryContextRequest,
   type WorkspaceMemoryProvenanceKind,
   WORKSPACE_MEMORY_INDEX_RETRY_STAGGER_MS,
 } from "./lib/workspaceMemoryCore";
 import {
-  getCachedSharedMemorySemanticIds,
-  setCachedSharedMemorySemanticIds,
-} from "./lib/sharedMemorySemanticCache";
+  buildWorkspaceMemoryContextFromStore,
+  buildWorkspaceMemorySearchQuery,
+  type WorkspaceMemoryContextSnapshot,
+} from "./lib/workspaceMemoryContextRuntime";
+import { getProspectThreadContextByThreadId } from "./lib/relationshipHelpers";
+import { getSetupSessionByThreadId } from "./lib/setupSessionCore";
+import { parseSetupThreadState } from "./lib/setupThreadHelpers";
+import { getWorkspaceThreadContextByThreadId } from "./lib/workspaceThreadHelpers";
 import { isBenchmarkLearningOff } from "./lib/benchmarkLearningControl";
 import {
   distillEnrichmentLearning,
@@ -90,7 +97,11 @@ import {
   workspaceMemoryCategoryValidator,
   workspaceMemorySourceValidator,
 } from "./validators";
-import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
+import {
+  getDefaultWorkspaceForUser,
+  requireOwnedWorkspace,
+  requireUser,
+} from "./lib/accessHelpers";
 import type { WorkspaceUseCaseKey } from "../shared/lib/workspaceUseCases";
 import { getStyleMemoryCategory } from "./lib/styleSourceCore";
 import { evaluateWorkspaceMemoryCompliance } from "./lib/workspaceMemoryCompliance";
@@ -172,27 +183,6 @@ function formatSemanticMemoryMatch(match: {
   }
 
   return match.text;
-}
-
-function buildWorkspaceMemorySearchQuery(args: {
-  title?: string | null;
-  briefIntro?: string | null;
-  matchedKeywords?: string[];
-  painPoints?: string[];
-  finance?: string | null;
-  additionalContext?: string[];
-}): string {
-  return [
-    args.title ?? "",
-    args.briefIntro ?? "",
-    args.finance ?? "",
-    ...(args.matchedKeywords ?? []),
-    ...(args.painPoints ?? []),
-    ...(args.additionalContext ?? []),
-  ]
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0)
-    .join(" ");
 }
 
 function hasWorkspaceMemorySearchQuery(query: string): boolean {
@@ -1292,259 +1282,200 @@ export const getCanonicalWorkspaceMemoriesByIdsInternal = internalQuery({
     await listCanonicalWorkspaceMemoriesByStoredIds(ctx.db, args),
 });
 
-const SHARED_MEMORY_SEMANTIC_THRESHOLD = 0.55;
-const SHARED_MEMORY_SEMANTIC_NAMESPACES = [
-  "lessons",
-  "patterns",
-  "objections",
-  "wins",
-  "losses",
-  "style",
-] as const;
-
-async function buildWorkspaceMemoryContextFromStore(
-  ctx: ConvexActionCtx,
-  request: WorkspaceMemoryContextRequest,
-  { operatorOnly = false }: { operatorOnly?: boolean } = {}
-): Promise<WorkspaceMemoryContext> {
-  const ids = {
-    workspaceId: request.workspaceId as Id<"workspaces">,
-    userId: request.userId as Id<"users">,
-  };
-  const ownsWorkspace = await ctx.runQuery(
-    internal.memory.ownsWorkspaceMemoryScopeInternal,
-    ids
-  );
-  if (!ownsWorkspace) {
-    return buildCanonicalWorkspaceMemoryContext({
-      request,
-      memories: [],
-    });
+async function loadWorkspaceMemoryContextSnapshot(
+  db: ConvexQueryCtx["db"],
+  args: {
+    workspaceId: Id<"workspaces">;
+    userId: Id<"users">;
+    query: string;
   }
-  const [candidates, exactMatches] = await Promise.all([
-    ctx.runQuery(
-      internal.memory.listCanonicalWorkspaceMemoryCandidatesInternal,
-      ids
-    ),
-    request.query.trim()
-      ? ctx.runQuery(internal.memory.searchCanonicalWorkspaceMemoriesInternal, {
+): Promise<WorkspaceMemoryContextSnapshot> {
+  const workspace = await db.get("workspaces", args.workspaceId);
+  if (workspace?.userId !== args.userId) {
+    return {
+      workspaceId: String(args.workspaceId),
+      userId: String(args.userId),
+      ownsWorkspace: false,
+      candidates: [],
+      candidatesComplete: true,
+      exactMatches: [],
+      legacyOperatorRows: [],
+      canonicalLegacyIds: [],
+    };
+  }
+
+  const ids = {
+    workspaceId: args.workspaceId,
+    userId: args.userId,
+  };
+  const [candidateLoad, exactMatches, legacyRecords] = await Promise.all([
+    listCanonicalWorkspaceMemoryCandidatesWithCompleteness(db, ids),
+    args.query.trim()
+      ? searchCanonicalWorkspaceMemories(db, {
           ...ids,
-          query: request.query,
+          query: args.query,
           limit: 32,
         })
       : Promise.resolve([] as CanonicalWorkspaceMemory[]),
-  ]);
-  const legacyOperatorRows = await ctx.runQuery(
-    internal.memory.listPinnedWorkspaceMemoriesInternal,
-    {
-      workspaceId: request.workspaceId,
+    listWorkspaceAgentMemoriesBySource(db, {
+      workspaceId: args.workspaceId,
       source: "operator",
       limit: 120,
-    }
+    }),
+  ]);
+  const candidateIds = new Set(
+    candidateLoad.candidates.map((memory) => memory.memoryId)
   );
-  const canonicalLegacyIds = new Set(
-    await ctx.runQuery(internal.memory.listCanonicalLegacyMemoryIdsInternal, {
-      ...ids,
-      legacyMemoryIds: legacyOperatorRows.map(
-        (memory: { memoryId: string }) => memory.memoryId
-      ),
-    })
+  const deduplicatedExactMatches = exactMatches.filter(
+    (memory) => !candidateIds.has(memory.memoryId)
   );
-  const legacyOperatorFallbacks: CanonicalWorkspaceMemory[] = legacyOperatorRows
-    .filter(
-      (memory: { memoryId: string }) => !canonicalLegacyIds.has(memory.memoryId)
-    )
-    .map(
-      (memory: {
-        memoryId: string;
-        createdAt: number;
-        parsed: ParsedAgentMemory;
-      }) => {
-        const instruction = [
-          memory.parsed.summary,
-          memory.parsed.narrative,
-          ...memory.parsed.evidence,
-        ]
-          .map((value) => value.trim())
-          .filter(Boolean)
-          .filter((value, index, values) => values.indexOf(value) === index)
-          .join("\n");
-        return {
-          memoryId: `legacy:${memory.memoryId}`,
-          workspaceId: request.workspaceId,
-          userId: request.userId,
-          identityKey: `legacy:${memory.memoryId}`,
-          legacyMemoryId: memory.memoryId,
-          authority: "operator" as const,
-          source: "operator" as const,
-          category: memory.parsed.category,
-          status: "active" as const,
-          indexStatus: "ready" as const,
-          kind: memory.parsed.category,
-          title: memory.parsed.title,
-          summary: memory.parsed.summary,
-          canonicalContent: instruction,
-          canonicalSearchText: instruction,
-          instruction,
-          metadata: {
-            evidence: memory.parsed.evidence,
-            relatedQueries: memory.parsed.relatedQueries,
-            verbatimRecovered: false,
-          },
-          precedence: 1_000,
-          confidence: memory.parsed.confidence,
-          impactScore: memory.parsed.impactScore,
-          prospectId: memory.parsed.prospectId,
-          provenanceKind: "legacy_backfill" as const,
-          ragNamespace: memory.parsed.namespace,
-          ragKey: `legacy:${memory.memoryId}`,
-          contentHash: createStableHash(instruction),
-          createdAt: memory.createdAt,
-          updatedAt: memory.createdAt,
-        } satisfies CanonicalWorkspaceMemory;
-      }
-    );
-  const rolloutCandidates = [...legacyOperatorFallbacks, ...candidates];
-  if (operatorOnly) {
-    // Learned memories (including semantic matches) are withheld entirely.
-    return buildCanonicalWorkspaceMemoryContext({
-      request,
-      memories: [...exactMatches, ...rolloutCandidates].filter(
-        (memory) => memory.authority === "operator"
-      ),
-    });
-  }
-  if (!request.query.trim()) {
-    return buildCanonicalWorkspaceMemoryContext({
-      request,
-      memories: [...exactMatches, ...rolloutCandidates],
-    });
-  }
-
-  // Semantic matches resolve through the canonical store, so a workspace with
-  // no candidates and no legacy operator fallbacks cannot gain anything from
-  // the shared namespace searches. Skipping them keeps qualification and
-  // outreach runs cheap for fresh or empty workspaces.
-  if (rolloutCandidates.length === 0) {
-    return buildCanonicalWorkspaceMemoryContext({
-      request,
-      memories: exactMatches,
-    });
-  }
-
-  const now = getCurrentUTCTimestamp();
-  let semanticMemoryIds = getCachedSharedMemorySemanticIds({
-    workspaceId: request.workspaceId,
-    query: request.query,
-    nowMs: now,
-  });
-
-  if (semanticMemoryIds) {
-    logRagSearch({
-      caller: "shared_workspace_memory_context",
-      workspaceId: request.workspaceId,
-      namespace: "shared",
-      limit: 0,
-      resultCount: semanticMemoryIds.length,
-      durationMs: 0,
-      outcome: "cache_hit",
-    });
-  } else {
-    const namespaceGroups = await Promise.all(
-      SHARED_MEMORY_SEMANTIC_NAMESPACES.map(async (namespace) => {
-        const searchStartedAt = getCurrentUTCTimestamp();
-        try {
-          const result = await getAgentMemoryRag().search(ctx, {
-            namespace: getWorkspaceNamespace(request.workspaceId, namespace),
-            query: request.query,
-            limit: 4,
-            vectorScoreThreshold: SHARED_MEMORY_SEMANTIC_THRESHOLD,
-          });
-          logRagSearch({
-            caller: "shared_workspace_memory_context",
-            workspaceId: request.workspaceId,
-            namespace,
-            limit: 4,
-            resultCount: result.entries.length,
-            durationMs: getCurrentUTCTimestamp() - searchStartedAt,
-            outcome: "success",
-          });
-          return {
-            memoryIds: result.entries
-              .map((entry) => entry.metadata?.memoryItemId)
-              .filter(
-                (memoryId): memoryId is string =>
-                  typeof memoryId === "string" && memoryId.length > 0
-              ),
-            succeeded: true,
-          };
-        } catch (error) {
-          logRagSearch({
-            caller: "shared_workspace_memory_context",
-            workspaceId: request.workspaceId,
-            namespace,
-            limit: 4,
-            resultCount: 0,
-            durationMs: getCurrentUTCTimestamp() - searchStartedAt,
-            outcome: "error",
-          });
-          memoryLogger.warn("Shared workspace memory semantic search failed", {
-            workspaceId: request.workspaceId,
-            namespace,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return { memoryIds: [] as string[], succeeded: false };
-        }
+  const canonicalLegacyIds = legacyRecords.length
+    ? await listCanonicalLegacyMemoryIds(db, {
+        ...ids,
+        legacyMemoryIds: legacyRecords.map((memory) => memory.memoryId),
       })
-    );
-
-    const flattenedIds = [
-      ...new Set(namespaceGroups.flatMap((group) => group.memoryIds)),
-    ].slice(0, 64);
-    if (namespaceGroups.every((group) => group.succeeded)) {
-      setCachedSharedMemorySemanticIds({
-        workspaceId: request.workspaceId,
-        query: request.query,
-        memoryIds: flattenedIds,
-        nowMs: getCurrentUTCTimestamp(),
-      });
-    }
-    semanticMemoryIds = flattenedIds;
-  }
-
-  const semanticMemories = semanticMemoryIds.length
-    ? await ctx.runQuery(
-        internal.memory.getCanonicalWorkspaceMemoriesByIdsInternal,
-        {
-          ...ids,
-          memoryIds: semanticMemoryIds,
-        }
-      )
     : [];
-
-  const byId = new Map<string, CanonicalWorkspaceMemory>();
-  for (const memory of [
-    ...exactMatches,
-    ...semanticMemories,
-    ...rolloutCandidates,
-  ]) {
-    byId.set(memory.memoryId, memory);
-  }
-  const base = buildCanonicalWorkspaceMemoryContext({
-    request,
-    memories: [...byId.values()],
-  });
-  const applicableMemoryIds = new Set(base.memoryIds);
-  const semanticMatches = semanticMemories
-    .filter((memory) => applicableMemoryIds.has(memory.memoryId))
-    .map((memory) => memory.canonicalContent)
-    .slice(0, 8);
+  const canonicalLegacyIdSet = new Set(canonicalLegacyIds);
+  const legacyOperatorRows = legacyRecords
+    .filter((record) => !canonicalLegacyIdSet.has(record.memoryId))
+    .map((record) => ({
+      memoryId: record.memoryId,
+      createdAt: record.createdAt,
+      parsed: record.parsed,
+    }));
 
   return {
-    ...base,
-    semanticMatches,
+    workspaceId: String(args.workspaceId),
+    userId: String(args.userId),
+    ownsWorkspace: true,
+    candidates: candidateLoad.candidates,
+    candidatesComplete: candidateLoad.candidatesComplete,
+    exactMatches: deduplicatedExactMatches,
+    legacyOperatorRows,
+    canonicalLegacyIds,
   };
 }
+
+/**
+ * Loads ownership, canonical candidates, exact matches, and legacy operator
+ * rows in a single Convex query transaction instead of 4 sequential queries.
+ */
+export const loadWorkspaceMemoryContextSnapshotInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    query: v.string(),
+  },
+  handler: async (ctx, args): Promise<WorkspaceMemoryContextSnapshot> =>
+    await loadWorkspaceMemoryContextSnapshot(ctx.db, args),
+});
+
+/**
+ * Resolves a thread's workspace memory scope and loads its memory snapshot in
+ * one query transaction for interactive Main and Setup chat context handlers.
+ */
+export const loadWorkspaceMemoryContextSnapshotForThreadInternal =
+  internalQuery({
+    args: {
+      userId: v.id("users"),
+      threadId: v.optional(v.string()),
+      allowDefaultWorkspace: v.optional(v.boolean()),
+      query: v.string(),
+    },
+    handler: async (
+      ctx,
+      args
+    ): Promise<{
+      scope: {
+        userId: Id<"users">;
+        workspaceId: Id<"workspaces"> | null;
+        prospectId: Id<"prospects"> | null;
+      };
+      snapshot: WorkspaceMemoryContextSnapshot | null;
+    }> => {
+      let workspaceId: Id<"workspaces"> | null = null;
+      let prospectId: Id<"prospects"> | null = null;
+
+      if (args.threadId) {
+        const [prospectContext, setupSession, workspaceContext] =
+          await Promise.all([
+            getProspectThreadContextByThreadId(ctx.db, args.threadId),
+            getSetupSessionByThreadId(ctx.db, args.threadId),
+            getWorkspaceThreadContextByThreadId(ctx.db, args.threadId),
+          ]);
+
+        if (prospectContext) {
+          workspaceId = prospectContext.prospect.workspaceId;
+          prospectId = prospectContext.prospect._id;
+        } else if (
+          setupSession?.targetWorkspaceId ||
+          setupSession?.existingWorkspaceId
+        ) {
+          workspaceId =
+            setupSession.targetWorkspaceId ??
+            setupSession.existingWorkspaceId ??
+            null;
+        } else if (workspaceContext) {
+          workspaceId = workspaceContext.workspace._id;
+        } else {
+          try {
+            const thread = await ctx.runQuery(
+              components.agent.threads.getThread,
+              {
+                threadId: args.threadId,
+              }
+            );
+            const parsed = parseSetupThreadState(thread?.title);
+            if (parsed?.kind === "workspace" && parsed.workspaceId) {
+              workspaceId = ctx.db.normalizeId(
+                "workspaces",
+                parsed.workspaceId
+              );
+            }
+          } catch (error) {
+            memoryLogger.warn(
+              "Failed to resolve workspace from setup thread title",
+              {
+                threadId: args.threadId,
+                error: error instanceof Error ? error.message : String(error),
+              }
+            );
+          }
+        }
+      }
+
+      if (!workspaceId && args.allowDefaultWorkspace === true) {
+        const workspace = await getDefaultWorkspaceForUser(ctx, args.userId);
+        workspaceId = workspace?._id ?? null;
+      }
+
+      if (!workspaceId) {
+        return {
+          scope: {
+            userId: args.userId,
+            workspaceId: null,
+            prospectId,
+          },
+          snapshot: null,
+        };
+      }
+
+      const snapshot = await loadWorkspaceMemoryContextSnapshot(ctx.db, {
+        workspaceId,
+        userId: args.userId,
+        query: args.query,
+      });
+
+      return {
+        scope: {
+          userId: args.userId,
+          workspaceId,
+          prospectId,
+        },
+        snapshot,
+      };
+    },
+  });
 
 export const buildWorkspaceMemoryContextInternal = internalAction({
   args: {
@@ -1695,14 +1626,18 @@ export const getOutreachLearningContextInternal = internalAction({
       finance: args.finance,
     });
 
-    const sharedContext = await buildWorkspaceMemoryContextFromStore(ctx, {
-      workspaceId: args.workspaceId,
-      userId: args.userId,
-      query: queryText || "outreach policy",
-      surface: "manual_prospect",
-      prospectId: args.prospectId,
-      channel: args.platform,
-    });
+    const sharedContext = await buildWorkspaceMemoryContextFromStore(
+      ctx,
+      {
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        query: queryText || "outreach policy",
+        surface: "manual_prospect",
+        prospectId: args.prospectId,
+        channel: args.platform,
+      },
+      { skipSemanticWhenComplete: true }
+    );
     const styleCategory = args.platform
       ? getStyleMemoryCategory(args.platform)
       : undefined;

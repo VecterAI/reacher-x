@@ -71,6 +71,7 @@ import {
   getSetupThreadTitle,
   parseSetupThreadState,
 } from "./lib/setupThreadHelpers";
+import { getSetupSessionByThreadId } from "./lib/setupSessionCore";
 import { dedupeThreadHistoryLinksByThreadId } from "./lib/threadHistoryHelpers";
 import {
   ensureWorkspaceThreadLink,
@@ -86,7 +87,9 @@ import {
 } from "./validators";
 import {
   getWorkspaceUseCase,
+  resolveWorkspaceUseCaseKey,
   type WorkspaceUseCaseDefinition,
+  type WorkspaceUseCaseKey,
 } from "../shared/lib/workspaceUseCases";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { logger } from "../shared/lib/logger";
@@ -103,9 +106,15 @@ import {
   OUTREACH_MIN_MESSAGES_FOR_HISTORY_SEARCH,
   OUTREACH_RECENT_MESSAGE_LIMIT,
 } from "./lib/agentContextHelpers";
-import { buildPlanBatchReferenceCatalogContext } from "./lib/planBatchCore";
-import { buildAgentAttachmentReferenceContext } from "./lib/agentAttachmentReferenceCore";
-import { OUTREACH_AGENT_MODEL, PINNED_AGENT_MODEL } from "./lib/ai";
+import {
+  buildPlanBatchReferenceCatalogContext,
+  type PlanBatchReferenceCatalogItem,
+} from "./lib/planBatchCore";
+import {
+  buildAgentAttachmentReferenceContext,
+  type AgentAttachmentToolReference,
+} from "./lib/agentAttachmentReferenceCore";
+import { MAIN_AGENT_MODEL, PINNED_AGENT_MODEL } from "./lib/ai";
 import { getPostedOutreachArtifactId } from "./lib/outreachResultCore";
 import {
   buildTransientXChatAgentContext,
@@ -853,63 +862,85 @@ async function buildVisionAttachmentMessage(
   };
 }
 
+type WorkspaceAgentTurnPrepResult = {
+  surface: WorkspaceAgentSurface;
+  useCaseKey: WorkspaceUseCaseKey;
+  scope: AgentThreadScopeContext;
+  metadata: AgentMessageContextMetadata | null;
+  attachmentReferences: AgentAttachmentToolReference[];
+  planBatchReferences: PlanBatchReferenceCatalogItem[];
+  promptCreatedAt: number | null;
+};
+
 async function buildAgentTurnContextMessages(
   ctx: ActionCtx,
   args: {
     threadId: string;
     promptMessageId: string;
+    preloaded?: {
+      metadata: AgentMessageContextMetadata | null;
+      scope: AgentThreadScopeContext;
+      attachmentReferences?: AgentAttachmentToolReference[];
+      planBatchReferences?: PlanBatchReferenceCatalogItem[];
+    };
   }
 ): Promise<ResolvedAgentTurnContext> {
-  const [metadata, scope] = await Promise.all([
-    getAgentMessageContextMetadataById(ctx, args.promptMessageId),
-    resolveAgentThreadScopeContext(ctx, args.threadId),
-  ]);
+  const [metadata, scope] = args.preloaded
+    ? [args.preloaded.metadata, args.preloaded.scope]
+    : await Promise.all([
+        getAgentMessageContextMetadataById(ctx, args.promptMessageId),
+        resolveAgentThreadScopeContext(ctx, args.threadId),
+      ]);
   const effectiveMetadata = metadata ?? {
     version: 1 as const,
     promptTextSource: "user" as const,
     taggedEntities: [],
     attachments: [],
   };
-  const taggedEntityLines = (
-    await Promise.all(
-      effectiveMetadata.taggedEntities.map((entity) =>
-        buildResolvedTaggedEntityLine(ctx, scope, entity)
-      )
-    )
-  ).filter((line): line is string => Boolean(line));
-  const attachmentReferences =
-    (scope.kind === "prospect" || scope.kind === "workspace") && scope.userId
-      ? await ctx.runQuery(
-          internal.agentAttachments.listAvailableForAgentTool,
-          {
+
+  const [
+    taggedEntityLines,
+    attachmentReferences,
+    attachmentLines,
+    visionAttachmentMessage,
+    planBatchReferences,
+  ] = await Promise.all([
+    effectiveMetadata.taggedEntities.length > 0
+      ? Promise.all(
+          effectiveMetadata.taggedEntities.map((entity) =>
+            buildResolvedTaggedEntityLine(ctx, scope, entity)
+          )
+        ).then((lines) => lines.filter((line): line is string => Boolean(line)))
+      : Promise.resolve([] as string[]),
+    args.preloaded?.attachmentReferences !== undefined
+      ? Promise.resolve(args.preloaded.attachmentReferences)
+      : (scope.kind === "prospect" || scope.kind === "workspace") &&
+          scope.userId
+        ? ctx.runQuery(internal.agentAttachments.listAvailableForAgentTool, {
             threadId: args.threadId,
             messageId: args.promptMessageId,
             userId: scope.userId,
-          }
-        )
-      : [];
-  const attachmentReferenceContext =
-    buildAgentAttachmentReferenceContext(attachmentReferences);
-  const attachmentLines =
-    scope.kind === "prospect"
-      ? []
-      : (
-          await Promise.all(
-            effectiveMetadata.attachments.map((attachment) =>
-              buildResolvedAttachmentReferenceLine(ctx, scope, attachment)
-            )
+          })
+        : Promise.resolve([]),
+    scope.kind === "prospect" || effectiveMetadata.attachments.length === 0
+      ? Promise.resolve([] as string[])
+      : Promise.all(
+          effectiveMetadata.attachments.map((attachment) =>
+            buildResolvedAttachmentReferenceLine(ctx, scope, attachment)
           )
-        ).filter((line): line is string => Boolean(line));
-  const visionAttachmentMessage = await buildVisionAttachmentMessage(
-    ctx,
-    scope,
-    effectiveMetadata
-  );
-  const messages: AgentTurnContextMessage[] = [];
-  const planReferenceContext =
-    scope.kind === "workspace"
-      ? buildPlanBatchReferenceCatalogContext(
-          await ctx.runQuery(
+        ).then((lines) =>
+          lines.filter((line): line is string => Boolean(line))
+        ),
+    effectiveMetadata.attachments.length > 0 ||
+    effectiveMetadata.taggedEntities.some(
+      (entity) => entity.kind === "attachment"
+    )
+      ? buildVisionAttachmentMessage(ctx, scope, effectiveMetadata)
+      : Promise.resolve(null),
+    args.preloaded?.planBatchReferences !== undefined
+      ? Promise.resolve(args.preloaded.planBatchReferences)
+      : scope.kind === "workspace"
+        ? ctx.runQuery(
             internal.planBatches.listPlanBatchReferencesForThreadInternal,
             {
               sourceThreadId: args.threadId,
@@ -917,7 +948,15 @@ async function buildAgentTurnContextMessages(
               userId: scope.userId,
             }
           )
-        )
+        : Promise.resolve([]),
+  ]);
+
+  const attachmentReferenceContext =
+    buildAgentAttachmentReferenceContext(attachmentReferences);
+  const messages: AgentTurnContextMessage[] = [];
+  const planReferenceContext =
+    scope.kind === "workspace"
+      ? buildPlanBatchReferenceCatalogContext(planBatchReferences)
       : null;
 
   if (planReferenceContext) {
@@ -1160,6 +1199,105 @@ async function canRetryAgentTurnWithoutDuplicatingTools(
   });
 }
 
+function createTimedStreamCtx(
+  ctx: ActionCtx,
+  timing?: OutreachStreamAttemptTiming
+): ActionCtx {
+  if (!timing) {
+    return ctx;
+  }
+
+  const addDeltaAddress = getFunctionAddress(components.agent.streams.addDelta);
+  const instrumentedRunMutation: ActionCtx["runMutation"] = async (
+    reference,
+    mutationArgs
+  ) => {
+    const result = await ctx.runMutation(reference, mutationArgs);
+    if (timing.first_saved_delta_ms === undefined && result === true) {
+      const address = getFunctionAddress(reference);
+      if (address.reference === addDeltaAddress.reference) {
+        timing.first_saved_delta_ms =
+          getCurrentUTCTimestamp() - timing.agent_call_started_at;
+      }
+    }
+    return result;
+  };
+
+  return { ...ctx, runMutation: instrumentedRunMutation };
+}
+
+function createStreamTimingCallbacks(timing?: OutreachStreamAttemptTiming) {
+  return {
+    experimental_onStart: ({
+      model,
+    }: {
+      model: { modelId: string; provider: string };
+    }) => {
+      if (!timing) return;
+      timing.context_and_rag_ms =
+        getCurrentUTCTimestamp() - timing.agent_call_started_at;
+      const firstStep = timing.steps[0];
+      if (firstStep) {
+        firstStep.model = model.modelId;
+        firstStep.provider = model.provider;
+      }
+    },
+    experimental_onStepStart: ({
+      stepNumber,
+      model,
+    }: {
+      stepNumber: number;
+      model: { modelId: string; provider: string };
+    }) => {
+      if (!timing) return;
+      timing.steps.push({
+        step_number: stepNumber,
+        model: model.modelId,
+        provider: model.provider,
+        started_at: getCurrentUTCTimestamp(),
+      });
+    },
+    onChunk: ({ chunk }: { chunk: { type: string } }) => {
+      if (!timing) return;
+      const now = getCurrentUTCTimestamp();
+      timing.first_delta_ready_ms ??= now - timing.agent_call_started_at;
+      if (chunk.type === "text-delta") {
+        timing.first_text_delta_ready_ms ??= now - timing.agent_call_started_at;
+      }
+      const currentStep = timing.steps[timing.steps.length - 1];
+      if (currentStep && currentStep.first_chunk_ms === undefined) {
+        currentStep.first_chunk_ms = now - currentStep.started_at;
+      }
+    },
+    onStepFinish: ({ finishReason }: { finishReason: string }) => {
+      if (!timing) return;
+      const currentStep = timing.steps[timing.steps.length - 1];
+      if (!currentStep) return;
+      currentStep.duration_ms =
+        getCurrentUTCTimestamp() - currentStep.started_at;
+      currentStep.finish_reason = finishReason;
+    },
+    experimental_onToolCallFinish: ({
+      durationMs,
+      stepNumber,
+      success,
+      toolCall,
+    }: {
+      durationMs: number;
+      stepNumber?: number;
+      success: boolean;
+      toolCall: { toolName: string };
+    }) => {
+      timing?.tool_calls.push({
+        duration_ms: durationMs,
+        ...(stepNumber === undefined ? {} : { step_number: stepNumber }),
+        success,
+        tool_name: toolCall.toolName,
+      });
+    },
+  };
+}
+
 async function runOutreachStreamText(
   ctx: ActionCtx,
   args: {
@@ -1175,30 +1313,7 @@ async function runOutreachStreamText(
     >;
   }
 ) {
-  const timing = args.timing;
-  const addDeltaAddress = getFunctionAddress(components.agent.streams.addDelta);
-  const instrumentedRunMutation: ActionCtx["runMutation"] = async (
-    reference,
-    mutationArgs
-  ) => {
-    const result = await ctx.runMutation(reference, mutationArgs);
-    if (
-      timing &&
-      timing.first_saved_delta_ms === undefined &&
-      result === true
-    ) {
-      const address = getFunctionAddress(reference);
-      if (address.reference === addDeltaAddress.reference) {
-        timing.first_saved_delta_ms =
-          getCurrentUTCTimestamp() - timing.agent_call_started_at;
-      }
-    }
-    return result;
-  };
-  const streamCtx: ActionCtx = timing
-    ? { ...ctx, runMutation: instrumentedRunMutation }
-    : ctx;
-
+  const streamCtx = createTimedStreamCtx(ctx, args.timing);
   const { outreachAgent } = await loadOutreachAgents();
 
   return outreachAgent.streamText(
@@ -1215,60 +1330,7 @@ async function runOutreachStreamText(
       allowSystemInMessages: true,
       system: args.system,
       tools: args.tools,
-      experimental_onStart: ({ model }) => {
-        if (!args.timing) return;
-        args.timing.context_and_rag_ms =
-          getCurrentUTCTimestamp() - args.timing.agent_call_started_at;
-        const firstStep = args.timing.steps[0];
-        if (firstStep) {
-          firstStep.model = model.modelId;
-          firstStep.provider = model.provider;
-        }
-      },
-      experimental_onStepStart: ({ stepNumber, model }) => {
-        if (!args.timing) return;
-        args.timing.steps.push({
-          step_number: stepNumber,
-          model: model.modelId,
-          provider: model.provider,
-          started_at: getCurrentUTCTimestamp(),
-        });
-      },
-      onChunk: ({ chunk }) => {
-        if (!args.timing) return;
-        const now = getCurrentUTCTimestamp();
-        args.timing.first_delta_ready_ms ??=
-          now - args.timing.agent_call_started_at;
-        if (chunk.type === "text-delta") {
-          args.timing.first_text_delta_ready_ms ??=
-            now - args.timing.agent_call_started_at;
-        }
-        const currentStep = args.timing.steps[args.timing.steps.length - 1];
-        if (currentStep && currentStep.first_chunk_ms === undefined) {
-          currentStep.first_chunk_ms = now - currentStep.started_at;
-        }
-      },
-      onStepFinish: ({ finishReason }) => {
-        if (!args.timing) return;
-        const currentStep = args.timing.steps[args.timing.steps.length - 1];
-        if (!currentStep) return;
-        currentStep.duration_ms =
-          getCurrentUTCTimestamp() - currentStep.started_at;
-        currentStep.finish_reason = finishReason;
-      },
-      experimental_onToolCallFinish: ({
-        durationMs,
-        stepNumber,
-        success,
-        toolCall,
-      }) => {
-        args.timing?.tool_calls.push({
-          duration_ms: durationMs,
-          ...(stepNumber === undefined ? {} : { step_number: stepNumber }),
-          success,
-          tool_name: toolCall.toolName,
-        });
-      },
+      ...createStreamTimingCallbacks(args.timing),
     },
     {
       contextOptions: args.contextOptions,
@@ -1349,12 +1411,14 @@ async function runSetupStreamText(
     system: string;
     messages?: AgentTurnContextMessage[];
     model?: LanguageModel;
+    timing?: OutreachStreamAttemptTiming;
   }
 ) {
+  const streamCtx = createTimedStreamCtx(ctx, args.timing);
   const { setupAgent } = await loadWorkspaceAgents();
 
   return setupAgent.streamText(
-    ctx,
+    streamCtx,
     { threadId: args.threadId },
     {
       ...(args.promptMessageId
@@ -1363,7 +1427,9 @@ async function runSetupStreamText(
       ...(args.prompt ? { prompt: args.prompt } : {}),
       ...(args.messages?.length ? { messages: args.messages } : {}),
       ...(args.model ? { model: args.model } : {}),
+      allowSystemInMessages: true,
       system: args.system,
+      ...createStreamTimingCallbacks(args.timing),
     },
     {
       saveStreamDeltas: DEFAULT_AGENT_STREAM_DELTAS,
@@ -1381,12 +1447,14 @@ async function runMainStreamText(
     messages?: AgentTurnContextMessage[];
     model?: LanguageModel;
     disableTools?: boolean;
+    timing?: OutreachStreamAttemptTiming;
   }
 ) {
+  const streamCtx = createTimedStreamCtx(ctx, args.timing);
   const { mainAgent } = await loadWorkspaceAgents();
 
   return mainAgent.streamText(
-    ctx,
+    streamCtx,
     { threadId: args.threadId },
     {
       ...(args.promptMessageId
@@ -1396,7 +1464,9 @@ async function runMainStreamText(
       ...(args.messages?.length ? { messages: args.messages } : {}),
       ...(args.model ? { model: args.model } : {}),
       ...(args.disableTools ? { tools: {} } : {}),
+      allowSystemInMessages: true,
       system: args.system,
+      ...createStreamTimingCallbacks(args.timing),
     },
     {
       saveStreamDeltas: DEFAULT_AGENT_STREAM_DELTAS,
@@ -1480,10 +1550,25 @@ async function streamSetupTextWithRetry(
     system: string;
     messages?: AgentTurnContextMessage[];
     model?: LanguageModel;
+    timing?: OutreachStreamTiming;
   }
 ) {
   const executeAttempt = async () => {
-    const result = await runSetupStreamText(ctx, args);
+    const attemptTiming: OutreachStreamAttemptTiming | undefined = args.timing
+      ? {
+          agent_call_started_at: getCurrentUTCTimestamp(),
+          attempt_number: args.timing.attempts.length + 1,
+          steps: [],
+          tool_calls: [],
+        }
+      : undefined;
+    if (attemptTiming) {
+      args.timing?.attempts.push(attemptTiming);
+    }
+    const result = await runSetupStreamText(ctx, {
+      ...args,
+      timing: attemptTiming,
+    });
     await result.consumeStream();
     return result;
   };
@@ -1525,10 +1610,25 @@ async function streamMainTextWithRetry(
     system: string;
     messages?: AgentTurnContextMessage[];
     model?: LanguageModel;
+    timing?: OutreachStreamTiming;
   }
 ) {
   const executeAttempt = async () => {
-    const result = await runMainStreamText(ctx, args);
+    const attemptTiming: OutreachStreamAttemptTiming | undefined = args.timing
+      ? {
+          agent_call_started_at: getCurrentUTCTimestamp(),
+          attempt_number: args.timing.attempts.length + 1,
+          steps: [],
+          tool_calls: [],
+        }
+      : undefined;
+    if (attemptTiming) {
+      args.timing?.attempts.push(attemptTiming);
+    }
+    const result = await runMainStreamText(ctx, {
+      ...args,
+      timing: attemptTiming,
+    });
     await result.consumeStream();
     return result;
   };
@@ -2669,25 +2769,177 @@ export const getMediaUploadInternal = internalQuery({
   },
 });
 
+async function loadAgentMessageContextByMessageId(
+  db: QueryCtx["db"],
+  messageId: string
+) {
+  const context = await db
+    .query("agentMessageContexts")
+    .withIndex("by_message", (q) => q.eq("messageId", messageId))
+    .first();
+  if (!context) {
+    return null;
+  }
+
+  return {
+    ...context,
+    taggedEntities: context.taggedEntities.filter((entity) =>
+      hasValidTaggedEntityIds(
+        entity,
+        (table, id) => db.normalizeId(table, id) !== null
+      )
+    ),
+  };
+}
+
 export const getAgentMessageContextInternal = internalQuery({
   args: { messageId: v.string() },
   handler: async (ctx, { messageId }) => {
-    const context = await ctx.db
-      .query("agentMessageContexts")
-      .withIndex("by_message", (q) => q.eq("messageId", messageId))
-      .first();
-    if (!context) {
-      return null;
+    return await loadAgentMessageContextByMessageId(ctx.db, messageId);
+  },
+});
+
+/**
+ * Loads surface, use case, thread scope, prompt timing, message metadata,
+ * attachment references, and plan-batch references in one Convex query
+ * transaction before Main or Setup chat starts streaming.
+ */
+export const getWorkspaceAgentTurnPrepInternal = internalQuery({
+  args: {
+    threadId: v.string(),
+    promptMessageId: v.string(),
+  },
+  handler: async (
+    ctx,
+    { threadId, promptMessageId }
+  ): Promise<WorkspaceAgentTurnPrepResult> => {
+    const [
+      prospectThreadContext,
+      workspaceThreadContext,
+      setupSession,
+      rawMessageContext,
+      promptMessages,
+    ] = await Promise.all([
+      getProspectThreadContextByThreadId(ctx.db, threadId),
+      getWorkspaceThreadContextByThreadId(ctx.db, threadId),
+      getSetupSessionByThreadId(ctx.db, threadId),
+      loadAgentMessageContextByMessageId(ctx.db, promptMessageId),
+      ctx.runQuery(components.agent.messages.getMessagesByIds, {
+        messageIds: [promptMessageId],
+      }),
+    ]);
+
+    const needsThreadTitle =
+      !prospectThreadContext &&
+      !workspaceThreadContext &&
+      !setupSession?.targetWorkspaceId;
+    const thread = needsThreadTitle
+      ? await ctx.runQuery(components.agent.threads.getThread, { threadId })
+      : null;
+    const parsedState = parseSetupThreadState(thread?.title);
+
+    const surface: WorkspaceAgentSurface = prospectThreadContext
+      ? "setup"
+      : workspaceThreadContext
+        ? "main"
+        : setupSession?.targetWorkspaceId || setupSession?.existingWorkspaceId
+          ? "setup"
+          : parsedState?.kind === "workspace"
+            ? "main"
+            : "setup";
+
+    let scope: AgentThreadScopeContext;
+    let setupWorkspace: Doc<"workspaces"> | null = null;
+
+    if (prospectThreadContext) {
+      scope = {
+        kind: "prospect",
+        workspaceId: prospectThreadContext.prospect.workspaceId,
+        prospectId: prospectThreadContext.link.prospectId,
+        userId: prospectThreadContext.link.userId,
+      };
+    } else if (workspaceThreadContext) {
+      scope = {
+        kind: "workspace",
+        workspaceId: workspaceThreadContext.link.workspaceId,
+        prospectId: null,
+        userId: workspaceThreadContext.link.userId,
+      };
+    } else {
+      const setupWorkspaceId =
+        setupSession?.targetWorkspaceId ??
+        (parsedState?.kind === "workspace"
+          ? ctx.db.normalizeId("workspaces", parsedState.workspaceId)
+          : null);
+      if (setupWorkspaceId) {
+        setupWorkspace = await ctx.db.get("workspaces", setupWorkspaceId);
+      }
+      scope =
+        setupWorkspaceId && setupWorkspace
+          ? {
+              kind: "setup",
+              workspaceId: setupWorkspaceId,
+              prospectId: null,
+              userId: setupWorkspace.userId,
+            }
+          : {
+              kind: "unknown",
+              workspaceId: null,
+              prospectId: null,
+              userId: null,
+            };
     }
 
+    const useCaseKey = setupSession
+      ? setupSession.useCaseKey
+      : workspaceThreadContext
+        ? workspaceThreadContext.workspace.useCaseKey
+        : parsedState?.kind === "draft"
+          ? (parsedState.useCaseKey ?? undefined)
+          : parsedState?.kind === "workspace"
+            ? setupWorkspace?.useCaseKey
+            : undefined;
+
+    const [attachmentReferences, planBatchReferences]: [
+      AgentAttachmentToolReference[],
+      PlanBatchReferenceCatalogItem[],
+    ] = await Promise.all([
+      (scope.kind === "prospect" || scope.kind === "workspace") && scope.userId
+        ? ctx.runQuery(internal.agentAttachments.listAvailableForAgentTool, {
+            threadId,
+            messageId: promptMessageId,
+            userId: scope.userId,
+          })
+        : Promise.resolve([]),
+      scope.kind === "workspace"
+        ? ctx.runQuery(
+            internal.planBatches.listPlanBatchReferencesForThreadInternal,
+            {
+              sourceThreadId: threadId,
+              workspaceId: scope.workspaceId,
+              userId: scope.userId,
+            }
+          )
+        : Promise.resolve([]),
+    ]);
+
+    const metadata = rawMessageContext
+      ? normalizeAgentMessageContextMetadata({
+          version: 1,
+          promptTextSource: rawMessageContext.promptTextSource,
+          taggedEntities: rawMessageContext.taggedEntities,
+          attachments: rawMessageContext.attachments,
+        })
+      : null;
+
     return {
-      ...context,
-      taggedEntities: context.taggedEntities.filter((entity) =>
-        hasValidTaggedEntityIds(
-          entity,
-          (table, id) => ctx.db.normalizeId(table, id) !== null
-        )
-      ),
+      surface,
+      useCaseKey: resolveWorkspaceUseCaseKey(useCaseKey),
+      scope,
+      metadata,
+      attachmentReferences,
+      planBatchReferences,
+      promptCreatedAt: promptMessages[0]?._creationTime ?? null,
     };
   },
 });
@@ -3752,23 +4004,48 @@ async function runStreamAgentResponse(
     transientXChatContext?: string;
   }
 ): Promise<{ text: string; finishReason: string | null } | void> {
+  const responseStartedAt = getCurrentUTCTimestamp();
+  const logEvent = getWideEventLogger(ctx);
+  const streamTiming: OutreachStreamTiming = { attempts: [] };
+  const responseTiming: Record<string, number | undefined> = {};
+
   try {
-    const { workspaceVisionLanguageModel } = await loadWorkspaceAgents();
-    const useCase = await resolveSetupUseCaseForThread(ctx, args.threadId);
-    const surface = await resolveWorkspaceAgentSurface(ctx, args.threadId);
+    const preModelStartedAt = getCurrentUTCTimestamp();
+    const [{ workspaceVisionLanguageModel }, turnPrep] = await Promise.all([
+      loadWorkspaceAgents(),
+      ctx.runQuery(internal.chat.getWorkspaceAgentTurnPrepInternal, {
+        threadId: args.threadId,
+        promptMessageId: args.promptMessageId,
+      }),
+    ]);
+    const useCase = getWorkspaceUseCase(turnPrep.useCaseKey);
+    const surface = turnPrep.surface;
     if (args.transientXChatContext && surface !== "main") {
       throw new Error("XChat analysis is available only in the main Agent.");
     }
     const hiddenContext = await buildAgentTurnContextMessages(ctx, {
       threadId: args.threadId,
       promptMessageId: args.promptMessageId,
+      preloaded: {
+        metadata: turnPrep.metadata,
+        scope: turnPrep.scope,
+        attachmentReferences: turnPrep.attachmentReferences,
+        planBatchReferences: turnPrep.planBatchReferences,
+      },
     });
+    responseTiming.pre_model_parallel_ms =
+      getCurrentUTCTimestamp() - preModelStartedAt;
+    responseTiming.queue_delay_ms = turnPrep.promptCreatedAt
+      ? Math.max(0, responseStartedAt - turnPrep.promptCreatedAt)
+      : undefined;
+
     const mainMessages = args.transientXChatContext
       ? [
           ...hiddenContext.messages,
           { role: "system" as const, content: args.transientXChatContext },
         ]
       : hiddenContext.messages;
+    const streamStartedAt = getCurrentUTCTimestamp();
     const result =
       surface === "main"
         ? await streamMainTextWithRetry(ctx, {
@@ -3779,6 +4056,7 @@ async function runStreamAgentResponse(
               ? workspaceVisionLanguageModel
               : undefined,
             system: buildMainAgentPrompt(useCase),
+            timing: streamTiming,
           })
         : await streamSetupTextWithRetry(ctx, {
             threadId: args.threadId,
@@ -3796,8 +4074,12 @@ async function runStreamAgentResponse(
               ? workspaceVisionLanguageModel
               : undefined,
             system: buildSetupAgentPrompt(useCase),
+            timing: streamTiming,
           });
+    responseTiming.stream_and_tools_ms =
+      getCurrentUTCTimestamp() - streamStartedAt;
 
+    const persistenceStartedAt = getCurrentUTCTimestamp();
     // Browser-decrypted XChat text is intentionally current-turn-only. The
     // model necessarily receives it after explicit consent, but ReacherX does
     // not copy the raw model request/response into its telemetry table.
@@ -3810,12 +4092,31 @@ async function runStreamAgentResponse(
         providerMetadata: result.providerMetadata,
       });
     }
+    responseTiming.post_stream_persistence_ms =
+      getCurrentUTCTimestamp() - persistenceStartedAt;
+    responseTiming.total_ms = getCurrentUTCTimestamp() - responseStartedAt;
+    logEvent?.set({
+      agent_response: {
+        surface,
+        model_mode: hiddenContext.hasVisionInput ? "vision" : "fixed",
+        stream_delta_throttle_ms: DEFAULT_AGENT_STREAM_DELTAS.throttleMs,
+        timing: responseTiming,
+        attempts: summarizeOutreachStreamTiming(streamTiming),
+      },
+    });
 
     return {
       text: await result.text,
       finishReason: await result.finishReason,
     };
   } catch (error) {
+    responseTiming.total_ms = getCurrentUTCTimestamp() - responseStartedAt;
+    logEvent?.set({
+      agent_response: {
+        timing: responseTiming,
+        attempts: summarizeOutreachStreamTiming(streamTiming),
+      },
+    });
     const normalizedError = normalizeUnknownError(error);
     await finalizeAgentTurnFailureBestEffort(ctx, {
       threadId: args.threadId,
@@ -4017,7 +4318,7 @@ export const resumePlanBatchAgentResponse = internalAction({
       const attempts = [
         {
           model: undefined,
-          modelId: OUTREACH_AGENT_MODEL,
+          modelId: MAIN_AGENT_MODEL,
         },
         {
           model: workspaceLanguageModel,

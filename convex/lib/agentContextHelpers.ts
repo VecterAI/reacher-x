@@ -31,7 +31,9 @@ function stripOpenRouterReasoningMetadata(value: unknown): unknown {
   );
 }
 
-function stripCompletedTurnReasoning(message: ModelMessage): ModelMessage {
+export function stripCompletedTurnReasoning(
+  message: ModelMessage
+): ModelMessage {
   const providerOptions = message.providerOptions
     ? (stripOpenRouterReasoningMetadata(
         message.providerOptions
@@ -73,13 +75,13 @@ function stripCompletedTurnReasoning(message: ModelMessage): ModelMessage {
 }
 
 /**
- * Builds the context for a new outreach generation. Completed prior turns are
- * reduced to portable text/tool history because OpenRouter's encrypted
- * reasoning is bound to the model/provider that created it. Responses on the
- * current prompt order stay byte-for-byte intact so an active tool call can
- * continue with the reasoning sequence required by the provider.
+ * Builds portable generation context for stateful agent threads. Completed
+ * prior turns are reduced to portable text/tool history because OpenRouter's
+ * encrypted reasoning is bound to the model/provider that created it. Responses
+ * on the current prompt order stay byte-for-byte intact so an active tool call
+ * can continue with the reasoning sequence required by the provider.
  */
-export function buildSafeOutreachContext(args: {
+export function buildSafeAgentContext(args: {
   search: ModelMessage[];
   recent: ModelMessage[];
   inputMessages: ModelMessage[];
@@ -94,6 +96,8 @@ export function buildSafeOutreachContext(args: {
     ...args.existingResponses,
   ];
 }
+
+export const buildSafeOutreachContext = buildSafeAgentContext;
 
 export function buildOutreachModelSessionId(threadId: string): string {
   const normalizedThreadId = threadId.replace(/\s+/g, " ").trim();

@@ -22,6 +22,7 @@ const app = defineApp({
     INLINE_AUTOCOMPLETE_ENABLED: v.optional(v.string()),
     AI_SETUP_AGENT_MODEL: v.optional(v.string()),
     AI_MAIN_AGENT_MODEL: v.optional(v.string()),
+    AI_OUTREACH_AGENT_MODEL: v.optional(v.string()),
     AI_VISION_MODEL: v.optional(v.string()),
     AI_TEXT_EMBEDDING_MODEL: v.optional(v.string()),
     AI_JEV_MODEL: v.optional(v.string()),
