@@ -4,6 +4,11 @@ import test from "node:test";
 
 const chatSource = readFileSync("convex/chat.ts", "utf8");
 const contextSource = readFileSync("convex/agents/outreach/index.ts", "utf8");
+const workspaceAgentsSource = readFileSync("convex/agents/index.ts", "utf8");
+const workspaceMemoryContextSource = readFileSync(
+  "convex/agents/workspaceMemoryContext.ts",
+  "utf8"
+);
 const outreachCoreSource = readFileSync("convex/lib/outreachCore.ts", "utf8");
 const aiSource = readFileSync("convex/lib/ai.ts", "utf8");
 const agentContextSource = readFileSync(
@@ -30,12 +35,18 @@ test("DM-only plan refinement skips X post-limit validation", () => {
   );
 });
 
-test("agent context uses stored X limits and parallel independent reads", () => {
+test("agent context uses stored X limits, inline memory, and parallel independent reads", () => {
   assert.match(contextSource, /getStoredXPostLimitContextForAgentUser/);
   assert.doesNotMatch(contextSource, /getEffectivePostLimitForAgentUser/);
   assert.match(
     contextSource,
-    /const \[[\s\S]*?workspace[\s\S]*?outreachLearningContext[\s\S]*?profileContext[\s\S]*?\] = await Promise\.all/
+    /const \[[\s\S]*?workspace[\s\S]*?outreachLearningContext[\s\S]*?profileContext[\s\S]*?outreachPlaybookMessage[\s\S]*?\] = await Promise\.all/
+  );
+  assert.match(contextSource, /buildWorkspaceMemoryContextFromStore/);
+  assert.match(contextSource, /skipSemanticWhenComplete: true/);
+  assert.doesNotMatch(
+    contextSource,
+    /internal\.memory\.getOutreachLearningContextInternal/
   );
 });
 
@@ -56,25 +67,47 @@ test("prospect-thread tags do not duplicate the canonical profile snapshot", () 
   );
 });
 
-test("setup agent uses the dedicated onboarding provider lane", () => {
+test("main and setup chat default to non-Pro GPT-6 Luna with batched prep and inline memory", () => {
   assert.match(
     aiSource,
-    /PINNED_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_SETUP_AGENT_MODEL",[\s\S]*?ONBOARDING_MODEL/
+    /PINNED_AGENT_MODEL = getConfiguredModel\([^)]*"AI_SETUP_AGENT_MODEL"[^)]*MODELS\.GPT_6_LUNA\b[^)]*\)/
   );
   assert.match(
     aiSource,
-    /PINNED_AGENT_PROVIDER_OPTIONS[\s\S]*?defaultOptions: ONBOARDING_PROVIDER_OPTIONS/
+    /MAIN_AGENT_MODEL = getConfiguredModel\([^)]*"AI_MAIN_AGENT_MODEL"[^)]*MODELS\.GPT_6_LUNA\b[^)]*\)/
+  );
+  assert.match(workspaceAgentsSource, /MAIN_AGENT_MODEL/);
+  assert.match(workspaceAgentsSource, /MAIN_AGENT_PROVIDER_OPTIONS/);
+  assert.match(
+    workspaceAgentsSource,
+    /maxRetries: WORKSPACE_AGENT_MAX_RETRIES/
   );
   assert.match(contextSource, /maxRetries: OUTREACH_AGENT_MAX_RETRIES/);
+  assert.match(chatSource, /internal\.chat\.getWorkspaceAgentTurnPrepInternal/);
+  assert.match(
+    workspaceMemoryContextSource,
+    /loadWorkspaceMemoryContextSnapshotForThreadInternal/
+  );
+  assert.match(
+    workspaceMemoryContextSource,
+    /buildWorkspaceMemoryContextFromStore/
+  );
+  assert.doesNotMatch(workspaceMemoryContextSource, /ctx\.runAction\s*\(/);
 });
 
-test("prospect agent keeps one fixed GPT-6 Luna Pro text model", () => {
+test("interactive prospect chat uses the fast main model while background outreach stays on Pro", () => {
   assert.match(
     aiSource,
-    /OUTREACH_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_MAIN_AGENT_MODEL",[\s\S]*?MODELS\.GPT_6_LUNA_PRO/
+    /OUTREACH_AGENT_MODEL = getConfiguredModel\([^)]*"AI_OUTREACH_AGENT_MODEL"[^)]*MODELS\.GPT_6_LUNA_PRO\b[^)]*\)/
   );
-  assert.match(contextSource, /OUTREACH_AGENT_MODEL/);
-  assert.match(contextSource, /OUTREACH_AGENT_PROVIDER_OPTIONS/);
+  assert.match(
+    contextSource,
+    /createOutreachThreadLanguageModel\(threadId: string\)[\s\S]*?MAIN_AGENT_MODEL[\s\S]*?MAIN_AGENT_PROVIDER_OPTIONS/
+  );
+  assert.match(
+    contextSource,
+    /outreachLanguageModel = createOutreachLanguageModel\([\s\S]*?OUTREACH_AGENT_MODEL[\s\S]*?OUTREACH_AGENT_PROVIDER_OPTIONS/
+  );
   assert.doesNotMatch(chatSource, /classifyOutreachTurn/);
   assert.match(chatSource, /createOutreachThreadLanguageModel/);
 });

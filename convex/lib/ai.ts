@@ -85,6 +85,7 @@ export function createAIProvider() {
 
 /** Available models via OpenRouter. */
 export const MODELS = {
+  GPT_6_LUNA: "openai/gpt-6-luna",
   GPT_6_LUNA_PRO: "openai/gpt-6-luna-pro",
   KIMI_K2_6: "moonshotai/kimi-k2.6",
   GPT_OSS: "openai/gpt-oss-120b",
@@ -363,33 +364,47 @@ const ONBOARDING_PROVIDER_LABEL = isPremiumOpenAIChatModel(ONBOARDING_MODEL)
   : "openrouter";
 
 /**
- * Tool-calling agents use a latency-ranked Cerebras/Groq/BaseTen pool.
- * OpenRouter chooses from rolling provider latency and can fail over inside
- * the request, preventing simultaneous endpoint throttling from stopping the
- * whole agent turn.
- *
- * Keep this route separate from broader fast/reasoning routing so background
- * generation can still evolve independently.
+ * Interactive setup chat defaults to non-Pro GPT-6 Luna for fast conversational
+ * first-token latency while keeping OpenAI/Azure routing and prompt caching.
+ * Background onboarding generation and qualification stay on ONBOARDING_MODEL.
  */
 export const PINNED_AGENT_MODEL = getConfiguredModel(
   "AI_SETUP_AGENT_MODEL",
-  ONBOARDING_MODEL
+  MODELS.GPT_6_LUNA
 );
 
 export const PINNED_AGENT_PROVIDER_OPTIONS: OpenRouterProviderOptions =
   getConfiguredProviderOptions({
     model: PINNED_AGENT_MODEL,
-    defaultModel: ONBOARDING_MODEL,
-    defaultOptions: ONBOARDING_PROVIDER_OPTIONS,
+    defaultModel: MODELS.GPT_6_LUNA,
+    defaultOptions: createOpenAIProviderOptions({ requireParameters: false }),
+    requireParameters: false,
   });
 
 /**
- * Prospect conversations and plan generation require stronger instruction
- * following and judgment than setup helpers and simple workspace operations.
- * Keep this route separate so those lower-judgment paths remain cost-efficient.
+ * Interactive workspace main chat and interactive prospect chat default to
+ * non-Pro GPT-6 Luna so simple prompts and multi-step tool turns respond
+ * quickly on the OpenAI/Azure lane.
+ */
+export const MAIN_AGENT_MODEL = getConfiguredModel(
+  "AI_MAIN_AGENT_MODEL",
+  MODELS.GPT_6_LUNA
+);
+
+export const MAIN_AGENT_PROVIDER_OPTIONS: OpenRouterProviderOptions =
+  getConfiguredProviderOptions({
+    model: MAIN_AGENT_MODEL,
+    defaultModel: MODELS.GPT_6_LUNA,
+    defaultOptions: createOpenAIProviderOptions(),
+  });
+
+/**
+ * Autonomous background outreach generation (auto-plans for >= 90 prospects,
+ * batch plans, and adaptive outreach) stays on GPT-6 Luna Pro independently of
+ * interactive chat so background plan quality and judgment do not regress.
  */
 export const OUTREACH_AGENT_MODEL = getConfiguredModel(
-  "AI_MAIN_AGENT_MODEL",
+  "AI_OUTREACH_AGENT_MODEL",
   MODELS.GPT_6_LUNA_PRO
 );
 

@@ -2,6 +2,7 @@
 // RAG instance for prospect context semantic search
 // Uses the shared AI SDK embedding model for vector search
 
+import { embed } from "ai";
 import { RAG } from "@convex-dev/rag";
 import { components } from "../../_generated/api";
 import {
@@ -78,6 +79,19 @@ export function getAgentMemoryRag(): AgentMemoryRag {
     }
   );
   return agentMemoryRag;
+}
+
+/**
+ * Computes a single 1536-dim embedding vector for shared memory queries so
+ * multi-namespace RAG searches reuse one embedding call instead of repeating
+ * the same provider request per namespace.
+ */
+export async function embedAgentMemoryQuery(query: string): Promise<number[]> {
+  const { embedding } = await embed({
+    model: getTextEmbeddingModel(),
+    value: query,
+  });
+  return embedding;
 }
 
 /**

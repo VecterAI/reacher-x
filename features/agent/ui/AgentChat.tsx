@@ -244,7 +244,7 @@ import { resolveUrlDescriptionStatusText } from "@/shared/lib/urls/urlDescriptio
 import { isSetupComposerLocked } from "@/convex/lib/setupFlowCore";
 import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
 import { UrlDescriptionFooterSlot } from "@/shared/ui/components/UrlDescriptionStatus";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1828,9 +1828,11 @@ function ChatMessage({
       ? "That response couldn't be completed."
       : "";
 
+  const hasAssistantText = messageText.trim().length > 0;
+
   if (
     isAssistant &&
-    (isPending || isStreaming) &&
+    (isPending || isStreaming || shouldStartVisibleTextStreaming) &&
     !displayText &&
     !toolCalls.length &&
     !hasAssistantMetadata
@@ -1853,8 +1855,11 @@ function ChatMessage({
   }
 
   // Don't render empty messages unless streaming or there is rich metadata.
+  // Keep assistant messages mounted on the first smooth-text commit tick while
+  // `useSmoothText` initializes `visibleText` from non-empty `messageText`.
   if (
     !displayText &&
+    !(isAssistant && hasAssistantText) &&
     !failedStateMessage &&
     !isStreaming &&
     !toolCalls.length &&
@@ -2531,9 +2536,12 @@ export function AgentChat({
               message.role === "assistant" &&
               (message.status === "pending" || message.status === "streaming")
           );
+  const showAssistantReasoning = pathname !== "/agent/setup";
   const shouldKeepPendingAssistantRowVisible =
     !currentTurnAssistantMessage ||
-    isAssistantPlaceholderMessage(currentTurnAssistantMessage);
+    isAssistantPlaceholderMessage(currentTurnAssistantMessage, {
+      showReasoning: showAssistantReasoning,
+    });
   const shouldShowPendingAssistantRow =
     pendingTurn !== null &&
     pendingTurn.phase !== "failed" &&
@@ -2545,7 +2553,9 @@ export function AgentChat({
         if (currentPendingTurnOrder === null) {
           return !shouldShowPendingAssistantRow || message.role !== "assistant"
             ? true
-            : !isAssistantPlaceholderMessage(message);
+            : !isAssistantPlaceholderMessage(message, {
+                showReasoning: showAssistantReasoning,
+              });
         }
 
         if (
@@ -2556,9 +2566,16 @@ export function AgentChat({
           return true;
         }
 
-        return !isAssistantPlaceholderMessage(message);
+        return !isAssistantPlaceholderMessage(message, {
+          showReasoning: showAssistantReasoning,
+        });
       }),
-    [currentPendingTurnOrder, displayMessages, shouldShowPendingAssistantRow]
+    [
+      currentPendingTurnOrder,
+      displayMessages,
+      shouldShowPendingAssistantRow,
+      showAssistantReasoning,
+    ]
   );
   const currentUserMessageScrollAnchorKey = useMemo(
     () =>
@@ -3861,50 +3878,70 @@ export function AgentChat({
                       "flex min-h-full flex-col justify-center"
                   )}
                 >
-                  {visibleSetupDisplayMessages.map((message) => (
-                    <MessageScrollerItem
-                      key={message.key}
-                      messageId={message.key}
-                      className="mb-6"
-                      scrollAnchor={
-                        message.key === currentUserMessageScrollAnchorKey
-                      }
-                    >
-                      <motion.div
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{
-                          duration: 0.25,
-                          ease: [0.25, 0.1, 0.25, 1],
-                        }}
+                  {visibleSetupDisplayMessages.map((message) => {
+                    const isPendingTurnHandoffMessage =
+                      pendingTurn !== null &&
+                      (currentPendingTurnOrder !== null
+                        ? message.order === currentPendingTurnOrder
+                        : message.role === "user"
+                          ? pendingUserPrompt !== null &&
+                            getUIMessageDisplayText(message) ===
+                              pendingUserPrompt
+                          : message.role === "assistant" &&
+                            (message.status === "pending" ||
+                              message.status === "streaming"));
+
+                    return (
+                      <MessageScrollerItem
+                        key={message.key}
+                        messageId={message.key}
+                        className="mb-6"
+                        scrollAnchor={
+                          message.key === currentUserMessageScrollAnchorKey
+                        }
                       >
-                        <ChatMessage
-                          message={message}
-                          threadId={effectiveThreadId ?? undefined}
-                          userImage={userDisplayImage ?? undefined}
-                          userName={userDisplayName}
-                          threadModelName={threadModelName}
-                          onOpenPanelFromCard={onOpenPanelFromCard}
-                          onOpenPlanPanel={onOpenPlanPanel}
-                          onOpenWorkspaceProfilePanel={
-                            onOpenWorkspaceProfilePanel
+                        <motion.div
+                          initial={
+                            isPendingTurnHandoffMessage
+                              ? false
+                              : { opacity: 0, y: 6 }
                           }
-                          showReasoning={!isSetupRoute}
-                          supplementalContent={
-                            setupProfileSnapshotByAssistantKey.has(message.key)
-                              ? renderSetupProfileSnapshot(
-                                  setupProfileSnapshotByAssistantKey.get(
-                                    message.key
-                                  )!
-                                )
-                              : message.key === setupInlineAnchorMessageKey
-                                ? setupInlineContent
-                                : undefined
-                          }
-                        />
-                      </motion.div>
-                    </MessageScrollerItem>
-                  ))}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{
+                            duration: 0.25,
+                            ease: [0.25, 0.1, 0.25, 1],
+                          }}
+                        >
+                          <ChatMessage
+                            message={message}
+                            threadId={effectiveThreadId ?? undefined}
+                            userImage={userDisplayImage ?? undefined}
+                            userName={userDisplayName}
+                            threadModelName={threadModelName}
+                            onOpenPanelFromCard={onOpenPanelFromCard}
+                            onOpenPlanPanel={onOpenPlanPanel}
+                            onOpenWorkspaceProfilePanel={
+                              onOpenWorkspaceProfilePanel
+                            }
+                            showReasoning={showAssistantReasoning}
+                            supplementalContent={
+                              setupProfileSnapshotByAssistantKey.has(
+                                message.key
+                              )
+                                ? renderSetupProfileSnapshot(
+                                    setupProfileSnapshotByAssistantKey.get(
+                                      message.key
+                                    )!
+                                  )
+                                : message.key === setupInlineAnchorMessageKey
+                                  ? setupInlineContent
+                                  : undefined
+                            }
+                          />
+                        </motion.div>
+                      </MessageScrollerItem>
+                    );
+                  })}
 
                   {shouldShowPendingUserMessage && pendingUserPrompt && (
                     <MessageScrollerItem
@@ -3930,29 +3967,26 @@ export function AgentChat({
                     </MessageScrollerItem>
                   )}
 
-                  <AnimatePresence mode="wait">
-                    {shouldShowPendingAssistantRow &&
-                    pendingTurn &&
-                    !isSetupAudienceEntry ? (
-                      <MessageScrollerItem
-                        key="pending-turn"
-                        messageId="pending-turn"
-                        className="mb-6"
+                  {shouldShowPendingAssistantRow &&
+                  pendingTurn &&
+                  !isSetupAudienceEntry ? (
+                    <MessageScrollerItem
+                      key="pending-turn"
+                      messageId="pending-turn"
+                      className="mb-6"
+                    >
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{
+                          duration: 0.15,
+                          ease: [0.25, 0.1, 0.25, 1],
+                        }}
                       >
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{
-                            duration: 0.2,
-                            ease: [0.25, 0.1, 0.25, 1],
-                          }}
-                        >
-                          <PendingAssistantMessage pendingTurn={pendingTurn} />
-                        </motion.div>
-                      </MessageScrollerItem>
-                    ) : null}
-                  </AnimatePresence>
+                        <PendingAssistantMessage pendingTurn={pendingTurn} />
+                      </motion.div>
+                    </MessageScrollerItem>
+                  ) : null}
 
                   {shouldShowPendingError && pendingTurn?.errorMessage && (
                     <MessageScrollerItem

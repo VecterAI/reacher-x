@@ -1,6 +1,7 @@
 import type { ContextHandler } from "@convex-dev/agent";
 import type { JSONValue, ModelMessage } from "ai";
 import { getDeferredAgentExecution } from "./deferredAgentTurn";
+import { stripCompletedTurnReasoning } from "./agentContextHelpers";
 
 export type PlanBatchAgentResult = {
   status: string;
@@ -103,8 +104,8 @@ export function buildPlanBatchAgentContinuationMessages(
   );
 
   return [
-    ...context.search,
-    ...context.recent,
+    ...context.search.map(stripCompletedTurnReasoning),
+    ...context.recent.map(stripCompletedTurnReasoning),
     ...context.inputMessages,
     ...context.inputPrompt,
     ...existingResponses,

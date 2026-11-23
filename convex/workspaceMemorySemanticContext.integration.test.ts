@@ -8,6 +8,7 @@ import schema from "./schema";
 import { getWorkspaceMemoryNamespace } from "./lib/memoryHelpers";
 import { clearSharedMemorySemanticCache } from "./lib/sharedMemorySemanticCache";
 import { upsertCanonicalWorkspaceMemory } from "./lib/workspaceMemoryCore";
+import { buildWorkspaceMemoryContextFromStore } from "./lib/workspaceMemoryContextRuntime";
 
 const SHARED_MEMORY_SEMANTIC_NAMESPACES = [
   "lessons",
@@ -18,23 +19,37 @@ const SHARED_MEMORY_SEMANTIC_NAMESPACES = [
   "style",
 ] as const;
 
+const TEST_QUERY_EMBEDDING = [0.25, 0.5, 0.75];
+
 const ragState = vi.hoisted(() => {
   return {
-    calls: [] as Array<{ namespace: string; query: string }>,
+    embedCalls: [] as string[],
+    embedImpl: null as null | ((query: string) => Promise<number[]>),
+    calls: [] as Array<{ namespace: string; query: string | number[] }>,
     entries: [] as Array<{ metadata?: { memoryItemId?: string } }>,
     searchImpl: null as
       | null
-      | ((args: { namespace: string; query: string }) => Promise<unknown>),
+      | ((args: {
+          namespace: string;
+          query: string | number[];
+        }) => Promise<unknown>),
   };
 });
 vi.mock("./agents/outreach/rag", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./agents/outreach/rag")>();
   return {
     ...actual,
+    embedAgentMemoryQuery: async (query: string) => {
+      ragState.embedCalls.push(query);
+      if (ragState.embedImpl) {
+        return await ragState.embedImpl(query);
+      }
+      return TEST_QUERY_EMBEDDING;
+    },
     getAgentMemoryRag: () => ({
       search: async (
         _ctx: unknown,
-        args: { namespace: string; query: string }
+        args: { namespace: string; query: string | number[] }
       ) => {
         ragState.calls.push({
           namespace: args.namespace,
@@ -94,6 +109,8 @@ async function seedOperatorMemory(
 describe("shared workspace memory semantic context", () => {
   beforeEach(() => {
     clearSharedMemorySemanticCache();
+    ragState.embedCalls = [];
+    ragState.embedImpl = null;
     ragState.calls = [];
     ragState.entries = [];
     ragState.searchImpl = null;
@@ -114,10 +131,11 @@ describe("shared workspace memory semantic context", () => {
 
     expect(context.memoryIds).toEqual([]);
     expect(context.semanticMatches).toEqual([]);
+    expect(ragState.embedCalls).toEqual([]);
     expect(ragState.calls).toEqual([]);
   });
 
-  test("caches semantic ids so repeated identical queries skip the vector searches", async () => {
+  test("embeds the query once, reuses the vector across namespaces, and caches semantic ids", async () => {
     const t = convexTest(schema, modules);
     const seeded = await seedWorkspace(t);
     const memoryId = await seedOperatorMemory(t, seeded);
@@ -133,6 +151,7 @@ describe("shared workspace memory semantic context", () => {
       args
     );
 
+    expect(ragState.embedCalls).toEqual(["async channels after six"]);
     expect(ragState.calls.length).toBe(6);
     expect(ragState.calls.map((call) => call.namespace).sort()).toEqual(
       SHARED_MEMORY_SEMANTIC_NAMESPACES.map((namespace) =>
@@ -140,7 +159,7 @@ describe("shared workspace memory semantic context", () => {
       ).sort()
     );
     expect(
-      ragState.calls.every((call) => call.query === "async channels after six")
+      ragState.calls.every((call) => call.query === TEST_QUERY_EMBEDDING)
     ).toBe(true);
     expect(first.semanticMatches).toContain("Prefer async channels after six.");
 
@@ -149,8 +168,47 @@ describe("shared workspace memory semantic context", () => {
       args
     );
 
+    expect(ragState.embedCalls).toEqual(["async channels after six"]);
     expect(ragState.calls.length).toBe(6);
     expect(second.semanticMatches).toEqual(first.semanticMatches);
+  });
+
+  test("a failed query embedding skips namespace searches and is not cached", async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await seedWorkspace(t);
+    const memoryId = await seedOperatorMemory(t, seeded);
+    ragState.entries = [{ metadata: { memoryItemId: memoryId } }];
+
+    ragState.embedImpl = async () => {
+      throw new Error("embedding provider unavailable");
+    };
+
+    const args = {
+      ...seeded,
+      query: "async channels after six",
+      surface: "main",
+    };
+    const degraded = await t.action(
+      internal.memory.buildWorkspaceMemoryContextInternal,
+      args
+    );
+    expect(ragState.embedCalls).toEqual(["async channels after six"]);
+    expect(ragState.calls).toEqual([]);
+    expect(degraded.semanticMatches).toEqual([]);
+
+    ragState.embedImpl = null;
+    const recovered = await t.action(
+      internal.memory.buildWorkspaceMemoryContextInternal,
+      args
+    );
+    expect(ragState.embedCalls).toEqual([
+      "async channels after six",
+      "async channels after six",
+    ]);
+    expect(ragState.calls.length).toBe(6);
+    expect(recovered.semanticMatches).toContain(
+      "Prefer async channels after six."
+    );
   });
 
   test("caches empty semantic results without re-searching", async () => {
@@ -206,5 +264,83 @@ describe("shared workspace memory semantic context", () => {
 
     await t.action(internal.memory.buildWorkspaceMemoryContextInternal, args);
     expect(ragState.calls.length).toBe(12);
+  });
+
+  test("batched thread snapshot resolves workspace thread and isolates draft setup threads", async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await seedWorkspace(t);
+    await seedOperatorMemory(t, seeded);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("workspaceAgentThreads", {
+        workspaceId: seeded.workspaceId,
+        userId: seeded.userId,
+        threadId: "workspace-thread-1",
+        threadStatus: "active",
+      });
+      await ctx.db.insert("workspaceSetupSessions", {
+        userId: seeded.userId,
+        mode: "new_workspace",
+        status: "draft",
+        setupThreadId: "draft-setup-thread-1",
+        useCaseKey: "customer_prospecting",
+        draftOrdinal: 1,
+        statusUpdatedAt: 1,
+      });
+    });
+
+    const workspaceLoaded = await t.query(
+      internal.memory.loadWorkspaceMemoryContextSnapshotForThreadInternal,
+      {
+        userId: seeded.userId,
+        threadId: "workspace-thread-1",
+        allowDefaultWorkspace: false,
+        query: "async channels",
+      }
+    );
+    expect(workspaceLoaded.scope.workspaceId).toBe(seeded.workspaceId);
+    expect(workspaceLoaded.snapshot?.ownsWorkspace).toBe(true);
+    expect(workspaceLoaded.snapshot?.candidatesComplete).toBe(true);
+    expect(workspaceLoaded.snapshot?.candidates.length).toBeGreaterThan(0);
+
+    const promptOnlyComplete = await buildWorkspaceMemoryContextFromStore(
+      {
+        runQuery: async () => {
+          throw new Error("should not query when snapshot is preloaded");
+        },
+        runAction: async () => {
+          throw new Error("should not search RAG when candidates are complete");
+        },
+      } as unknown as Parameters<
+        typeof buildWorkspaceMemoryContextFromStore
+      >[0],
+      {
+        workspaceId: String(seeded.workspaceId),
+        userId: String(seeded.userId),
+        query: "async channels",
+        surface: "main",
+      },
+      {
+        preloadedSnapshot: workspaceLoaded.snapshot!,
+        skipSemanticWhenComplete: true,
+      }
+    );
+    expect(promptOnlyComplete.prompt).toContain(
+      "Prefer async channels after six."
+    );
+    expect(ragState.embedCalls).toEqual([]);
+    expect(ragState.calls).toEqual([]);
+
+    const draftSetupLoaded = await t.query(
+      internal.memory.loadWorkspaceMemoryContextSnapshotForThreadInternal,
+      {
+        userId: seeded.userId,
+        threadId: "draft-setup-thread-1",
+        allowDefaultWorkspace: false,
+        query: "setup policy",
+      }
+    );
+    expect(draftSetupLoaded.scope.workspaceId).toBeNull();
+    expect(draftSetupLoaded.snapshot).toBeNull();
   });
 });

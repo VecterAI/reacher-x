@@ -707,13 +707,16 @@ export async function searchCanonicalWorkspaceMemories(
     .map(toCanonicalWorkspaceMemory);
 }
 
-export async function listCanonicalWorkspaceMemoryCandidates(
+export async function listCanonicalWorkspaceMemoryCandidatesWithCompleteness(
   db: MemoryDbReader,
   args: { workspaceId: Id<"workspaces">; userId: Id<"users"> }
-): Promise<CanonicalWorkspaceMemory[]> {
+): Promise<{
+  candidates: CanonicalWorkspaceMemory[];
+  candidatesComplete: boolean;
+}> {
   const workspace = await db.get("workspaces", args.workspaceId);
   if (!workspace || workspace.userId !== args.userId) {
-    return [];
+    return { candidates: [], candidatesComplete: true };
   }
   const [operatorRows, learnedRows] = await Promise.all([
     db
@@ -741,14 +744,28 @@ export async function listCanonicalWorkspaceMemoryCandidates(
       .order("desc")
       .take(MAX_LEARNED_MEMORY_CANDIDATES),
   ]);
-  return [
-    ...operatorRows,
-    ...learnedRows.filter(
-      (row) =>
-        row.source === "style_analysis" ||
-        isCurrentTargetingLearning(row, workspace)
-    ),
-  ].map(toCanonicalWorkspaceMemory);
+  return {
+    candidates: [
+      ...operatorRows,
+      ...learnedRows.filter(
+        (row) =>
+          row.source === "style_analysis" ||
+          isCurrentTargetingLearning(row, workspace)
+      ),
+    ].map(toCanonicalWorkspaceMemory),
+    candidatesComplete:
+      operatorRows.length < MAX_OPERATOR_MEMORY_CANDIDATES &&
+      learnedRows.length < MAX_LEARNED_MEMORY_CANDIDATES,
+  };
+}
+
+export async function listCanonicalWorkspaceMemoryCandidates(
+  db: MemoryDbReader,
+  args: { workspaceId: Id<"workspaces">; userId: Id<"users"> }
+): Promise<CanonicalWorkspaceMemory[]> {
+  return (
+    await listCanonicalWorkspaceMemoryCandidatesWithCompleteness(db, args)
+  ).candidates;
 }
 
 export async function listCanonicalLegacyMemoryIds(

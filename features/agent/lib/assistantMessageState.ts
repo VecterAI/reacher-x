@@ -1,3 +1,8 @@
+import type { UIMessage } from "@convex-dev/agent/react";
+import {
+  extractAssistantReasoning,
+  extractAssistantSources,
+} from "./messageMetadata";
 import { getUIMessageDisplayText } from "./uiMessageText";
 import { isToolPart } from "./toolParts";
 
@@ -6,6 +11,9 @@ type AssistantMessageLike = {
   status?: string;
   text?: string | null;
   parts?: Array<{ type?: string; [key: string]: unknown }> | null;
+  reasoning?: string | null;
+  reasoningDetails?: unknown;
+  sources?: unknown;
 };
 
 /**
@@ -14,7 +22,8 @@ type AssistantMessageLike = {
  * a single stable pending row instead of two competing loading states.
  */
 export function isAssistantPlaceholderMessage(
-  message: AssistantMessageLike
+  message: AssistantMessageLike,
+  options?: { showReasoning?: boolean }
 ): boolean {
   if (message.role !== "assistant") {
     return false;
@@ -28,5 +37,17 @@ export function isAssistantPlaceholderMessage(
     return false;
   }
 
-  return !(message.parts ?? []).some(isToolPart);
+  if ((message.parts ?? []).some(isToolPart)) {
+    return false;
+  }
+
+  const showReasoning = options?.showReasoning ?? true;
+  if (
+    showReasoning &&
+    Boolean(extractAssistantReasoning(message as UIMessage))
+  ) {
+    return false;
+  }
+
+  return extractAssistantSources(message as UIMessage).length === 0;
 }

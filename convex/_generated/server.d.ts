@@ -35,6 +35,7 @@ type Env = {
   readonly AI_JEV_MODEL: string | undefined;
   readonly AI_MAIN_AGENT_MODEL: string | undefined;
   readonly AI_ONBOARDING_MODEL: string | undefined;
+  readonly AI_OUTREACH_AGENT_MODEL: string | undefined;
   readonly AI_REASONING_MODEL: string | undefined;
   readonly AI_SETUP_AGENT_MODEL: string | undefined;
   readonly AI_TEXT_EMBEDDING_MODEL: string | undefined;

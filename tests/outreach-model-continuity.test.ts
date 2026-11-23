@@ -13,12 +13,21 @@ const outreachAgentSource = readFileSync(
   "utf8"
 );
 const chatSource = readFileSync("convex/chat.ts", "utf8");
+const workspaceMemoryContextSource = readFileSync(
+  "convex/agents/workspaceMemoryContext.ts",
+  "utf8"
+);
 
 test("outreach uses one fixed text model with an explicit vision exception", () => {
   assert.match(
     aiSource,
-    /OUTREACH_AGENT_MODEL = getConfiguredModel\([\s\S]*?"AI_MAIN_AGENT_MODEL",[\s\S]*?MODELS\.GPT_6_LUNA_PRO/
+    /OUTREACH_AGENT_MODEL = getConfiguredModel\([^)]*"AI_OUTREACH_AGENT_MODEL"[^)]*MODELS\.GPT_6_LUNA_PRO\b[^)]*\)/
   );
+  assert.match(
+    aiSource,
+    /MAIN_AGENT_MODEL = getConfiguredModel\([^)]*"AI_MAIN_AGENT_MODEL"[^)]*MODELS\.GPT_6_LUNA\b[^)]*\)/
+  );
+  assert.match(workspaceMemoryContextSource, /buildSafeAgentContext\(args\)/);
   assert.doesNotMatch(
     aiSource,
     /AI_OUTREACH_(ROUTER|FAST|STANDARD|RECOVERY)_MODEL/
