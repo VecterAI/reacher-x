@@ -18,6 +18,15 @@ const TERMINAL_PLAN_BATCH_STATUSES = new Set([
   "cancelled",
 ]);
 
+/**
+ * Returns true while an assistant message row is still being generated on the
+ * backend, including the initial empty `"pending"` shell created before stream
+ * deltas begin arriving.
+ */
+export function isAssistantMessageActive(status: string | undefined): boolean {
+  return status === "pending" || status === "streaming";
+}
+
 export function isPlanBatchTurnWaiting(state: PlanBatchTurnState): boolean {
   return Boolean(
     state &&

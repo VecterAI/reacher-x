@@ -294,8 +294,9 @@ Values are OpenRouter model IDs unless otherwise noted.
 | `AI_AUTOCOMPLETE_MODEL`       | `openai/gpt-oss-120b`             | Autocomplete and lightweight helper generation                                                                                                        |
 | `AI_ONBOARDING_MODEL`         | `openai/gpt-6-luna-pro`           | Shared strong route for onboarding, targeting criteria, synthetic examples, revisions, prospecting keyword/query planning, and prospect qualification |
 | `INLINE_AUTOCOMPLETE_ENABLED` | Production: `1`; development: `0` | Inline composer autocomplete. Accepts `1/0`, `true/false`, `yes/no`, or `on/off`.                                                                     |
-| `AI_SETUP_AGENT_MODEL`        | Value of `AI_ONBOARDING_MODEL`    | Workspace setup chat agent                                                                                                                            |
-| `AI_MAIN_AGENT_MODEL`         | `openai/gpt-6-luna-pro`           | Fixed model for stateful main and prospect-scoped conversations, planning, and outreach                                                               |
+| `AI_SETUP_AGENT_MODEL`        | `openai/gpt-6-luna`               | Interactive workspace setup chat agent                                                                                                                |
+| `AI_MAIN_AGENT_MODEL`         | `openai/gpt-6-luna`               | Fixed model for interactive workspace main chat and interactive prospect chat                                                                         |
+| `AI_OUTREACH_AGENT_MODEL`     | `openai/gpt-6-luna-pro`           | Fixed model for autonomous background outreach generation (auto-plans for >= 90 fit prospects, batch plans, and adaptive outreach)                    |
 | `AI_VISION_MODEL`             | `moonshotai/kimi-k2.6`            | Image/GIF understanding for multimodal turns                                                                                                          |
 | `AI_TEXT_EMBEDDING_MODEL`     | `openai/text-embedding-3-small`   | Agent-memory and RAG embeddings                                                                                                                       |
 | `AI_JEV_MODEL`                | `typesafe/jev-1.13`               | TypeSafe Jev System One decision model used by the replay evaluation tooling and the qualification pre-filter                                         |
@@ -308,9 +309,11 @@ Values are OpenRouter model IDs unless otherwise noted.
 
 Role-specific model variables take precedence over the preset. A newly selected model uses generic OpenRouter provider fallback unless the code has a model-specific optimized route.
 
+**Upgrading existing deployments:** `AI_MAIN_AGENT_MODEL` previously drove both interactive chat and background outreach, and `AI_SETUP_AGENT_MODEL` previously inherited `AI_ONBOARDING_MODEL`. If your deployment explicitly pins `AI_MAIN_AGENT_MODEL` or `AI_SETUP_AGENT_MODEL` to `openai/gpt-6-luna-pro`, those overrides stay active after upgrading, so update them to `openai/gpt-6-luna` (or unset them) to use the faster chat defaults. If your deployment overrides `AI_MAIN_AGENT_MODEL` to control autonomous background outreach (auto-plans, batch plans, adaptive outreach), set `AI_OUTREACH_AGENT_MODEL` to keep that model and choose `AI_MAIN_AGENT_MODEL` independently for interactive chat. If your deployment overrides `AI_ONBOARDING_MODEL` and you want setup chat to match it instead of defaulting to `openai/gpt-6-luna`, set `AI_SETUP_AGENT_MODEL` explicitly.
+
 ### Low-Cost Models For Local Development And Contributors
 
-Unlocking the workspace dashboard requires generating and approving setup examples with plan access; once approved, the workspace opens immediately and schedules the background discovery, qualification, and enrichment workflows. Because `AI_ONBOARDING_MODEL` and `AI_MAIN_AGENT_MODEL` default to the expensive production model (`openai/gpt-6-luna-pro`), running setup and its background workflows on default settings is the #1 cost blocker for contributors and coding agents.
+Unlocking the workspace dashboard requires generating and approving setup examples with plan access; once approved, the workspace opens immediately and schedules the background discovery, qualification, and enrichment workflows. Because `AI_ONBOARDING_MODEL` and `AI_OUTREACH_AGENT_MODEL` default to `openai/gpt-6-luna-pro` (and `AI_MAIN_AGENT_MODEL` / `AI_SETUP_AGENT_MODEL` default to `openai/gpt-6-luna`), running setup and its background workflows on default settings is the #1 cost blocker for contributors and coding agents.
 
 When developing locally or contributing a fix, match quality does not matter; setup and the background workflows only need to run cleanly. Override the model roles in your dev Convex deployment with an ultra-cheap model that still handles tool calling and structured outputs reliably, such as a budget Gemini model (`google/gemini-2.5-flash-lite` or `google/gemini-3.1-flash-lite`) or a GLM model (`z-ai/glm-5.3-flash` or `z-ai/glm-4.7-flash`):
 
@@ -318,6 +321,7 @@ When developing locally or contributing a fix, match quality does not matter; se
 npx convex env set AI_ONBOARDING_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_SETUP_AGENT_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_MAIN_AGENT_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_OUTREACH_AGENT_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_FAST_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_REASONING_MODEL google/gemini-2.5-flash-lite
 ```
@@ -332,12 +336,15 @@ Do **not** use free OpenRouter models (such as Nvidia Nemotron `:free` variants)
 
 ### Stateful Agent Model Continuity
 
-Main and prospect outreach threads use `AI_MAIN_AGENT_MODEL` for every text
-turn. Do not introduce per-turn model routing inside these persisted threads:
-provider reasoning metadata can be bound to the model or endpoint that created
-it. Cheaper models remain appropriate for isolated stateless workloads such as
-autocomplete, extraction, and classification when their outputs are not saved
-as assistant reasoning in the conversation.
+Setup chat threads use `AI_SETUP_AGENT_MODEL`, interactive workspace main chat
+and prospect chat turns use `AI_MAIN_AGENT_MODEL`, and autonomous background
+outreach generation (auto-plans, batch plans, and adaptive outreach) uses
+`AI_OUTREACH_AGENT_MODEL`. Do not introduce per-turn dynamic model routing
+inside interactive threads: provider reasoning metadata can be bound to the
+model or endpoint that created it. Cheaper models remain appropriate for
+isolated stateless workloads such as autocomplete, extraction, and
+classification when their outputs are not saved as assistant reasoning in the
+conversation.
 
 Completed historical turns are normalized before generation so portable text
 and tool history remains available without replaying encrypted provider
@@ -605,6 +612,21 @@ Logging overrides affect metadata, not deployment selection or feature flags. Fo
 | `NEXT_PUBLIC_DISABLE_LLM_FILTER`            | Reserved/currently unused; setting it has no effect                                                                             |
 
 Reserved variables remain in `.env.example` so intended future integration points are explicit without implying that they currently change application behavior.
+
+## Development-Only Benchmark Variables
+
+These Convex variables are managed automatically by the benchmark CLI against a development deployment. Leave all of them unset in production; when unset, production behavior is unchanged.
+
+| Variable                               | Purpose                                                                                                                                                                                   |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BENCHMARK_LEARNING_OFF_WORKSPACE_IDS` | Comma-separated workspace IDs for the benchmark's learning-off control group                                                                                                              |
+| `BENCHMARK_POOL_LIMITS`                | JSON overriding workflow and worker pool concurrency for a Convex Starter dev deployment                                                                                                  |
+| `BENCHMARK_KEYWORD_POST_SEARCH_LIMIT`  | Caps LinkdAPI keyword post-search calls per benchmark workspace cycle during enrichment                                                                                                   |
+| `BENCHMARK_HALTED_WORKSPACE_ID`        | Kill switch while stopping a benchmark workspace; refuses new LinkdAPI reservations during teardown (calls that already hold a reservation still complete)                                |
+| `BENCHMARK_MATCH_LIMIT_PER_CYCLE`      | Match threshold per benchmark workspace cycle; once reached, parks subsequent qualification work (in-flight qualifications that already passed the gate may still finish above the limit) |
+| `BENCHMARK_MATCH_LIMIT_PER_QUERY`      | Match threshold across all cycles for a benchmark prompt; once reached, stops further cycles (in-flight qualifications that already passed the gate may still finish above the limit)     |
+
+Local CLI inputs for running benchmarks live in `.env.benchmark.local` (copied from `.env.benchmark.example`). See [benchmarks/README.md](../benchmarks/README.md) for setup and usage.
 
 ## Deployment Checklist
 

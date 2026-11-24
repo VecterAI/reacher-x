@@ -279,6 +279,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
       activityLogs,
       interactionEvents,
       planRevisions,
+      benchmarkDecidedMatches,
     ] = await Promise.all([
       ctx.db
         .query("workspaceProfileChangeRequests")
@@ -464,6 +465,12 @@ export const sweepWorkspaceRowsInternal = internalMutation({
         .query("outreachPlanRevisions")
         .withIndex("by_workspace", (q) => q.eq("workspaceId", w))
         .take(n),
+      ctx.db
+        .query("benchmarkDecidedMatches")
+        .withIndex("by_workspace_id_and_qualified_at", (q) =>
+          q.eq("workspaceId", w)
+        )
+        .take(n),
     ]);
 
     let deleted = 0;
@@ -516,6 +523,7 @@ export const sweepWorkspaceRowsInternal = internalMutation({
     deleted += await deleteDocuments(ctx, activityLogs);
     deleted += await deleteDocuments(ctx, interactionEvents);
     deleted += await deleteDocuments(ctx, planRevisions);
+    deleted += await deleteDocuments(ctx, benchmarkDecidedMatches);
     return { deleted };
   },
 });

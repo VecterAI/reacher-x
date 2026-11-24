@@ -8,8 +8,16 @@ import { internal } from "../_generated/api";
 import { internalAction, internalMutation } from "../lib/functionBuilders";
 import { getQualificationPool } from "../lib/qualificationPool";
 import { previewQualificationPool } from "../lib/previewQualificationPool";
-import { QUALIFICATION_THRESHOLD } from "../lib/qualificationCore";
-import { evaluateQualificationWithExternalArticles } from "../lib/qualificationEvaluationCore";
+import {
+  QUALIFICATION_THRESHOLD,
+  type QualificationResult,
+} from "../lib/qualificationCore";
+import {
+  evaluateQualificationWithExternalArticles,
+  gatherQualificationEvidence,
+  qualifyGatheredEvidence,
+} from "../lib/qualificationEvaluationCore";
+import { isMatchLimitConfigured } from "../lib/benchmarkMatchLimit";
 import { indexEvidencePosts, type EvidencePost } from "../lib/ragIndexing";
 import {
   prospectPlatformValidator,
@@ -71,6 +79,11 @@ async function hasValidatedSetupPreviewContext(
 // Qualification Action (Node.js runtime)
 // ============================================================================
 
+/** What the qualification step returns when the benchmark match limit parked it. */
+const BENCHMARK_MATCH_LIMIT_PARKED = {
+  benchmarkMatchLimitParked: true,
+} as const;
+
 /**
  * Internal action that runs qualification logic.
  * Uses qualifyProspectCore from lib/qualificationCore.ts (single source of truth).
@@ -105,8 +118,11 @@ export const runQualificationCore = internalAction({
       )
     ),
   },
-  handler: async (ctx, args) => {
-    return await evaluateQualificationWithExternalArticles(ctx, {
+  handler: async (
+    ctx,
+    args
+  ): Promise<QualificationResult | typeof BENCHMARK_MATCH_LIMIT_PARKED> => {
+    const evaluation = {
       evidencePosts: args.evidencePosts as Array<Record<string, unknown>>,
       platform: args.platform,
       discoveryQueries: args.discoveryQueries,
@@ -125,7 +141,43 @@ export const runQualificationCore = internalAction({
       similarQualifiedCases: args.similarQualifiedCases,
       similarDisqualifiedCases: args.similarDisqualifiedCases,
       routing: args.routing,
-    });
+    };
+    if (!isMatchLimitConfigured())
+      return await evaluateQualificationWithExternalArticles(ctx, evaluation);
+
+    // Development benchmark only (lib/benchmarkMatchLimit.ts). This step can
+    // start many minutes after the workflow's gate let it through, so the
+    // match limit is checked again before the provider calls and before the
+    // model call, and a match is recorded the moment it is decided.
+    const parked = () =>
+      ctx.runQuery(
+        internal.lib.benchmarkMatchLimit.qualificationParkedInternal,
+        {
+          workspaceId: args.workspaceId,
+          prospectId: args.prospectId,
+        }
+      );
+    if (await parked()) return BENCHMARK_MATCH_LIMIT_PARKED;
+    const evidence = await gatherQualificationEvidence(ctx, evaluation);
+    if (await parked()) return BENCHMARK_MATCH_LIMIT_PARKED;
+    const result = await qualifyGatheredEvidence(ctx, evaluation, evidence);
+    if (result.qualified && result.qualifiedAt !== undefined) {
+      // A missed record only lets the limit see this match later; failing
+      // the step would pay for the verdict again.
+      await ctx
+        .runMutation(
+          internal.lib.benchmarkMatchLimit.recordDecidedMatchInternal,
+          { prospectId: args.prospectId, qualifiedAt: result.qualifiedAt }
+        )
+        .catch((error) =>
+          qualificationWorkflowLogger.warn(
+            "Benchmark match not recorded",
+            { prospectId: String(args.prospectId) },
+            error instanceof Error ? error : new Error(String(error))
+          )
+        );
+    }
+    return result;
   },
 });
 
@@ -480,6 +532,32 @@ export const qualificationWorkflow = workflow.define({
         routing: "onboarding",
       }
     );
+
+    // Development benchmark only: the step found the match limit reached
+    // before its model call, so the prospect stays pending, parked as at the
+    // gate. Replay-safe: older journals never carry this result.
+    if ("benchmarkMatchLimitParked" in result) {
+      qualificationWorkflowLogger.warn(
+        "Qualification parked by the benchmark match limit inside its step",
+        {
+          prospectId: String(args.prospectId),
+          workspaceId: String(args.workspaceId),
+        }
+      );
+      await step.runMutation(
+        internal.prospects.clearQualificationWorkflowIdIfMatchesInternal,
+        {
+          prospectId: args.prospectId,
+          workflowId: String(step.workflowId),
+        }
+      );
+      return {
+        success: true,
+        skipped: true,
+        qualified: false,
+        score: prospect.qualificationScore,
+      };
+    }
 
     // Step 5: Update prospect with qualification result
     const qualificationUpdate = await step.runMutation(

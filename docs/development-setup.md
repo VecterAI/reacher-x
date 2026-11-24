@@ -113,7 +113,7 @@ To unlock the workspace dashboard, you must generate and approve example profile
 - **Qualification workflow**
 - **Enrichment workflow**
 
-By default, workspace setup example generation, discovery query planning, qualification, and the main chat agent use expensive production models (`openai/gpt-6-luna-pro`). When you are contributing to the project, you do not care about the quality of the lead matches. You only need setup and the background workflows to run cleanly so you can build or test your change.
+By default, workspace setup example generation, discovery query planning, qualification, and autonomous background outreach use `openai/gpt-6-luna-pro` (and interactive setup, main, and prospect chat use `openai/gpt-6-luna`). When you are contributing to the project, you do not care about the quality of the lead matches. You only need setup and the background workflows to run cleanly so you can build or test your change.
 
 Swap the model roles in your dev Convex deployment to a very cheap model that still handles tool calling and structured outputs reliably, such as a budget Gemini model (`google/gemini-2.5-flash-lite` or `google/gemini-3.1-flash-lite`) or a GLM model (`z-ai/glm-5.3-flash` or `z-ai/glm-4.7-flash`):
 
@@ -121,6 +121,7 @@ Swap the model roles in your dev Convex deployment to a very cheap model that st
 npx convex env set AI_ONBOARDING_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_SETUP_AGENT_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_MAIN_AGENT_MODEL google/gemini-2.5-flash-lite
+npx convex env set AI_OUTREACH_AGENT_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_FAST_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_REASONING_MODEL google/gemini-2.5-flash-lite
 ```

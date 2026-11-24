@@ -44,6 +44,9 @@ jobs:
       - name: Convex tests
         run: pnpm test:convex
 
+      - name: Benchmark tests
+        run: pnpm test:benchmark
+
       - name: Build and check function size
         env:
           NEXT_PUBLIC_CONVEX_URL: https://example.convex.cloud

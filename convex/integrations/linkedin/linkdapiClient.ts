@@ -2,6 +2,7 @@
 
 import type { ActionCtx } from "../../_generated/server";
 import { acquireLinkdApiBudget } from "../../lib/linkdapiBudget";
+import type { LinkdApiPurpose } from "../../lib/benchmarkLinkdApiCap";
 import {
   classifyProviderFailure,
   recordProviderRequestOutcome,
@@ -127,9 +128,10 @@ export async function requestLinkdApiData<T>(
     path: string;
     query?: Record<string, LinkdApiQueryValue>;
     consumer: string;
+    purpose?: LinkdApiPurpose;
   }
 ): Promise<T> {
-  await acquireLinkdApiBudget(ctx, args.consumer);
+  await acquireLinkdApiBudget(ctx, args.consumer, undefined, args.purpose);
 
   const request = {
     consumer: args.consumer,

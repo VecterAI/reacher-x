@@ -1812,7 +1812,25 @@ export default defineSchema({
     nextAvailableAt: v.number(),
     updatedAt: v.number(),
     lastConsumer: v.optional(v.string()),
+    // Development benchmark only (lib/benchmarkLinkdApiCap.ts): the benchmark
+    // workspace cycle being counted, its keyword post-search calls so far and
+    // the calls refused.
+    benchmarkCycleKey: v.optional(v.string()),
+    benchmarkCycleCalls: v.optional(v.number()),
+    benchmarkCycleRefused: v.optional(v.number()),
   }).index("by_provider", ["provider"]),
+
+  // Development benchmark only (lib/benchmarkMatchLimit.ts): a match the
+  // qualification step decided, recorded at once, since the workflow commits
+  // it to the prospect minutes later. One row per prospect, its latest
+  // verdict. Never written in production.
+  benchmarkDecidedMatches: defineTable({
+    workspaceId: v.id("workspaces"),
+    prospectId: v.id("prospects"),
+    qualifiedAt: v.number(),
+  })
+    .index("by_workspace_id_and_qualified_at", ["workspaceId", "qualifiedAt"])
+    .index("by_prospect_id", ["prospectId"]),
 
   exaApiBudgetState: defineTable({
     provider: v.string(),

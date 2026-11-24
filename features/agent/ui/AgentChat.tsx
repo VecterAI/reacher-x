@@ -76,21 +76,15 @@ import {
   ChatContainerContent,
 } from "@/shared/ui/components/ChatContainer";
 import {
-  Reasoning,
-  ReasoningTrigger,
-  ReasoningContent,
-} from "@/shared/ui/components/Reasoning";
-import {
-  Steps,
-  StepsTrigger,
-  StepsContent,
-  StepsItem,
-} from "@/shared/ui/components/Steps";
-import {
-  Source,
-  SourceTrigger,
-  SourceContent,
-} from "@/shared/ui/components/Source";
+  Trace,
+  TraceLine,
+  TraceIcon,
+  TraceTitle,
+  TraceDescription,
+  TraceCollapsible,
+  TraceCollapsibleTrigger,
+  TraceCollapsibleContent,
+} from "@/shared/ui/components/Trace";
 import { SystemMessage } from "@/shared/ui/components/SystemMessage";
 import {
   Marker,
@@ -123,8 +117,8 @@ import {
   getToolIconKey,
   getToolLabel,
   isInlineWebResearchCall,
-  type ToolIconKey,
 } from "@/features/agent/lib/toolPresentation";
+import { TOOL_ICON_COMPONENTS } from "./toolIconComponents";
 import { AgentProspectEmptyState } from "./components/AgentProspectEmptyState";
 import {
   AgentWorkspaceEmptyState,
@@ -155,7 +149,6 @@ import {
   useRef,
   startTransition,
   type ClipboardEvent,
-  type ComponentType,
   type UIEvent,
 } from "react";
 import { useStore } from "@nanostores/react";
@@ -185,31 +178,10 @@ import {
   CloseIcon,
   ContentCopyIcon,
   ErrorIcon,
+  GlobeIcon,
+  PersonIcon,
   ProgressActivityIcon,
   RadioButtonUncheckedIcon,
-  PersonIcon,
-  ChangeHistoryIcon,
-  AccountCircleIcon,
-  CognitionIcon,
-  DeleteIcon,
-  DescriptionIcon,
-  DraftIcon,
-  EditIcon,
-  FolderIcon,
-  FramePersonIcon,
-  GroupIcon,
-  LinkedinIcon,
-  NeurologyIcon,
-  SwapVertIcon,
-  TwitterIcon,
-  FactCheckIcon,
-  ForumIcon,
-  GlobeIcon,
-  LinkIcon,
-  PauseCircleIcon,
-  RefreshIcon,
-  SearchIcon,
-  SettingsIcon,
 } from "@/shared/ui/components/icons";
 import {
   useOutreachPlanPreviewState,
@@ -244,7 +216,7 @@ import { resolveUrlDescriptionStatusText } from "@/shared/lib/urls/urlDescriptio
 import { isSetupComposerLocked } from "@/convex/lib/setupFlowCore";
 import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
 import { UrlDescriptionFooterSlot } from "@/shared/ui/components/UrlDescriptionStatus";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -406,38 +378,6 @@ function getProgressStatusIcon(status: ProgressStep["status"]) {
       );
   }
 }
-
-const TOOL_ICON_COMPONENTS: Record<
-  ToolIconKey,
-  ComponentType<{ className?: string }>
-> = {
-  account: AccountCircleIcon,
-  attachment: AttachFileIcon,
-  brain: NeurologyIcon,
-  check: CheckCircleIcon,
-  change: ChangeHistoryIcon,
-  cognition: CognitionIcon,
-  delete: DeleteIcon,
-  document: DescriptionIcon,
-  draft: DraftIcon,
-  edit: EditIcon,
-  factCheck: FactCheckIcon,
-  folder: FolderIcon,
-  forum: ForumIcon,
-  framePerson: FramePersonIcon,
-  globe: GlobeIcon,
-  group: GroupIcon,
-  link: LinkIcon,
-  linkedin: LinkedinIcon,
-  pause: PauseCircleIcon,
-  person: PersonIcon,
-  refresh: RefreshIcon,
-  search: SearchIcon,
-  searchActivity: SearchActivityIcon,
-  settings: SettingsIcon,
-  swap: SwapVertIcon,
-  twitter: TwitterIcon,
-};
 
 const AGENT_DISPLAY_NAME = "Agent";
 const AGENT_AVATAR_FALLBACK = "△";
@@ -731,6 +671,40 @@ function ToolCallMarker({
   );
 }
 
+function ToolCallTraceLine({
+  toolCall,
+}: {
+  toolCall: Pick<ToolCallInfo, "toolName" | "state" | "args" | "errorText">;
+}) {
+  const isComplete =
+    toolCall.state === "result" || toolCall.state === "output-available";
+  const isError = toolCall.state === "output-error";
+  const isRunning = !isComplete && !isError;
+  const label = getToolLabel(toolCall.toolName, toolCall.args);
+  const shortError = isError ? getShortToolError(toolCall.errorText) : null;
+  const ToolIcon =
+    TOOL_ICON_COMPONENTS[getToolIconKey(toolCall.toolName, toolCall.args)];
+
+  return (
+    <TraceLine
+      role="status"
+      status={isRunning ? "running" : isError ? "error" : undefined}
+      title={isError ? toolCall.errorText : undefined}
+    >
+      <TraceIcon>
+        {isRunning ? (
+          <ProgressActivityIcon className="size-4 animate-spin fill-current" />
+        ) : isError ? (
+          <ErrorIcon className="size-4 fill-current" />
+        ) : (
+          <ToolIcon className="size-4 fill-current" />
+        )}
+      </TraceIcon>
+      <TraceTitle>{shortError ? `${label}: ${shortError}` : label}</TraceTitle>
+    </TraceLine>
+  );
+}
+
 function ToolCallGroup({
   toolCalls,
 }: {
@@ -748,31 +722,37 @@ function ToolCallGroup({
   );
   const triggerLabel =
     totalCalls === 1 ? "1 tool used" : `${totalCalls} tools used`;
+  const groupStatus = hasError ? "error" : hasPending ? "running" : undefined;
 
   return (
-    <Steps defaultOpen={hasPending} className="w-full">
-      <StepsTrigger
-        className="text-xs font-medium"
-        leftIcon={
-          hasError ? (
-            <ErrorIcon className="text-destructive size-3.5 fill-current" />
-          ) : hasPending ? (
-            <ProgressActivityIcon className="text-primary size-3.5 animate-spin" />
-          ) : (
-            <ChangeHistoryIcon className="text-primary size-3.5 fill-current" />
-          )
-        }
-      >
-        {triggerLabel}
-      </StepsTrigger>
-      <StepsContent className="mt-0">
-        {toolCalls.map((toolCall, index) => (
-          <StepsItem key={`${toolCall.toolName}-${toolCall.state}-${index}`}>
-            <ToolCallMarker toolCall={toolCall} />
-          </StepsItem>
-        ))}
-      </StepsContent>
-    </Steps>
+    <Trace>
+      <TraceCollapsible defaultOpen={hasPending}>
+        <TraceCollapsibleTrigger>
+          <TraceLine status={groupStatus}>
+            <TraceIcon>
+              {hasError ? (
+                <ErrorIcon className="size-4 fill-current" />
+              ) : hasPending ? (
+                <ProgressActivityIcon className="size-4 animate-spin fill-current" />
+              ) : (
+                <CheckCircleIcon className="size-4 fill-current" />
+              )}
+            </TraceIcon>
+            <TraceTitle>{triggerLabel}</TraceTitle>
+          </TraceLine>
+        </TraceCollapsibleTrigger>
+        <TraceCollapsibleContent>
+          <Trace>
+            {toolCalls.map((toolCall, index) => (
+              <ToolCallTraceLine
+                key={`${toolCall.toolName}-${toolCall.state}-${index}`}
+                toolCall={toolCall}
+              />
+            ))}
+          </Trace>
+        </TraceCollapsibleContent>
+      </TraceCollapsible>
+    </Trace>
   );
 }
 
@@ -1160,48 +1140,65 @@ function ReasoningSection({
   }
 
   return (
-    <Reasoning className="mt-1" open={isOpen} onOpenChange={handleOpenChange}>
-      <ReasoningTrigger className="text-xs font-medium">
-        Analysis
-      </ReasoningTrigger>
-      <ReasoningContent
-        className="mt-2"
-        contentClassName="prose-invert:inherit"
-      >
-        <div className="space-y-3 text-sm">
-          {summary && <p className="text-foreground">{summary}</p>}
-          {steps.length > 0 && (
-            <div className="space-y-2">
-              {steps.map((step, index) => (
-                <Steps key={`${index}-${step}`}>
-                  <StepsTrigger
-                    leftIcon={
-                      isStreaming ? undefined : (
-                        <CheckCircleIcon className="text-muted-foreground size-3.5 fill-current" />
-                      )
-                    }
+    <Trace className="mt-1">
+      <TraceCollapsible open={isOpen} onOpenChange={handleOpenChange}>
+        <TraceCollapsibleTrigger>
+          <TraceLine status={isStreaming ? "running" : undefined}>
+            <TraceIcon>
+              {isStreaming ? (
+                <ProgressActivityIcon className="size-4 animate-spin fill-current" />
+              ) : (
+                <CheckCircleIcon className="size-4 fill-current" />
+              )}
+            </TraceIcon>
+            <TraceTitle>{isStreaming ? "Thinking" : "Analysis"}</TraceTitle>
+          </TraceLine>
+        </TraceCollapsibleTrigger>
+        <TraceCollapsibleContent>
+          <div className="space-y-3 text-sm">
+            {summary && <p className="text-foreground">{summary}</p>}
+            {steps.length > 0 && (
+              <div className="space-y-2">
+                {steps.map((step, index) => (
+                  <p
+                    key={`${index}-${step}`}
+                    className="text-muted-foreground leading-relaxed"
                   >
-                    Thinking
-                  </StepsTrigger>
-                  <StepsContent>
-                    <StepsItem>{step}</StepsItem>
-                  </StepsContent>
-                </Steps>
-              ))}
-            </div>
-          )}
-          {!steps.length && reasoning && summary !== reasoning && (
-            <AssistantMessageBody text={reasoning} />
-          )}
-          {redacted && !reasoning && (
-            <p className="text-muted-foreground">
-              Detailed reasoning is unavailable for this response.
-            </p>
-          )}
-        </div>
-      </ReasoningContent>
-    </Reasoning>
+                    {step}
+                  </p>
+                ))}
+              </div>
+            )}
+            {!steps.length && reasoning && summary !== reasoning && (
+              <AssistantMessageBody text={reasoning} />
+            )}
+            {redacted && !reasoning && (
+              <p className="text-muted-foreground">
+                Detailed reasoning is unavailable for this response.
+              </p>
+            )}
+          </div>
+        </TraceCollapsibleContent>
+      </TraceCollapsible>
+    </Trace>
   );
+}
+
+function getSourceMeta(
+  href: string,
+  fallback: string
+): { domain: string; faviconOrigin: string | null } {
+  try {
+    const parsed = new URL(href);
+    const domain = parsed.hostname.replace(/^www\./, "");
+    const faviconOrigin =
+      parsed.protocol === "http:" || parsed.protocol === "https:"
+        ? parsed.origin
+        : null;
+    return { domain, faviconOrigin };
+  } catch {
+    return { domain: fallback, faviconOrigin: null };
+  }
 }
 
 function SourceChips({ message }: { message: UIMessage }) {
@@ -1211,18 +1208,66 @@ function SourceChips({ message }: { message: UIMessage }) {
     return null;
   }
 
+  const triggerLabel =
+    sources.length === 1 ? "Used 1 source" : `Used ${sources.length} sources`;
+
   return (
-    <div className="flex flex-wrap gap-2">
-      {sources.map((source) => (
-        <Source key={`${source.id}-${source.href}`} href={source.href}>
-          <SourceTrigger label={source.label} showFavicon />
-          <SourceContent
-            title={source.title}
-            description={source.description}
-          />
-        </Source>
-      ))}
-    </div>
+    <Trace>
+      <TraceCollapsible defaultOpen={false}>
+        <TraceCollapsibleTrigger>
+          <TraceLine>
+            <TraceIcon>
+              <GlobeIcon className="size-4 fill-current" />
+            </TraceIcon>
+            <TraceTitle>{triggerLabel}</TraceTitle>
+          </TraceLine>
+        </TraceCollapsibleTrigger>
+        <TraceCollapsibleContent>
+          <Trace>
+            {sources.map((source) => {
+              const { domain, faviconOrigin } = getSourceMeta(
+                source.href,
+                source.label
+              );
+              return (
+                <a
+                  key={`${source.id}-${source.href}`}
+                  href={source.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={source.description || source.title || source.href}
+                >
+                  <TraceLine>
+                    <TraceIcon>
+                      {faviconOrigin ? (
+                        /* eslint-disable-next-line @next/next/no-img-element -- External favicon URLs are tiny and highly dynamic. */
+                        <img
+                          src={`https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(
+                            faviconOrigin
+                          )}`}
+                          alt=""
+                          width={14}
+                          height={14}
+                          className="size-3.5 rounded-full"
+                        />
+                      ) : (
+                        <GlobeIcon className="size-3.5 fill-current" />
+                      )}
+                    </TraceIcon>
+                    <TraceTitle>{source.title || source.label}</TraceTitle>
+                    {domain ? (
+                      <TraceDescription className="max-w-36 min-w-0 shrink truncate text-xs">
+                        {domain}
+                      </TraceDescription>
+                    ) : null}
+                  </TraceLine>
+                </a>
+              );
+            })}
+          </Trace>
+        </TraceCollapsibleContent>
+      </TraceCollapsible>
+    </Trace>
   );
 }
 
@@ -1828,9 +1873,11 @@ function ChatMessage({
       ? "That response couldn't be completed."
       : "";
 
+  const hasAssistantText = messageText.trim().length > 0;
+
   if (
     isAssistant &&
-    (isPending || isStreaming) &&
+    (isPending || isStreaming || shouldStartVisibleTextStreaming) &&
     !displayText &&
     !toolCalls.length &&
     !hasAssistantMetadata
@@ -1853,8 +1900,11 @@ function ChatMessage({
   }
 
   // Don't render empty messages unless streaming or there is rich metadata.
+  // Keep assistant messages mounted on the first smooth-text commit tick while
+  // `useSmoothText` initializes `visibleText` from non-empty `messageText`.
   if (
     !displayText &&
+    !(isAssistant && hasAssistantText) &&
     !failedStateMessage &&
     !isStreaming &&
     !toolCalls.length &&
@@ -2531,9 +2581,12 @@ export function AgentChat({
               message.role === "assistant" &&
               (message.status === "pending" || message.status === "streaming")
           );
+  const showAssistantReasoning = pathname !== "/agent/setup";
   const shouldKeepPendingAssistantRowVisible =
     !currentTurnAssistantMessage ||
-    isAssistantPlaceholderMessage(currentTurnAssistantMessage);
+    isAssistantPlaceholderMessage(currentTurnAssistantMessage, {
+      showReasoning: showAssistantReasoning,
+    });
   const shouldShowPendingAssistantRow =
     pendingTurn !== null &&
     pendingTurn.phase !== "failed" &&
@@ -2545,7 +2598,9 @@ export function AgentChat({
         if (currentPendingTurnOrder === null) {
           return !shouldShowPendingAssistantRow || message.role !== "assistant"
             ? true
-            : !isAssistantPlaceholderMessage(message);
+            : !isAssistantPlaceholderMessage(message, {
+                showReasoning: showAssistantReasoning,
+              });
         }
 
         if (
@@ -2556,9 +2611,16 @@ export function AgentChat({
           return true;
         }
 
-        return !isAssistantPlaceholderMessage(message);
+        return !isAssistantPlaceholderMessage(message, {
+          showReasoning: showAssistantReasoning,
+        });
       }),
-    [currentPendingTurnOrder, displayMessages, shouldShowPendingAssistantRow]
+    [
+      currentPendingTurnOrder,
+      displayMessages,
+      shouldShowPendingAssistantRow,
+      showAssistantReasoning,
+    ]
   );
   const currentUserMessageScrollAnchorKey = useMemo(
     () =>
@@ -3861,50 +3923,70 @@ export function AgentChat({
                       "flex min-h-full flex-col justify-center"
                   )}
                 >
-                  {visibleSetupDisplayMessages.map((message) => (
-                    <MessageScrollerItem
-                      key={message.key}
-                      messageId={message.key}
-                      className="mb-6"
-                      scrollAnchor={
-                        message.key === currentUserMessageScrollAnchorKey
-                      }
-                    >
-                      <motion.div
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{
-                          duration: 0.25,
-                          ease: [0.25, 0.1, 0.25, 1],
-                        }}
+                  {visibleSetupDisplayMessages.map((message) => {
+                    const isPendingTurnHandoffMessage =
+                      pendingTurn !== null &&
+                      (currentPendingTurnOrder !== null
+                        ? message.order === currentPendingTurnOrder
+                        : message.role === "user"
+                          ? pendingUserPrompt !== null &&
+                            getUIMessageDisplayText(message) ===
+                              pendingUserPrompt
+                          : message.role === "assistant" &&
+                            (message.status === "pending" ||
+                              message.status === "streaming"));
+
+                    return (
+                      <MessageScrollerItem
+                        key={message.key}
+                        messageId={message.key}
+                        className="mb-6"
+                        scrollAnchor={
+                          message.key === currentUserMessageScrollAnchorKey
+                        }
                       >
-                        <ChatMessage
-                          message={message}
-                          threadId={effectiveThreadId ?? undefined}
-                          userImage={userDisplayImage ?? undefined}
-                          userName={userDisplayName}
-                          threadModelName={threadModelName}
-                          onOpenPanelFromCard={onOpenPanelFromCard}
-                          onOpenPlanPanel={onOpenPlanPanel}
-                          onOpenWorkspaceProfilePanel={
-                            onOpenWorkspaceProfilePanel
+                        <motion.div
+                          initial={
+                            isPendingTurnHandoffMessage
+                              ? false
+                              : { opacity: 0, y: 6 }
                           }
-                          showReasoning={!isSetupRoute}
-                          supplementalContent={
-                            setupProfileSnapshotByAssistantKey.has(message.key)
-                              ? renderSetupProfileSnapshot(
-                                  setupProfileSnapshotByAssistantKey.get(
-                                    message.key
-                                  )!
-                                )
-                              : message.key === setupInlineAnchorMessageKey
-                                ? setupInlineContent
-                                : undefined
-                          }
-                        />
-                      </motion.div>
-                    </MessageScrollerItem>
-                  ))}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{
+                            duration: 0.25,
+                            ease: [0.25, 0.1, 0.25, 1],
+                          }}
+                        >
+                          <ChatMessage
+                            message={message}
+                            threadId={effectiveThreadId ?? undefined}
+                            userImage={userDisplayImage ?? undefined}
+                            userName={userDisplayName}
+                            threadModelName={threadModelName}
+                            onOpenPanelFromCard={onOpenPanelFromCard}
+                            onOpenPlanPanel={onOpenPlanPanel}
+                            onOpenWorkspaceProfilePanel={
+                              onOpenWorkspaceProfilePanel
+                            }
+                            showReasoning={showAssistantReasoning}
+                            supplementalContent={
+                              setupProfileSnapshotByAssistantKey.has(
+                                message.key
+                              )
+                                ? renderSetupProfileSnapshot(
+                                    setupProfileSnapshotByAssistantKey.get(
+                                      message.key
+                                    )!
+                                  )
+                                : message.key === setupInlineAnchorMessageKey
+                                  ? setupInlineContent
+                                  : undefined
+                            }
+                          />
+                        </motion.div>
+                      </MessageScrollerItem>
+                    );
+                  })}
 
                   {shouldShowPendingUserMessage && pendingUserPrompt && (
                     <MessageScrollerItem
@@ -3930,29 +4012,26 @@ export function AgentChat({
                     </MessageScrollerItem>
                   )}
 
-                  <AnimatePresence mode="wait">
-                    {shouldShowPendingAssistantRow &&
-                    pendingTurn &&
-                    !isSetupAudienceEntry ? (
-                      <MessageScrollerItem
-                        key="pending-turn"
-                        messageId="pending-turn"
-                        className="mb-6"
+                  {shouldShowPendingAssistantRow &&
+                  pendingTurn &&
+                  !isSetupAudienceEntry ? (
+                    <MessageScrollerItem
+                      key="pending-turn"
+                      messageId="pending-turn"
+                      className="mb-6"
+                    >
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{
+                          duration: 0.15,
+                          ease: [0.25, 0.1, 0.25, 1],
+                        }}
                       >
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{
-                            duration: 0.2,
-                            ease: [0.25, 0.1, 0.25, 1],
-                          }}
-                        >
-                          <PendingAssistantMessage pendingTurn={pendingTurn} />
-                        </motion.div>
-                      </MessageScrollerItem>
-                    ) : null}
-                  </AnimatePresence>
+                        <PendingAssistantMessage pendingTurn={pendingTurn} />
+                      </motion.div>
+                    </MessageScrollerItem>
+                  ) : null}
 
                   {shouldShowPendingError && pendingTurn?.errorMessage && (
                     <MessageScrollerItem

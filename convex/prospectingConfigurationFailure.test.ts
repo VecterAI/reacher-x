@@ -72,3 +72,48 @@ test("missing discovery configuration stops before model calls and records an ac
     },
   });
 });
+
+test("a benchmark workspace with every match its limit per query allows ends the cycle at the start, without plan-limit side effects", async () => {
+  const mutations: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const runAction = vi.fn();
+  const step = {
+    workflowId: "query-limit-workflow",
+    runQuery: vi.fn().mockResolvedValueOnce({
+      limitReached: false,
+      currentCount: 100,
+      limit: -1,
+      benchmarkQueryLimit: { limit: 100, matches: 102, reached: true },
+    }),
+    runMutation: vi.fn(async (ref, args) => {
+      mutations.push({ name: getFunctionName(ref), args });
+    }),
+    runAction,
+  };
+  const result = await capture.handler!(step, { workspaceId: "workspace" });
+  expect(result).toMatchObject({
+    status: "limit_reached",
+    shouldContinue: false,
+  });
+  expect((result as { reason: string }).reason).toMatch(/102 matches.*100/);
+  // No capacity reconcile, status change or plan-limit notification.
+  expect(runAction).not.toHaveBeenCalled();
+  expect(step.runQuery).toHaveBeenCalledTimes(1);
+  expect(mutations).toEqual([
+    {
+      name: "memory:recordMemoryWorkflowEventInternal",
+      args: {
+        workspaceId: "workspace",
+        eventType: "prospecting_cycle_limit_reached",
+        sourceType: "workflow_event",
+        sourceId: "query-limit-workflow",
+        workflowName: "prospectingWorkflow",
+        payload: {
+          reason: "benchmark_query_limit_reached",
+          currentCount: 102,
+          limit: 100,
+        },
+        eventKey: "prospecting:query-limit-workflow:limit_reached",
+      },
+    },
+  ]);
+});

@@ -9,8 +9,8 @@ import { components, internal } from "../_generated/api";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   type OpenRouterProviderOptions,
-  OUTREACH_AGENT_MODEL,
-  OUTREACH_AGENT_PROVIDER_OPTIONS,
+  MAIN_AGENT_MODEL,
+  MAIN_AGENT_PROVIDER_OPTIONS,
   PINNED_AGENT_MODEL,
   PINNED_AGENT_PROVIDER_OPTIONS,
   PINNED_VISION_MODEL,
@@ -105,21 +105,21 @@ function createWorkspaceLanguageModel(
 }
 
 export const workspaceLanguageModel = createWorkspaceLanguageModel(
-  // Pin tool-calling setup runs to the validated Cerebras route. This avoids
-  // provider roulette for multi-step streamed agent turns.
   PINNED_AGENT_MODEL,
   PINNED_AGENT_PROVIDER_OPTIONS
 );
 
 export const workspaceMainLanguageModel = createWorkspaceLanguageModel(
-  OUTREACH_AGENT_MODEL,
-  OUTREACH_AGENT_PROVIDER_OPTIONS
+  MAIN_AGENT_MODEL,
+  MAIN_AGENT_PROVIDER_OPTIONS
 );
 
 export const workspaceVisionLanguageModel = createWorkspaceLanguageModel(
   PINNED_VISION_MODEL,
   PINNED_VISION_PROVIDER_OPTIONS
 );
+
+const WORKSPACE_AGENT_MAX_RETRIES = 1;
 
 const mainAgentBaseTools = {
   // Workspace context. Global discovery is intentionally setup-only.
@@ -162,6 +162,11 @@ export const mainAgent = new Agent(components.agent, {
     stepCountIs(15),
     stopOnDeferredAgentExecution<typeof mainAgentBaseTools>(),
   ],
+  callSettings: {
+    // Allow one bounded client-side retry for transient OpenRouter errors
+    // (such as 503s) without adding extra retries on interactive turns.
+    maxRetries: WORKSPACE_AGENT_MAX_RETRIES,
+  },
   contextOptions: {
     recentMessages: 20,
   },
@@ -216,6 +221,9 @@ export const setupAgent = new Agent(components.agent, {
   },
   // Allow multiple tool calls for complex flows
   maxSteps: 15,
+  callSettings: {
+    maxRetries: WORKSPACE_AGENT_MAX_RETRIES,
+  },
   // Customize model behavior
   contextOptions: {
     recentMessages: 20,

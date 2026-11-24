@@ -274,12 +274,24 @@ pnpm exec tsc --noEmit
 pnpm lint:strict
 pnpm exec prettier --check path/to/changed-file
 pnpm test:convex
+pnpm test:benchmark
 pnpm build
 ```
+
+For benchmark harness setup and CLI usage, see [benchmarks/README.md](./benchmarks/README.md).
 
 Run the focused test commands that cover your change as well. Keep editor/LSP diagnostics clean for every touched code file.
 
 CI must pass on your PR before it can be merged.
+
+## Labeling issues
+
+External contributors cannot set GitHub labels directly. To tag an issue you open:
+
+- Select any matching checkboxes under **Areas** in the bug report or feature request form, or
+- Comment `/label backend, prospecting` on your own issue.
+
+Supported tags: `bug`, `enhancement`, `documentation`, `question`, `backend`, `ui`, `prospecting`, `benchmark`, `performance`, and `architecture`. Priority and triage labels stay maintainer-only.
 
 ## Where to ask questions
 

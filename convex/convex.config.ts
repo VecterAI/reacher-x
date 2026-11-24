@@ -22,6 +22,7 @@ const app = defineApp({
     INLINE_AUTOCOMPLETE_ENABLED: v.optional(v.string()),
     AI_SETUP_AGENT_MODEL: v.optional(v.string()),
     AI_MAIN_AGENT_MODEL: v.optional(v.string()),
+    AI_OUTREACH_AGENT_MODEL: v.optional(v.string()),
     AI_VISION_MODEL: v.optional(v.string()),
     AI_TEXT_EMBEDDING_MODEL: v.optional(v.string()),
     AI_JEV_MODEL: v.optional(v.string()),
@@ -31,6 +32,28 @@ const app = defineApp({
     // Emergency brake: stops recovery/retry crons and the tenant dispatcher
     // from starting autonomous background work without a redeploy.
     PAUSE_AUTONOMOUS_JOBS: v.optional(v.string()),
+    // Development benchmark only: comma-separated workspace IDs whose learned
+    // context is withheld (see lib/benchmarkLearningControl.ts).
+    BENCHMARK_LEARNING_OFF_WORKSPACE_IDS: v.optional(v.string()),
+    // Development benchmark only: JSON workflow and worker pool limits for the
+    // Starter plan (see lib/benchmarkConcurrency.ts).
+    BENCHMARK_POOL_LIMITS: v.optional(v.string()),
+    // Development benchmark only: most LinkdAPI calls enrichment's keyword
+    // post search may make per benchmark workspace cycle (see
+    // lib/benchmarkLinkdApiCap.ts).
+    BENCHMARK_KEYWORD_POST_SEARCH_LIMIT: v.optional(v.string()),
+    // Development benchmark only: the workspace a benchmark step is stopping;
+    // while set, every LinkdAPI reservation is refused (see
+    // lib/benchmarkLinkdApiCap.ts).
+    BENCHMARK_HALTED_WORKSPACE_ID: v.optional(v.string()),
+    // Development benchmark only: most matches a benchmark workspace's cycle
+    // qualifies before further qualification is parked at the plan-limit gate
+    // (see lib/benchmarkMatchLimit.ts).
+    BENCHMARK_MATCH_LIMIT_PER_CYCLE: v.optional(v.string()),
+    // Development benchmark only: most matches a benchmark workspace qualifies
+    // across all its cycles; once reached, no further cycle runs (see
+    // lib/benchmarkMatchLimit.ts).
+    BENCHMARK_MATCH_LIMIT_PER_QUERY: v.optional(v.string()),
     OPENROUTER_ROUTING_PRESET: v.optional(
       v.union(v.literal("current"), v.literal("cost_optimized"))
     ),

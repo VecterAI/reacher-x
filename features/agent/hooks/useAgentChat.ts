@@ -31,6 +31,7 @@ import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
 import { logger } from "@/shared/lib/logger";
 import { resolveAgentThreadInitializationMode } from "@/features/agent/lib/agentThreadInitialization";
 import {
+  isAssistantMessageActive,
   isPlanBatchTurnWaiting,
   updatePendingTurnPhase,
 } from "@/features/agent/lib/pendingTurnState";
@@ -958,7 +959,7 @@ export function useAgentChat(
         }));
 
     if (pendingTurn.order === null) {
-      if (isStreaming) {
+      if (isStreaming || hasPersistedPendingAssistant) {
         setPendingTurn((current) =>
           updatePendingTurnPhase(current, pendingTurn.id, "streaming")
         );
@@ -986,7 +987,7 @@ export function useAgentChat(
       return;
     }
 
-    if (matchingAssistantMessage.status === "streaming") {
+    if (isAssistantMessageActive(matchingAssistantMessage.status)) {
       setPendingTurn((current) =>
         updatePendingTurnPhase(current, pendingTurn.id, "streaming")
       );
@@ -1004,6 +1005,7 @@ export function useAgentChat(
       current?.id === pendingTurn.id ? null : current
     );
   }, [
+    hasPersistedPendingAssistant,
     isStreaming,
     visibleMessageStatus,
     messages,

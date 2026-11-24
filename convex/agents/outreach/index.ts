@@ -8,6 +8,8 @@ import { components, internal } from "../../_generated/api";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   type OpenRouterProviderOptions,
+  MAIN_AGENT_MODEL,
+  MAIN_AGENT_PROVIDER_OPTIONS,
   OUTREACH_AGENT_MODEL,
   OUTREACH_AGENT_PROMPT_CACHE_OPTIONS,
   OUTREACH_AGENT_PROVIDER_OPTIONS,
@@ -63,6 +65,10 @@ import {
   OUTREACH_RECENT_MESSAGE_LIMIT,
 } from "../../lib/agentContextHelpers";
 import { filterLegacySharedBatchTurns } from "../../lib/planBatchCore";
+import {
+  buildWorkspaceMemoryContextFromStore,
+  buildWorkspaceMemorySearchQuery,
+} from "../../lib/workspaceMemoryContextRuntime";
 import { getOutreachPlaybookMessage } from "../../../shared/lib/outreachPlaybook";
 import type { OutreachAgentCustomContext } from "./context";
 import {
@@ -156,13 +162,18 @@ function createOutreachLanguageModel(
   });
 }
 
+/**
+ * Interactive prospect-chat model (uses `AI_MAIN_AGENT_MODEL`, defaulting to
+ * fast non-Pro GPT-6 Luna). Background autonomous outreach (auto-plans, batch
+ * plans, and adaptive outreach) uses `outreachLanguageModel` below on Pro.
+ */
 export function createOutreachThreadLanguageModel(threadId: string) {
   return createOutreachLanguageModel(
-    OUTREACH_AGENT_MODEL,
-    OUTREACH_AGENT_PROVIDER_OPTIONS,
+    MAIN_AGENT_MODEL,
+    MAIN_AGENT_PROVIDER_OPTIONS,
     {
       enableExplicitPromptCaching:
-        supportsExplicitPromptCaching(OUTREACH_AGENT_MODEL),
+        supportsExplicitPromptCaching(MAIN_AGENT_MODEL),
       sessionId: buildOutreachModelSessionId(threadId),
     }
   );
@@ -196,15 +207,22 @@ const OUTREACH_AGENT_MAX_RETRIES = 0;
  */
 const prospectContextHandler: ContextHandler = async (ctx, args) => {
   const safeMessages = buildSafeOutreachContext(args);
+  let loadedPlaybookPromise: Promise<{
+    role: "system";
+    content: string;
+  }> | null = null;
   const fallbackWithPlaybook = async () => {
     try {
-      return [
-        {
-          role: "system" as const,
-          content: await getOutreachPlaybookMessage(),
-        },
-        ...safeMessages,
-      ];
+      const playbookMessage = loadedPlaybookPromise
+        ? await loadedPlaybookPromise.catch(async () => ({
+            role: "system" as const,
+            content: await getOutreachPlaybookMessage(),
+          }))
+        : {
+            role: "system" as const,
+            content: await getOutreachPlaybookMessage(),
+          };
+      return [playbookMessage, ...safeMessages];
     } catch (playbookError) {
       outreachAgentLogger.warn(
         "Failed to load outreach playbook",
@@ -261,6 +279,22 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
     }
 
     const prospect = threadContext.prospect;
+    const prospectPlatform =
+      prospect.platform === "linkedin" ? "linkedin" : "twitter";
+    const memoryQueryText = buildWorkspaceMemorySearchQuery({
+      title: prospect.title,
+      briefIntro: prospect.briefIntro,
+      painPoints:
+        prospect.painPoints?.map(
+          (painPoint: { pain: string }) => painPoint.pain
+        ) || [],
+      matchedKeywords: prospect.matchedKeywords || [],
+      finance: prospect.finance?.displayValue,
+    });
+    loadedPlaybookPromise = measureStage("outreach_playbook", async () => ({
+      role: "system" as const,
+      content: await getOutreachPlaybookMessage(),
+    }));
     const [
       workspace,
       workspaceInspection,
@@ -269,6 +303,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       xPostLimitContext,
       writingStyleContext,
       linkedinRelationshipContext,
+      outreachPlaybookMessage,
     ] = await Promise.all([
       measureStage(
         "workspace",
@@ -290,23 +325,17 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       measureStage(
         "learning_rag",
         async () =>
-          await ctx.runAction(
-            internal.memory.getOutreachLearningContextInternal,
+          await buildWorkspaceMemoryContextFromStore(
+            ctx,
             {
               workspaceId: String(prospect.workspaceId),
               userId: String(prospect.userId),
-              platform:
-                prospect.platform === "linkedin" ? "linkedin" : "twitter",
-              title: prospect.title,
-              briefIntro: prospect.briefIntro,
-              painPoints:
-                prospect.painPoints?.map(
-                  (painPoint: { pain: string }) => painPoint.pain
-                ) || [],
-              matchedKeywords: prospect.matchedKeywords || [],
-              finance: prospect.finance?.displayValue,
+              query: memoryQueryText || "outreach policy",
+              surface: "manual_prospect",
               prospectId: String(prospect._id),
-            }
+              channel: prospectPlatform,
+            },
+            { skipSemanticWhenComplete: true }
           )
       ),
       measureStage(
@@ -325,8 +354,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
               .getWorkspaceWritingStyleContextInternal,
             {
               workspaceId: prospect.workspaceId,
-              platform:
-                prospect.platform === "linkedin" ? "linkedin" : "twitter",
+              platform: prospectPlatform,
             }
           );
         } catch (styleError) {
@@ -361,6 +389,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
           };
         }
       }),
+      loadedPlaybookPromise,
     ]);
     const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
     const { effectivePostLimit, subscriptionType: xSubscriptionType } =
@@ -419,7 +448,7 @@ You are chatting about this specific prospect and already have the complete prof
     const workspaceMemoryMessage = {
       role: "system" as const,
       content:
-        outreachLearningContext.policyPrompt ||
+        outreachLearningContext.prompt ||
         "## Workspace Memory Policy\n\nNo applicable workspace memories were found.",
     };
 
@@ -482,13 +511,6 @@ RULES:
     }
 
     const isolatedMessages = filterLegacySharedBatchTurns(safeMessages);
-    const outreachPlaybookMessage = await measureStage(
-      "outreach_playbook",
-      async () => ({
-        role: "system" as const,
-        content: await getOutreachPlaybookMessage(),
-      })
-    );
 
     // Prepend context to all messages. The playbook is the second system
     // message because outreachPromptCacheMiddleware sets the cache breakpoint
@@ -508,11 +530,8 @@ RULES:
       context: {
         output_message_count: messages.length,
         workspace_memory_count:
-          outreachLearningContext.relevantMemories.length +
-          outreachLearningContext.operatorPreferences.length +
-          outreachLearningContext.winningPatterns.length +
-          outreachLearningContext.objections.length +
-          outreachLearningContext.similarCases.length,
+          outreachLearningContext.learnedMemories.length +
+          outreachLearningContext.operatorInstructions.length,
       },
       prospect: { id: prospect._id },
       workspace: { id: prospect.workspaceId },

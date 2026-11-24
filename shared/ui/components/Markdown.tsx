@@ -1,8 +1,21 @@
+"use client";
+
 import { cn } from "@/shared/lib/utils";
 import React, { memo } from "react";
 import ReactMarkdown, { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { CodeBlock, CodeBlockCode } from "./CodeBlock";
+import { useHighlightedCode } from "@/shared/ui/hooks/useHighlightedCode";
+import { getCodeBlockMeta } from "@/shared/ui/lib/codeBlockMeta";
+import {
+  CodeBlock,
+  CodeBlockActions,
+  CodeBlockContent,
+  CodeBlockCopyButton,
+  CodeBlockHeader,
+  CodeBlockLine,
+  CodeBlockMetaIcon,
+  CodeBlockTitle,
+} from "./CodeBlock";
 import { InlineCode } from "./InlineCode";
 
 export type MarkdownProps = {
@@ -14,8 +27,45 @@ export type MarkdownProps = {
 
 function extractLanguage(className?: string): string {
   if (!className) return "plaintext";
-  const match = className.match(/language-(\w+)/);
+  const match = className.match(/language-([\w-]+)/);
   return match ? match[1] : "plaintext";
+}
+
+function MarkdownCodeBlock({
+  code,
+  language,
+}: {
+  code: string;
+  language: string;
+}) {
+  const normalizedCode = code.endsWith("\n") ? code.slice(0, -1) : code;
+  const lines = useHighlightedCode(code, language);
+  const { title, icon } = getCodeBlockMeta(language);
+
+  return (
+    <CodeBlock className="my-3">
+      {title ? (
+        <CodeBlockHeader>
+          <CodeBlockTitle>
+            <CodeBlockMetaIcon kind={icon} />
+            {title}
+          </CodeBlockTitle>
+          <CodeBlockActions>
+            <CodeBlockCopyButton value={normalizedCode} />
+          </CodeBlockActions>
+        </CodeBlockHeader>
+      ) : (
+        <CodeBlockActions>
+          <CodeBlockCopyButton value={normalizedCode} />
+        </CodeBlockActions>
+      )}
+      <CodeBlockContent className="text-[13px]">
+        {lines.map((line, index) => (
+          <CodeBlockLine key={index}>{line}</CodeBlockLine>
+        ))}
+      </CodeBlockContent>
+    </CodeBlock>
+  );
 }
 
 const INLINE_AT_MENTION_PATTERN =
@@ -98,23 +148,21 @@ const INITIAL_COMPONENTS: Partial<Components> = {
 
     if (isInline) {
       return (
-        <InlineCode
-          variant="markdown"
-          className={className}
-          {...props}
-        >
+        <InlineCode variant="markdown" className={className} {...props}>
           {children}
         </InlineCode>
       );
     }
 
     const language = extractLanguage(className);
+    const codeText =
+      typeof children === "string"
+        ? children
+        : Array.isArray(children)
+          ? children.join("")
+          : String(children ?? "");
 
-    return (
-      <CodeBlock className={className}>
-        <CodeBlockCode code={children as string} language={language} />
-      </CodeBlock>
-    );
+    return <MarkdownCodeBlock code={codeText} language={language} />;
   },
   pre: function PreComponent({ children }) {
     return <>{children}</>;
