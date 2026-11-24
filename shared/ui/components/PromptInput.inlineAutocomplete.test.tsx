@@ -37,7 +37,12 @@ const textarea = () => host.querySelector("textarea")!;
 const mirror = () =>
   host.querySelector<HTMLDivElement>('div[aria-hidden="true"]');
 
-async function mount(options: { readOnly?: boolean } = {}) {
+async function mount(
+  options: {
+    readOnly?: boolean;
+    onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  } = {}
+) {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -47,6 +52,7 @@ async function mount(options: { readOnly?: boolean } = {}) {
         <PromptInputTextarea
           inlineAutocompleteContext={{ surfaceLabel: "prompt-test" }}
           readOnly={options.readOnly}
+          onKeyDown={options.onKeyDown}
         />
       </PromptInput>
     );
@@ -267,4 +273,34 @@ test("the mirror re-measures when the textarea is resized without a render", asy
 
   await press("Escape");
   expect(observers.every((entry) => entry.disconnected)).toBe(true);
+});
+
+test("accepting a suggestion does not steal focus back if onKeyDown moved it", async () => {
+  const other = document.createElement("input");
+  document.body.append(other);
+  let queuedFrame: FrameRequestCallback | null = null;
+  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+    queuedFrame = cb;
+    return 1;
+  });
+
+  act(() => root.unmount());
+  host.remove();
+  await mount({
+    onKeyDown: (e) => {
+      if (e.key === "ArrowRight") {
+        other.focus();
+      }
+    },
+  });
+
+  await showGhost("Thanks for the", "quick reply");
+  await press("ArrowRight", { ctrlKey: true });
+  expect(document.activeElement).toBe(other);
+
+  await act(async () => {
+    queuedFrame?.(0);
+  });
+  expect(document.activeElement).toBe(other);
+  other.remove();
 });

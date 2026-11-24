@@ -347,14 +347,38 @@ describe("dismiss", () => {
     expect(ctx.calls).toHaveLength(2);
   });
 
-  test("the Escape hold ends once the text changes", async () => {
+  test("the Escape hold stays active when moving the caret within the same draft and ends on edit", async () => {
     const ctx = setup();
     await showSuggestion(ctx, "Thanks for the", "quick reply");
     ctx.controller.dismiss("escape");
 
+    // Moving the caret inside the same draft keeps the hold.
+    ctx.controller.update(req("Thanks for ", { afterCursor: "the" }));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 2);
+    expect(ctx.calls).toHaveLength(1);
+    expect(ctx.controller.getSnapshot().ghostText).toBe("");
+
+    // Editing the text lifts the hold; deleting back restores the cached answer.
     ctx.controller.update(req("Thanks for thex"));
     ctx.controller.update(req("Thanks for the"));
     expect(ctx.controller.getSnapshot().ghostText).toBe(" quick reply");
+  });
+
+  test("late responses are ignored when the current input fails the request gate", async () => {
+    const ctx = setup();
+    ctx.controller.update(req("Thanks for the"));
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(ctx.calls).toHaveLength(1);
+
+    // User types a trailing mention trigger before the reply returns.
+    ctx.controller.update(req("Thanks for the @"));
+    ctx.calls[0].resolve("@Sam");
+    await settle();
+
+    expect(ctx.controller.getSnapshot()).toMatchObject({
+      status: "idle",
+      ghostText: "",
+    });
   });
 
   test("hasPendingSuggestion covers debounce, request and ghost", async () => {

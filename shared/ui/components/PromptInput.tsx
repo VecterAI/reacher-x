@@ -670,6 +670,9 @@ function PromptInputTextarea({
       setSelectionEnd(result.selectionEnd);
 
       requestAnimationFrame(() => {
+        if (el.ownerDocument.activeElement !== el) {
+          return;
+        }
         el.focus();
         el.setSelectionRange(result.selectionStart, result.selectionEnd);
         syncSelection(el);

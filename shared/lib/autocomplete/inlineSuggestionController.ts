@@ -88,6 +88,7 @@ type CurrentInput = {
   beforeCursor: string;
   fullText: string;
   contextKey: string;
+  draftKey: string;
   signature: string;
 };
 
@@ -143,6 +144,14 @@ function getContextKey(request: InlineAutocompleteRequest) {
   });
 }
 
+function getDraftKey(request: InlineAutocompleteRequest) {
+  return buildInlineAutocompleteRequestSignature({
+    ...request,
+    beforeCursor: "",
+    afterCursor: "",
+  });
+}
+
 function getSurfaceProperties(request: InlineAutocompleteRequest) {
   return {
     surface: request.surface ?? "composer",
@@ -163,8 +172,8 @@ export class InlineSuggestionController {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private nextRequestId = 0;
   private suggestionCount = 0;
-  /** Text the user dismissed with Escape or blur; no re-request until it changes. */
-  private suppressed: { signature: string; fullText: string } | null = null;
+  /** Draft context + text dismissed with Escape or blur; holds until text or context changes. */
+  private suppressed: { draftKey: string; fullText: string } | null = null;
   /**
    * Thread-helper requests still running on the server, by request id. Kept
    * apart from `inFlight` so a request whose answer will be ignored (after
@@ -239,8 +248,14 @@ export class InlineSuggestionController {
       return;
     }
 
-    // A dismissal holds only while the text is the same; caret moves keep it.
-    if (next && this.suppressed && this.suppressed.fullText !== next.fullText) {
+    // A dismissal holds only while the draft text and context are the same;
+    // caret moves keep it.
+    if (
+      next &&
+      this.suppressed &&
+      (this.suppressed.draftKey !== next.draftKey ||
+        this.suppressed.fullText !== next.fullText)
+    ) {
       this.suppressed = null;
     }
 
@@ -270,7 +285,11 @@ export class InlineSuggestionController {
       return;
     }
 
-    if (this.suppressed?.signature === next.signature) {
+    if (
+      this.suppressed &&
+      this.suppressed.draftKey === next.draftKey &&
+      this.suppressed.fullText === next.fullText
+    ) {
       this.emit();
       return;
     }
@@ -343,7 +362,7 @@ export class InlineSuggestionController {
     this.clearDebounce();
     if (this.current) {
       this.suppressed = {
-        signature: this.current.signature,
+        draftKey: this.current.draftKey,
         fullText: this.current.fullText,
       };
     }
@@ -377,6 +396,7 @@ export class InlineSuggestionController {
       beforeCursor,
       fullText: `${beforeCursor}${afterCursor}`,
       contextKey: getContextKey(request),
+      draftKey: getDraftKey(request),
       signature: buildInlineAutocompleteRequestSignature(request),
     };
   }
@@ -465,7 +485,12 @@ export class InlineSuggestionController {
       return false;
     }
     const current = this.current;
-    if (!current || !this.enabled || this.active) {
+    if (
+      !current ||
+      !this.enabled ||
+      this.active ||
+      !shouldRequestInlineAutocomplete(current.request)
+    ) {
       return false;
     }
     const origin = this.toCurrentInput(inFlight.request);
