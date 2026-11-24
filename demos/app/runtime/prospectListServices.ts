@@ -78,13 +78,23 @@ export function registerProspectListServices(
       };
     }
   );
+  const listWithOpened = (args: ListArgs) => {
+    const result = list(args);
+    return {
+      ...result,
+      page: result.page.map((row) => ({
+        ...row,
+        opened: state.openedProspectIds.has(row.prospectId),
+      })),
+    };
+  };
   client.register(
     api.prospectListFeed.listStableWorkspaceProspectSummaries,
-    list
+    listWithOpened
   );
   client.register(api.prospectSummaries.listWorkspaceProspectSummaries, list);
   client.register(api.prospectSearchUnified.searchProspectsUnified, (args) =>
-    list({
+    listWithOpened({
       ...args,
       paginationOpts: {
         ...args.paginationOpts,

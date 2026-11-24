@@ -1,11 +1,12 @@
 import type { Doc } from "@/convex/_generated/dataModel";
 
-type ProspectSummary = Doc<"prospectSummaries">;
+/** A list row; dashboard rows also say whether the user opened it. */
+export type ProspectListRow = Doc<"prospectSummaries"> & { opened?: boolean };
 
 export function dedupeProspectListResults(
-  results: readonly ProspectSummary[]
-): ProspectSummary[] {
-  const seen = new Set<ProspectSummary["_id"]>();
+  results: readonly ProspectListRow[]
+): ProspectListRow[] {
+  const seen = new Set<ProspectListRow["_id"]>();
 
   return results.filter((prospect) => {
     if (seen.has(prospect._id)) return false;

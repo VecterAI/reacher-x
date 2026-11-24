@@ -15,7 +15,6 @@ export function registerProspectServices(
   client: LocalClient,
   state: ReturnType<typeof createAppFixtures>
 ) {
-  const opened = new Set<string>();
   client.register(api.prospects.getOnboardingProgress, ({ workspaceId }) => {
     const workspace = state.workspaces.find((item) => item._id === workspaceId);
     if (!workspace) return null;
@@ -83,13 +82,8 @@ export function registerProspectServices(
     () => null
   );
   client.register(api.prospectListFeed.mergePendingProspects, () => null);
-  client.register(
-    api.prospectListFeed.getProspectOpenedMap,
-    ({ prospectIds }) =>
-      Object.fromEntries(prospectIds.map((id) => [id, opened.has(id)]))
-  );
   client.register(api.prospectListFeed.markProspectOpened, ({ prospectId }) => {
-    opened.add(prospectId);
+    state.openedProspectIds.add(prospectId);
     return null;
   });
   client.register(api.prospects.getProspect, ({ prospectId }) => {

@@ -640,7 +640,7 @@ async function getProspectSummaryOrFallback(
   return prospect ? buildProspectSummaryRecord(prospect) : null;
 }
 
-async function getProspectSummariesByProspectIds(
+export async function getProspectSummariesByProspectIds(
   db: SummaryDb,
   args: {
     workspaceId: Id<"workspaces">;
@@ -1462,15 +1462,6 @@ export const getWorkspaceFitScoreHistogram = query({
 
     return { binCounts };
   },
-});
-
-export const getProspectSummariesByProspectIdsInternal = internalQuery({
-  args: {
-    workspaceId: v.id("workspaces"),
-    prospectIds: v.array(v.id("prospects")),
-  },
-  handler: async (ctx, args) =>
-    await getProspectSummariesByProspectIds(ctx.db, args),
 });
 
 export const getFilteredProspectSummariesByProspectIdsInternal = internalQuery({

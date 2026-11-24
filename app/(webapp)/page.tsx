@@ -16,7 +16,7 @@ import {
   useQuery,
 } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Doc, Id } from "@/convex/_generated/dataModel";
+import type { Id } from "@/convex/_generated/dataModel";
 import {
   useActiveUseCaseLabels,
   useConvexReady,
@@ -111,7 +111,6 @@ type WorkspaceSetupStatus =
 type TabType = ProspectsToolbarTab;
 type ProspectStageCounts = ProspectsToolbarStageCounts;
 type TabAttentionState = ProspectsToolbarTabAttention;
-type ProspectSummary = Doc<"prospectSummaries">;
 type ProspectListFeedState = {
   hasSnapshot: boolean;
   pendingCount: number;
@@ -586,11 +585,11 @@ export default function ProspectsPage() {
   const tabProspects = useMemo(() => {
     switch (activeTab) {
       case "new":
-        return newProspectsQuery.results as ProspectSummary[];
+        return newProspectsQuery.results;
       case "contacted":
-        return contactedProspectsQuery.results as ProspectSummary[];
+        return contactedProspectsQuery.results;
       case "in_progress":
-        return inProgressProspectsQuery.results as ProspectSummary[];
+        return inProgressProspectsQuery.results;
       default:
         return [];
     }
@@ -738,8 +737,8 @@ export default function ProspectsPage() {
 
   const {
     displayProspects,
+    markSearchResultOpened,
     paginationResultCount,
-    prospectIdsForMap,
     isSearchLoading,
     hasMore,
     loadMore,
@@ -760,13 +759,6 @@ export default function ProspectsPage() {
     browseStatus: currentTabStatus,
     onBrowseLoadMore: browseLoadMore,
   });
-
-  const openedMapQuery = useQuery(
-    api.prospectListFeed.getProspectOpenedMap,
-    workspaceId && prospectIdsForMap.length > 0
-      ? { workspaceId, prospectIds: prospectIdsForMap }
-      : "skip"
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1076,15 +1068,10 @@ export default function ProspectsPage() {
                               highlightKeywords={prospect.matchedKeywords}
                               mode="default"
                               showMenu
-                              unread={
-                                "prospectId" in prospect &&
-                                openedMapQuery !== undefined &&
-                                !openedMapQuery[prospect.prospectId]
-                              }
+                              unread={!prospect.opened}
                               onClick={() => {
-                                if ("prospectId" in prospect) {
-                                  handleProspectClick(prospect.prospectId);
-                                }
+                                markSearchResultOpened(prospect.prospectId);
+                                handleProspectClick(prospect.prospectId);
                               }}
                             />
                           </li>
