@@ -19,6 +19,7 @@ export default defineConfig({
       "features/**/*.test.ts",
       "features/**/*.test.tsx",
       "shared/**/*.test.ts",
+      "shared/**/*.test.tsx",
     ],
   },
 });
