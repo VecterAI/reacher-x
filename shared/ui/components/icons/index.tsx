@@ -5493,3 +5493,23 @@ export const FilledHeartIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+/** Terminal window icon for shell commands and terminal code blocks. */
+export const TerminalIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <path
+        d="M2,20V4H22V20H2Zm2-2H20V8H4V18Zm3.5-1L6.1,15.6L8.68,13l-2.6-2.6L7.5,9l4,4l-4,4ZM12,17V15h6v2H12Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+};

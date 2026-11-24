@@ -7,7 +7,7 @@
  * - Reused as-is (prop-driven, no Convex): ThreadCard, OutreachPlanCard,
  *   InlineProgressCard, AgentWorkspaceEmptyState, Message/MessageAvatar/
  *   MessageContent/MessageActions/MessageAction, Bubble/BubbleContent,
- *   MessageScroller family, Steps family, Marker family, InlineFeatureStrip,
+ *   MessageScroller family, Trace family, Marker family, InlineFeatureStrip,
  *   PageLayout/PageHeader/PageContent, Markdown, ScrollArea, Input, Button.
  * - Replicated exactly (real versions are Convex-wired): HistoryPanel
  *   (usePaginatedQuery/useAction/useMutation), ChatHeader, ChatMessage rows
@@ -50,11 +50,14 @@ import {
   MessageScrollerButton,
 } from "@/shared/ui/components/MessageScroller";
 import {
-  Steps,
-  StepsTrigger,
-  StepsContent,
-  StepsItem,
-} from "@/shared/ui/components/Steps";
+  Trace,
+  TraceLine,
+  TraceIcon,
+  TraceTitle,
+  TraceCollapsible,
+  TraceCollapsibleTrigger,
+  TraceCollapsibleContent,
+} from "@/shared/ui/components/Trace";
 import {
   Marker,
   MarkerContent,
@@ -91,6 +94,7 @@ import {
   ArrowUpwardIcon,
   AttachFileIcon,
   ChangeHistoryIcon,
+  CheckCircleIcon,
   CheckIcon,
   CognitionIcon,
   ContentCopyIcon,
@@ -99,6 +103,11 @@ import {
   SearchActivityIcon,
   SearchIcon,
 } from "@/shared/ui/components/icons";
+import {
+  getToolIconKey,
+  getToolLabel,
+} from "@/features/agent/lib/toolPresentation";
+import { TOOL_ICON_COMPONENTS } from "@/features/agent/ui/toolIconComponents";
 import {
   DESKTOP_PANEL_BORDER_CLASS_NAME,
   PageContent,
@@ -671,45 +680,41 @@ function DemoAssistantMessageBody({ text }: { text: string }) {
   );
 }
 
-/** Replica of ToolCallMarker in AgentChat, completed state. */
-function DemoToolCallMarker({ label }: { label: string }) {
-  return (
-    <Marker role="status" className="w-full gap-2 py-0.5 text-xs">
-      <MarkerIcon className="border-border bg-background text-primary flex size-5 items-center justify-center rounded-md border">
-        <ChangeHistoryIcon className="text-primary size-3.5 fill-current" />
-      </MarkerIcon>
-      <MarkerContent className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="text-muted-foreground truncate text-xs leading-none font-medium">
-          {label}
-        </span>
-      </MarkerContent>
-    </Marker>
-  );
-}
-
 /** Replica of ToolCallGroup in AgentChat, completed state. */
 function DemoToolCallGroup({ toolNames }: { toolNames: string[] }) {
   const triggerLabel =
     toolNames.length === 1 ? "1 tool used" : `${toolNames.length} tools used`;
 
   return (
-    <Steps defaultOpen={false} className="w-full">
-      <StepsTrigger
-        className="text-xs font-medium"
-        leftIcon={
-          <ChangeHistoryIcon className="text-primary size-3.5 fill-current" />
-        }
-      >
-        {triggerLabel}
-      </StepsTrigger>
-      <StepsContent className="mt-0">
-        {toolNames.map((toolName) => (
-          <StepsItem key={toolName}>
-            <DemoToolCallMarker label={TOOL_LABELS[toolName] ?? toolName} />
-          </StepsItem>
-        ))}
-      </StepsContent>
-    </Steps>
+    <Trace>
+      <TraceCollapsible defaultOpen={false}>
+        <TraceCollapsibleTrigger>
+          <TraceLine>
+            <TraceIcon>
+              <CheckCircleIcon className="size-4 fill-current" />
+            </TraceIcon>
+            <TraceTitle>{triggerLabel}</TraceTitle>
+          </TraceLine>
+        </TraceCollapsibleTrigger>
+        <TraceCollapsibleContent>
+          <Trace>
+            {toolNames.map((toolName) => {
+              const ToolIcon = TOOL_ICON_COMPONENTS[getToolIconKey(toolName)];
+              return (
+                <TraceLine key={toolName} role="status">
+                  <TraceIcon>
+                    <ToolIcon className="size-4 fill-current" />
+                  </TraceIcon>
+                  <TraceTitle>
+                    {TOOL_LABELS[toolName] ?? getToolLabel(toolName)}
+                  </TraceTitle>
+                </TraceLine>
+              );
+            })}
+          </Trace>
+        </TraceCollapsibleContent>
+      </TraceCollapsible>
+    </Trace>
   );
 }
 
