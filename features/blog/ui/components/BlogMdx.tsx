@@ -4,8 +4,16 @@ import { cacheLife } from "next/cache";
 import { isValidElement, type ComponentProps, type ReactNode } from "react";
 import { codeToHtml, bundledLanguages } from "shiki";
 import { InlineCode } from "@/shared/ui/components/InlineCode";
+import {
+  CodeBlock,
+  CodeBlockActions,
+  CodeBlockCopyButton,
+  CodeBlockHeader,
+  CodeBlockMetaIcon,
+  CodeBlockTitle,
+} from "@/shared/ui/components/CodeBlock";
+import { getCodeBlockMeta } from "@/shared/ui/lib/codeBlockMeta";
 import { neutralShikiThemes } from "@/shared/ui/components/shikiNeutralTheme";
-import { BlogCopyButton } from "./BlogCopyButton";
 
 export async function BlogPre({ children }: { children?: ReactNode }) {
   if (
@@ -24,19 +32,32 @@ export async function BlogPre({ children }: { children?: ReactNode }) {
       ? (requestedLanguage as keyof typeof bundledLanguages)
       : "text";
   const html = await highlightBlogCode(code, language);
+  const { title, icon } = getCodeBlockMeta(
+    requestedLanguage,
+    children.props["data-filename"]
+  );
   return (
-    <div className="not-prose border-border my-8 overflow-hidden rounded-md border">
-      <div className="border-border flex items-center justify-between border-b px-4 py-2 text-xs">
-        <span className="text-muted-foreground font-mono">
-          {children.props["data-filename"] ?? requestedLanguage}
-        </span>
-        <BlogCopyButton text={code} />
-      </div>
+    <CodeBlock className="my-8">
+      {title ? (
+        <CodeBlockHeader>
+          <CodeBlockTitle>
+            <CodeBlockMetaIcon kind={icon} />
+            {title}
+          </CodeBlockTitle>
+          <CodeBlockActions>
+            <CodeBlockCopyButton value={code} />
+          </CodeBlockActions>
+        </CodeBlockHeader>
+      ) : (
+        <CodeBlockActions>
+          <CodeBlockCopyButton value={code} />
+        </CodeBlockActions>
+      )}
       <div
-        className="blog-code overflow-x-auto text-sm [&_pre]:m-0 [&_pre]:p-4"
+        className="blog-code scroll-fade-x overflow-x-auto text-sm [&_pre]:m-0 [&_pre]:bg-transparent! [&_pre]:px-3 [&_pre]:py-3"
         dangerouslySetInnerHTML={{ __html: html }}
       />
-    </div>
+    </CodeBlock>
   );
 }
 

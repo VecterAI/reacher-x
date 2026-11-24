@@ -18,7 +18,7 @@ You will need Node.js 22 or newer, pnpm 11, and accounts for the services in the
 
 You will not have push access to the main repository, so the standard open source flow starts with a fork. Fork `VecterAI/reacher-x` on GitHub, then clone your fork and keep the main repository as a second remote.
 
-```bash title="Get ReacherX"
+```bash
 git clone https://github.com/YOUR-USERNAME/reacher-x.git
 cd reacher-x
 git remote add upstream https://github.com/VecterAI/reacher-x.git
@@ -48,7 +48,7 @@ The biggest blocker contributors hit is OpenRouter cost during workspace setup a
 
 Swap the model roles in your dev Convex deployment to a very cheap model that still handles tool calling and structured outputs properly, such as a budget Gemini model (`google/gemini-2.5-flash-lite` or `google/gemini-3.1-flash-lite`) or a GLM model (`z-ai/glm-5.3-flash` or `z-ai/glm-4.7-flash`):
 
-```bash title="Use cheap tool-calling models in dev"
+```bash
 npx convex env set AI_ONBOARDING_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_SETUP_AGENT_MODEL google/gemini-2.5-flash-lite
 npx convex env set AI_MAIN_AGENT_MODEL google/gemini-2.5-flash-lite
@@ -63,7 +63,7 @@ Don't use free OpenRouter models (such as Nvidia Nemotron `:free` variants). Fre
 
 Install dependencies and set up the backend once. Node.js 25 and later no longer bundle Corepack, so if `corepack enable pnpm` fails, run `npm install -g corepack` first.
 
-```bash title="Set up the backend"
+```bash
 corepack enable pnpm # on Node.js 25+, run npm install -g corepack first
 pnpm install
 cp .env.example .env.local
@@ -72,13 +72,13 @@ npx convex dev --once
 
 Then leave the backend running in one terminal.
 
-```bash title="Run the backend"
+```bash
 npx convex dev
 ```
 
 In a second terminal, start the website.
 
-```bash title="Run the website"
+```bash
 pnpm dev
 ```
 
@@ -86,7 +86,7 @@ Open the localhost address printed in the terminal, usually `http://localhost:30
 
 For marketing, blog, or demo work, run the demo app in a third terminal. It runs on fictional data, so it needs no Convex, WorkOS, or provider keys.
 
-```bash title="Run the demo app"
+```bash
 cp demos/app/.env.example demos/app/.env.local
 pnpm dev:demo
 ```
