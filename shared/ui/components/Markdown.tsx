@@ -38,8 +38,8 @@ function MarkdownCodeBlock({
   code: string;
   language: string;
 }) {
-  const normalizedCode = code.replace(/\n$/, "");
-  const lines = useHighlightedCode(normalizedCode, language);
+  const normalizedCode = code.endsWith("\n") ? code.slice(0, -1) : code;
+  const lines = useHighlightedCode(code, language);
   const { title, icon } = getCodeBlockMeta(language);
 
   return (

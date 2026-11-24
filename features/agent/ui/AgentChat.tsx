@@ -722,7 +722,7 @@ function ToolCallGroup({
   );
   const triggerLabel =
     totalCalls === 1 ? "1 tool used" : `${totalCalls} tools used`;
-  const groupStatus = hasPending ? "running" : hasError ? "error" : undefined;
+  const groupStatus = hasError ? "error" : hasPending ? "running" : undefined;
 
   return (
     <Trace>
@@ -730,10 +730,10 @@ function ToolCallGroup({
         <TraceCollapsibleTrigger>
           <TraceLine status={groupStatus}>
             <TraceIcon>
-              {hasPending ? (
-                <ProgressActivityIcon className="size-4 animate-spin fill-current" />
-              ) : hasError ? (
+              {hasError ? (
                 <ErrorIcon className="size-4 fill-current" />
+              ) : hasPending ? (
+                <ProgressActivityIcon className="size-4 animate-spin fill-current" />
               ) : (
                 <CheckCircleIcon className="size-4 fill-current" />
               )}
@@ -1256,7 +1256,7 @@ function SourceChips({ message }: { message: UIMessage }) {
                     </TraceIcon>
                     <TraceTitle>{source.title || source.label}</TraceTitle>
                     {domain ? (
-                      <TraceDescription className="text-xs">
+                      <TraceDescription className="max-w-36 min-w-0 shrink truncate text-xs">
                         {domain}
                       </TraceDescription>
                     ) : null}

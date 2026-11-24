@@ -73,7 +73,9 @@ export function getCodeBlockMeta(
   }
 
   return {
-    title: LANGUAGE_DISPLAY_NAMES[normalizedLanguage] ?? normalizedLanguage,
+    title: Object.hasOwn(LANGUAGE_DISPLAY_NAMES, normalizedLanguage)
+      ? LANGUAGE_DISPLAY_NAMES[normalizedLanguage]
+      : normalizedLanguage,
     icon: "code",
   };
 }
