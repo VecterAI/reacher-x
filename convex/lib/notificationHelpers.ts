@@ -262,3 +262,37 @@ export async function dismissNotificationsForTask(
     )
   );
 }
+
+/**
+ * Dismiss pending ask_human notifications tied to a plan's tasks (approvals).
+ * Used when the plan is paused/cancelled/abandoned so the bell badge stays honest.
+ * Skips ask_human rows without a taskId (createHumanNotification human-input flows).
+ */
+export async function dismissPendingAskHumanNotificationsForPlan(
+  ctx: MutationCtx,
+  planId: Id<"outreachPlans">
+): Promise<number> {
+  const notifications = await ctx.db
+    .query("outreachNotifications")
+    .withIndex("by_plan", (q) => q.eq("planId", planId))
+    .collect();
+  const stale = notifications.filter(
+    (notification) =>
+      notification.status === "pending" &&
+      notification.type === "ask_human" &&
+      notification.taskId !== undefined
+  );
+  if (stale.length === 0) {
+    return 0;
+  }
+  const dismissedAt = getCurrentUTCTimestamp();
+  await Promise.all(
+    stale.map((notification) =>
+      ctx.db.patch(notification._id, {
+        status: "dismissed",
+        dismissedAt,
+      })
+    )
+  );
+  return stale.length;
+}
