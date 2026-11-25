@@ -83,6 +83,7 @@ The pitch deck description:
 
 ## Frontend
 
+- Before designing, building, or editing any UI, page, layout, or component, **always read `DESIGN.md` first**. It is the design authority for ReacherX and overrides generic design skills (including `frontend-design`) and model defaults.
 - When doing frontend work, test properly for all devices, desktop and mobile. Something can look good on desktop but cause issues on mobile.
 
 ## PR visuals

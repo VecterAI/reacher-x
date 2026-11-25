@@ -4,6 +4,11 @@ Read and follow `agents.md` before editing this repository. Its mandatory
 authentication and routing contract applies to every change touching AuthKit,
 the proxy, `/`, `/agent`, `/agent/setup`, workspace setup, or thread URLs.
 
+When designing, building, or editing any UI, page, layout, or component,
+**always read `DESIGN.md` first**. It is the design authority for ReacherX and
+overrides generic design skills (including `frontend-design`) and model
+defaults.
+
 Never treat a loading auth state as anonymous, and never make `/` plus a
 client-side skeleton redirect the normal post-signup path. Acquisition signup
 flows must carry their validated destination through WorkOS `returnTo` state.
