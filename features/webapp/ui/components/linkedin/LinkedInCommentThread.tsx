@@ -223,19 +223,23 @@ export function LinkedInCommentThread({
           if (!previous || !opts?.cursor || opts.replace) {
             return result;
           }
+          const newItems = result.topLevelComments.items.filter(
+            (comment) =>
+              !previous.topLevelComments.items.some(
+                (previousComment) => previousComment.id === comment.id
+              )
+          );
+          const nextCursor =
+            newItems.length === 0 ||
+            result.topLevelComments.cursor === opts.cursor
+              ? null
+              : result.topLevelComments.cursor;
           return {
             ...result,
             topLevelComments: {
               ...result.topLevelComments,
-              items: [
-                ...previous.topLevelComments.items,
-                ...result.topLevelComments.items.filter(
-                  (comment) =>
-                    !previous.topLevelComments.items.some(
-                      (previousComment) => previousComment.id === comment.id
-                    )
-                ),
-              ],
+              cursor: nextCursor,
+              items: [...previous.topLevelComments.items, ...newItems],
             },
           };
         });

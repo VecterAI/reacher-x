@@ -23,6 +23,7 @@ import {
   normalizeTregProfilePostsPage,
   normalizeTregSearchPostsPage,
   normalizeTregUserProfile,
+  parseFetchinCommentsCursor,
   toLinkedInSearchPostFromProfilePost,
   type TregProfileSupplemental,
 } from "./tregNormalizers";
@@ -444,7 +445,10 @@ export async function fetchTregLinkedInProfilePosts(
           paginationToken: args.cursor,
         },
         parse: (raw) =>
-          normalizeTregProfilePostsPage(raw, { maxPosts: args.maxPosts }),
+          normalizeTregProfilePostsPage(raw, {
+            maxPosts: args.maxPosts,
+            previousCursor: args.cursor,
+          }),
       },
       {
         toolId: "treg.linkedin.user.posts",
@@ -454,7 +458,10 @@ export async function fetchTregLinkedInProfilePosts(
           ...(args.cursor ? { cursor: args.cursor } : {}),
         },
         parse: (raw) =>
-          normalizeTregProfilePostsPage(raw, { maxPosts: args.maxPosts }),
+          normalizeTregProfilePostsPage(raw, {
+            maxPosts: args.maxPosts,
+            previousCursor: args.cursor,
+          }),
       },
       {
         toolId: "harvestapi.linkedin.user.posts",
@@ -465,7 +472,10 @@ export async function fetchTregLinkedInProfilePosts(
           paginationToken: args.cursor,
         },
         parse: (raw) =>
-          normalizeTregProfilePostsPage(raw, { maxPosts: args.maxPosts }),
+          normalizeTregProfilePostsPage(raw, {
+            maxPosts: args.maxPosts,
+            previousCursor: args.cursor,
+          }),
       },
     ],
   });
@@ -487,6 +497,8 @@ export async function fetchTregLinkedInPostComments(
 }> {
   const postUrn = toLinkedInPostUrn(args.urn);
   const count = Math.min(Math.max(args.count ?? 20, 1), 100);
+  const parsedFetchinCursor = parseFetchinCommentsCursor(args.cursor);
+  const fetchinStart = parsedFetchinCursor.start ?? args.start ?? 0;
   const isInitialPage = !args.cursor && (!args.start || args.start === 0);
   const attempts: TregCallAttempt<{
     comments: Array<Record<string, unknown>>;
@@ -498,19 +510,29 @@ export async function fetchTregLinkedInPostComments(
       query: {
         postUrlOrUrn: postUrn,
         count,
-        start: args.cursor ? undefined : args.start,
-        paginationToken: args.cursor,
+        start: fetchinStart,
+        paginationToken: parsedFetchinCursor.paginationToken,
       },
-      parse: normalizeTregPostCommentsPage,
+      parse: (raw) =>
+        normalizeTregPostCommentsPage(raw, {
+          currentStart: fetchinStart,
+          encodeFetchinStart: true,
+          previousCursor: args.cursor,
+        }),
     },
     {
       toolId: "treg.linkedin.post.comments",
       method: "POST",
       body: {
         post_id: postUrn,
-        ...(args.cursor ? { cursor: args.cursor } : {}),
+        ...(parsedFetchinCursor.paginationToken
+          ? { cursor: parsedFetchinCursor.paginationToken }
+          : {}),
       },
-      parse: normalizeTregPostCommentsPage,
+      parse: (raw) =>
+        normalizeTregPostCommentsPage(raw, {
+          previousCursor: args.cursor,
+        }),
     },
   ];
 
@@ -523,7 +545,10 @@ export async function fetchTregLinkedInPostComments(
         post: postUrn,
         page: 1,
       },
-      parse: normalizeTregPostCommentsPage,
+      parse: (raw) =>
+        normalizeTregPostCommentsPage(raw, {
+          previousCursor: args.cursor,
+        }),
     });
   }
 
@@ -610,7 +635,8 @@ export async function fetchTregLinkedInCompanyPosts(
         page: paginationToken ? undefined : numericPage,
         paginationToken,
       },
-      parse: (raw) => normalizeTregProfilePostsPage(raw),
+      parse: (raw) =>
+        normalizeTregProfilePostsPage(raw, { previousCursor: args.cursor }),
     },
   ];
 
@@ -622,7 +648,8 @@ export async function fetchTregLinkedInCompanyPosts(
       query: {
         url: `https://www.linkedin.com/company/${companySlug}/`,
       },
-      parse: (raw) => normalizeTregProfilePostsPage(raw),
+      parse: (raw) =>
+        normalizeTregProfilePostsPage(raw, { previousCursor: args.cursor }),
     });
   }
 

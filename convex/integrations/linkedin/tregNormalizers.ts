@@ -914,7 +914,7 @@ function normalizeProfilePostRecord(
 /** Normalize profile or company posts from fetchinio, treg routed, harvestapi, or tikhub. */
 export function normalizeTregProfilePostsPage(
   raw: unknown,
-  opts: { maxPosts?: number } = {}
+  opts: { maxPosts?: number; previousCursor?: string } = {}
 ): {
   posts: LinkedInProfilePost[];
   nextCursor: string | null;
@@ -932,12 +932,29 @@ export function normalizeTregProfilePostsPage(
     .filter((post): post is LinkedInProfilePost => post !== null);
 
   const pagination = asRecord(root.pagination);
-  const nextCursor =
+  const hasMoreFlag = asBoolean(root.hasMore);
+  const pageNumber = asNumber(pagination?.pageNumber);
+  const totalPages = asNumber(pagination?.totalPages);
+  const exhausted =
+    hasMoreFlag === false ||
+    (pageNumber !== undefined &&
+      totalPages !== undefined &&
+      pageNumber >= totalPages);
+
+  const rawNextCursor =
     asString(root.paginationToken) ??
     asString(root.next_cursor) ??
     asString(pagination?.paginationToken) ??
     asString(root.cursor) ??
     null;
+
+  // Never emit a cursor when the provider reports no more pages or repeats the previous cursor.
+  const nextCursor =
+    exhausted ||
+    !rawNextCursor ||
+    (opts.previousCursor && rawNextCursor === opts.previousCursor)
+      ? null
+      : rawNextCursor;
 
   const posts =
     opts.maxPosts !== undefined
@@ -950,11 +967,43 @@ export function normalizeTregProfilePostsPage(
   };
 }
 
+const FETCHIN_COMMENTS_CURSOR_PREFIX = "fetchinio:";
+
+/** Parse an encoded Fetchin comments cursor (`fetchinio:<start>:<token>`). */
+export function parseFetchinCommentsCursor(cursor?: string): {
+  start?: number;
+  paginationToken?: string;
+} {
+  const trimmed = cursor?.trim();
+  if (!trimmed) return {};
+  if (!trimmed.startsWith(FETCHIN_COMMENTS_CURSOR_PREFIX)) {
+    return { paginationToken: trimmed };
+  }
+  const rest = trimmed.slice(FETCHIN_COMMENTS_CURSOR_PREFIX.length);
+  const separatorIdx = rest.indexOf(":");
+  if (separatorIdx === -1) return {};
+  const parsedStart = Number.parseInt(rest.slice(0, separatorIdx), 10);
+  const token = rest.slice(separatorIdx + 1).trim();
+  return {
+    ...(Number.isFinite(parsedStart) && parsedStart >= 0
+      ? { start: parsedStart }
+      : {}),
+    ...(token ? { paginationToken: token } : {}),
+  };
+}
+
 /**
  * Normalize post comments from fetchinio, treg routed, or harvestapi into the
  * exact LinkdAPI-compatible comment object expected by `normalizeLinkdApiComment`.
  */
-export function normalizeTregPostCommentsPage(raw: unknown): {
+export function normalizeTregPostCommentsPage(
+  raw: unknown,
+  opts: {
+    currentStart?: number;
+    encodeFetchinStart?: boolean;
+    previousCursor?: string;
+  } = {}
+): {
   comments: Array<Record<string, unknown>>;
   cursor: string | null;
 } {
@@ -1049,12 +1098,33 @@ export function normalizeTregPostCommentsPage(raw: unknown): {
   }
 
   const pagination = asRecord(root.pagination);
-  const cursor =
+  const hasMoreFlag = asBoolean(root.hasMore);
+  const pageNumber = asNumber(pagination?.pageNumber);
+  const totalPages = asNumber(pagination?.totalPages);
+  const exhausted =
+    hasMoreFlag === false ||
+    comments.length === 0 ||
+    (pageNumber !== undefined &&
+      totalPages !== undefined &&
+      pageNumber >= totalPages);
+
+  const rawCursor =
     asString(root.paginationToken) ??
     asString(root.next_cursor) ??
     asString(pagination?.paginationToken) ??
     asString(root.cursor) ??
     null;
+
+  let cursor: string | null = null;
+  if (!exhausted && rawCursor) {
+    cursor = opts.encodeFetchinStart
+      ? `${FETCHIN_COMMENTS_CURSOR_PREFIX}${(opts.currentStart ?? 0) + comments.length}:${rawCursor}`
+      : rawCursor;
+  }
+
+  if (opts.previousCursor && cursor === opts.previousCursor) {
+    cursor = null;
+  }
 
   return { comments, cursor };
 }

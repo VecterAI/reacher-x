@@ -26,6 +26,7 @@ import {
   normalizeTregProfilePostsPage,
   normalizeTregSearchPostsPage,
   normalizeTregUserProfile,
+  parseFetchinCommentsCursor,
 } from "./tregNormalizers";
 
 describe("providerConfig", () => {
@@ -529,6 +530,54 @@ describe("tregNormalizers", () => {
     expect(
       filterLinkedInPostsByDatePosted(posts, undefined, nowMs)
     ).toHaveLength(2);
+  });
+
+  test("stops pagination when hasMore is false and encodes Fetchin start offset when hasMore is true", () => {
+    const doneComments = normalizeTregPostCommentsPage(
+      {
+        comments: [{ urn: "urn:li:comment:(activity:1,2)", text: "Nice!" }],
+        paginationToken: "cm::same-token",
+        hasMore: false,
+      },
+      { currentStart: 0, encodeFetchinStart: true }
+    );
+    expect(doneComments.comments).toHaveLength(1);
+    expect(doneComments.cursor).toBeNull();
+
+    const moreComments = normalizeTregPostCommentsPage(
+      {
+        comments: [
+          { urn: "urn:li:comment:(activity:1,2)", text: "One" },
+          { urn: "urn:li:comment:(activity:1,3)", text: "Two" },
+        ],
+        paginationToken: "cm::tok-1",
+        hasMore: true,
+      },
+      { currentStart: 0, encodeFetchinStart: true }
+    );
+    expect(moreComments.cursor).toBe("fetchinio:2:cm::tok-1");
+    expect(
+      parseFetchinCommentsCursor(moreComments.cursor ?? undefined)
+    ).toEqual({
+      start: 2,
+      paginationToken: "cm::tok-1",
+    });
+
+    const donePosts = normalizeTregProfilePostsPage({
+      posts: [{ id: "urn:li:activity:7530839822152708096", content: "Hi" }],
+      paginationToken: "posts-tok",
+      hasMore: false,
+    });
+    expect(donePosts.nextCursor).toBeNull();
+
+    const repeatedPosts = normalizeTregProfilePostsPage(
+      {
+        posts: [{ id: "urn:li:activity:7530839822152708096", content: "Hi" }],
+        paginationToken: "same-tok",
+      },
+      { previousCursor: "same-tok" }
+    );
+    expect(repeatedPosts.nextCursor).toBeNull();
   });
 });
 
