@@ -60,6 +60,7 @@ import {
   workspaceWorkflowStatusValidator,
 } from "../validators";
 import { logger } from "../../shared/lib/logger";
+import { hasConfiguredLinkedInDataProvider } from "../integrations/linkedin/providerConfig";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { isWorkspaceInactive } from "../lib/workspaceSystem";
 import { getSystemRuntimeConfig } from "../lib/runtimeConfigHelpers";
@@ -2686,7 +2687,7 @@ export const getDiscoveryConfigurationInternal = internalQuery({
   handler: async () => ({
     configured: Boolean(
       process.env.SOCIALAPI_API_KEY?.trim() &&
-      process.env.LINKDAPI_API_KEY?.trim()
+      hasConfiguredLinkedInDataProvider()
     ),
   }),
 });

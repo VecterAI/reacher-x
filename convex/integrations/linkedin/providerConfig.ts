@@ -26,3 +26,12 @@ export function isTregLinkedInProvider(
 ): boolean {
   return resolveLinkedInDataProvider(env) === "treg";
 }
+
+/** True when the active LinkedIn read provider has its API key configured. */
+export function hasConfiguredLinkedInDataProvider(
+  env: ProviderEnv = process.env
+): boolean {
+  return resolveLinkedInDataProvider(env) === "treg"
+    ? Boolean(env.TREG_API_KEY?.trim())
+    : Boolean(env.LINKDAPI_API_KEY?.trim());
+}

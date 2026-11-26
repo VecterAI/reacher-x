@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ActionCtx } from "../../_generated/server";
 import { ProviderCircuitOpenError } from "../../lib/providerReliability";
 import {
+  hasConfiguredLinkedInDataProvider,
   isTregLinkedInProvider,
   resolveLinkedInDataProvider,
 } from "./providerConfig";
@@ -49,6 +50,25 @@ describe("providerConfig", () => {
     expect(isTregLinkedInProvider({ TREG_API_KEY: "token" })).toBe(true);
     expect(resolveLinkedInDataProvider({})).toBe("linkdapi");
     expect(isTregLinkedInProvider({})).toBe(false);
+  });
+
+  test("hasConfiguredLinkedInDataProvider checks the active provider's key", () => {
+    expect(hasConfiguredLinkedInDataProvider({ TREG_API_KEY: "tok" })).toBe(
+      true
+    );
+    expect(
+      hasConfiguredLinkedInDataProvider({
+        LINKEDIN_DATA_PROVIDER: "treg",
+        LINKDAPI_API_KEY: "legacy",
+      })
+    ).toBe(false);
+    expect(
+      hasConfiguredLinkedInDataProvider({
+        LINKEDIN_DATA_PROVIDER: "linkdapi",
+        LINKDAPI_API_KEY: "legacy",
+      })
+    ).toBe(true);
+    expect(hasConfiguredLinkedInDataProvider({})).toBe(false);
   });
 });
 
