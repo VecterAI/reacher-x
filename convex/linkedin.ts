@@ -117,6 +117,11 @@ function getUnavailableLinkedInProfilePostsPage(
 
 import type { LinkedInProfilePost } from "./integrations/linkedin/getProfilePosts";
 import { requestLinkdApiData } from "./integrations/linkedin/linkdapiClient";
+import { isTregLinkedInProvider } from "./integrations/linkedin/providerConfig";
+import {
+  fetchTregLinkedInCompanyPosts,
+  fetchTregLinkedInProfile,
+} from "./integrations/linkedin/tregOperations";
 import {
   buildStyleSourceKey,
   getNextStyleSourceVersion,
@@ -3764,8 +3769,19 @@ export const getLinkedInProfileSupplemental = action({
       providerId: args.providerId,
     });
 
+    const useTreg = isTregLinkedInProvider();
+    const tregProfilePromise =
+      useTreg && (args.username || args.profileUrn)
+        ? fetchTregLinkedInProfile(ctx, {
+            username: args.username,
+            urn: args.profileUrn,
+            includeContactInfo: false,
+          }).catch(() => null)
+        : Promise.resolve(null);
+
     const [
       companyResult,
+      tregProfileResult,
       contactInfoResult,
       overviewResult,
       featuredPostsResult,
@@ -3779,7 +3795,8 @@ export const getLinkedInProfileSupplemental = action({
             })
             .catch(() => null)
         : Promise.resolve(null),
-      args.username
+      tregProfilePromise,
+      !useTreg && args.username
         ? requestLinkdApi<LinkedInContactInfo>(
             ctx,
             "/api/v1/profile/contact-info",
@@ -3788,7 +3805,7 @@ export const getLinkedInProfileSupplemental = action({
             }
           ).catch(() => null)
         : Promise.resolve(null),
-      args.username
+      !useTreg && args.username
         ? requestLinkdApi<LinkdApiProfileOverview>(
             ctx,
             "/api/v1/profile/overview",
@@ -3797,7 +3814,7 @@ export const getLinkedInProfileSupplemental = action({
             }
           ).catch(() => null)
         : Promise.resolve(null),
-      args.profileUrn
+      !useTreg && args.profileUrn
         ? requestLinkdApi<LinkdApiFeaturedPost[]>(
             ctx,
             "/api/v1/posts/featured",
@@ -3815,6 +3832,21 @@ export const getLinkedInProfileSupplemental = action({
         : Promise.resolve(null),
     ]);
 
+    const resolvedContactInfo =
+      contactInfoResult ?? tregProfileResult?.contactInfo ?? null;
+    const resolvedOverview: LinkdApiProfileOverview | null =
+      overviewResult ??
+      (tregProfileResult
+        ? {
+            backgroundImageURL:
+              tregProfileResult.supplemental.backgroundImageUrl,
+            connectionsCount: tregProfileResult.supplemental.connectionsCount,
+            followerCount: tregProfileResult.supplemental.followerCount,
+            creator: tregProfileResult.profile.isCreator,
+            premium: tregProfileResult.profile.isPremium,
+          }
+        : null);
+
     const connectionStatus = liveProfile
       ? liveProfile.is_relationship === true
         ? "connected"
@@ -3830,16 +3862,16 @@ export const getLinkedInProfileSupplemental = action({
     return {
       backgroundImageUrl:
         toOptionalString(liveProfile?.background_picture_url) ??
-        toOptionalString(overviewResult?.backgroundImageURL),
+        toOptionalString(resolvedOverview?.backgroundImageURL),
       connectionCount:
         toOptionalNumber(liveProfile?.connections_count) ??
-        toOptionalNumber(overviewResult?.connectionsCount),
+        toOptionalNumber(resolvedOverview?.connectionsCount),
       connectionStatus,
-      contact: contactInfoResult
+      contact: resolvedContactInfo
         ? {
-            emailAddress: contactInfoResult.emailAddress,
-            websites: Array.isArray(contactInfoResult.websites)
-              ? contactInfoResult.websites
+            emailAddress: resolvedContactInfo.emailAddress,
+            websites: Array.isArray(resolvedContactInfo.websites)
+              ? resolvedContactInfo.websites
               : [],
           }
         : undefined,
@@ -3876,9 +3908,9 @@ export const getLinkedInProfileSupplemental = action({
         : undefined,
       followerCount:
         toOptionalNumber(liveProfile?.follower_count) ??
-        toOptionalNumber(overviewResult?.followerCount),
-      isCreator: liveProfile?.is_creator ?? overviewResult?.creator,
-      isPremium: liveProfile?.is_premium ?? overviewResult?.premium,
+        toOptionalNumber(resolvedOverview?.followerCount),
+      isCreator: liveProfile?.is_creator ?? resolvedOverview?.creator,
+      isPremium: liveProfile?.is_premium ?? resolvedOverview?.premium,
     };
   },
 });
@@ -4153,6 +4185,21 @@ export const getLinkedInIdentityProfilePostsPage = action({
           normalizeLinkedInCompanyId(args.identity.providerId);
         if (!companyId) {
           return { posts: [], nextCursor: null };
+        }
+
+        if (isTregLinkedInProvider()) {
+          const tregPage = await fetchTregLinkedInCompanyPosts(ctx, {
+            companyId,
+            companyUniversalName: args.identity.username ?? undefined,
+            cursor: args.cursor,
+          });
+          const activityActor = toLinkedInActivityActor(args.identity);
+          return {
+            posts: tregPage.posts.map((post) =>
+              toUnifiedLinkedInProfilePost(post, activityActor)
+            ),
+            nextCursor: tregPage.nextCursor,
+          };
         }
 
         const start = Math.max(0, Number.parseInt(args.cursor ?? "0", 10) || 0);

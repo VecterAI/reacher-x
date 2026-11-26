@@ -25,6 +25,8 @@ import {
   linkedinTimeFilterValidator,
 } from "../../validators";
 import { requestLinkdApiData } from "./linkdapiClient";
+import { isTregLinkedInProvider } from "./providerConfig";
+import { searchTregLinkedInPostsPage } from "./tregOperations";
 import { isProviderCircuitOpenError } from "../../lib/providerReliability";
 const linkedInSearchPostsLogger = logger.withScope("LinkedInSearchPosts");
 
@@ -150,6 +152,7 @@ interface InternalSearchResult {
   start: number;
   count: number;
   hasMore: boolean;
+  nextPaginationToken?: string | null;
   searchMode?: "plain_relevance" | "plain_date" | "exact_phrase";
   error?: string;
 }
@@ -286,6 +289,8 @@ async function collectPaginatedPostResults(
           query: args.query,
           searchMode: args.searchMode,
           start: nextStart,
+          pageNumber: pageIndex + 1,
+          paginationToken: lastResult.nextPaginationToken ?? undefined,
           sortBy: args.sortBy,
           datePosted: args.datePosted,
           authorJobTitle: args.authorJobTitle,
@@ -335,6 +340,8 @@ export const searchInternal = internalAction({
       )
     ),
     start: v.optional(v.number()),
+    pageNumber: v.optional(v.number()),
+    paginationToken: v.optional(v.string()),
     sortBy: v.optional(linkedinSortOrderValidator),
     datePosted: v.optional(linkedinTimeFilterValidator),
     authorJobTitle: v.optional(v.string()),
@@ -344,6 +351,29 @@ export const searchInternal = internalAction({
       args.authorJobTitle
     );
     try {
+      if (isTregLinkedInProvider()) {
+        const page = await searchTregLinkedInPostsPage(ctx, {
+          query: args.query,
+          searchMode: args.searchMode,
+          start: args.start ?? 0,
+          pageNumber: args.pageNumber,
+          paginationToken: args.paginationToken,
+          sortBy: args.sortBy,
+          datePosted: args.datePosted,
+          authorJobTitle,
+        });
+        return {
+          success: true,
+          posts: page.posts,
+          total: page.total,
+          start: page.start,
+          count: page.count,
+          hasMore: page.hasMore,
+          nextPaginationToken: page.nextPaginationToken,
+          searchMode: args.searchMode,
+        };
+      }
+
       const data = await requestLinkdApiData<ApiResponse["data"]>(ctx, {
         path: "/api/v1/search/posts",
         query: {

@@ -11,6 +11,10 @@ import { getProviderSearchMaxRuntimeMs } from "../../lib/retrier";
 import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { requestLinkdApiData } from "./linkdapiClient";
+import { isTregLinkedInProvider } from "./providerConfig";
+import type { LinkedInPost as LinkedInSearchPost } from "./searchPosts";
+import { filterLinkedInPostsByKeyword } from "./tregNormalizers";
+import { searchTregLinkedInUserPosts } from "./tregOperations";
 import {
   isKeywordPostSearchCapRefusal,
   linkdApiPurposeValidator,
@@ -107,6 +111,18 @@ function deduplicatePosts(posts: LinkedInPost[]): LinkedInPost[] {
   return Array.from(seen.values());
 }
 
+function toUserLinkedInPost(post: LinkedInSearchPost): LinkedInPost {
+  return {
+    ...post,
+    engagements: {
+      totalReactions: post.engagements.totalReactions,
+      commentsCount: post.engagements.commentsCount,
+      repostsCount: post.engagements.repostsCount,
+      reactions: post.engagements.reactions ?? undefined,
+    },
+  };
+}
+
 /**
  * Internal action that performs the actual HTTP fetch to LinkedIn API.
  * Handles pagination internally - loops until maxPosts reached or no more pages.
@@ -115,6 +131,7 @@ function deduplicatePosts(posts: LinkedInPost[]): LinkedInPost[] {
 export const searchUserPostsInternal = internalAction({
   args: {
     urn: v.string(),
+    username: v.optional(v.string()),
     keyword: v.optional(v.string()),
     datePosted: v.optional(v.string()), // "past-24h", "past-week", "past-month", "past-year"
     maxPosts: v.optional(v.number()), // Default 20, max posts to collect
@@ -124,6 +141,22 @@ export const searchUserPostsInternal = internalAction({
   handler: async (ctx, args): Promise<InternalSearchResult> => {
     const profileUrn = requireLinkedInProfileQueryUrn(args.urn);
     const maxPosts = args.maxPosts ?? 20;
+
+    if (isTregLinkedInProvider()) {
+      const posts = await searchTregLinkedInUserPosts(ctx, {
+        profileUrn,
+        username: args.username,
+        keyword: args.keyword,
+        datePosted: args.datePosted,
+        maxPosts,
+        purpose: args.purpose,
+      });
+      return {
+        success: true,
+        posts: posts.map(toUserLinkedInPost),
+      };
+    }
+
     const MAX_PAGES = 5; // Safety limit
     const PAGE_SIZE = 10; // LinkdAPI default page size
     // Stop paginating after a bounded runtime so a slow provider can never
@@ -241,6 +274,79 @@ export const searchUserPostsCore = internalAction({
           durationMs: getCurrentUTCTimestamp() - startTime,
         },
       };
+    }
+
+    if (isTregLinkedInProvider()) {
+      const fetchLimit = Math.min(Math.max(maxPosts * 2, 30), 50);
+      try {
+        // Fetch the user's recent posts once instead of looping 2x per keyword.
+        const fetchedPosts = await searchTregLinkedInUserPosts(ctx, {
+          profileUrn,
+          maxPosts: fetchLimit,
+          purpose: args.purpose,
+        });
+        const oneMonthAgo = getCurrentUTCTimestamp() - 30 * 24 * 60 * 60 * 1000;
+        const recentPosts = fetchedPosts.filter(
+          (post) => post.postedAt.timestamp >= oneMonthAgo
+        );
+        const matchedPosts: LinkedInPost[] = [];
+        const matchedKeywords: string[] = [];
+
+        if (args.keywords.length === 0) {
+          matchedPosts.push(...fetchedPosts.map(toUserLinkedInPost));
+        } else {
+          for (const keyword of args.keywords) {
+            if (deduplicatePosts(matchedPosts).length >= maxPosts) break;
+            const recentHits = filterLinkedInPostsByKeyword(
+              recentPosts,
+              keyword
+            );
+            const hits =
+              recentHits.length > 0
+                ? recentHits
+                : filterLinkedInPostsByKeyword(fetchedPosts, keyword);
+            if (hits.length > 0) {
+              matchedPosts.push(...hits.map(toUserLinkedInPost));
+              matchedKeywords.push(keyword);
+            }
+          }
+        }
+
+        const uniquePosts = deduplicatePosts(matchedPosts).slice(0, maxPosts);
+        const outcome = getUserPostSearchOutcome({
+          postCount: uniquePosts.length,
+        });
+        return {
+          success: isUserPostSearchSuccessful(outcome),
+          outcome,
+          posts: uniquePosts,
+          matchedKeywords,
+          stats: {
+            urn: profileUrn,
+            keywordsSearched: args.keywords.length,
+            totalPostsFound: matchedPosts.length,
+            uniquePosts: uniquePosts.length,
+            durationMs: getCurrentUTCTimestamp() - startTime,
+          },
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "LinkedIn search failed";
+        return {
+          success: false,
+          outcome: "error",
+          posts: [],
+          matchedKeywords: [],
+          error: message,
+          stats: {
+            urn: profileUrn,
+            keywordsSearched: args.keywords.length,
+            totalPostsFound: 0,
+            uniquePosts: 0,
+            durationMs: getCurrentUTCTimestamp() - startTime,
+          },
+        };
+      }
     }
 
     const allPosts: LinkedInPost[] = [];

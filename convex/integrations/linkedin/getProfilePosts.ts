@@ -5,7 +5,9 @@ import { internalAction } from "../../lib/functionBuilders";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { getLinkedInActivityTimestamp } from "../../../shared/lib/linkedin/post";
 import { isLinkdApiNoDataError, requestLinkdApiData } from "./linkdapiClient";
+import { isTregLinkedInProvider } from "./providerConfig";
 import { requireLinkedInProfileQueryUrn } from "./profileIdentity";
+import { fetchTregLinkedInProfilePosts } from "./tregOperations";
 import {
   buildLinkdApiProfilePostsQuery,
   limitLinkdApiProfilePosts,
@@ -183,8 +185,23 @@ export const getProfilePostsInternal = internalAction({
     cursor: v.optional(v.string()),
     maxPosts: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    posts: LinkedInProfilePost[];
+    nextCursor: string | null;
+    unavailableReason?: "profile_data_unavailable";
+  }> => {
     const profileUrn = requireLinkedInProfileQueryUrn(args.urn);
+    if (isTregLinkedInProvider()) {
+      return await fetchTregLinkedInProfilePosts(ctx, {
+        profileUrn,
+        cursor: args.cursor,
+        maxPosts: args.maxPosts,
+      });
+    }
+
     let data: {
       posts?: Array<Record<string, unknown>>;
       cursor?: string | null;
