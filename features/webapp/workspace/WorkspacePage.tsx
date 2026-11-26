@@ -10,6 +10,7 @@ import {
   type SyntheticEvent,
 } from "react";
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
   useFieldArray,
@@ -484,8 +485,7 @@ export default function WorkspacePage() {
     } catch (error) {
       logger.error("Workspace save failed", error);
       toast.error("Could not save", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: getClientErrorMessage(error, "Please try again."),
       });
       return "failed" as const;
     }
@@ -714,7 +714,10 @@ export default function WorkspacePage() {
                       <Alert variant="destructive" className="mb-6">
                         <AlertTitle>Could not load workspace</AlertTitle>
                         <AlertDescription>
-                          {authError.message ?? "Please refresh."}
+                          {getClientErrorMessage(
+                            authError,
+                            "Please refresh and try again."
+                          )}
                         </AlertDescription>
                       </Alert>
                     </div>
@@ -1094,7 +1097,10 @@ export default function WorkspacePage() {
                     <Alert variant="destructive" className="mb-6">
                       <AlertTitle>Could not load workspace</AlertTitle>
                       <AlertDescription>
-                        {authError.message ?? "Please refresh."}
+                        {getClientErrorMessage(
+                          authError,
+                          "Please refresh and try again."
+                        )}
                       </AlertDescription>
                     </Alert>
                   </div>

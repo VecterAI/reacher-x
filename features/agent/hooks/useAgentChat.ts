@@ -28,6 +28,7 @@ import {
   type AgentMessageContextMetadata,
 } from "@/shared/lib/mentions/messageContext";
 import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { logger } from "@/shared/lib/logger";
 import { resolveAgentThreadInitializationMode } from "@/features/agent/lib/agentThreadInitialization";
 import {
@@ -584,7 +585,10 @@ export function useAgentChat(
             : {
                 ...current,
                 phase: "failed",
-                errorMessage: nextError.message,
+                errorMessage: getClientErrorMessage(
+                  nextError,
+                  AGENT_FAILURE_TOAST_MESSAGE
+                ),
               }
         );
       } finally {
@@ -823,7 +827,10 @@ export function useAgentChat(
               : {
                   ...current,
                   phase: "failed",
-                  errorMessage: nextError.message,
+                  errorMessage: getClientErrorMessage(
+                    nextError,
+                    AGENT_FAILURE_TOAST_MESSAGE
+                  ),
                 }
           );
         }
@@ -1118,7 +1125,10 @@ export function useAgentChat(
         ? {
             ...current,
             phase: "failed",
-            errorMessage: error.message,
+            errorMessage: getClientErrorMessage(
+              error,
+              AGENT_FAILURE_TOAST_MESSAGE
+            ),
           }
         : current
     );
@@ -1379,7 +1389,10 @@ export function useAgentChat(
               : {
                   ...current,
                   phase: "failed",
-                  errorMessage: nextError.message,
+                  errorMessage: getClientErrorMessage(
+                    nextError,
+                    AGENT_FAILURE_TOAST_MESSAGE
+                  ),
                 }
           );
         } finally {
@@ -1440,7 +1453,10 @@ export function useAgentChat(
                 : {
                     ...current,
                     phase: "failed",
-                    errorMessage: nextError.message,
+                    errorMessage: getClientErrorMessage(
+                      nextError,
+                      AGENT_FAILURE_TOAST_MESSAGE
+                    ),
                   }
             );
           } finally {
@@ -1526,7 +1542,10 @@ export function useAgentChat(
             : {
                 ...current,
                 phase: "failed",
-                errorMessage: nextError.message,
+                errorMessage: getClientErrorMessage(
+                  nextError,
+                  AGENT_FAILURE_TOAST_MESSAGE
+                ),
               }
         );
       } finally {

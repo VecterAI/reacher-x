@@ -1,6 +1,10 @@
 "use client";
 
 import { useApproveOutreachPlan } from "@/shared/hooks/useApproveOutreachPlan";
+import {
+  captureClientErrorMessage,
+  getClientErrorMessage,
+} from "@/shared/lib/errors";
 
 /**
  * AgentChat - Main agent chat interface with streaming support
@@ -3350,8 +3354,11 @@ export function AgentChat({
       toast.success("Starting a fresh setup from step one.");
     } catch (error) {
       toast.error("Could not reset setup", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "AgentChat"
+        ),
       });
     }
   }, [
@@ -3382,8 +3389,11 @@ export function AgentChat({
       toast.success("Draft removed. Switched back to your workspace.");
     } catch (error) {
       toast.error("Could not delete draft", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "AgentChat"
+        ),
       });
     }
   }, [
@@ -3436,9 +3446,11 @@ export function AgentChat({
       });
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not retry. Please try again."
+        captureClientErrorMessage(
+          error,
+          "Could not retry. Please try again.",
+          "AgentChat"
+        )
       );
     }
   }, [retrySetup, setupSessionForInlineCard]);
@@ -4098,7 +4110,7 @@ export function AgentChat({
                       className="mb-6"
                     >
                       <SystemMessage variant="error">
-                        {error.message || "Please try again."}
+                        {getClientErrorMessage(error, "Please try again.")}
                       </SystemMessage>
                     </MessageScrollerItem>
                   )}
@@ -4108,8 +4120,10 @@ export function AgentChat({
                       className="mb-6"
                     >
                       <SystemMessage variant="warning">
-                        {workspaceStatusQuery.error.message ||
-                          "Workspace status is unavailable. Agent actions may be limited until this resolves."}
+                        {getClientErrorMessage(
+                          workspaceStatusQuery.error,
+                          "Workspace status is unavailable. Agent actions may be limited until this resolves."
+                        )}
                       </SystemMessage>
                     </MessageScrollerItem>
                   )}

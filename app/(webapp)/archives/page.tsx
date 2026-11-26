@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -250,7 +251,10 @@ export default function ArchivesPage() {
                 <div className="rounded-lg border border-dashed p-6 text-center">
                   <p className="text-sm font-medium">Could not load archives</p>
                   <p className="text-muted-foreground mt-1 text-sm">
-                    {setupStatusQuery.error.message || "Please try again."}
+                    {getClientErrorMessage(
+                      setupStatusQuery.error,
+                      "Please try again."
+                    )}
                   </p>
                   <Button
                     variant="outline"

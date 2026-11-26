@@ -6,6 +6,8 @@
  */
 "use client";
 
+import { getClientErrorMessage } from "@/shared/lib/errors";
+
 import * as React from "react";
 import { useAction, useMutation, usePaginatedQuery } from "convex/react";
 import { toast } from "sonner";
@@ -342,7 +344,7 @@ export function HistoryPanel({
               <div className="px-4 py-8 text-center text-sm">
                 <p className="font-medium">Could not load thread history</p>
                 <p className="text-muted-foreground mt-1">
-                  {convexReadyError.message || "Please try again."}
+                  {getClientErrorMessage(convexReadyError, "Please try again.")}
                 </p>
               </div>
             ) : displayedThreads.length === 0 ? (

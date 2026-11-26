@@ -14,6 +14,7 @@ import { workflow as workflowManager } from "./lib/workflow";
 import type { WorkflowId, WorkflowStatus } from "@convex-dev/workflow";
 import { createThread, saveMessage, listStreams } from "@convex-dev/agent";
 import { ConvexError, v } from "convex/values";
+import { throwAppError } from "./lib/appError";
 import { logger } from "../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
@@ -377,13 +378,14 @@ async function finalizeSetupSessionReady(
     session.flowVersion !== 2 ||
     session.approvedGenerationRevision !== session.generationRevision
   )
-    throw new Error(
+    throwAppError(
+      "CONFLICT",
       "Review the current example profiles before finishing setup."
     );
   validateSyntheticProfileExamples(session.generatedProfiles ?? []);
   const planTier = await getUserPlanTier(ctx.db, session.userId);
   if (!isPaidPlanTier(planTier))
-    throw new Error("Choose a paid plan to finish setup.");
+    throwAppError("PLAN_UNAVAILABLE", "Choose a paid plan to finish setup.");
   const workspaceId = await provisionApprovedSetupWorkspace(ctx, session);
 
   const now = getCurrentUTCTimestamp();
@@ -462,7 +464,8 @@ async function applySetupPlanSelection(
     // Legacy mid-flow rows: finish lean setup instead of staying on preferences.
     const verifiedPlan = await getUserPlanTier(ctx.db, session.userId);
     if (!isPaidPlanTier(verifiedPlan))
-      throw new Error(
+      throwAppError(
+        "PLAN_UNAVAILABLE",
         "Payment is not confirmed yet. Please wait and try again."
       );
     return await finalizeSetupSessionReady(ctx, session, {
@@ -474,12 +477,15 @@ async function applySetupPlanSelection(
     session.status !== "awaiting_plan" &&
     session.status !== "awaiting_connections"
   ) {
-    throw new Error("Setup session is not awaiting a plan choice.");
+    throwAppError("CONFLICT", "Setup session is not awaiting a plan choice.");
   }
 
   const verifiedPlan = await getUserPlanTier(ctx.db, session.userId);
   if (!isPaidPlanTier(verifiedPlan))
-    throw new Error("Payment is not confirmed yet. Please wait and try again.");
+    throwAppError(
+      "PLAN_UNAVAILABLE",
+      "Payment is not confirmed yet. Please wait and try again."
+    );
   return await finalizeSetupSessionReady(ctx, session, {
     planChoice: verifiedPlan,
   });
@@ -718,7 +724,10 @@ export const startSetupSession = mutation({
         }
       );
       if (!eligibility.allowed) {
-        throw new Error(eligibility.reason ?? "Workspace limit reached");
+        throwAppError(
+          "PLAN_LIMIT_REACHED",
+          eligibility.reason ?? "Workspace limit reached."
+        );
       }
     }
 

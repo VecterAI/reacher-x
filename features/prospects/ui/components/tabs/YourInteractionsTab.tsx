@@ -7,6 +7,7 @@
 
 import * as React from "react";
 import { useAction, useMutation, usePaginatedQuery } from "convex/react";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/shared/ui/components/Button";
@@ -116,9 +117,11 @@ export function YourInteractionsTab({
         }
         if (syncRequestIdRef.current === requestId) {
           setSyncError(
-            error instanceof Error
-              ? error.message
-              : "Could not sync interactions right now."
+            captureClientErrorMessage(
+              error,
+              "Could not sync interactions right now. Please try again.",
+              "YourInteractionsTab"
+            )
           );
         }
       })

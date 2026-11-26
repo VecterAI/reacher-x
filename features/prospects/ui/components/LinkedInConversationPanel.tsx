@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { SerializedEditorState } from "lexical";
 import { toast } from "sonner";
 import { getOutboundMessageFailure } from "@/shared/lib/platforms/outboundMessageFailure";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
 import { buildSerializedTextState } from "@/features/composer/lib/buildSerializedTextState";
@@ -535,10 +536,11 @@ export function LinkedInConversationPanel({
         await reactToMessage(message.id, emoji);
       } catch (reactionError) {
         toast.error("Could not add LinkedIn reaction", {
-          description:
-            reactionError instanceof Error
-              ? reactionError.message
-              : "Please try again.",
+          description: captureClientErrorMessage(
+            reactionError,
+            "Please try again.",
+            "LinkedInConversationPanel"
+          ),
         });
       }
     },

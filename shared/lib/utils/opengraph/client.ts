@@ -2,6 +2,7 @@
  * Client-side Open Graph fetching utilities
  */
 
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import type {
   OpenGraphData,
   FetchOpenGraphOptions,
@@ -73,7 +74,11 @@ export async function fetchOpenGraph(
   } catch (error) {
     return {
       data: null,
-      error: error instanceof Error ? error.message : "Unknown error occurred",
+      error: captureClientErrorMessage(
+        error,
+        "Couldn't load a preview for this link.",
+        "OpenGraphClient"
+      ),
     };
   }
 }

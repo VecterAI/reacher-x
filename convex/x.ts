@@ -1,6 +1,7 @@
 "use node";
 
 import { ConvexError, v, type Infer } from "convex/values";
+import { throwAppError } from "./lib/appError";
 import { action, internalAction } from "./lib/functionBuilders";
 import { api, components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -2091,7 +2092,7 @@ export const sendDm = action({
   handler: async (ctx, args) => {
     const limitError = getDmTextLimitError(args.text.trim());
     if (limitError) {
-      throw new Error(limitError);
+      throwAppError("INVALID_INPUT", limitError);
     }
     const userId = await getCurrentUserId(ctx);
     const entry = getTwitterActionCatalogEntry("send_dm");
@@ -2129,7 +2130,7 @@ export const sendDmInExistingConversation = action({
   handler: async (ctx, args) => {
     const limitError = getDmTextLimitError(args.text.trim());
     if (limitError) {
-      throw new Error(limitError);
+      throwAppError("INVALID_INPUT", limitError);
     }
     const userId = await getCurrentUserId(ctx);
     const entry = getTwitterActionCatalogEntry(

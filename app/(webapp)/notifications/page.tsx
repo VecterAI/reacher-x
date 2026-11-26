@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { useConvex, useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -134,10 +135,12 @@ export default function NotificationsPage() {
               <div className="mx-4 mb-4 rounded-lg border border-dashed p-4 text-sm">
                 <p className="font-medium">Could not load notifications</p>
                 <p className="text-muted-foreground mt-1">
-                  {notificationWorkspaceError?.message ||
-                    shellStateQuery.error?.message ||
-                    notificationQueryError?.message ||
-                    "Please try again."}
+                  {getClientErrorMessage(
+                    notificationWorkspaceError ??
+                      shellStateQuery.error ??
+                      notificationQueryError,
+                    "Please try again."
+                  )}
                 </p>
                 <Button
                   size="xs"

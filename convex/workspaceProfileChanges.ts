@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { throwAppError } from "./lib/appError";
 import {
   internalMutation,
   internalQuery,
@@ -139,7 +140,10 @@ export const upsertPendingInternal = internalMutation({
       changes.updatedTitles.length === 0 &&
       changes.removedTitles.length === 0
     ) {
-      throw new Error("The proposed ideal profiles match the saved workspace.");
+      throwAppError(
+        "INVALID_INPUT",
+        "The proposed ideal profiles match the saved workspace."
+      );
     }
 
     const existing = await getPendingForWorkspace(ctx, args.workspaceId);

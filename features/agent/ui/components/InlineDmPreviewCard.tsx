@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Avatar,
@@ -122,7 +123,11 @@ export function InlineDmPreviewCard({
       toast.success("DM sent on X/Twitter");
     } catch (err) {
       toast.error("Failed to send DM", {
-        description: err instanceof Error ? err.message : "Please try again.",
+        description: captureClientErrorMessage(
+          err,
+          "Please try again.",
+          "InlineDmPreviewCard"
+        ),
       });
     }
   }

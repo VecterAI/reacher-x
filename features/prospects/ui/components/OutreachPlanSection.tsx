@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useQueryWithStatus } from "@/shared/hooks";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { Button } from "@/shared/ui/components/Button";
 import { InlineCode } from "@/shared/ui/components/InlineCode";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
@@ -64,9 +65,10 @@ export function OutreachPlanSection({
       <div className="rounded-xl border border-dashed p-6 text-center">
         <p className="text-sm font-medium">Could not load outreach plan</p>
         <p className="text-muted-foreground mt-1 text-sm">
-          {planDataQuery.error?.message ||
-            prospectQuery.error?.message ||
-            "Please try again."}
+          {getClientErrorMessage(
+            planDataQuery.error ?? prospectQuery.error,
+            "Please try again."
+          )}
         </p>
         <Button
           variant="outline"

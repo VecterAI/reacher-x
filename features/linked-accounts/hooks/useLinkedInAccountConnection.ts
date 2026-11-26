@@ -5,6 +5,10 @@ import { useAction } from "convex/react";
 import { useQueryWithStatus } from "@/shared/hooks/useQueryWithStatus";
 import { parseAsString, useQueryStates } from "nuqs";
 import { api } from "@/convex/_generated/api";
+import {
+  captureClientErrorMessage,
+  getClientErrorMessage,
+} from "@/shared/lib/errors";
 import { showStyleSyncIssueToast } from "@/features/linked-accounts/lib/styleSyncIssueToast";
 import { logger } from "@/shared/lib/logger";
 import { toast } from "sonner";
@@ -114,7 +118,10 @@ export function useLinkedInAccountConnection({
       logger.warn("Failed to load LinkedIn connection status:", err);
       if (!finalizedCallbackRef.current) {
         setStatusError(
-          err instanceof Error ? err.message : "Unable to load LinkedIn status."
+          getClientErrorMessage(
+            err,
+            "Unable to load LinkedIn status. Please try again."
+          )
         );
       }
       return null;
@@ -180,9 +187,11 @@ export function useLinkedInAccountConnection({
       schedulePostConnectStatusChecks();
     } catch (error) {
       setStatusError(
-        error instanceof Error
-          ? error.message
-          : "Could not finish connecting LinkedIn. Try again."
+        captureClientErrorMessage(
+          error,
+          "Could not finish connecting LinkedIn. Please try again.",
+          "LinkedInAccountConnection"
+        )
       );
     } finally {
       finalizingRef.current = false;
@@ -246,7 +255,7 @@ export function useLinkedInAccountConnection({
     } catch (err) {
       logger.error("Failed to start LinkedIn connect:", err);
       toast.error("Unable to start LinkedIn connection", {
-        description: err instanceof Error ? err.message : "Please try again.",
+        description: getClientErrorMessage(err, "Please try again."),
       });
       setIsMutating(false);
     }
@@ -261,7 +270,7 @@ export function useLinkedInAccountConnection({
     } catch (err) {
       logger.error("Failed to disconnect LinkedIn account:", err);
       toast.error("Unable to disconnect LinkedIn", {
-        description: err instanceof Error ? err.message : "Please try again.",
+        description: getClientErrorMessage(err, "Please try again."),
       });
     } finally {
       setIsMutating(false);
@@ -271,7 +280,14 @@ export function useLinkedInAccountConnection({
   return {
     linkedinStatus,
     statusLoading,
-    statusError: statusError ?? statusQuery.error?.message ?? null,
+    statusError:
+      statusError ??
+      (statusQuery.error
+        ? getClientErrorMessage(
+            statusQuery.error,
+            "Unable to load LinkedIn status. Please try again."
+          )
+        : null),
     isFinalizing,
     isMutating,
     refreshStatus,

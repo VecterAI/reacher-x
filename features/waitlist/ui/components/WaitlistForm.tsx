@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { UseFormReturn } from "react-hook-form";
 
 import { Checkbox } from "@/shared/ui/components/Checkbox";
@@ -45,8 +46,11 @@ export function WaitlistForm({
       });
       onSuccess();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "An unknown error occurred";
+      const message = captureClientErrorMessage(
+        error,
+        "Couldn't submit your request. Please try again.",
+        "WaitlistForm"
+      );
       onError(message);
     }
   };

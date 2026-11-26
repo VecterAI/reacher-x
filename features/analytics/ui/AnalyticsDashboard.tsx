@@ -4,6 +4,7 @@
 import * as React from "react";
 import { parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { AnalyticsQueryResult } from "@/convex/lib/analyticsCore";
@@ -285,7 +286,10 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
             Could not load workspace status
           </p>
           <p className="text-destructive/80 mt-1 text-sm">
-            {workspaceStatusQuery.error.message || "Please try again."}
+            {getClientErrorMessage(
+              workspaceStatusQuery.error,
+              "Please try again."
+            )}
           </p>
           <Button
             variant="outline"
@@ -310,9 +314,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
             Could not load analytics
           </p>
           <p className="text-destructive/80 mt-1 text-sm">
-            {analyticsError?.message ||
-              analyticsResult?.error ||
-              "Please try again."}
+            {getClientErrorMessage(analyticsError, "Please try again.")}
           </p>
           <Button
             variant="outline"

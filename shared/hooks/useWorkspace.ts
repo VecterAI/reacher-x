@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useConvexAuth } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
 import { persistWorkspaceUseCaseKey } from "@/shared/lib/workspaceUseCaseCache";
 import { useQueryWithStatus } from "./useQueryWithStatus";
@@ -33,7 +34,10 @@ export function useWorkspace() {
   }, [workspace?.useCaseKey]);
 
   const error = workspaceQuery.isError
-    ? workspaceQuery.error.message || "Failed to load workspace"
+    ? getClientErrorMessage(
+        workspaceQuery.error,
+        "Could not load workspace. Please try again."
+      )
     : null;
 
   return {

@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import {
   fetchOpenGraph,
   OpenGraphData,
@@ -83,7 +84,13 @@ export function useOgPreview(
       }
     } catch (err) {
       setData(null);
-      setError(err instanceof Error ? err.message : "Unknown error occurred");
+      setError(
+        captureClientErrorMessage(
+          err,
+          "Couldn't load a preview for this link.",
+          "OgPreview"
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -215,14 +222,18 @@ export function useOgPreview(
         setData(null);
 
         // Provide more specific error messages for catch block errors
-        let errorMessage = "Unknown error occurred";
+        let errorMessage = "Couldn't load a preview for this link.";
         if (err instanceof Error) {
           if (err.name === "AbortError") {
-            errorMessage = "Request was cancelled";
+            errorMessage = "Request was cancelled.";
           } else if (err.message.includes("fetch")) {
-            errorMessage = "Network error - please check your connection";
+            errorMessage = "Network error. Please check your connection.";
           } else {
-            errorMessage = err.message;
+            errorMessage = captureClientErrorMessage(
+              err,
+              "Couldn't load a preview for this link.",
+              "OgPreview"
+            );
           }
         }
 

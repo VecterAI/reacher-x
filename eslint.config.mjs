@@ -110,6 +110,27 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    files: ["app/(webapp)/**/*.{ts,tsx}", "features/**/ui/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.ts", "**/*.test.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "JSXExpressionContainer MemberExpression[property.name='message'][object.name=/^(error|err|authError|usageError|dashboardError|convexReadyError|activePanelError)$/]",
+          message:
+            "Use getClientErrorMessage(error, fallback) from @/shared/lib/errors instead of rendering raw error.message in UI.",
+        },
+        {
+          selector:
+            "JSXExpressionContainer MemberExpression[property.name='message'][object.type='MemberExpression'][object.property.name='error'][object.object.name!='fieldState']",
+          message:
+            "Use getClientErrorMessage(query.error, fallback) from @/shared/lib/errors instead of rendering raw query.error.message in UI.",
+        },
+      ],
+    },
+  },
+  {
     files: ["convex/prospectListFeed.ts"],
     plugins: {
       "@convex-dev": convexPlugin,

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { REGEXP_ONLY_DIGITS } from "input-otp";
 import { toast } from "sonner";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
@@ -307,19 +308,22 @@ export function XChatUnlockCard({
       })
         .catch((streamError) => {
           toast.error("The Agent couldn't analyze these messages", {
-            description:
-              streamError instanceof Error
-                ? streamError.message
-                : "Please try again.",
+            description: captureClientErrorMessage(
+              streamError,
+              "Please try again.",
+              "XChatUnlockCard"
+            ),
           });
         })
         .finally(() => setIsSharing(false));
     } catch (shareError) {
       setIsSharing(false);
       setError(
-        shareError instanceof Error
-          ? shareError.message
-          : "Couldn't share messages with the Agent."
+        captureClientErrorMessage(
+          shareError,
+          "Couldn't share messages with the Agent. Please try again.",
+          "XChatUnlockCard"
+        )
       );
     }
   };

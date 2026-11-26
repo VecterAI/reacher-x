@@ -5,6 +5,7 @@ import { useAction, useConvex } from "convex/react";
 import { parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import { DATE_RANGE_PRESETS } from "@/features/analytics/lib/dateRange";
 import {
@@ -886,10 +887,12 @@ export function AgentOpsDashboard() {
             Could not load Agent observability
           </p>
           <p className="text-destructive/80 mt-1 text-sm">
-            {dashboardError?.message ||
-              workspaceStatusQuery.error?.message ||
-              memoryInventoryError?.message ||
-              "Please try again."}
+            {getClientErrorMessage(
+              dashboardError ??
+                workspaceStatusQuery.error ??
+                memoryInventoryError,
+              "Please try again."
+            )}
           </p>
           <Button
             variant="outline"

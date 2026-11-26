@@ -5,6 +5,7 @@ import { useConvexAuth } from "convex/react";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/convex/_generated/api";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import {
   buildComposerIdentityUser,
   parseXConnectionIdentitySnapshot,
@@ -53,7 +54,13 @@ export function useViewerXComposerIdentity(
       setError(null);
     } catch (e) {
       setConnectionStatus(null);
-      setError(e instanceof Error ? e.message : "Unable to load X status.");
+      setError(
+        captureClientErrorMessage(
+          e,
+          "Unable to load X/Twitter status right now.",
+          "ViewerXComposerIdentity"
+        )
+      );
     } finally {
       setLoading(false);
     }

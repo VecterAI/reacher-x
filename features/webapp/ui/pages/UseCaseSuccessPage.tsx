@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -279,7 +280,10 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
                     Could not load {successLabelLower}
                   </p>
                   <p className="text-muted-foreground mt-1 text-sm">
-                    {setupStatusQuery.error.message || "Please try again."}
+                    {getClientErrorMessage(
+                      setupStatusQuery.error,
+                      "Please try again."
+                    )}
                   </p>
                   <Button
                     variant="outline"

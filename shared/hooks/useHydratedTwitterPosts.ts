@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useAction } from "convex/react";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import type { Tweet } from "@/features/threads/types";
 import type { HydratedTwitterPostsFromSocialApiPayload } from "@/shared/lib/twitter/hydration";
@@ -189,10 +190,11 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
             } catch (error) {
               return {
                 batchIds,
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Failed to load posts from SocialAPI.",
+                error: captureClientErrorMessage(
+                  error,
+                  "We couldn't load this post right now. Please try again.",
+                  "HydratedTwitterPosts"
+                ),
               } as const;
             }
           })
@@ -261,10 +263,11 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
         )?.message;
         setError(nextError ?? null);
       } catch (err) {
-        const message =
-          err instanceof Error
-            ? err.message
-            : "Failed to load posts from SocialAPI.";
+        const message = captureClientErrorMessage(
+          err,
+          "We couldn't load this post right now. Please try again.",
+          "HydratedTwitterPosts"
+        );
         const failedResultsById = Object.fromEntries(
           missingIds.map((tweetId) => [
             tweetId,

@@ -257,12 +257,20 @@ export const GET = withEvlog(async (request: NextRequest) => {
         fromCache: result.fromCache || false,
       });
     } else {
+      log.warn("Open Graph fetch returned no metadata", {
+        opengraph: {
+          target_host: hostname,
+          failure_reason: result.error,
+        },
+      });
       // Return 422 for client errors (like 404, 403) and 500 for server errors
       const isClientError = result.error?.includes("HTTP 4");
       return NextResponse.json(
         {
           success: false,
-          error: result.error || "Failed to fetch Open Graph data",
+          error: isClientError
+            ? "This link couldn't be previewed."
+            : "Couldn't load a preview for this link.",
         },
         { status: isClientError ? 422 : 500 }
       );
@@ -276,7 +284,7 @@ export const GET = withEvlog(async (request: NextRequest) => {
         return NextResponse.json(
           {
             success: false,
-            error: "Request timeout - the URL took too long to respond",
+            error: "The website took too long to respond.",
           },
           { status: 408 }
         );
@@ -286,7 +294,7 @@ export const GET = withEvlog(async (request: NextRequest) => {
         return NextResponse.json(
           {
             success: false,
-            error: "Network error - unable to reach the URL",
+            error: "Unable to reach this website right now.",
           },
           { status: 503 }
         );
@@ -296,7 +304,7 @@ export const GET = withEvlog(async (request: NextRequest) => {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Internal server error",
+        error: "Couldn't load a preview for this link.",
       },
       { status: 500 }
     );

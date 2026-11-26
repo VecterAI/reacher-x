@@ -10,6 +10,7 @@
  */
 
 import { useSearchParams, useRouter } from "next/navigation";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useEffect, Suspense, useMemo, useRef, useState } from "react";
@@ -83,7 +84,11 @@ function SuccessContent() {
       } catch (error) {
         hasHandledReturnRef.current = false;
         setResumeError(
-          error instanceof Error ? error.message : "Could not resume setup."
+          captureClientErrorMessage(
+            error,
+            "Could not resume setup. Please try again.",
+            "CheckoutSuccessPage"
+          )
         );
       }
     })();

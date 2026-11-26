@@ -5,6 +5,7 @@ import { useAction } from "convex/react";
 import { useQueryWithStatus } from "@/shared/hooks/useQueryWithStatus";
 import { parseAsString, useQueryStates } from "nuqs";
 import { api } from "@/convex/_generated/api";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { showStyleSyncIssueToast } from "@/features/linked-accounts/lib/styleSyncIssueToast";
 import { logger } from "@/shared/lib/logger";
 import { toast } from "sonner";
@@ -116,7 +117,10 @@ export function useXAccountConnection({
     } catch (err) {
       logger.warn("Failed to load X connection status:", err);
       setStatusError(
-        err instanceof Error ? err.message : "Unable to load X/Twitter status."
+        getClientErrorMessage(
+          err,
+          "Unable to load X/Twitter status. Please try again."
+        )
       );
     }
   }, [enabled]);
@@ -228,10 +232,10 @@ export function useXAccountConnection({
       } catch (exchangeError) {
         logger.error("Failed to finalize X connection:", exchangeError);
         toast.error("Unable to connect X/Twitter", {
-          description:
-            exchangeError instanceof Error
-              ? exchangeError.message
-              : "Please try again.",
+          description: getClientErrorMessage(
+            exchangeError,
+            "Please try again."
+          ),
         });
       } finally {
         clearOauthParams();
@@ -274,7 +278,7 @@ export function useXAccountConnection({
     } catch (err) {
       logger.error("Failed to start X connect:", err);
       toast.error("Unable to start X/Twitter connection", {
-        description: err instanceof Error ? err.message : "Please try again.",
+        description: getClientErrorMessage(err, "Please try again."),
       });
       setIsMutating(false);
     }
@@ -297,7 +301,7 @@ export function useXAccountConnection({
     } catch (err) {
       logger.error("Failed to disconnect X account:", err);
       toast.error("Unable to disconnect X/Twitter", {
-        description: err instanceof Error ? err.message : "Please try again.",
+        description: getClientErrorMessage(err, "Please try again."),
       });
     } finally {
       setIsMutating(false);
@@ -307,7 +311,14 @@ export function useXAccountConnection({
   return {
     xStatus,
     statusLoading,
-    statusError: statusError ?? statusQuery.error?.message ?? null,
+    statusError:
+      statusError ??
+      (statusQuery.error
+        ? getClientErrorMessage(
+            statusQuery.error,
+            "Unable to load X/Twitter status. Please try again."
+          )
+        : null),
     isMutating,
     refreshStatus,
     handleConnectX,

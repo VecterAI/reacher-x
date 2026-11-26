@@ -10,6 +10,7 @@ import { useQueryWithStatus } from "@/shared/hooks";
 import { NewWorkspaceDraftModal } from "@/features/webapp/ui/components/NewWorkspaceDraftModal";
 import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import {
   replaceWorkspaceDraft,
   type NewWorkspaceSessionSelection,
@@ -105,8 +106,11 @@ export function useNewWorkspaceDraftFlow(args?: NewWorkspaceDraftFlowArgs) {
     } catch (error) {
       onError?.();
       toast.error("Could not start a new workspace", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "NewWorkspaceDraftFlow"
+        ),
       });
     } finally {
       setIsSubmitting(false);
@@ -138,8 +142,11 @@ export function useNewWorkspaceDraftFlow(args?: NewWorkspaceDraftFlowArgs) {
     } catch (error) {
       onError?.();
       toast.error("Could not continue the existing draft", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "NewWorkspaceDraftFlow"
+        ),
       });
     } finally {
       setIsSubmitting(false);
@@ -172,8 +179,11 @@ export function useNewWorkspaceDraftFlow(args?: NewWorkspaceDraftFlowArgs) {
     } catch (error) {
       onError?.();
       toast.error("Could not replace the existing draft", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "NewWorkspaceDraftFlow"
+        ),
       });
     } finally {
       setIsSubmitting(false);

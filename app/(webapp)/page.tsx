@@ -9,6 +9,7 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import {
   useConvex,
   useMutation,
@@ -955,7 +956,10 @@ export default function ProspectsPage() {
                     Could not load {entitiesLower}
                   </p>
                   <p className="text-muted-foreground mt-1 text-sm">
-                    {setupStatusQuery.error.message || "Please try again."}
+                    {getClientErrorMessage(
+                      setupStatusQuery.error,
+                      "Please try again."
+                    )}
                   </p>
                   <Button
                     variant="outline"

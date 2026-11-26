@@ -137,6 +137,26 @@ class DescribeUrlLookupError extends Error {
   }
 }
 
+function getSafeDescribeUrlError(lookupError: string): string {
+  const normalized = lookupError.toLowerCase();
+  if (normalized.includes("invalid url")) {
+    return "Please enter a valid website URL.";
+  }
+  if (normalized.includes("only http")) {
+    return "Only HTTP and HTTPS website links are supported.";
+  }
+  if (normalized.includes("local") || normalized.includes("private")) {
+    return "Local or private URLs are not supported.";
+  }
+  if (normalized.includes("timed out")) {
+    return "That website took too long to respond. Try again or type your description.";
+  }
+  if (normalized.includes("sufficient content")) {
+    return "We couldn't find enough text on that page. Please type a short description instead.";
+  }
+  return "We couldn't read that website. Check the URL or type your description instead.";
+}
+
 // One lookup plus summary per URL per TTL. Lookup failures throw so they are
 // never cached and surface as 422 responses to the caller.
 async function describeUrlOutcome(url: string): Promise<DescribeUrlOutcome> {
@@ -226,7 +246,7 @@ export const POST = withEvlog(async (request: NextRequest) => {
       return NextResponse.json(
         {
           success: false,
-          error: error.lookupError,
+          error: getSafeDescribeUrlError(error.lookupError),
         },
         { status: 422 }
       );
