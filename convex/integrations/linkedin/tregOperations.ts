@@ -9,9 +9,11 @@ import type { LinkedInPerson } from "./searchPeople";
 import type { LinkedInPost } from "./searchPosts";
 import { requestTregWithFallback, type TregCallAttempt } from "./tregClient";
 import {
+  filterLinkedInPostsByDatePosted,
   filterLinkedInPostsByKeyword,
   mapDatePostedToAnyApi,
   mapDatePostedToHarvestLimit,
+  mapDatePostedToScrapeCreators,
   mapSortByToHarvest,
   normalizeTregCompany,
   normalizeTregContactEnrichment,
@@ -114,9 +116,9 @@ export async function searchTregLinkedInPeoplePage(
         normalizeTregPeopleSearchPage(raw, { start: args.start, count: limit }),
       isEmpty: (parsed) => parsed.people.length === 0,
     });
-  } else if (!args.cursor) {
+  } else if (args.start === 0 && !args.cursor) {
     // Semantic people search (exa) honors city/region location text in `q` and
-    // does not paginate with cursors, so only run it on page 1.
+    // does not paginate with cursors, so only run it on the initial page.
     const semanticQuery = args.location
       ? `${args.query} in ${args.location}`
       : args.query;
@@ -180,6 +182,7 @@ export async function searchTregLinkedInPostsPage(
   nextPaginationToken: string | null;
 }> {
   const page = args.pageNumber ?? Math.max(1, Math.floor(args.start / 50) + 1);
+  const isInitialPage = args.start === 0 && !args.paginationToken && page <= 1;
   const attempts: TregCallAttempt<{
     posts: LinkedInPost[];
     total: number;
@@ -201,26 +204,35 @@ export async function searchTregLinkedInPostsPage(
       },
       parse: (raw) => normalizeTregSearchPostsPage(raw, { start: args.start }),
     },
-    {
-      toolId: "anyapi.linkedin.search.posts",
-      method: "POST",
-      body: {
-        query: args.query,
-        ...(mapDatePostedToAnyApi(args.datePosted)
-          ? { datePosted: mapDatePostedToAnyApi(args.datePosted) }
-          : {}),
-      },
-      parse: (raw) => normalizeTregSearchPostsPage(raw, { start: args.start }),
-    },
-    {
-      toolId: "scrapecreators.x.v1-linkedin-search-posts",
-      method: "GET",
-      query: {
-        keyword: args.query,
-      },
-      parse: (raw) => normalizeTregSearchPostsPage(raw, { start: args.start }),
-    },
   ];
+
+  // Page-1-only fallbacks: never serve page 1 results for a continuation request.
+  if (isInitialPage) {
+    attempts.push(
+      {
+        toolId: "anyapi.linkedin.search.posts",
+        method: "POST",
+        body: {
+          query: args.query,
+          ...(mapDatePostedToAnyApi(args.datePosted)
+            ? { datePosted: mapDatePostedToAnyApi(args.datePosted) }
+            : {}),
+        },
+        parse: (raw) =>
+          normalizeTregSearchPostsPage(raw, { start: args.start }),
+      },
+      {
+        toolId: "scrapecreators.x.v1-linkedin-search-posts",
+        method: "GET",
+        query: {
+          query: args.query,
+          date_posted: mapDatePostedToScrapeCreators(args.datePosted),
+        },
+        parse: (raw) =>
+          normalizeTregSearchPostsPage(raw, { start: args.start }),
+      }
+    );
+  }
 
   const result = await requestTregWithFallback(ctx, {
     consumer: `linkedin.searchPosts:${args.searchMode ?? "plain_relevance"}:${args.query}`,
@@ -274,6 +286,21 @@ export async function searchTregLinkedInUserPosts(
   }
 
   const profileIdentifier = handle ?? args.profileUrn;
+  const parseAndFilterFeedPosts = (raw: unknown): LinkedInPost[] => {
+    const page = normalizeTregProfilePostsPage(raw, { maxPosts: fetchCount });
+    const searchPosts = page.posts.map((post) =>
+      toLinkedInSearchPostFromProfilePost(post, args.profileUrn)
+    );
+    const dateFiltered = filterLinkedInPostsByDatePosted(
+      searchPosts,
+      args.datePosted
+    );
+    return filterLinkedInPostsByKeyword(dateFiltered, args.keyword).slice(
+      0,
+      args.maxPosts
+    );
+  };
+
   attempts.push({
     toolId: "fetchinio.linkedin.user.posts",
     method: "GET",
@@ -281,16 +308,7 @@ export async function searchTregLinkedInUserPosts(
       profileUrlOrUrn: profileIdentifier,
       count: fetchCount,
     },
-    parse: (raw) => {
-      const page = normalizeTregProfilePostsPage(raw, { maxPosts: fetchCount });
-      const searchPosts = page.posts.map((post) =>
-        toLinkedInSearchPostFromProfilePost(post, args.profileUrn)
-      );
-      return filterLinkedInPostsByKeyword(searchPosts, args.keyword).slice(
-        0,
-        args.maxPosts
-      );
-    },
+    parse: parseAndFilterFeedPosts,
   });
 
   attempts.push({
@@ -299,16 +317,7 @@ export async function searchTregLinkedInUserPosts(
     body: {
       linkedin_url: toLinkedInProfileUrl(profileIdentifier),
     },
-    parse: (raw) => {
-      const page = normalizeTregProfilePostsPage(raw, { maxPosts: fetchCount });
-      const searchPosts = page.posts.map((post) =>
-        toLinkedInSearchPostFromProfilePost(post, args.profileUrn)
-      );
-      return filterLinkedInPostsByKeyword(searchPosts, args.keyword).slice(
-        0,
-        args.maxPosts
-      );
-    },
+    parse: parseAndFilterFeedPosts,
   });
 
   const result = await requestTregWithFallback(ctx, {
@@ -478,39 +487,49 @@ export async function fetchTregLinkedInPostComments(
 }> {
   const postUrn = toLinkedInPostUrn(args.urn);
   const count = Math.min(Math.max(args.count ?? 20, 1), 100);
+  const isInitialPage = !args.cursor && (!args.start || args.start === 0);
+  const attempts: TregCallAttempt<{
+    comments: Array<Record<string, unknown>>;
+    cursor: string | null;
+  }>[] = [
+    {
+      toolId: "fetchinio.linkedin.post.comments",
+      method: "GET",
+      query: {
+        postUrlOrUrn: postUrn,
+        count,
+        start: args.cursor ? undefined : args.start,
+        paginationToken: args.cursor,
+      },
+      parse: normalizeTregPostCommentsPage,
+    },
+    {
+      toolId: "treg.linkedin.post.comments",
+      method: "POST",
+      body: {
+        post_id: postUrn,
+        ...(args.cursor ? { cursor: args.cursor } : {}),
+      },
+      parse: normalizeTregPostCommentsPage,
+    },
+  ];
+
+  // Harvest comments fallback only serves page 1 reliably; skip for continuations.
+  if (isInitialPage) {
+    attempts.push({
+      toolId: "harvestapi.linkedin.post.comments",
+      method: "GET",
+      query: {
+        post: postUrn,
+        page: 1,
+      },
+      parse: normalizeTregPostCommentsPage,
+    });
+  }
+
   const result = await requestTregWithFallback(ctx, {
     consumer: `linkedin.getPostComments:${args.urn}`,
-    attempts: [
-      {
-        toolId: "fetchinio.linkedin.post.comments",
-        method: "GET",
-        query: {
-          postUrlOrUrn: postUrn,
-          count,
-          start: args.cursor ? undefined : args.start,
-          paginationToken: args.cursor,
-        },
-        parse: normalizeTregPostCommentsPage,
-      },
-      {
-        toolId: "treg.linkedin.post.comments",
-        method: "POST",
-        body: {
-          post_id: postUrn,
-          ...(args.cursor ? { cursor: args.cursor } : {}),
-        },
-        parse: normalizeTregPostCommentsPage,
-      },
-      {
-        toolId: "harvestapi.linkedin.post.comments",
-        method: "GET",
-        query: {
-          post: postUrn,
-          page: 1,
-        },
-        parse: normalizeTregPostCommentsPage,
-      },
-    ],
+    attempts,
   });
   return result.data;
 }
@@ -577,29 +596,39 @@ export async function fetchTregLinkedInCompanyPosts(
     trimmedCursor && !/^\d+$/.test(trimmedCursor) ? trimmedCursor : undefined;
   const companySlug = args.companyUniversalName?.trim() || args.companyId;
 
+  const isInitialPage = !paginationToken && numericPage === 1;
+  const attempts: TregCallAttempt<{
+    posts: LinkedInProfilePost[];
+    nextCursor: string | null;
+  }>[] = [
+    {
+      toolId: "harvestapi.linkedin.company.posts",
+      method: "GET",
+      query: {
+        companyId: args.companyId,
+        companyUniversalName: args.companyUniversalName,
+        page: paginationToken ? undefined : numericPage,
+        paginationToken,
+      },
+      parse: (raw) => normalizeTregProfilePostsPage(raw),
+    },
+  ];
+
+  // TikHub company posts has no cursor/page param; only use as a page-1 fallback.
+  if (isInitialPage) {
+    attempts.push({
+      toolId: "tikhub.x.linkedin-web-v2-get-company-posts",
+      method: "GET",
+      query: {
+        url: `https://www.linkedin.com/company/${companySlug}/`,
+      },
+      parse: (raw) => normalizeTregProfilePostsPage(raw),
+    });
+  }
+
   const result = await requestTregWithFallback(ctx, {
     consumer: `linkedin.getCompanyPosts:${args.companyId}:${args.cursor ?? "first"}`,
-    attempts: [
-      {
-        toolId: "harvestapi.linkedin.company.posts",
-        method: "GET",
-        query: {
-          companyId: args.companyId,
-          companyUniversalName: args.companyUniversalName,
-          page: paginationToken ? undefined : numericPage,
-          paginationToken,
-        },
-        parse: (raw) => normalizeTregProfilePostsPage(raw),
-      },
-      {
-        toolId: "tikhub.x.linkedin-web-v2-get-company-posts",
-        method: "GET",
-        query: {
-          url: `https://www.linkedin.com/company/${companySlug}/`,
-        },
-        parse: (raw) => normalizeTregProfilePostsPage(raw),
-      },
-    ],
+    attempts,
   });
   return result.data;
 }

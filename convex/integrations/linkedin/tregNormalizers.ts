@@ -72,18 +72,30 @@ function unwrapOutput(raw: unknown): LooseRecord {
   return root;
 }
 
+const MAX_JS_DATE_MS = 8_640_000_000_000_000;
+
+function toValidDateTimestampMs(ms: number): number | undefined {
+  if (!Number.isFinite(ms) || ms <= 0 || Math.abs(ms) > MAX_JS_DATE_MS) {
+    return undefined;
+  }
+  return Number.isFinite(new Date(ms).getTime()) ? ms : undefined;
+}
+
 function parseTimestampMs(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return value < 1_000_000_000_000 ? Math.trunc(value * 1000) : value;
+    const ms = value < 1_000_000_000_000 ? Math.trunc(value * 1000) : value;
+    return toValidDateTimestampMs(ms);
   }
   if (typeof value === "string" && value.trim().length > 0) {
     const numeric = Number(value.trim());
     if (Number.isFinite(numeric) && numeric > 0) {
-      return numeric < 1_000_000_000_000 ? Math.trunc(numeric * 1000) : numeric;
+      const ms =
+        numeric < 1_000_000_000_000 ? Math.trunc(numeric * 1000) : numeric;
+      return toValidDateTimestampMs(ms);
     }
     const parsed = Date.parse(value.trim());
     if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
+      return toValidDateTimestampMs(parsed);
     }
   }
   const record = asRecord(value);
@@ -91,6 +103,7 @@ function parseTimestampMs(value: unknown): number | undefined {
     return (
       parseTimestampMs(record.timestamp) ??
       parseTimestampMs(record.date) ??
+      parseTimestampMs(record.datePublished) ??
       parseTimestampMs(record.createdAt)
     );
   }
@@ -223,6 +236,24 @@ export function mapDatePostedToAnyApi(datePosted?: string): string | undefined {
       return "last-week";
     case "past-month":
       return "last-month";
+    default:
+      return undefined;
+  }
+}
+
+/** Map LinkdAPI datePosted filters to ScrapeCreators date_posted values. */
+export function mapDatePostedToScrapeCreators(
+  datePosted?: string
+): "last-day" | "last-week" | "last-month" | "last-year" | undefined {
+  switch (datePosted) {
+    case "past-24h":
+      return "last-day";
+    case "past-week":
+      return "last-week";
+    case "past-month":
+      return "last-month";
+    case "past-year":
+      return "last-year";
     default:
       return undefined;
   }
@@ -361,29 +392,41 @@ export function normalizeTregPeopleSearchPage(
   };
 }
 
+function extractActivityIdFromPostUrl(url?: string): string | undefined {
+  if (!url) return undefined;
+  const activityMatch = /activity(?::|-)(\d{10,})/i.exec(url);
+  if (activityMatch?.[1]) return activityMatch[1];
+  const ugcMatch = /ugcPost:(\d{10,})/i.exec(url);
+  if (ugcMatch?.[1]) return `urn:li:ugcPost:${ugcMatch[1]}`;
+  const shareMatch = /share:(\d{10,})/i.exec(url);
+  if (shareMatch?.[1]) return `urn:li:share:${shareMatch[1]}`;
+  return undefined;
+}
+
 function normalizeHarvestOrGenericPost(
   record: LooseRecord
 ): LinkedInPost | null {
+  const candidateUrl =
+    asString(record.postURL) ??
+    asString(record.linkedinUrl) ??
+    asString(record.shareLinkedinUrl) ??
+    asString(record.url);
   const rawId =
     asString(record.urn) ??
     asString(record.entityId) ??
     asString(record.id) ??
     asString(record.postID) ??
-    asString(record.shareUrn);
+    asString(record.shareUrn) ??
+    extractActivityIdFromPostUrl(candidateUrl);
   if (!rawId) return null;
 
   const urn = normalizePostUrn(rawId);
   const postID = extractActivityNumericId(rawId);
-  const postURL = buildPostUrlFromUrn(
-    urn,
-    asString(record.postURL) ??
-      asString(record.linkedinUrl) ??
-      asString(record.shareLinkedinUrl) ??
-      asString(record.url)
-  );
+  const postURL = buildPostUrlFromUrn(urn, candidateUrl);
   const text =
     asString(record.text) ??
     asString(record.content) ??
+    asString(record.description) ??
     asString(record.commentary) ??
     "";
 
@@ -407,6 +450,7 @@ function normalizeHarvestOrGenericPost(
 
   const timestamp =
     parseTimestampMs(record.postedAt) ??
+    parseTimestampMs(record.datePublished) ??
     parseTimestampMs(record.date) ??
     parseTimestampMs(record.createdAt) ??
     getLinkedInActivityTimestamp(urn) ??
@@ -415,6 +459,7 @@ function normalizeHarvestOrGenericPost(
   const fullDate =
     asString(postedAtRec?.fullDate) ??
     asString(postedAtRec?.date) ??
+    asString(record.datePublished) ??
     asString(record.date) ??
     new Date(timestamp).toISOString();
 
@@ -1149,6 +1194,25 @@ export function normalizeTregContactEnrichment(
     phoneNumber: firstPhone,
     websites,
   };
+}
+
+/** Filter normalized posts by LinkdAPI-style datePosted window when provided. */
+export function filterLinkedInPostsByDatePosted(
+  posts: LinkedInPost[],
+  datePosted?: string,
+  nowMs: number = getCurrentUTCTimestamp()
+): LinkedInPost[] {
+  const windowMsByFilter: Record<string, number> = {
+    "past-24h": 24 * 60 * 60 * 1000,
+    "past-week": 7 * 24 * 60 * 60 * 1000,
+    "past-month": 30 * 24 * 60 * 60 * 1000,
+    "past-year": 365 * 24 * 60 * 60 * 1000,
+  };
+  const windowMs = datePosted ? windowMsByFilter[datePosted] : undefined;
+  if (!windowMs) return posts;
+
+  const cutoff = nowMs - windowMs;
+  return posts.filter((post) => post.postedAt.timestamp >= cutoff);
 }
 
 /** Local case-insensitive keyword filter for user posts fallback when only a URN is known. */

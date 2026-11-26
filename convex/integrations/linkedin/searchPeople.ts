@@ -405,6 +405,9 @@ export const searchBatch = action({
       runIdPromise: Promise<RunId>;
     }> = [];
 
+    const useTreg = isTregLinkedInProvider();
+    const effectiveProfileLanguage = useTreg ? undefined : args.profileLanguage;
+
     for (let index = 0; index < queriesToExecute.length; index += 1) {
       const query = queriesToExecute[index];
       const attempts = buildLinkedInPeopleSearchAttempts({
@@ -412,7 +415,7 @@ export const searchBatch = action({
           ? ["title", "keyword"]
           : ["keyword"],
         geoUrn,
-        profileLanguage: args.profileLanguage,
+        profileLanguage: effectiveProfileLanguage,
       });
       const runIdPromise = new Promise<RunId>((resolve, reject) => {
         void (async () => {

@@ -270,6 +270,11 @@ async function collectPaginatedPostResults(
   );
   const seenStarts = new Set<number>([args.initialResult.start]);
 
+  const initialPageNumber = Math.max(
+    1,
+    Math.floor(args.initialResult.start / 50) + 1
+  );
+
   for (
     let pageIndex = 1;
     pageIndex < LINKEDIN_POSTS_MAX_PAGES_PER_QUERY;
@@ -289,7 +294,7 @@ async function collectPaginatedPostResults(
           query: args.query,
           searchMode: args.searchMode,
           start: nextStart,
-          pageNumber: pageIndex + 1,
+          pageNumber: initialPageNumber + pageIndex,
           paginationToken: lastResult.nextPaginationToken ?? undefined,
           sortBy: args.sortBy,
           datePosted: args.datePosted,

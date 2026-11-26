@@ -268,6 +268,7 @@ async function executeSingleTregAttempt<T>(
   }
 
   let httpStatus: number | undefined;
+  let capturedCostUsd = 0;
 
   try {
     const response = await fetch(url, {
@@ -278,9 +279,33 @@ async function executeSingleTregAttempt<T>(
       signal: AbortSignal.timeout(attempt.timeoutMs ?? DEFAULT_TREG_TIMEOUT_MS),
     });
     httpStatus = response.status;
+    capturedCostUsd = parseTregCostUsd(
+      response.headers.get("x-treg-cost-micro"),
+      null
+    );
 
-    const payloadText = await response.text();
+    let payloadText: string;
+    try {
+      payloadText = await response.text();
+    } catch (readError) {
+      if (!response.ok) {
+        throw new TregRequestError({
+          message: `treg.to ${attempt.toolId} failed with HTTP ${response.status} (body unreadable)`,
+          toolId: attempt.toolId,
+          status: response.status,
+          retryable: isRetryableHttpStatus(response.status),
+          detail: readError instanceof Error ? readError.message : undefined,
+        });
+      }
+      throw readError;
+    }
+
     const payload = parseJsonSafe(payloadText);
+    const costUsd = parseTregCostUsd(
+      response.headers.get("x-treg-cost-micro"),
+      payload
+    );
+    capturedCostUsd = costUsd;
 
     if (!response.ok) {
       const meta = extractErrorMeta(payload);
@@ -309,10 +334,6 @@ async function executeSingleTregAttempt<T>(
 
     const servedBy =
       response.headers.get("x-treg-served-by")?.trim() || attempt.toolId;
-    const costUsd = parseTregCostUsd(
-      response.headers.get("x-treg-cost-micro"),
-      payload
-    );
     const data = attempt.parse(payload);
 
     const usage: ProviderUsageEstimate = {
@@ -320,19 +341,24 @@ async function executeSingleTregAttempt<T>(
       estimatedCostUsd: costUsd,
     };
 
-    await recordProviderRequestOutcome({
-      ctx,
-      provider: "linkdapi",
-      request: {
-        consumer,
-        endpoint: `treg:${servedBy}`,
-      },
-      startedAt,
-      outcome: "success",
-      httpStatus,
-      usage,
-      healthEvidence: true,
-    });
+    // Isolate telemetry persistence so a DB write error never retries an already-charged call.
+    try {
+      await recordProviderRequestOutcome({
+        ctx,
+        provider: "linkdapi",
+        request: {
+          consumer,
+          endpoint: `treg:${servedBy}`,
+        },
+        startedAt,
+        outcome: "success",
+        httpStatus,
+        usage,
+        healthEvidence: true,
+      });
+    } catch {
+      // Telemetry failure must not discard valid paid data or trigger failover.
+    }
 
     return {
       data,
@@ -345,19 +371,27 @@ async function executeSingleTregAttempt<T>(
       error instanceof TregRequestError
         ? (error.status ?? httpStatus)
         : httpStatus;
-    await recordProviderRequestOutcome({
-      ctx,
-      provider: "linkdapi",
-      request: {
-        consumer,
-        endpoint: `treg:${attempt.toolId}`,
-      },
-      startedAt,
-      outcome: "error",
-      httpStatus: recordedStatus,
-      error,
-      healthEvidence: isTregHealthEvidenceError(error, httpStatus),
-    });
+    try {
+      await recordProviderRequestOutcome({
+        ctx,
+        provider: "linkdapi",
+        request: {
+          consumer,
+          endpoint: `treg:${attempt.toolId}`,
+        },
+        startedAt,
+        outcome: "error",
+        httpStatus: recordedStatus,
+        error,
+        usage:
+          capturedCostUsd > 0
+            ? { billableUnits: 1, estimatedCostUsd: capturedCostUsd }
+            : undefined,
+        healthEvidence: isTregHealthEvidenceError(error, httpStatus),
+      });
+    } catch {
+      // Never mask the upstream error with a telemetry write failure.
+    }
     throw error;
   }
 }
@@ -406,7 +440,10 @@ export async function requestTregWithFallback<T>(
       return result;
     } catch (error) {
       lastError = error;
-      if (!hasMoreAttempts || !shouldFailoverTregError(error)) {
+      if (!shouldFailoverTregError(error)) {
+        throw error;
+      }
+      if (!hasMoreAttempts) {
         if (lastEmptyResult) {
           return lastEmptyResult;
         }

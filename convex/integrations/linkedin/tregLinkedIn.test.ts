@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import type { ActionCtx } from "../../_generated/server";
 import { ProviderCircuitOpenError } from "../../lib/providerReliability";
 import {
   isTregLinkedInProvider,
@@ -6,13 +7,16 @@ import {
 } from "./providerConfig";
 import {
   parseTregCostUsd,
+  requestTregWithFallback,
   shouldFailoverTregError,
   TregRequestError,
 } from "./tregClient";
 import {
+  filterLinkedInPostsByDatePosted,
   filterLinkedInPostsByKeyword,
   mapDatePostedToAnyApi,
   mapDatePostedToHarvestLimit,
+  mapDatePostedToScrapeCreators,
   mapSortByToHarvest,
   normalizeTregCompany,
   normalizeTregContactEnrichment,
@@ -462,5 +466,191 @@ describe("tregNormalizers", () => {
     const hits = filterLinkedInPostsByKeyword(posts, '"HubSpot" CRM');
     expect(hits).toHaveLength(1);
     expect(hits[0].postID).toBe("1000000000001");
+  });
+
+  test("normalizes ScrapeCreators URL-only posts and rejects out-of-range timestamps", () => {
+    const page = normalizeTregSearchPostsPage(
+      {
+        posts: [
+          {
+            url: "https://www.linkedin.com/posts/alex_ai-activity-7531688431618367488-abc1",
+            description: "Looking for an AI SDR replacement.",
+            datePublished: "2026-11-25T10:00:00.000Z",
+          },
+          {
+            id: "1000000000099",
+            content: "Huge timestamp should not crash Date.toISOString",
+            postedAt: 9_000_000_000_000_000,
+          },
+        ],
+      },
+      { start: 0 }
+    );
+
+    expect(page.posts).toHaveLength(2);
+    expect(page.posts[0]).toMatchObject({
+      urn: "urn:li:activity:7531688431618367488",
+      postID: "7531688431618367488",
+      text: "Looking for an AI SDR replacement.",
+      postedAt: {
+        fullDate: "2026-11-25T10:00:00.000Z",
+      },
+    });
+    expect(Number.isFinite(Date.parse(page.posts[1].postedAt.fullDate))).toBe(
+      true
+    );
+    expect(mapDatePostedToScrapeCreators("past-week")).toBe("last-week");
+    expect(mapDatePostedToScrapeCreators("past-24h")).toBe("last-day");
+  });
+
+  test("filters user posts locally by datePosted window", () => {
+    const nowMs = Date.parse("2026-11-26T12:00:00.000Z");
+    const posts = normalizeTregSearchPostsPage(
+      {
+        elements: [
+          {
+            id: "1000000000001",
+            content: "Recent post",
+            postedAt: Date.parse("2026-11-24T12:00:00.000Z"),
+          },
+          {
+            id: "1000000000002",
+            content: "Old post",
+            postedAt: Date.parse("2026-09-01T12:00:00.000Z"),
+          },
+        ],
+      },
+      { start: 0 }
+    ).posts;
+
+    expect(
+      filterLinkedInPostsByDatePosted(posts, "past-week", nowMs)
+    ).toHaveLength(1);
+    expect(
+      filterLinkedInPostsByDatePosted(posts, undefined, nowMs)
+    ).toHaveLength(2);
+  });
+});
+
+describe("requestTregWithFallback behavior", () => {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.TREG_API_KEY;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) {
+      delete process.env.TREG_API_KEY;
+    } else {
+      process.env.TREG_API_KEY = originalToken;
+    }
+    vi.restoreAllMocks();
+  });
+
+  function makeMockCtx(options: { failTelemetry?: boolean } = {}): ActionCtx {
+    let mutationCall = 0;
+    const runQuery = vi.fn().mockResolvedValue({ status: "closed" });
+    const runMutation = vi.fn().mockImplementation(async () => {
+      mutationCall += 1;
+      // First mutation call is assertProviderRequestAllowed; later calls are telemetry writes.
+      if (mutationCall === 1) {
+        return { allowed: true };
+      }
+      if (options.failTelemetry) {
+        throw new Error("OCC write conflict");
+      }
+      return null;
+    });
+    return {
+      runQuery,
+      runMutation,
+    } as unknown as ActionCtx;
+  }
+
+  test("does not fail over on 401 even if reading the response body fails", async () => {
+    process.env.TREG_API_KEY = "test-token";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: vi.fn().mockRejectedValue(new Error("body stream timeout")),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      requestTregWithFallback(makeMockCtx(), {
+        consumer: "test.401-body-fail",
+        attempts: [
+          { toolId: "provider.a", parse: (raw) => raw },
+          { toolId: "provider.b", parse: (raw) => raw },
+        ],
+      })
+    ).rejects.toMatchObject({ status: 401 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not retry a paid 200 response if telemetry persistence fails", async () => {
+    process.env.TREG_API_KEY = "test-token";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "x-treg-cost-micro": "1500" }),
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await requestTregWithFallback(
+      makeMockCtx({ failTelemetry: true }),
+      {
+        consumer: "test.telemetry-fail",
+        attempts: [
+          { toolId: "provider.a", parse: (raw) => raw },
+          { toolId: "provider.b", parse: (raw) => raw },
+        ],
+      }
+    );
+
+    expect(result.data).toEqual({ ok: true });
+    expect(result.costUsd).toBeCloseTo(0.0015);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("throws permanent 402 instead of returning an earlier empty result", async () => {
+    process.env.TREG_API_KEY = "test-token";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "x-treg-cost-micro": "0" }),
+        text: vi.fn().mockResolvedValue(JSON.stringify({ items: [] })),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 402,
+        headers: new Headers(),
+        text: vi
+          .fn()
+          .mockResolvedValue(
+            JSON.stringify({ message: "Insufficient balance" })
+          ),
+      });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      requestTregWithFallback(makeMockCtx(), {
+        consumer: "test.empty-then-402",
+        attempts: [
+          {
+            toolId: "provider.a",
+            parse: () => [] as string[],
+            isEmpty: (rows) => rows.length === 0,
+          },
+          { toolId: "provider.b", parse: () => ["x"] },
+        ],
+      })
+    ).rejects.toMatchObject({ status: 402 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
