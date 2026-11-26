@@ -27,6 +27,8 @@ export interface LinkedInReplyComposerProps {
   maxAttachments?: number;
   localMentionEntities?: MentionEntitySearchResult[];
   surfaceLabel?: string;
+  replyToText?: string;
+  replyToAuthorHandle?: string;
   beforeCounterSlot?: React.ReactNode;
   onCancel?: () => void;
   onContentChange?: (content: SerializedEditorState) => void;
@@ -50,6 +52,8 @@ export function LinkedInReplyComposer({
   maxAttachments = 1,
   localMentionEntities,
   surfaceLabel = "linkedin_comment_thread",
+  replyToText,
+  replyToAuthorHandle,
   beforeCounterSlot,
   onCancel,
   onContentChange,
@@ -102,6 +106,8 @@ export function LinkedInReplyComposer({
           prospectId,
           maxLength: LINKEDIN_COMMENT_TEXT_MAX,
           characterCountMode: "raw",
+          replyToText,
+          replyToAuthorHandle,
         }}
         entityMentions={{
           prospectId,

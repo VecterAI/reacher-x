@@ -1046,6 +1046,8 @@ export function AgentDynamicPanel({
               disabled={isSubmitting}
               localMentionEntities={linkedInPostMentionEntities}
               surfaceLabel="linkedin_comment_approval"
+              replyToText={sourceLinkedInPost?.text}
+              replyToAuthorHandle={sourceLinkedInPost?.author.name}
               onContentChange={(content) => {
                 setCurrentDraftText(extractTextFromEditorState(content).trim());
               }}
@@ -1444,6 +1446,8 @@ export function AgentDynamicPanel({
                           disabled={isSubmitting}
                           localMentionEntities={linkedInPostMentionEntities}
                           surfaceLabel="linkedin_comment_task_approval"
+                          replyToText={sourceLinkedInPost?.text}
+                          replyToAuthorHandle={sourceLinkedInPost?.author.name}
                           onContentChange={(content) => {
                             setCurrentDraftText(
                               extractTextFromEditorState(content).trim()

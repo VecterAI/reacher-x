@@ -1,0 +1,116 @@
+import type { CandidateConfig } from "./types";
+
+const IMPROVED_LIMITS = {
+  maxSuggestionChars: 110,
+  maxSuggestionWords: 16,
+  temperature: 0.15,
+  stopSequences: ["\n"] as const,
+};
+
+/**
+ * Curated OpenRouter candidates verified against the live model catalog,
+ * spanning today's production baseline plus the fastest, lowest-cost
+ * non-reasoning and low-effort models available.
+ */
+export const AUTOCOMPLETE_CANDIDATES: readonly CandidateConfig[] = [
+  {
+    id: "baseline-legacy",
+    label: "Baseline: gpt-oss-120b (Groq, legacy JSON, no history)",
+    model: "openai/gpt-oss-120b",
+    promptMode: "legacy_json_no_history",
+    maxOutputTokens: 256,
+    temperature: 0.15,
+    maxSuggestionChars: 24,
+    maxSuggestionWords: 4,
+    provider: { only: ["groq"], allow_fallbacks: false },
+  },
+  {
+    id: "gpt-oss-120b-groq-low",
+    label: "gpt-oss-120b (Groq, context + effort:low)",
+    model: "openai/gpt-oss-120b",
+    promptMode: "context_raw",
+    maxOutputTokens: 128,
+    provider: { only: ["groq"], allow_fallbacks: false },
+    reasoning: { effort: "low", exclude: true },
+    ...IMPROVED_LIMITS,
+  },
+  {
+    id: "gpt-oss-20b-groq-low",
+    label: "gpt-oss-20b (Groq, context + effort:low)",
+    model: "openai/gpt-oss-20b",
+    promptMode: "context_raw",
+    maxOutputTokens: 128,
+    provider: { only: ["groq"], allow_fallbacks: false },
+    reasoning: { effort: "low", exclude: true },
+    ...IMPROVED_LIMITS,
+  },
+  {
+    id: "llama-3.1-8b-groq",
+    label: "Llama 3.1 8B Instruct (Groq, non-reasoning)",
+    model: "meta-llama/llama-3.1-8b-instruct",
+    promptMode: "context_raw",
+    maxOutputTokens: 32,
+    provider: { only: ["groq"], allow_fallbacks: false },
+    ...IMPROVED_LIMITS,
+  },
+  {
+    id: "nemotron-3.5-lightning",
+    label: "Nemotron 3.5 Lightning (Fireworks, no reasoning)",
+    model: "nvidia/nemotron-3.5-lightning",
+    promptMode: "context_raw",
+    maxOutputTokens: 32,
+    provider: { order: ["fireworks"], allow_fallbacks: true },
+    reasoning: { enabled: false },
+    ...IMPROVED_LIMITS,
+  },
+  {
+    id: "gemma-4-26b-a4b",
+    label: "Gemma 4 26B A4B (latency sort, no reasoning)",
+    model: "google/gemma-4-26b-a4b-it",
+    promptMode: "context_raw",
+    maxOutputTokens: 32,
+    provider: { sort: "latency", allow_fallbacks: true },
+    reasoning: { enabled: false },
+    ...IMPROVED_LIMITS,
+  },
+  {
+    id: "gemini-2.5-flash-lite",
+    label: "Gemini 2.5 Flash Lite (no reasoning)",
+    model: "google/gemini-2.5-flash-lite",
+    promptMode: "context_raw",
+    maxOutputTokens: 32,
+    reasoning: { enabled: false },
+    ...IMPROVED_LIMITS,
+  },
+  {
+    id: "gpt-4.1-nano",
+    label: "GPT-4.1 Nano (non-reasoning)",
+    model: "openai/gpt-4.1-nano",
+    promptMode: "context_raw",
+    maxOutputTokens: 32,
+    ...IMPROVED_LIMITS,
+  },
+  {
+    id: "gpt-6-luna-none",
+    label: "GPT-6 Luna (OpenAI/Azure, effort:none)",
+    model: "openai/gpt-6-luna",
+    promptMode: "context_raw",
+    maxOutputTokens: 32,
+    provider: {
+      only: ["openai", "azure"],
+      order: ["openai", "azure"],
+      allow_fallbacks: true,
+    },
+    reasoning: { effort: "none", exclude: true },
+    ...IMPROVED_LIMITS,
+  },
+  {
+    id: "solar-mini-4-5",
+    label: "Solar Mini 4.5 (Upstage, $0.01/M, no reasoning)",
+    model: "upstage/solar-mini-4-5",
+    promptMode: "context_raw",
+    maxOutputTokens: 32,
+    reasoning: { enabled: false },
+    ...IMPROVED_LIMITS,
+  },
+];

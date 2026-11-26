@@ -216,6 +216,12 @@ export function LinkedInCommentItem({
               initialValue={replyComposerInitialValue}
               disabled={disabled}
               localMentionEntities={replyMentionEntities}
+              replyToText={
+                sourcePost?.text
+                  ? `Post by ${sourcePost.author.name}: ${sourcePost.text}\nComment by ${comment.author.name}: ${comment.text}`
+                  : comment.text
+              }
+              replyToAuthorHandle={comment.author.name}
               onCancel={onToggleReplyComposer}
               onSubmit={onReplySubmit}
             />

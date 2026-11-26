@@ -41,6 +41,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftSync";
 import { resolveOutreachTaskApprovalUiState } from "@/shared/lib/outreach/taskApprovalHelpers";
 import { resolveTaskDmComposerState } from "@/shared/lib/outreach/taskDmComposerHelpers";
+import { buildRecentAutocompleteMessages } from "@/shared/lib/autocomplete/inlineAutocomplete";
 
 import type {
   ComposerInitialMediaUpload,
@@ -855,6 +856,22 @@ export function LinkedInConversationPanel({
                 prospectId,
                 maxLength: LINKEDIN_DM_TEXT_MAX,
                 characterCountMode: "raw",
+                replyToText: replyingTo?.text || undefined,
+                replyToAuthorHandle: replyingTo?.text
+                  ? replyingTo.direction === "sent"
+                    ? "Me"
+                    : resolvedData?.prospect.displayName
+                  : undefined,
+                recentMessages: buildRecentAutocompleteMessages(
+                  (resolvedData?.messages ?? []).map((message) => ({
+                    role: message.direction === "sent" ? "user" : "prospect",
+                    author:
+                      message.direction === "sent"
+                        ? undefined
+                        : resolvedData?.prospect.displayName,
+                    text: message.text,
+                  }))
+                ),
               }}
               entityMentions={{
                 prospectId,

@@ -835,6 +835,8 @@ export function LinkedInCommentThread({
               initialValue={topLevelInitialValue}
               disabled={isPostingTopLevel}
               localMentionEntities={topLevelMentionEntities}
+              replyToText={post.text}
+              replyToAuthorHandle={post.author.name}
               onSubmit={handleTopLevelSubmit}
             />
           ) : thread?.eligibility.reasonLabel ? (

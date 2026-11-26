@@ -10,7 +10,18 @@ cp .env.benchmark.example .env.benchmark.local
 chmod 600 .env.benchmark.local
 pnpm benchmark --plan
 pnpm benchmark --check-env
+pnpm benchmark:autocomplete --dry-run
 pnpm test:benchmark
+```
+
+### Inline autocomplete benchmark
+
+`benchmarks/inline-autocomplete/` benchmarks OpenRouter models and prompt formats across real ReacherX composer surfaces (agent chat threads, X/LinkedIn DMs, X replies, LinkedIn comments, and silence edge cases).
+
+```sh
+pnpm benchmark:autocomplete --dry-run                 # Synthetic check at $0
+pnpm benchmark:autocomplete --judge --samples         # Live OpenRouter run + blind quality judge (default cap: $0.50)
+pnpm benchmark:autocomplete --candidates gemma-4-26b-a4b,solar-mini-4-5
 ```
 
 Fill `.env.benchmark.local` using your own approved development credentials. Exported shell variables take precedence. The environment check only reads local values. It does not validate keys, balances, Convex login or remote settings. Keep deployment keys and self-hosted overrides out of this shell; `CONVEX_DEPLOYMENT` must be `dev:<name>`.

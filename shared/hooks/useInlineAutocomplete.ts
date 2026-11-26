@@ -7,7 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { usePostHog } from "posthog-js/react";
 import { api } from "@/convex/_generated/api";
 import {
@@ -60,21 +60,11 @@ export function useInlineAutocomplete(args: {
   ) as (
     request: InlineAutocompleteRequest
   ) => Promise<InlineAutocompleteResponse>;
-  const cancelThreadHelperRequests = useMutation(
-    autocompleteApi.autocompleteControl.cancelThreadHelperRequests
-  ) as (args: { threadId: string }) => Promise<unknown>;
   const posthog = usePostHog();
 
   const options: InlineSuggestionControllerOptions = {
     debounceMs,
     fetchSuggestion: getInlineSuggestion,
-    cancelRemote: (canceled) => {
-      if (canceled.threadId) {
-        void cancelThreadHelperRequests({
-          threadId: canceled.threadId,
-        }).catch(() => {});
-      }
-    },
     onEvent: (name, properties) => {
       posthog?.capture(name, properties);
     },
