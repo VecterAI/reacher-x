@@ -4,6 +4,12 @@ export type InlineAutocompleteSurface = "composer" | "prompt_input";
 export type InlineAutocompletePlatform = "twitter" | "linkedin" | "generic";
 export type InlineAutocompleteCharacterCountMode = "raw" | "x_post";
 
+export type InlineAutocompleteMessage = {
+  role: "user" | "assistant" | "prospect";
+  author?: string;
+  text: string;
+};
+
 export type InlineAutocompleteContext = {
   enabled?: boolean;
   surface?: InlineAutocompleteSurface;
@@ -16,6 +22,7 @@ export type InlineAutocompleteContext = {
   characterCountMode?: InlineAutocompleteCharacterCountMode;
   replyToText?: string;
   replyToAuthorHandle?: string;
+  recentMessages?: InlineAutocompleteMessage[];
   useCaseKey?: string;
   toneHint?: string;
 };
@@ -37,12 +44,57 @@ export type InlineAutocompleteResponse = {
 export const INLINE_AUTOCOMPLETE_MIN_PREFIX_CHARS = 8;
 export const INLINE_AUTOCOMPLETE_MAX_PREFIX_CHARS = 600;
 export const INLINE_AUTOCOMPLETE_MAX_SUFFIX_CHARS = 96;
-export const INLINE_AUTOCOMPLETE_MAX_SUGGESTION_CHARS = 24;
-export const INLINE_AUTOCOMPLETE_MAX_SUGGESTION_WORDS = 4;
-// GPT-OSS uses mandatory reasoning tokens, so leave room for final text.
-export const INLINE_AUTOCOMPLETE_MAX_OUTPUT_TOKENS = 256;
-export const INLINE_AUTOCOMPLETE_DEBOUNCE_MS = 400;
+export const INLINE_AUTOCOMPLETE_MAX_SUGGESTION_CHARS = 110;
+export const INLINE_AUTOCOMPLETE_MAX_SUGGESTION_WORDS = 16;
+export const INLINE_AUTOCOMPLETE_MAX_RECENT_MESSAGES = 6;
+export const INLINE_AUTOCOMPLETE_MAX_RECENT_MESSAGE_CHARS = 280;
+// Non-reasoning autocomplete models only need enough budget for a single clause.
+export const INLINE_AUTOCOMPLETE_MAX_OUTPUT_TOKENS = 40;
+export const INLINE_AUTOCOMPLETE_DEBOUNCE_MS = 180;
 export const INLINE_AUTOCOMPLETE_NO_SUGGESTION = "__NO_COMPLETION__";
+
+/**
+ * Normalizes and caps recent conversation turns for inline autocomplete so
+ * callers pass a compact, cache-stable history window.
+ */
+export function buildRecentAutocompleteMessages(
+  messages: ReadonlyArray<{
+    role: InlineAutocompleteMessage["role"];
+    author?: string | null;
+    text?: string | null;
+  }>,
+  options?: {
+    maxMessages?: number;
+    maxCharsPerMessage?: number;
+  }
+): InlineAutocompleteMessage[] {
+  const maxMessages =
+    options?.maxMessages ?? INLINE_AUTOCOMPLETE_MAX_RECENT_MESSAGES;
+  const maxChars =
+    options?.maxCharsPerMessage ?? INLINE_AUTOCOMPLETE_MAX_RECENT_MESSAGE_CHARS;
+
+  const cleaned: InlineAutocompleteMessage[] = [];
+  for (const message of messages) {
+    const normalizedText = (message.text ?? "").replace(/\s+/g, " ").trim();
+    if (!normalizedText) {
+      continue;
+    }
+
+    const text =
+      normalizedText.length <= maxChars
+        ? normalizedText
+        : `${normalizedText.slice(0, maxChars - 1).trimEnd()}…`;
+    const author = message.author?.replace(/\s+/g, " ").trim() || undefined;
+
+    cleaned.push(
+      author
+        ? { role: message.role, author, text }
+        : { role: message.role, text }
+    );
+  }
+
+  return cleaned.slice(-maxMessages);
+}
 
 const URL_LIKE_REGEX = /https?:\/\/\S*$/i;
 const EMAIL_LIKE_REGEX = /\S+@\S*$/i;
@@ -300,7 +352,7 @@ function trimSuggestionToNaturalBoundary(suggestion: string, limit: number) {
     slice.lastIndexOf(":")
   );
 
-  if (lastBoundary >= Math.max(12, limit - 18)) {
+  if (lastBoundary >= Math.max(12, limit - 24)) {
     return slice.slice(0, lastBoundary).trimEnd();
   }
 
@@ -312,6 +364,7 @@ function trimSuggestionToWordLimit(suggestion: string, maxWords: number) {
     return "";
   }
 
+  const leadingSpace = suggestion.startsWith(" ") ? " " : "";
   const trimmed = suggestion.trim();
   if (!trimmed) {
     return "";
@@ -319,8 +372,8 @@ function trimSuggestionToWordLimit(suggestion: string, maxWords: number) {
 
   const words = trimmed.split(/\s+/);
   if (words.length <= maxWords) {
-    return trimmed;
+    return `${leadingSpace}${trimmed}`;
   }
 
-  return words.slice(0, maxWords).join(" ").trimEnd();
+  return `${leadingSpace}${words.slice(0, maxWords).join(" ").trimEnd()}`;
 }

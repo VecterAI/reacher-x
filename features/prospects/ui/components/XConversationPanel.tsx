@@ -45,6 +45,7 @@ import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftS
 import { resolveOutreachTaskApprovalUiState } from "@/shared/lib/outreach/taskApprovalHelpers";
 import { resolveTaskDmComposerState } from "@/shared/lib/outreach/taskDmComposerHelpers";
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
+import { buildRecentAutocompleteMessages } from "@/shared/lib/autocomplete/inlineAutocomplete";
 import type { XDmAttachmentSummary } from "@/shared/lib/twitter/dm";
 import type {
   ComposerInitialMediaUpload,
@@ -1457,6 +1458,35 @@ export function XConversationPanel({
                   prospectId,
                   maxLength: X_DM_TEXT_MAX,
                   characterCountMode: "raw",
+                  // Never transmit browser-decrypted E2EE XChat plaintext to
+                  // background autocomplete without explicit user sharing.
+                  replyToText:
+                    replyingTo &&
+                    !isEncryptedXChatMessage(replyingTo) &&
+                    replyingTo.text
+                      ? replyingTo.text
+                      : undefined,
+                  replyToAuthorHandle:
+                    replyingTo &&
+                    !isEncryptedXChatMessage(replyingTo) &&
+                    replyingTo.text
+                      ? replyingTo.direction === "sent"
+                        ? "Me"
+                        : data.prospect.displayName
+                      : undefined,
+                  recentMessages: buildRecentAutocompleteMessages(
+                    renderedMessages
+                      .filter((message) => !isEncryptedXChatMessage(message))
+                      .map((message) => ({
+                        role:
+                          message.direction === "sent" ? "user" : "prospect",
+                        author:
+                          message.direction === "sent"
+                            ? undefined
+                            : data.prospect.displayName,
+                        text: message.text,
+                      }))
+                  ),
                 }}
                 entityMentions={{
                   prospectId,

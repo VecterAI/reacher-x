@@ -39,6 +39,7 @@ import {
   resolveReasoningDisclosureRequest,
 } from "../lib/reasoningDisclosure";
 import { getUIMessageDisplayText } from "../lib/uiMessageText";
+import { buildRecentAutocompleteMessages } from "@/shared/lib/autocomplete/inlineAutocomplete";
 import {
   indexSetupProfileSnapshotsByAssistantMessage,
   type SetupProfileSnapshot,
@@ -3541,14 +3542,37 @@ export function AgentChat({
 
     agentComposerApi.insertEmoji("@");
   }, [agentComposerApi, isComposerLocked]);
+  const recentAgentAutocompleteMessages = useMemo(
+    () =>
+      buildRecentAutocompleteMessages(
+        displayMessages
+          .filter(
+            (message) => message.role === "user" || message.role === "assistant"
+          )
+          .map((message) => ({
+            role: message.role === "user" ? "user" : "assistant",
+            text: getUIMessageDisplayText(message),
+          }))
+      ),
+    [displayMessages]
+  );
+
   const agentInlineAutocompleteContext = useMemo(
     () => ({
       surfaceLabel: "agent_chat",
+      workspaceId: effectiveWorkspaceId ?? undefined,
       prospectId,
       threadId: effectiveThreadId ?? threadId,
       platform: "generic" as const,
+      recentMessages: recentAgentAutocompleteMessages,
     }),
-    [effectiveThreadId, prospectId, threadId]
+    [
+      effectiveThreadId,
+      effectiveWorkspaceId,
+      prospectId,
+      recentAgentAutocompleteMessages,
+      threadId,
+    ]
   );
 
   // Track if we've synced generatedThreadId to URL

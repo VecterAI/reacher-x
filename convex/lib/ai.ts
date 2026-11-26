@@ -89,6 +89,7 @@ export const MODELS = {
   GPT_6_LUNA_PRO: "openai/gpt-6-luna-pro",
   KIMI_K2_6: "moonshotai/kimi-k2.6",
   GPT_OSS: "openai/gpt-oss-120b",
+  GEMMA_4_26B_A4B: "google/gemma-4-26b-a4b-it",
 } as const;
 
 export type ModelId = string;
@@ -311,7 +312,7 @@ export const REASONING_MODEL = getConfiguredModel(
 );
 export const AUTOCOMPLETE_MODEL = getConfiguredModel(
   "AI_AUTOCOMPLETE_MODEL",
-  MODELS.GPT_OSS
+  MODELS.GEMMA_4_26B_A4B
 );
 export const HELPER_MODEL = AUTOCOMPLETE_MODEL;
 
@@ -329,15 +330,31 @@ export const FAST_PROVIDER_OPTIONS: OpenRouterProviderOptions =
     defaultOptions: activeRoutingConfig.fast.providerOptions,
   });
 
+function createAutocompleteDefaultProviderOptions(): OpenRouterProviderOptions {
+  return {
+    openrouter: {
+      provider: {
+        sort: "latency",
+        allow_fallbacks: true,
+      },
+      reasoning: {
+        enabled: false,
+      },
+    },
+  };
+}
+
 /**
- * Background helper AI runs on a separate Groq lane so autocomplete and other
- * non-critical helpers cannot consume the pinned main-agent provider capacity.
+ * Inline autocomplete runs on a dedicated low-latency non-reasoning route
+ * (Gemma 4 26B A4B by default, latency-sorted with reasoning disabled) so
+ * ghost-text requests stay sub-500ms and isolated from main-agent capacity.
  */
 export const HELPER_PROVIDER_OPTIONS: OpenRouterProviderOptions =
   getConfiguredProviderOptions({
     model: AUTOCOMPLETE_MODEL,
-    defaultModel: MODELS.GPT_OSS,
-    defaultOptions: createOnlyProviderOptions([OPENROUTER_PROVIDERS.GROQ]),
+    defaultModel: MODELS.GEMMA_4_26B_A4B,
+    defaultOptions: createAutocompleteDefaultProviderOptions(),
+    requireParameters: false,
   });
 export const AUTOCOMPLETE_PROVIDER_OPTIONS = HELPER_PROVIDER_OPTIONS;
 

@@ -3,8 +3,7 @@
 import { generateText } from "ai";
 import { v } from "convex/values";
 import { action } from "./lib/functionBuilders";
-import { components, internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import {
   AUTOCOMPLETE_MODEL,
   AUTOCOMPLETE_PROVIDER_OPTIONS,
@@ -12,14 +11,16 @@ import {
   extractJsonPayload,
   extractUsage,
 } from "./lib/ai";
-import { getStyleMemoryCategory } from "./lib/styleSourceCore";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { getWorkspaceUseCase } from "../shared/lib/workspaceUseCases";
 import {
   clampInlineAutocompleteSuggestion,
   getInlineAutocompletePromptWindow,
   INLINE_AUTOCOMPLETE_MAX_OUTPUT_TOKENS,
+  INLINE_AUTOCOMPLETE_MAX_RECENT_MESSAGE_CHARS,
+  INLINE_AUTOCOMPLETE_MAX_RECENT_MESSAGES,
   INLINE_AUTOCOMPLETE_NO_SUGGESTION,
+  type InlineAutocompleteMessage,
   type InlineAutocompleteResponse,
   normalizeInlineAutocompleteSuggestion,
   shouldRequestInlineAutocomplete,
@@ -27,46 +28,64 @@ import {
 import { isInlineAutocompleteEnabled } from "./lib/runtimeConfigHelpers";
 import { getXPostWeightedLength } from "../shared/lib/twitter/xPostTextLimit";
 
-type ViewerUser = Doc<"users">;
-type WorkspaceDoc = Doc<"workspaces">;
-type ProspectDoc = Doc<"prospects">;
-
-const MAX_STYLE_PROFILE_CHARS = 700;
-const MAX_REPLY_CONTEXT_CHARS = 320;
+const MAX_STYLE_PROFILE_CHARS = 500;
+const MAX_REPLY_CONTEXT_CHARS = 900;
 const MAX_TONE_HINT_CHARS = 120;
-const THREAD_HELPER_CONTROL_POLL_MS = 150;
+const REASONING_OVERRIDE_MAX_OUTPUT_TOKENS = 160;
 
-function extractAutocompleteCompletion(text: string) {
+type WorkspaceSummary = {
+  id: string;
+  name: string;
+  description?: string;
+  useCaseKey?: string;
+};
+
+type ProspectSummary = {
+  displayName?: string;
+  title?: string;
+  company?: string;
+  briefIntro?: string;
+  location?: string;
+  matchedKeywords?: string[];
+};
+
+const recentMessageValidator = v.object({
+  role: v.union(
+    v.literal("user"),
+    v.literal("assistant"),
+    v.literal("prospect")
+  ),
+  author: v.optional(v.string()),
+  text: v.string(),
+});
+
+/**
+ * Extracts a single-line continuation from raw text (or unwraps JSON if a
+ * custom `AI_AUTOCOMPLETE_MODEL` override still returns `{"completion":...}`).
+ */
+function extractAutocompleteCompletion(text: string): string {
   const rawText = text.trim();
   if (!rawText) {
     return "";
   }
 
-  try {
-    const parsed = JSON.parse(extractJsonPayload(rawText)) as {
-      completion?: unknown;
-    };
-    return typeof parsed.completion === "string" ? parsed.completion : rawText;
-  } catch {
-    return rawText;
-  }
-}
-
-async function getCurrentUser(ctx: any): Promise<ViewerUser> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new Error("Not authenticated");
+  if (rawText.startsWith("{") || rawText.startsWith("```")) {
+    try {
+      const parsed = JSON.parse(extractJsonPayload(rawText)) as {
+        completion?: unknown;
+      };
+      if (typeof parsed.completion === "string") {
+        return parsed.completion;
+      }
+    } catch {
+      // Not valid JSON; treat as plain continuation text.
+    }
   }
 
-  const user = await ctx.runQuery(internal.users.getUserByWorkosIdInternal, {
-    workosUserId: identity.subject,
-  });
-
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  return user;
+  const firstLine = rawText.split(/\r?\n/)[0] ?? "";
+  return firstLine
+    .replace(/^(?:Continuation(?: at <CURSOR>)?|Completion):\s*/i, "")
+    .replace(/^<CURSOR>/, "");
 }
 
 function buildEmptyInlineAutocompleteResponse(): InlineAutocompleteResponse {
@@ -80,102 +99,24 @@ function buildEmptyInlineAutocompleteResponse(): InlineAutocompleteResponse {
   };
 }
 
-async function getOwnedThread(ctx: any, userId: Id<"users">, threadId: string) {
-  const thread = await ctx.runQuery(components.agent.threads.getThread, {
-    threadId,
-  });
-  if (!thread || thread.userId !== userId) {
-    throw new Error("Not authorized");
-  }
-  return thread;
-}
-
-async function isThreadGenerationRunning(ctx: any, threadId: string) {
-  const streams = await ctx.runQuery(components.agent.streams.list, {
-    threadId,
-    statuses: ["streaming"],
-  });
-  return streams.length > 0;
-}
-
-function startThreadHelperCancellationWatcher(args: {
-  ctx: any;
-  threadId?: string;
-  initialVersion: number;
-}) {
-  if (!args.threadId) {
-    return {
-      abortSignal: undefined as AbortSignal | undefined,
-      stop() {},
-    };
+function truncateContext(value: string | null | undefined, maxChars: number) {
+  if (!value) {
+    return null;
   }
 
-  const abortController = new AbortController();
-  let disposed = false;
-  let polling = false;
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-
-  const poll = async () => {
-    if (disposed || polling || abortController.signal.aborted) {
-      return;
-    }
-
-    polling = true;
-    try {
-      const nextVersion: number = await args.ctx.runQuery(
-        internal.autocompleteControl.getThreadHelperCancellationVersionInternal,
-        {
-          threadId: args.threadId,
-        }
-      );
-      if (nextVersion > args.initialVersion) {
-        abortController.abort(
-          new Error("Inline autocomplete request canceled.")
-        );
-        return;
-      }
-    } catch (error) {
-      console.warn(
-        "[autocomplete] Unable to poll helper cancellation state.",
-        error
-      );
-    } finally {
-      polling = false;
-    }
-
-    if (!disposed && !abortController.signal.aborted) {
-      timeoutHandle = setTimeout(poll, THREAD_HELPER_CONTROL_POLL_MS);
-    }
-  };
-
-  timeoutHandle = setTimeout(poll, THREAD_HELPER_CONTROL_POLL_MS);
-
-  return {
-    abortSignal: abortController.signal,
-    stop() {
-      disposed = true;
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
-    },
-  };
-}
-
-function getPlatformCandidates(
-  platform: "twitter" | "linkedin" | "generic" | undefined
-) {
-  if (platform === "linkedin") {
-    return ["linkedin"] as const;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return null;
   }
 
-  if (platform === "twitter") {
-    return ["twitter"] as const;
+  if (normalized.length <= maxChars) {
+    return normalized;
   }
 
-  return ["twitter", "linkedin"] as const;
+  return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
-function buildWorkspaceContext(workspace: WorkspaceDoc | null | undefined) {
+function buildWorkspaceContext(workspace: WorkspaceSummary | null) {
   if (!workspace) {
     return null;
   }
@@ -198,7 +139,7 @@ function buildWorkspaceContext(workspace: WorkspaceDoc | null | undefined) {
   };
 }
 
-function buildProspectContext(prospect: ProspectDoc | null | undefined) {
+function buildProspectContext(prospect: ProspectSummary | null) {
   if (!prospect) {
     return null;
   }
@@ -215,6 +156,45 @@ function buildProspectContext(prospect: ProspectDoc | null | undefined) {
   ]
     .filter((value): value is string => typeof value === "string")
     .join("\n");
+}
+
+function buildRecentMessagesContext(args: {
+  recentMessages?: InlineAutocompleteMessage[];
+  surfaceLabel?: string;
+  platform?: "twitter" | "linkedin" | "generic";
+}) {
+  if (!args.recentMessages || args.recentMessages.length === 0) {
+    return null;
+  }
+
+  const recent = args.recentMessages.slice(
+    -INLINE_AUTOCOMPLETE_MAX_RECENT_MESSAGES
+  );
+  const isAgentChat =
+    args.platform === "generic" || args.surfaceLabel === "agent_chat";
+  const label = isAgentChat ? "Recent thread messages" : "Recent DM messages";
+
+  const lines = recent
+    .map((message) => {
+      const speaker =
+        message.role === "user"
+          ? "Me"
+          : message.role === "assistant"
+            ? "Agent"
+            : (truncateContext(message.author, 48) ?? "Prospect");
+      const text = truncateContext(
+        message.text,
+        INLINE_AUTOCOMPLETE_MAX_RECENT_MESSAGE_CHARS
+      );
+      return text ? `${speaker}: ${text}` : null;
+    })
+    .filter((line): line is string => line !== null);
+
+  if (lines.length === 0) {
+    return null;
+  }
+
+  return `${label}:\n${lines.join("\n")}`;
 }
 
 function buildBudgetContext(args: {
@@ -236,120 +216,15 @@ function buildBudgetContext(args: {
   return `Remaining length budget: ${Math.max(0, remaining)} (${args.characterCountMode ?? "raw"} mode)`;
 }
 
-function truncateContext(value: string | null | undefined, maxChars: number) {
-  if (!value) {
-    return null;
+function getAutocompleteMaxOutputTokens(model: string): number {
+  // Mandatory-reasoning overrides (for example gpt-oss) need extra output
+  // tokens to emit thinking tokens before the final continuation.
+  if (model.includes("gpt-oss")) {
+    return REASONING_OVERRIDE_MAX_OUTPUT_TOKENS;
   }
-
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized.length <= maxChars) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
+  return INLINE_AUTOCOMPLETE_MAX_OUTPUT_TOKENS;
 }
 
-async function resolveWorkspaceAndProspectContext(args: {
-  ctx: any;
-  user: ViewerUser;
-  workspaceId?: string;
-  prospectId?: string;
-}): Promise<{
-  workspace: WorkspaceDoc | null;
-  prospect: ProspectDoc | null;
-}> {
-  let prospect: ProspectDoc | null = null;
-  let workspace: WorkspaceDoc | null = null;
-
-  if (args.prospectId) {
-    const nextProspect: ProspectDoc | null = await args.ctx.runQuery(
-      internal.prospects.getProspectInternal,
-      {
-        prospectId: args.prospectId as Id<"prospects">,
-      }
-    );
-
-    if (nextProspect && nextProspect.userId === args.user._id) {
-      prospect = nextProspect;
-    }
-  }
-
-  const resolvedWorkspaceId = args.workspaceId ?? prospect?.workspaceId;
-  if (resolvedWorkspaceId) {
-    const nextWorkspace: WorkspaceDoc | null = await args.ctx.runQuery(
-      internal.workspaces.getWorkspaceInternal,
-      {
-        workspaceId: resolvedWorkspaceId as Id<"workspaces">,
-      }
-    );
-
-    if (nextWorkspace && nextWorkspace.userId === args.user._id) {
-      workspace = nextWorkspace;
-    }
-  }
-
-  if (!workspace) {
-    const nextWorkspace: WorkspaceDoc | null = await args.ctx.runQuery(
-      internal.workspaces.getDefaultWorkspaceInternal,
-      {
-        userId: args.user._id,
-      }
-    );
-    workspace = nextWorkspace;
-  }
-
-  return { workspace, prospect };
-}
-
-async function resolveStyleProfile(args: {
-  ctx: any;
-  user: ViewerUser;
-  workspace: WorkspaceDoc | null | undefined;
-  platform?: "twitter" | "linkedin" | "generic";
-}): Promise<{
-  category: "writing_style_profile_twitter" | "writing_style_profile_linkedin";
-  narrative: string;
-} | null> {
-  if (!args.workspace) {
-    return null;
-  }
-
-  for (const platform of getPlatformCandidates(args.platform)) {
-    const category = getStyleMemoryCategory(platform) as
-      | "writing_style_profile_twitter"
-      | "writing_style_profile_linkedin";
-    const memories: Array<{
-      parsed?: { narrative?: string } | null;
-      promptLine?: string;
-    }> = await args.ctx.runQuery(
-      internal.memory.findRelevantBuiltInAgentMemoriesInternal,
-      {
-        userId: String(args.user._id),
-        workspaceId: String(args.workspace._id),
-        query: "writing style profile voice",
-        categories: [category],
-        limit: 1,
-      }
-    );
-
-    const memory = memories[0];
-    const narrative: string =
-      memory?.parsed?.narrative || memory?.promptLine || "";
-
-    if (narrative) {
-      return {
-        category,
-        narrative,
-      };
-    }
-  }
-
-  return null;
-}
 export const getInlineSuggestion = action({
   args: {
     enabled: v.optional(v.boolean()),
@@ -369,6 +244,7 @@ export const getInlineSuggestion = action({
     ),
     replyToText: v.optional(v.string()),
     replyToAuthorHandle: v.optional(v.string()),
+    recentMessages: v.optional(v.array(recentMessageValidator)),
     useCaseKey: v.optional(v.string()),
     toneHint: v.optional(v.string()),
     beforeCursor: v.string(),
@@ -383,35 +259,31 @@ export const getInlineSuggestion = action({
       return buildEmptyInlineAutocompleteResponse();
     }
 
-    const startedAt = getCurrentUTCTimestamp();
-    const user = await getCurrentUser(ctx);
-    let helperCancellationVersion = 0;
-    if (args.threadId) {
-      await getOwnedThread(ctx, user._id, args.threadId);
-      if (await isThreadGenerationRunning(ctx, args.threadId)) {
-        return buildEmptyInlineAutocompleteResponse();
-      }
-      helperCancellationVersion = await ctx.runQuery(
-        internal.autocompleteControl.getThreadHelperCancellationVersionInternal,
-        {
-          threadId: args.threadId,
-        }
-      );
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
     }
 
-    const { workspace, prospect } = await resolveWorkspaceAndProspectContext({
-      ctx,
-      user,
-      workspaceId: args.workspaceId,
-      prospectId: args.prospectId,
-    });
-    const styleProfile = await resolveStyleProfile({
-      ctx,
-      user,
-      workspace,
-      platform: args.platform,
-    });
+    const startedAt = getCurrentUTCTimestamp();
 
+    // Single consolidated Convex query for auth, stream guard, workspace,
+    // prospect, and social style memory.
+    const resolvedContext = await ctx.runQuery(
+      internal.autocompleteControl.resolveAutocompleteContextInternal,
+      {
+        workosUserId: identity.subject,
+        workspaceId: args.workspaceId,
+        prospectId: args.prospectId,
+        threadId: args.threadId,
+        platform: args.platform,
+      }
+    );
+
+    if (resolvedContext.blockedByActiveStream) {
+      return buildEmptyInlineAutocompleteResponse();
+    }
+
+    const { workspace, prospect, styleProfile } = resolvedContext;
     const provider = createAIProvider();
     const promptWindow = getInlineAutocompletePromptWindow({
       beforeCursor: args.beforeCursor,
@@ -419,52 +291,46 @@ export const getInlineSuggestion = action({
     });
     const workspaceContext = buildWorkspaceContext(workspace);
     const prospectContext = buildProspectContext(prospect);
+    const recentMessagesContext = buildRecentMessagesContext({
+      recentMessages: args.recentMessages,
+      surfaceLabel: args.surfaceLabel,
+      platform: args.platform,
+    });
     const budgetContext = buildBudgetContext(args);
+    const replyTargetText = truncateContext(
+      args.replyToText,
+      MAX_REPLY_CONTEXT_CHARS
+    );
+    const toneHint = truncateContext(args.toneHint, MAX_TONE_HINT_CHARS);
 
-    const systemPrompt = `You generate inline autocomplete continuations for ReacherX.
-
-Return ONLY JSON in this exact shape: {"completion":"text to insert"}.
+    const systemPrompt = `You are an ultra-fast inline ghost-text autocomplete engine inside ReacherX.
+Output ONLY the exact continuation text to insert at <CURSOR>, with no quotes, no JSON, no markdown, and no explanation.
 
 Rules:
-- Continue the user's exact train of thought instead of rewriting it.
-- Match the user's voice when style guidance is provided.
-- The completion value must be a single-line continuation only.
-- Never include line breaks, bullets, labels, or multiple options.
-- Keep completions short and tab-accept friendly.
-- Prefer 2-3 words only. Never exceed 4 words.
-- End on a natural word boundary.
-- Do not repeat the provided prefix.
-- Do not repeat text that already appears after the cursor.
-- Do not add explanations, markdown, or multiple options.
-- For chat and prompt inputs, prefer giving a small useful continuation when the text is an ordinary unfinished thought.
-- Set completion to ${INLINE_AUTOCOMPLETE_NO_SUGGESTION} only when the cursor context is not a natural-language continuation, the text is already complete, or any completion would be misleading.
-- Avoid generic AI phrasing, filler, and corporate language unless the user's style clearly does that.`;
+- Use the conversation history, post being replied to, and prospect context to predict the exact continuation the user intends to type next.
+- Continue seamlessly from the text before <CURSOR> and fit naturally before the text after <CURSOR>.
+- Never repeat words already right before <CURSOR> or right after <CURSOR>.
+- Output a single line, completing the current phrase or clause naturally (typically 4 to 14 words, stopping at a clean word or sentence boundary).
+- Respect any remaining character budget strictly.
+- Match the user's voice on social posts and DMs; stay direct and clear in agent chat instructions.
+- Avoid robotic filler, corporate buzzwords, or sycophancy.
+- If the text before <CURSOR> is already a complete finished message or no continuation is helpful, output ONLY: ${INLINE_AUTOCOMPLETE_NO_SUGGESTION}`;
 
-    const prompt = [
-      `Surface: ${args.surfaceLabel ?? args.surface ?? "composer"}`,
-      `Platform: ${args.platform ?? "generic"}`,
-      budgetContext,
-      workspaceContext
-        ? `Workspace context:\n${workspaceContext.details}`
-        : null,
-      prospectContext ? `Prospect context:\n${prospectContext}` : null,
+    // Keep the stable context prefix first so repeated keystrokes in the same
+    // thread, DM, or reply hit provider prompt caching.
+    const stablePrefix = [
+      `Surface: ${args.surfaceLabel ?? args.surface ?? "composer"} (${args.platform ?? "generic"})`,
+      workspaceContext ? `Workspace:\n${workspaceContext.details}` : null,
+      prospectContext ? `Prospect:\n${prospectContext}` : null,
       args.replyToAuthorHandle
-        ? `Reply target handle: @${args.replyToAuthorHandle}`
+        ? `Replying to: ${args.replyToAuthorHandle}`
         : null,
-      truncateContext(args.replyToText, MAX_REPLY_CONTEXT_CHARS)
-        ? `Reply target text:\n${truncateContext(args.replyToText, MAX_REPLY_CONTEXT_CHARS)}`
-        : null,
-      truncateContext(args.toneHint, MAX_TONE_HINT_CHARS)
-        ? `Tone hint: ${truncateContext(args.toneHint, MAX_TONE_HINT_CHARS)}`
-        : null,
+      replyTargetText ? `Post being replied to:\n${replyTargetText}` : null,
+      recentMessagesContext,
+      toneHint ? `Tone hint: ${toneHint}` : null,
       styleProfile
         ? `User writing voice:\n${truncateContext(styleProfile.narrative, MAX_STYLE_PROFILE_CHARS)}`
-        : "No trusted style profile is available. Stay concise and neutral.",
-      `Text before cursor:\n"""${promptWindow.beforeCursor}"""`,
-      promptWindow.afterCursor
-        ? `Text after cursor:\n"""${promptWindow.afterCursor}"""`
-        : "Text after cursor: <empty>",
-      `Generate the single most likely continuation as JSON. Keep completion to 2-3 words. For ordinary unfinished chat text, return a continuation rather than ${INLINE_AUTOCOMPLETE_NO_SUGGESTION}.`,
+        : null,
     ]
       .filter(
         (value): value is string =>
@@ -472,31 +338,27 @@ Rules:
       )
       .join("\n\n");
 
-    const cancellationWatcher = startThreadHelperCancellationWatcher({
-      ctx,
-      threadId: args.threadId,
-      initialVersion: helperCancellationVersion,
+    const dynamicSuffix = [
+      budgetContext,
+      `Draft:\n${promptWindow.beforeCursor}<CURSOR>${promptWindow.afterCursor}`,
+      "Continuation at <CURSOR>:",
+    ]
+      .filter(
+        (value): value is string =>
+          typeof value === "string" && value.length > 0
+      )
+      .join("\n\n");
+
+    const result = await generateText({
+      model: provider(AUTOCOMPLETE_MODEL),
+      system: systemPrompt,
+      prompt: `${stablePrefix}\n\n${dynamicSuffix}`,
+      temperature: 0.15,
+      maxOutputTokens: getAutocompleteMaxOutputTokens(AUTOCOMPLETE_MODEL),
+      stopSequences: ["\n"],
+      providerOptions: AUTOCOMPLETE_PROVIDER_OPTIONS,
     });
 
-    let result;
-    try {
-      result = await generateText({
-        model: provider(AUTOCOMPLETE_MODEL) as any,
-        system: systemPrompt,
-        prompt,
-        temperature: 0.15,
-        maxOutputTokens: INLINE_AUTOCOMPLETE_MAX_OUTPUT_TOKENS,
-        providerOptions: AUTOCOMPLETE_PROVIDER_OPTIONS,
-        abortSignal: cancellationWatcher.abortSignal,
-      });
-    } catch (error) {
-      if (cancellationWatcher.abortSignal?.aborted) {
-        return buildEmptyInlineAutocompleteResponse();
-      }
-      throw error;
-    } finally {
-      cancellationWatcher.stop();
-    }
     const completionText = extractAutocompleteCompletion(result.text);
 
     const normalizedSuggestion = normalizeInlineAutocompleteSuggestion({
@@ -519,7 +381,7 @@ Rules:
       suggestion,
       latencyMs,
       model,
-      workspaceId: workspace ? String(workspace._id) : undefined,
+      workspaceId: workspace?.id,
       styleProfileCategory: styleProfile?.category,
       styleProfileApplied: Boolean(styleProfile),
     };
