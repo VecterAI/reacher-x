@@ -702,6 +702,7 @@ export function LinkedInProfilePanel({
       localActions ||
       !prospectId ||
       !requestedProfileData ||
+      requestedProfileData.entityType === "company" ||
       !relationshipKey ||
       loading ||
       requestedProfileData.viewerAccountConnected !== true ||

@@ -1,6 +1,11 @@
 "use node";
 
 import { toConnectionStatus } from "./lib/linkedinConnectionStateCore";
+import {
+  isLinkedInCompanyIdentity,
+  normalizeLinkedInCompanyId,
+  resolveLinkedInCompanyLookupArgs,
+} from "./lib/linkedinProspectIdentityCore";
 
 import { v, type Infer } from "convex/values";
 import { action, internalAction } from "./lib/functionBuilders";
@@ -1103,11 +1108,24 @@ function getProspectLinkedInIdentity(prospect: any) {
     (typeof author?.urn === "string" && author.urn) ||
     undefined;
 
+  const entityType = isLinkedInCompanyIdentity({
+    providerId,
+    profileUrl,
+    prospectType:
+      typeof prospect?.prospectType === "string"
+        ? prospect.prospectType
+        : undefined,
+    authorType: typeof author?.type === "string" ? author.type : undefined,
+  })
+    ? ("company" as const)
+    : ("person" as const);
+
   return {
+    entityType,
     displayName:
       (typeof prospect?.displayName === "string" && prospect.displayName) ||
       (typeof author?.name === "string" && author.name) ||
-      "LinkedIn user",
+      (entityType === "company" ? "LinkedIn company" : "LinkedIn user"),
     title:
       (typeof prospect?.title === "string" && prospect.title) ||
       (typeof author?.headline === "string" && author.headline) ||
@@ -1543,14 +1561,6 @@ function buildLinkedInProfileData(args: {
     recentPosts: args.recentPosts,
     recentPostsCursor: args.recentPostsCursor ?? null,
   };
-}
-
-function normalizeLinkedInCompanyId(value?: string): string | undefined {
-  const normalized = toOptionalString(value)?.replace(
-    /^urn:li:(?:organization|company):/i,
-    ""
-  );
-  return normalized && /^\d+$/.test(normalized) ? normalized : undefined;
 }
 
 function buildLinkedInCompanyProfileData(args: {
@@ -3553,13 +3563,64 @@ export const getLinkedInProfile = action({
     }
 
     const prospectIdentity = getProspectLinkedInIdentity(prospect);
+
+    if (prospectIdentity.entityType === "company") {
+      const lookupArgs = resolveLinkedInCompanyLookupArgs({
+        providerId: prospectIdentity.providerId,
+        username: prospectIdentity.username,
+        displayName:
+          prospectIdentity.displayName === "LinkedIn company"
+            ? undefined
+            : prospectIdentity.displayName,
+      });
+      if (!lookupArgs.id && !lookupArgs.name) {
+        throw new Error(
+          "This profile is missing the LinkedIn identity needed to load a company."
+        );
+      }
+
+      const storedAccountPromise = ctx.runQuery(
+        internalLinkedInStore.getLinkedInAccountForUserInternal,
+        { userId }
+      );
+      const companyResult = await ctx.runAction(
+        internal.integrations.linkedin.getCompany.getCompany,
+        lookupArgs
+      );
+      if (!companyResult.success || !companyResult.company) {
+        throw new Error(
+          companyResult.error || "Could not load LinkedIn company."
+        );
+      }
+
+      const storedAccount = await storedAccountPromise;
+      return buildLinkedInCompanyProfileData({
+        company: companyResult.company,
+        identity: {
+          entityType: "company",
+          displayName: prospectIdentity.displayName,
+          headline: prospectIdentity.title,
+          avatarUrl: prospectIdentity.avatarUrl,
+          profileUrl: prospectIdentity.profileUrl,
+          username: prospectIdentity.username,
+          providerId: prospectIdentity.providerId,
+        },
+        viewerConnectionStatus: toConnectionStatus(storedAccount),
+      });
+    }
+
     if (!prospectIdentity.username && !prospectIdentity.providerId) {
       throw new Error(
         "This profile is missing the LinkedIn identity needed to load a profile."
       );
     }
 
-    const profilePromise = ctx.runAction(
+    const storedAccountPromise = ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      { userId }
+    );
+
+    const profileResult = await ctx.runAction(
       internal.integrations.linkedin.getProfile.getProfile,
       {
         username: prospectIdentity.username,
@@ -3567,12 +3628,6 @@ export const getLinkedInProfile = action({
         includeContactInfo: false,
       }
     );
-    const storedAccountPromise = ctx.runQuery(
-      internalLinkedInStore.getLinkedInAccountForUserInternal,
-      { userId }
-    );
-
-    const profileResult = await profilePromise;
     if (!profileResult.success || !profileResult.profile) {
       throw new Error(
         profileResult.error || "Could not load LinkedIn profile."
@@ -3605,15 +3660,14 @@ export const getLinkedInIdentityProfile = action({
     );
 
     if (identity.entityType === "company") {
-      const companyId = normalizeLinkedInCompanyId(identity.providerId);
+      const lookupArgs = resolveLinkedInCompanyLookupArgs({
+        providerId: identity.providerId,
+        username: identity.username,
+        displayName: identity.displayName,
+      });
       const companyResult = await ctx.runAction(
         internal.integrations.linkedin.getCompany.getCompany,
-        {
-          id: companyId,
-          name: companyId
-            ? undefined
-            : (identity.displayName ?? identity.username),
-        }
+        lookupArgs
       );
       if (!companyResult.success || !companyResult.company) {
         throw new Error(
@@ -3651,6 +3705,7 @@ export const getLinkedInIdentityProfile = action({
     const storedAccount = await storedAccountPromise;
     return buildLinkedInProfileData({
       prospectIdentity: {
+        entityType: "person" as const,
         displayName: identity.displayName ?? "LinkedIn user",
         title: identity.headline,
         avatarUrl: identity.avatarUrl,
@@ -3688,6 +3743,14 @@ export const getLinkedInProfileRelationship = action({
       { userId }
     );
     const viewerConnectionStatus = toConnectionStatus(storedAccount);
+
+    if (prospectIdentity.entityType === "company") {
+      return {
+        relationshipStatusKnown: false,
+        viewerAccountConnected: viewerConnectionStatus.isConnected,
+        viewerAccountStatus: viewerConnectionStatus.status,
+      };
+    }
 
     if (!storedAccount?.accountId) {
       return {
@@ -3753,6 +3816,17 @@ export const getLinkedInProfileSupplemental = action({
     );
     if (!prospect) {
       return null;
+    }
+
+    if (
+      getProspectLinkedInIdentity(prospect).entityType === "company" ||
+      isLinkedInCompanyIdentity({
+        providerId: args.profileUrn ?? args.providerId,
+      })
+    ) {
+      return {
+        relationshipStatusKnown: false,
+      };
     }
 
     const storedAccount = await ctx.runQuery(
@@ -3901,11 +3975,42 @@ export const getLinkedInProfilePostsPage = action({
     if (!prospect) {
       return { posts: [], nextCursor: null };
     }
-    const activityActor = toLinkedInActivityActor(
-      getProspectLinkedInIdentity(prospect)
-    );
+    const prospectIdentity = getProspectLinkedInIdentity(prospect);
+    const activityActor = toLinkedInActivityActor(prospectIdentity);
 
     try {
+      const companyId =
+        prospectIdentity.entityType === "company"
+          ? (normalizeLinkedInCompanyId(args.profileUrn) ??
+            normalizeLinkedInCompanyId(prospectIdentity.providerId))
+          : undefined;
+      if (prospectIdentity.entityType === "company") {
+        if (!companyId) {
+          return { posts: [], nextCursor: null };
+        }
+        const start = Math.max(0, Number.parseInt(args.cursor ?? "0", 10) || 0);
+        const result = await requestLinkdApiData<{
+          posts?: LinkedInProfilePost[];
+        }>(ctx, {
+          path: "/api/v1/companies/company/posts",
+          query: {
+            id: companyId,
+            start,
+          },
+          consumer: `linkedin.getCompanyPosts:${companyId}:${start}`,
+        });
+        const posts = Array.isArray(result.posts)
+          ? result.posts.map((post) =>
+              toUnifiedLinkedInProfilePost(post, activityActor)
+            )
+          : [];
+
+        return {
+          posts,
+          nextCursor: posts.length > 0 ? String(start + posts.length) : null,
+        };
+      }
+
       const page = await ctx.runAction(
         internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
         {
