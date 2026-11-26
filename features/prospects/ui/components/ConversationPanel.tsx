@@ -8,6 +8,7 @@
 
 import * as React from "react";
 import { useAction } from "convex/react";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/shared/lib/utils";
 import {
@@ -179,7 +180,11 @@ export function ConversationPanel({
         setNextRepliesCursor(result.repliesCursor ?? null);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to load conversation"
+          captureClientErrorMessage(
+            err,
+            "We couldn't load this conversation right now. Please try again.",
+            "ConversationPanel"
+          )
         );
       } finally {
         if (isInitialLoad) {

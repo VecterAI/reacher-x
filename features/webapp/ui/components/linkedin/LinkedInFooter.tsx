@@ -4,6 +4,10 @@
 import * as React from "react";
 import { useAction } from "convex/react";
 import { useRouter } from "next/navigation";
+import {
+  captureClientErrorMessage,
+  getConvexErrorCode,
+} from "@/shared/lib/errors";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
@@ -277,11 +281,11 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
 
   const handleLinkedInActionError = React.useCallback(
     (error: unknown, fallbackTitle: string) => {
-      const message =
-        error instanceof Error ? error.message : "Please try again.";
+      const rawMessage = error instanceof Error ? error.message : "";
       if (
+        getConvexErrorCode(error) === "ACCOUNT_NOT_CONNECTED" ||
         /connect(ed)? linkedin|linkedin account|missing credentials|disconnected account|expired credentials|insufficient privileges/i.test(
-          message
+          rawMessage
         )
       ) {
         promptConnectLinkedIn();
@@ -289,7 +293,11 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
       }
 
       toast.error(fallbackTitle, {
-        description: message,
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "LinkedInFooter"
+        ),
       });
     },
     [promptConnectLinkedIn]

@@ -4,6 +4,7 @@ import * as React from "react";
 import { runLinkedInProfileRequest } from "@/shared/lib/linkedin/profileRequests";
 import { useAction } from "convex/react";
 import { useRouter } from "next/navigation";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import Link from "next/link";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -515,9 +516,11 @@ export function LinkedInProfilePanel({
         setResolvedProfile(null);
         setNextPostsCursor(null);
         setError(
-          err instanceof Error
-            ? err.message
-            : "Could not load LinkedIn profile."
+          captureClientErrorMessage(
+            err,
+            "We couldn't load this profile right now. Please try again.",
+            "LinkedInProfilePanel"
+          )
         );
       } finally {
         if (requestVersion === profileRequestVersion.current) setLoading(false);
@@ -654,7 +657,11 @@ export function LinkedInProfilePanel({
           return nextProfile;
         });
         setNextPostsCursor(nextCursor);
-        setPostsError(result.error);
+        setPostsError(
+          result.error
+            ? getLinkedInProfilePostsFailureMessage(result.error)
+            : undefined
+        );
       } catch (initialPostsError) {
         if (!cancelled) {
           setPostsError(
@@ -852,7 +859,7 @@ export function LinkedInProfilePanel({
       };
       if (requestVersion !== profileRequestVersion.current) return;
       if (result.error) {
-        setPostsError(result.error);
+        setPostsError(getLinkedInProfilePostsFailureMessage(result.error));
         return;
       }
       const nextCursor =
@@ -942,10 +949,11 @@ export function LinkedInProfilePanel({
     } catch (inviteError) {
       setConnectionState(previousConnectionState);
       toast.error("Could not send LinkedIn invite", {
-        description:
-          inviteError instanceof Error
-            ? inviteError.message
-            : "Please try again.",
+        description: captureClientErrorMessage(
+          inviteError,
+          "Please try again.",
+          "LinkedInProfilePanel"
+        ),
       });
       void loadProfile(true);
     } finally {

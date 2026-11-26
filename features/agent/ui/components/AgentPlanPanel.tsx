@@ -6,6 +6,7 @@ import { PlanConnectButton } from "@/features/prospects/ui/components/outreach-p
 import { useCallback } from "react";
 import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -237,9 +238,10 @@ export function AgentPlanPanel({
                   Could not load outreach plan
                 </p>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  {convexReadyError?.message ||
-                    planDataQuery.error?.message ||
-                    "Please try again."}
+                  {getClientErrorMessage(
+                    convexReadyError ?? planDataQuery.error,
+                    "Please try again."
+                  )}
                 </p>
               </div>
             ) : !plan ? (

@@ -1,3 +1,5 @@
+import { getClientErrorMessage } from "../../shared/lib/errors";
+
 const MAX_ERROR_DEPTH = 8;
 const MAX_ERROR_MESSAGE_LENGTH = 4_000;
 
@@ -160,14 +162,7 @@ export function normalizeUnknownError(error: unknown): Error {
 
 export function getUserSafeErrorMessage(
   error: unknown,
-  fallback = "Something went wrong"
+  fallback = "Something went wrong. Please try again."
 ): string {
-  const rawMessage =
-    error instanceof Error
-      ? error.message
-      : typeof error === "string"
-        ? error
-        : fallback;
-  const firstLine = rawMessage.split("\n", 1)[0]?.trim();
-  return firstLine?.replace(/^Uncaught Error:\s*/i, "") || fallback;
+  return getClientErrorMessage(error, fallback);
 }

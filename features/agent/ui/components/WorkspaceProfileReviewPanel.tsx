@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "convex/react";
 import { useFieldArray, useForm, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -279,8 +280,11 @@ export function WorkspaceProfileReviewPanel({
       toast.error("This proposal is no longer pending.");
     } catch (error) {
       toast.error("Could not update workspace", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "WorkspaceProfileReviewPanel"
+        ),
       });
     }
   });

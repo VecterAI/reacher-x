@@ -4,6 +4,10 @@ import * as React from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter, usePathname } from "next/navigation";
+import {
+  captureClientErrorMessage,
+  getConvexErrorMessage,
+} from "@/shared/lib/errors";
 import { formatLargeNumber } from "@/shared/lib/utils";
 import { cn } from "@/shared/lib/utils";
 import {
@@ -72,6 +76,11 @@ function getAnimatedPartsFromCount(count?: number | string): {
  * Prevents exposing technical details (JSON, stack traces, HTTP codes) in toasts.
  */
 function getUserFriendlyErrorMessage(error: unknown): string {
+  const convexMessage = getConvexErrorMessage(error);
+  if (convexMessage) {
+    return convexMessage;
+  }
+
   const raw = error instanceof Error ? error.message : String(error ?? "");
   const lower = raw.toLowerCase();
 
@@ -116,7 +125,11 @@ function getUserFriendlyErrorMessage(error: unknown): string {
     return "Your message is too long. Please shorten it and try again.";
   }
 
-  return "Something went wrong. Please try again.";
+  return captureClientErrorMessage(
+    error,
+    "Something went wrong. Please try again.",
+    "TweetFooter"
+  );
 }
 
 function mergeCachedViewerState(

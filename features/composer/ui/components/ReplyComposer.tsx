@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { SerializedEditorState } from "lexical";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 // import {
 //   DropdownMenu,
 //   DropdownMenuContent,
@@ -137,10 +138,10 @@ export function ReplyComposer({
       await onSubmit?.(content, mediaUrls, mediaDescriptions, mediaKinds);
     } catch (error) {
       toast.error("Unable to post reply", {
-        description:
-          error instanceof Error
-            ? error.message
-            : "X rejected the reply. Please try again.",
+        description: getClientErrorMessage(
+          error,
+          "X couldn't post this reply right now. Please try again."
+        ),
       });
       logger.error("Reply submit error:", error);
       throw error;

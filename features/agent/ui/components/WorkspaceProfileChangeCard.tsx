@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -110,8 +111,11 @@ export function WorkspaceProfileChangeCard({
       toast.error("This proposal is no longer pending.");
     } catch (error) {
       toast.error("Could not approve proposal", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "WorkspaceProfileChangeCard"
+        ),
       });
     } finally {
       setPendingAction(null);
@@ -126,8 +130,11 @@ export function WorkspaceProfileChangeCard({
       });
     } catch (error) {
       toast.error("Could not reject proposal", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "WorkspaceProfileChangeCard"
+        ),
       });
     } finally {
       setPendingAction(null);

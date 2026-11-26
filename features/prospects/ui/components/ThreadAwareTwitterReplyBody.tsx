@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useAction } from "convex/react";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import { Tweet } from "@/features/webapp/ui/components/tweet";
 import type { Tweet as TweetType } from "@/features/threads/types";
@@ -151,7 +152,11 @@ export function ThreadAwareTwitterReplyBody({
         setNextRepliesCursor(result.repliesCursor ?? null);
       } catch (error) {
         setConversationError(
-          error instanceof Error ? error.message : "Failed to load conversation"
+          captureClientErrorMessage(
+            error,
+            "We couldn't load this conversation right now. Please try again.",
+            "ThreadAwareTwitterReplyBody"
+          )
         );
       } finally {
         setIsLoadingConversation(false);

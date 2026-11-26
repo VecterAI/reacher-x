@@ -1,5 +1,6 @@
 import { validateSyntheticProfileExamples } from "./lib/syntheticProfileCore";
 import { getWorkspaceIcpRefreshFingerprint } from "./lib/workspaceIcpSignalsCore";
+import { throwAppError } from "./lib/appError";
 import { v } from "convex/values";
 import type { WorkflowId } from "@convex-dev/workflow";
 import {
@@ -810,7 +811,7 @@ export const setWorkspaceReportingTimeZone = mutation({
     });
 
     if (!isValidTimeZoneIdentifier(args.timeZone)) {
-      throw new Error("Invalid reporting timezone");
+      throwAppError("INVALID_INPUT", "Invalid reporting timezone.");
     }
 
     const reportingTimeZone = normalizeTimeZoneIdentifier(args.timeZone);
@@ -1842,7 +1843,10 @@ export const createWorkspaceInternal = internalMutation({
       }
     );
     if (!eligibility.allowed) {
-      throw new Error(eligibility.reason ?? "Workspace limit reached");
+      throwAppError(
+        "PLAN_LIMIT_REACHED",
+        eligibility.reason ?? "Workspace limit reached."
+      );
     }
 
     const now = getCurrentUTCTimestamp();

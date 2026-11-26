@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -265,8 +266,11 @@ export function WorkspaceSystemStatusDialog({
         );
       } catch (error) {
         toast.error("Could not start the △ Agent", {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
+          description: captureClientErrorMessage(
+            error,
+            "Please try again.",
+            "WorkspaceSystemStatusDialog"
+          ),
         });
       } finally {
         setPendingAction(null);
@@ -311,8 +315,11 @@ export function WorkspaceSystemStatusDialog({
       resetAndClose();
     } catch (error) {
       toast.error("Could not pause the △ Agent", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "WorkspaceSystemStatusDialog"
+        ),
       });
     } finally {
       setPendingAction(null);

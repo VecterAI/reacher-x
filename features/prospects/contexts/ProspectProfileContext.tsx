@@ -6,6 +6,7 @@
 "use client";
 
 import * as React from "react";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -83,7 +84,10 @@ function ProspectProfileProviderInner({
 
   const loading = selection !== null && rawProspectQuery.isPending;
   const error = rawProspectQuery.isError
-    ? rawProspectQuery.error.message || `Failed to load ${entitySingularLower}`
+    ? getClientErrorMessage(
+        rawProspectQuery.error,
+        `Could not load this ${entitySingularLower}. Please try again.`
+      )
     : rawProspect === null
       ? `${entitySingular} not found`
       : null;

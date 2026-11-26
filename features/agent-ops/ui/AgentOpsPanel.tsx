@@ -3,6 +3,7 @@
 import * as React from "react";
 import { api } from "@/convex/_generated/api";
 import { useQueryWithStatus } from "@/shared/hooks";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Card,
@@ -162,7 +163,10 @@ export function AgentOpsPanel({
           {activeQuery.isError ? (
             <Card className="border-destructive/40 shadow-none">
               <CardContent className="text-destructive p-4 text-sm">
-                {activeQuery.error.message || "Failed to load detail record."}
+                {getClientErrorMessage(
+                  activeQuery.error,
+                  "Could not load detail record. Please try again."
+                )}
               </CardContent>
             </Card>
           ) : null}

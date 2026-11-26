@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { api } from "@/convex/_generated/api";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import type { Id } from "@/convex/_generated/dataModel";
 import type {
   LinkedInConversationAttachmentSummary,
@@ -266,9 +267,11 @@ export function useProspectLinkedInPanel(args: {
         startTransition(() => {
           setData(null);
           setError(
-            lastErr instanceof Error
-              ? lastErr.message
-              : "Unable to load messages."
+            captureClientErrorMessage(
+              lastErr,
+              "Unable to load messages right now. Please try again.",
+              "ProspectLinkedInPanel"
+            )
           );
         });
       }

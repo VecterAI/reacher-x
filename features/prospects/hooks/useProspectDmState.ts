@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { api } from "@/convex/_generated/api";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import type { Id } from "@/convex/_generated/dataModel";
 
 const dmStateCache = new Map<string, unknown>();
@@ -89,11 +90,13 @@ export function useProspectDmState(
       startTransition(() => {
         setData(null);
         setError(
-          err instanceof Error
-            ? err.message
-            : platform === "linkedin"
-              ? "Unable to load LinkedIn message state."
-              : "Unable to load DM state."
+          captureClientErrorMessage(
+            err,
+            platform === "linkedin"
+              ? "Unable to load LinkedIn messages right now."
+              : "Unable to load messages right now.",
+            "ProspectDmState"
+          )
         );
       });
       return null;

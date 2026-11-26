@@ -9,6 +9,7 @@ import React, {
   useState,
 } from "react";
 import { useAction } from "convex/react";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import type { Tweet } from "@/features/threads/types";
 import type {
@@ -209,8 +210,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         };
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to refresh profile.";
+      const message = captureClientErrorMessage(
+        error,
+        "We couldn't refresh this profile right now. Please try again.",
+        "TwitterProfileContext"
+      );
       setState((current) => {
         if (
           reqId !== requestRef.current ||
@@ -280,8 +284,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           };
         });
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to load profile.";
+        const message = captureClientErrorMessage(
+          error,
+          "We couldn't load this profile right now. Please try again.",
+          "TwitterProfileContext"
+        );
         setState((current) => {
           if (reqId !== requestRef.current || current.username !== username) {
             return current;
@@ -399,8 +406,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           };
         });
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to load timeline.";
+        const message = captureClientErrorMessage(
+          error,
+          "We couldn't load recent posts right now. Please try again.",
+          "TwitterProfileContext"
+        );
         setState((current) => {
           if (
             reqId !== requestRef.current ||
@@ -500,8 +510,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           };
         });
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to load more posts.";
+        const message = captureClientErrorMessage(
+          error,
+          "We couldn't load more posts right now. Please try again.",
+          "TwitterProfileContext"
+        );
         setState((current) => {
           if (
             reqId !== requestRef.current ||

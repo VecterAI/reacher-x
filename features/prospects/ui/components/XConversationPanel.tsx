@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { getOutboundMessageFailure } from "@/shared/lib/platforms/outboundMessageFailure";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { SerializedEditorState } from "lexical";
 import { useRouter } from "next/navigation";
@@ -1099,10 +1100,11 @@ export function XConversationPanel({
         });
       } catch (reactionError) {
         toast.error("Could not update X/Twitter Chat reaction", {
-          description:
-            reactionError instanceof Error
-              ? reactionError.message
-              : "Please try again.",
+          description: captureClientErrorMessage(
+            reactionError,
+            "Please try again.",
+            "XConversationPanel"
+          ),
         });
       }
     },

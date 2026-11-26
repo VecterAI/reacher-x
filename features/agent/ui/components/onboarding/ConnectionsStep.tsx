@@ -5,6 +5,10 @@ import { useMutation } from "convex/react";
 import { useConvexAuth } from "convex/react";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
 import { toast } from "sonner";
+import {
+  captureClientErrorMessage,
+  getClientErrorMessage,
+} from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
@@ -55,7 +59,17 @@ export function ConnectionsStep({
     workosLoading ||
     (isAuthenticated && currentUserQuery.isPending) ||
     (accountsEnabled && (xQuery.isPending || linkedinQuery.isPending));
-  const statusError = [xQuery.error?.message, linkedinQuery.error?.message]
+  const statusError = [
+    xQuery.error
+      ? getClientErrorMessage(xQuery.error, "Unable to load X/Twitter status.")
+      : null,
+    linkedinQuery.error
+      ? getClientErrorMessage(
+          linkedinQuery.error,
+          "Unable to load LinkedIn status."
+        )
+      : null,
+  ]
     .filter(Boolean)
     .join(" · ");
   const isMutating = isCompletingStep;
@@ -97,8 +111,11 @@ export function ConnectionsStep({
             ? "Could not save connection step"
             : "Could not continue setup",
           {
-            description:
-              error instanceof Error ? error.message : "Please try again.",
+            description: captureClientErrorMessage(
+              error,
+              "Please try again.",
+              "ConnectionsStep"
+            ),
           }
         );
       } finally {

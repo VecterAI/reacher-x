@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useAction } from "convex/react";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import {
   PageContent,
@@ -130,8 +131,11 @@ export function PlansPage() {
         window.location.assign(url);
       } catch (error) {
         toast.error("Could not start checkout", {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
+          description: captureClientErrorMessage(
+            error,
+            "Please try again.",
+            "PlansPage"
+          ),
         });
       }
     },
@@ -144,8 +148,11 @@ export function PlansPage() {
       window.location.assign(url);
     } catch (error) {
       toast.error("Could not open billing portal", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: captureClientErrorMessage(
+          error,
+          "Please try again.",
+          "PlansPage"
+        ),
       });
     }
   }, [startCustomerPortalFlow]);

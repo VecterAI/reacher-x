@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useAction } from "convex/react";
 import { useRouter } from "next/navigation";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import type { SerializedEditorState } from "lexical";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -242,7 +243,11 @@ export function LinkedInCommentThread({
         setError(null);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Unable to load comments."
+          captureClientErrorMessage(
+            err,
+            "Unable to load comments right now. Please try again.",
+            "LinkedInCommentThread"
+          )
         );
       } finally {
         setLoading(false);
@@ -321,8 +326,11 @@ export function LinkedInCommentThread({
           [commentId]: {
             page: previous[commentId]?.page,
             loading: false,
-            error:
-              err instanceof Error ? err.message : "Unable to load replies.",
+            error: captureClientErrorMessage(
+              err,
+              "Unable to load replies right now. Please try again.",
+              "LinkedInCommentThread"
+            ),
           },
         }));
       }
@@ -457,10 +465,11 @@ export function LinkedInCommentThread({
             ? "Unable to remove like from LinkedIn comment"
             : "Unable to like LinkedIn comment",
           {
-            description:
-              likeError instanceof Error
-                ? likeError.message
-                : "Please try again.",
+            description: captureClientErrorMessage(
+              likeError,
+              "Please try again.",
+              "LinkedInCommentThread"
+            ),
           }
         );
       } finally {
@@ -580,10 +589,11 @@ export function LinkedInCommentThread({
           setTopLevelInitialValue(text);
           setTopLevelComposerVersion((previous) => previous + 1);
           toast.error("Unable to comment on LinkedIn", {
-            description:
-              sendError instanceof Error
-                ? sendError.message
-                : "Please try again.",
+            description: captureClientErrorMessage(
+              sendError,
+              "Please try again.",
+              "LinkedInCommentThread"
+            ),
           });
         })
         .finally(() => {
@@ -734,10 +744,11 @@ export function LinkedInCommentThread({
           }));
           setOpenReplyComposerId(comment.id);
           toast.error("Unable to reply on LinkedIn", {
-            description:
-              sendError instanceof Error
-                ? sendError.message
-                : "Please try again.",
+            description: captureClientErrorMessage(
+              sendError,
+              "Please try again.",
+              "LinkedInCommentThread"
+            ),
           });
         });
       void mediaDescriptions;

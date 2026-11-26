@@ -7,6 +7,7 @@ import type { SerializedEditorState } from "lexical";
 import { useMutation } from "convex/react";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { toast } from "sonner";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { ComposerEditor } from "@/features/composer/lib/ComposerEditor";
 import type { ComposerEditorAPI } from "@/features/composer/lib/ToolbarBridgePlugin";
 import { buildSerializedTextState } from "@/features/composer/lib/buildSerializedTextState";
@@ -279,10 +280,11 @@ export function LandingPromptCta({
       pendingAuthenticatedHandoffRef.current = null;
       setIsSubmittingPrompt(false);
       toast.error("Couldn't start setup", {
-        description:
-          submissionError instanceof Error
-            ? submissionError.message
-            : "Please try again.",
+        description: captureClientErrorMessage(
+          submissionError,
+          "Please try again.",
+          "LandingPromptCta"
+        ),
       });
     }
   }, [

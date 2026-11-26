@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
@@ -308,7 +309,7 @@ export function UsagePage() {
               Could not load usage
             </p>
             <p className="text-destructive/80 mt-1 text-sm">
-              {usageError.message || "Please try again."}
+              {getClientErrorMessage(usageError, "Please try again.")}
             </p>
             <Button
               variant="outline"

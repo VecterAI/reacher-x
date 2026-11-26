@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { SerializedEditorState } from "lexical";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { cn } from "@/shared/lib/utils";
 import {
   extractTextFromEditorState,
@@ -1023,8 +1024,11 @@ export function BaseComposer({
                 ? {
                     ...u,
                     status: "error" as const,
-                    error:
-                      error instanceof Error ? error.message : "Upload failed",
+                    error: captureClientErrorMessage(
+                      error,
+                      "Upload failed. Please try again.",
+                      "BaseComposer"
+                    ),
                   }
                 : u
             )

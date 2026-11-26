@@ -2,9 +2,9 @@
 
 import { useCallback, useState } from "react";
 import { useAction, useMutation } from "convex/react";
-import { ConvexError } from "convex/values";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { useSetupThreadDraft } from "@/shared/hooks";
 import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
 import { cn } from "@/shared/lib/utils";
@@ -60,12 +60,11 @@ export function AgentOnboardingPanel({
     } catch (error) {
       setApprovalFailure({
         revisionKey,
-        message:
-          error instanceof ConvexError &&
-          typeof error.data === "string" &&
-          error.data.trim()
-            ? error.data.trim()
-            : "Could not continue. Wait for Agent to finish, then try again.",
+        message: captureClientErrorMessage(
+          error,
+          "Could not continue. Wait for Agent to finish, then try again.",
+          "AgentOnboardingPanel"
+        ),
       });
     } finally {
       setIsApproving(false);
@@ -93,8 +92,11 @@ export function AgentOnboardingPanel({
         window.location.assign(url);
       } catch (error) {
         toast.error("Could not start checkout", {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
+          description: captureClientErrorMessage(
+            error,
+            "Please try again.",
+            "AgentOnboardingPanel"
+          ),
         });
       } finally {
         setIsStartingCheckout(false);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { getClientErrorMessage } from "@/shared/lib/errors";
 import {
   getRunningWorkspaceStatusCopy,
   getRecoveringWorkspaceStatusCopy,
@@ -242,7 +243,7 @@ export function OnboardingProgressCard({
       <Card className="p-4 shadow-none">
         <p className="text-sm font-medium">Could not load setup progress</p>
         <p className="text-muted-foreground mt-1 text-sm">
-          {dataQuery.error.message || "Please try again."}
+          {getClientErrorMessage(dataQuery.error, "Please try again.")}
         </p>
       </Card>
     );

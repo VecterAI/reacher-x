@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { api } from "@/convex/_generated/api";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import type { Id } from "@/convex/_generated/dataModel";
 import type {
   XDmAttachmentSummary,
@@ -182,7 +183,11 @@ export function useProspectDmPanel(args: {
         startTransition(() => {
           setData(null);
           setError(
-            lastErr instanceof Error ? lastErr.message : "Unable to load DMs."
+            captureClientErrorMessage(
+              lastErr,
+              "Unable to load messages right now. Please try again.",
+              "ProspectDmPanel"
+            )
           );
         });
       }

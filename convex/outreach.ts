@@ -7,6 +7,7 @@ import {
 // Following existing patterns from prospects.ts
 
 import { v } from "convex/values";
+import { throwAppError } from "./lib/appError";
 import { paginationOptsValidator } from "convex/server";
 import type { WorkflowId } from "@convex-dev/workflow";
 import { type QueryCtx, type MutationCtx } from "./_generated/server";
@@ -3936,11 +3937,14 @@ export const approveTaskWithEdits = mutation({
     const actionableStatus =
       task.status === "pending" || task.status === "executing";
     if (!alreadyHandledStatus && !actionableStatus) {
-      throw new Error("Task is no longer actionable");
+      throwAppError("CONFLICT", "This action is no longer available.");
     }
 
     if (!task.approvalEventId) {
-      throw new Error("Task approval signal is missing. Reopen and retry.");
+      throwAppError(
+        "CONFLICT",
+        "This action is out of date. Reopen it and try again."
+      );
     }
     if (task.approvedAt || alreadyHandledStatus) {
       return { success: true, duplicate: true };
@@ -3962,7 +3966,7 @@ export const approveTaskWithEdits = mutation({
       mediaUrls,
     });
     if (validation.error) {
-      throw new Error(validation.error);
+      throwAppError("INVALID_INPUT", validation.error);
     }
 
     if (
@@ -4084,7 +4088,7 @@ export const updatePendingTaskDraft = mutation({
     assertExpectedTaskType(task, args.expectedType);
 
     if (task.status !== "pending" && task.status !== "executing") {
-      throw new Error("Task draft is no longer editable");
+      throwAppError("CONFLICT", "This draft can no longer be edited.");
     }
 
     const trimmedContent = args.content.trim();
@@ -4125,7 +4129,7 @@ export const updatePendingTaskDraft = mutation({
       mediaUploadIds: hasMediaSnapshot ? undefined : task.mediaUploadIds,
     });
     if (validation.error) {
-      throw new Error(validation.error);
+      throwAppError("INVALID_INPUT", validation.error);
     }
 
     await ctx.db.patch(args.taskId, {
@@ -4181,11 +4185,14 @@ export const approveTask = mutation({
     const actionableStatus =
       task.status === "pending" || task.status === "executing";
     if (!alreadyHandledStatus && !actionableStatus) {
-      throw new Error("Task is no longer actionable");
+      throwAppError("CONFLICT", "This action is no longer available.");
     }
 
     if (!task.approvalEventId) {
-      throw new Error("Task approval signal is missing. Reopen and retry.");
+      throwAppError(
+        "CONFLICT",
+        "This action is out of date. Reopen it and try again."
+      );
     }
     if (task.approvedAt || alreadyHandledStatus) {
       return;
@@ -4212,7 +4219,7 @@ export const approveTask = mutation({
       mediaUploadIds: task.mediaUploadIds,
     });
     if (validation.error) {
-      throw new Error(validation.error);
+      throwAppError("INVALID_INPUT", validation.error);
     }
 
     await ctx.db.patch(taskId, {

@@ -3,6 +3,7 @@
 import { toConnectionStatus } from "./lib/linkedinConnectionStateCore";
 
 import { v, type Infer } from "convex/values";
+import { throwAppError } from "./lib/appError";
 import { action, internalAction } from "./lib/functionBuilders";
 import { api, components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -2654,7 +2655,10 @@ async function getConnectedLinkedInAccountOrThrow(
   );
   const status = toConnectionStatus(storedAccount);
   if (!status.isConnected || !storedAccount?.accountId) {
-    throw new Error(getLinkedInActionUnavailableMessage(status));
+    throwAppError(
+      "ACCOUNT_NOT_CONNECTED",
+      getLinkedInActionUnavailableMessage(status)
+    );
   }
 
   return storedAccount;
@@ -2705,19 +2709,20 @@ async function sendLinkedInMessageForUser(
       metadata.mimeType?.toLowerCase().startsWith("audio/") ? [index] : []
   );
   if (voiceMessageIndexes.length > 0 && mediaUrls.length !== 1) {
-    throw new Error("Send a LinkedIn voice note by itself.");
+    throwAppError("INVALID_INPUT", "Send a LinkedIn voice note by itself.");
   }
   if (voiceMessageIndexes.length === 1) {
     const voiceMetadata = args.mediaMetadata?.[voiceMessageIndexes[0]];
     if (trimmedText) {
-      throw new Error("Send a LinkedIn voice note by itself.");
+      throwAppError("INVALID_INPUT", "Send a LinkedIn voice note by itself.");
     }
     if (
       voiceMetadata?.mimeType?.trim().toLowerCase() !== "audio/x-m4a" ||
       !voiceMetadata.durationMs ||
       voiceMetadata.durationMs > 60_000
     ) {
-      throw new Error(
+      throwAppError(
+        "INVALID_INPUT",
         "LinkedIn voice notes must be valid M4A audio up to 1 minute."
       );
     }
@@ -2726,12 +2731,13 @@ async function sendLinkedInMessageForUser(
   if (voiceMessageIndexes.length === 1) {
     const candidate = args.mediaUrls?.[voiceMessageIndexes[0]]?.trim();
     if (!candidate) {
-      throw new Error("LinkedIn voice note media is missing.");
+      throwAppError("INVALID_INPUT", "LinkedIn voice note media is missing.");
     }
     voiceMessageUrl = candidate;
   }
   if (!trimmedText && mediaUrls.length === 0) {
-    throw new Error(
+    throwAppError(
+      "INVALID_INPUT",
       "LinkedIn message requires text or at least one attachment."
     );
   }
@@ -2757,7 +2763,7 @@ async function sendLinkedInMessageForUser(
     conversationId,
   });
   if (!eligibility.enabled) {
-    throw new Error(eligibility.reasonLabel);
+    throwAppError("FORBIDDEN", eligibility.reasonLabel);
   }
 
   let result:
@@ -4866,7 +4872,10 @@ export const likeLinkedInPost = action({
     const canReact =
       getLinkedInPostCanReact(sourcePost) ?? post?.permissions?.can_react;
     if (canReact === false) {
-      throw new Error("Reactions are disabled on this LinkedIn post.");
+      throwAppError(
+        "FORBIDDEN",
+        "Reactions are disabled on this LinkedIn post."
+      );
     }
 
     await reactToLinkedInPost({

@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { SerializedEditorState } from "lexical";
 import { toast } from "sonner";
+import {
+  captureClientErrorMessage,
+  getClientErrorMessage,
+} from "@/shared/lib/errors";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn, extractTextFromEditorState } from "@/shared/lib/utils";
@@ -798,8 +802,11 @@ export function AgentDynamicPanel({
               ? "Failed to approve DM"
               : "Failed to approve reply",
           {
-            description:
-              error instanceof Error ? error.message : "Please try again.",
+            description: captureClientErrorMessage(
+              error,
+              "Please try again.",
+              "AgentDynamicPanel"
+            ),
           }
         );
       } finally {
@@ -1146,10 +1153,11 @@ export function AgentDynamicPanel({
                         });
                       } catch (error) {
                         toast.error("Failed to approve action", {
-                          description:
-                            error instanceof Error
-                              ? error.message
-                              : "Please try again.",
+                          description: captureClientErrorMessage(
+                            error,
+                            "Please try again.",
+                            "AgentDynamicPanel"
+                          ),
                         });
                       } finally {
                         setIsSubmitting(false);
@@ -1294,9 +1302,10 @@ export function AgentDynamicPanel({
                   Could not load panel context
                 </p>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  {convexReadyError?.message ||
-                    activePanelError?.message ||
-                    "Please try again."}
+                  {getClientErrorMessage(
+                    convexReadyError ?? activePanelError,
+                    "Please try again."
+                  )}
                 </p>
               </div>
             ) : isActionRequestPanel ? (

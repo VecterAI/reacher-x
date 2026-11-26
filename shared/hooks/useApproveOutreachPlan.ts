@@ -2,11 +2,10 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useMutation } from "convex/react";
-import { ConvexError } from "convex/values";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { getStringProperty, isRecord } from "@/convex/lib/typeGuards";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 
 /** Shared feedback for approval from a plan panel or a chat preview. */
 export function useApproveOutreachPlan() {
@@ -23,13 +22,16 @@ export function useApproveOutreachPlan() {
         await approve({ planId });
         toast.success("Plan started", { id: toastId });
       } catch (error) {
-        const message =
-          error instanceof ConvexError && isRecord(error.data)
-            ? getStringProperty(error.data, "message")
-            : undefined;
-        toast.error(message ?? "Could not start the plan. Try again.", {
-          id: toastId,
-        });
+        toast.error(
+          captureClientErrorMessage(
+            error,
+            "Could not start the plan. Try again.",
+            "ApproveOutreachPlan"
+          ),
+          {
+            id: toastId,
+          }
+        );
       } finally {
         pending.current = false;
         setIsApproving(false);

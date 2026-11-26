@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createLinkedInVoiceNoteFile } from "@/shared/lib/utils/media/linkedinVoiceNote";
+import { captureClientErrorMessage } from "@/shared/lib/errors";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
 export type VoiceNotePlatform = "linkedin" | "twitter";
@@ -93,20 +94,26 @@ function getMicrophoneError(
   if (error instanceof DOMException && error.name === "NotFoundError") {
     return "Connect a microphone, then try again.";
   }
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return platform === "linkedin"
-    ? "This browser cannot record LinkedIn-compatible audio."
-    : "Voice recording is unavailable in this browser.";
+  return captureClientErrorMessage(
+    error,
+    platform === "linkedin"
+      ? "This browser cannot record LinkedIn-compatible audio."
+      : "Voice recording is unavailable in this browser.",
+    "VoiceNoteRecorder"
+  );
 }
 
 function getVoiceNoteFileError(
   error: unknown,
   platform: VoiceNotePlatform
 ): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return platform === "linkedin"
-    ? "Could not prepare this recording as LinkedIn-compatible M4A audio."
-    : "Could not prepare this voice recording for upload.";
+  return captureClientErrorMessage(
+    error,
+    platform === "linkedin"
+      ? "Could not prepare this recording as LinkedIn-compatible M4A audio."
+      : "Could not prepare this voice recording for upload.",
+    "VoiceNoteRecorder"
+  );
 }
 
 export function useVoiceNoteRecorder(
