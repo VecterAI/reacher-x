@@ -3,6 +3,8 @@
 import { v } from "convex/values";
 import { internalAction } from "../../lib/functionBuilders";
 import { requestLinkdApiData } from "./linkdapiClient";
+import { isTregLinkedInProvider } from "./providerConfig";
+import { fetchTregLinkedInPostComments } from "./tregOperations";
 
 type LinkdApiPostCommentResponse = {
   success?: boolean;
@@ -21,6 +23,10 @@ export const getPostComments = internalAction({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (isTregLinkedInProvider()) {
+      return await fetchTregLinkedInPostComments(ctx, args);
+    }
+
     const payload = await requestLinkdApiData<
       NonNullable<LinkdApiPostCommentResponse["data"]>
     >(ctx, {

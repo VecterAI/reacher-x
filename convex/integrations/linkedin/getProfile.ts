@@ -7,6 +7,8 @@ import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { logger } from "../../../shared/lib/logger";
 import { requestLinkdApiData } from "./linkdapiClient";
+import { isTregLinkedInProvider } from "./providerConfig";
+import { fetchTregLinkedInProfile } from "./tregOperations";
 const linkedInProfileLogger = logger.withScope("LinkedInGetProfile");
 
 // ============================================================================
@@ -104,6 +106,19 @@ export const getProfile = internalAction({
     }
 
     try {
+      if (isTregLinkedInProvider()) {
+        const result = await fetchTregLinkedInProfile(ctx, {
+          username: args.username,
+          urn: args.urn,
+          includeContactInfo: args.includeContactInfo,
+        });
+        return {
+          success: true,
+          profile: result.profile,
+          contactInfo: result.contactInfo,
+        };
+      }
+
       const profile = await requestLinkdApiData<LinkedInProfile>(ctx, {
         path: "/api/v1/profile/full",
         query: {

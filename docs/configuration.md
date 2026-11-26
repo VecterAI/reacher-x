@@ -183,14 +183,16 @@ These are Convex deployment variables.
 
 ### LinkedIn
 
-| Variable                 | Purpose                                                       |
-| ------------------------ | ------------------------------------------------------------- |
-| `LINKDAPI_API_KEY`       | LinkedIn discovery, profile, company, post, and comment reads |
-| `UNIPILE_API_KEY`        | Connected-account messaging and LinkedIn actions              |
-| `UNIPILE_BASE_URL`       | Unipile API base URL/DSN                                      |
-| `UNIPILE_WEBHOOK_SECRET` | Validates Unipile webhook requests                            |
+| Variable                 | Purpose                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
+| `TREG_API_KEY`           | `treg.to` team/agent API key for LinkedIn discovery, profile, company, post, and comment reads |
+| `LINKEDIN_DATA_PROVIDER` | Optional override: `treg` or `linkdapi` (defaults to `treg` when `TREG_API_KEY` is set)        |
+| `LINKDAPI_API_KEY`       | Legacy/fallback LinkdAPI key for LinkedIn discovery, profile, company, post, and comment reads |
+| `UNIPILE_API_KEY`        | Connected-account messaging and LinkedIn actions                                               |
+| `UNIPILE_BASE_URL`       | Unipile API base URL/DSN                                                                       |
+| `UNIPILE_WEBHOOK_SECRET` | Validates Unipile webhook requests                                                             |
 
-These are Convex deployment variables. LinkdAPI is the LinkedIn read plane; Unipile is the connected-account auth/write plane.
+These are Convex deployment variables. `treg.to` (or LinkdAPI when selected) is the LinkedIn read plane; Unipile is the connected-account auth/write plane.
 
 Prefer `UNIPILE_BASE_URL`. The client also accepts `UNIPILE_API_URL` and `UNIPILE_DSN` as fallback names, in that order, when earlier values are empty. Set only one; the client normalizes a DSN or API URL to its base URL.
 

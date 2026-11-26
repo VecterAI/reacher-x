@@ -7,6 +7,8 @@ import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { logger } from "../../../shared/lib/logger";
 import { requestLinkdApiData } from "./linkdapiClient";
+import { isTregLinkedInProvider } from "./providerConfig";
+import { fetchTregLinkedInCompany } from "./tregOperations";
 const linkedInCompanyLogger = logger.withScope("LinkedInGetCompany");
 
 // ============================================================================
@@ -107,6 +109,17 @@ export const getCompany = internalAction({
     }
 
     try {
+      if (isTregLinkedInProvider()) {
+        const company = await fetchTregLinkedInCompany(ctx, {
+          id: args.id,
+          name: args.name,
+        });
+        return {
+          success: true,
+          company,
+        };
+      }
+
       const company = await requestLinkdApiData<LinkedInCompany>(ctx, {
         path: "/api/v1/companies/company/info",
         query: {

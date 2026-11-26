@@ -19,6 +19,11 @@ import {
   type LinkedInPeopleSearchAttempt,
 } from "../../lib/linkedinSearchHelpers";
 import { requestLinkdApiData } from "./linkdapiClient";
+import { isTregLinkedInProvider } from "./providerConfig";
+import {
+  lookupTregLinkedInGeoId,
+  searchTregLinkedInPeoplePage,
+} from "./tregOperations";
 import { isProviderCircuitOpenError } from "../../lib/providerReliability";
 
 export interface LinkedInPerson {
@@ -54,6 +59,7 @@ interface InternalSearchPeopleResult {
   total: number;
   start: number;
   hasMore: boolean;
+  nextCursor?: string | null;
   searchMode: "title" | "keyword";
   error?: string;
 }
@@ -191,6 +197,7 @@ async function collectPaginatedPeopleResults(
     query: string;
     searchMode: "title" | "keyword";
     geoUrn?: string;
+    location?: string;
     profileLanguage?: string;
     count: number;
     initialResult: InternalSearchPeopleResult;
@@ -223,8 +230,10 @@ async function collectPaginatedPeopleResults(
           query: args.query,
           searchMode: args.searchMode,
           geoUrn: args.geoUrn,
+          location: args.location,
           profileLanguage: args.profileLanguage,
           start: nextStart,
+          cursor: lastResult.nextCursor ?? undefined,
           count: args.count,
         }
       );
@@ -261,6 +270,10 @@ async function resolveGeoUrn(
   if (!normalized) return undefined;
 
   try {
+    if (isTregLinkedInProvider()) {
+      return await lookupTregLinkedInGeoId(ctx, normalized);
+    }
+
     const data = await requestLinkdApiData<unknown>(ctx, {
       path: "/api/v1/geos/name-lookup",
       query: { query: normalized },
@@ -281,12 +294,35 @@ export const searchInternal = internalAction({
     query: v.string(),
     searchMode: v.union(v.literal("title"), v.literal("keyword")),
     start: v.optional(v.number()),
+    cursor: v.optional(v.string()),
     count: v.optional(v.number()),
     geoUrn: v.optional(v.string()),
+    location: v.optional(v.string()),
     profileLanguage: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<InternalSearchPeopleResult> => {
     try {
+      if (isTregLinkedInProvider()) {
+        const page = await searchTregLinkedInPeoplePage(ctx, {
+          query: args.query,
+          searchMode: args.searchMode,
+          geoUrn: args.geoUrn,
+          location: args.location,
+          start: args.start ?? 0,
+          count: args.count ?? LINKEDIN_PEOPLE_DEFAULT_COUNT,
+          cursor: args.cursor,
+        });
+        return {
+          success: true,
+          people: page.people,
+          total: page.total,
+          start: page.start,
+          hasMore: page.hasMore,
+          nextCursor: page.nextCursor,
+          searchMode: args.searchMode,
+        };
+      }
+
       const data = await requestLinkdApiData<ApiResponse["data"]>(ctx, {
         path: "/api/v1/search/people",
         query: {
@@ -369,6 +405,9 @@ export const searchBatch = action({
       runIdPromise: Promise<RunId>;
     }> = [];
 
+    const useTreg = isTregLinkedInProvider();
+    const effectiveProfileLanguage = useTreg ? undefined : args.profileLanguage;
+
     for (let index = 0; index < queriesToExecute.length; index += 1) {
       const query = queriesToExecute[index];
       const attempts = buildLinkedInPeopleSearchAttempts({
@@ -376,7 +415,7 @@ export const searchBatch = action({
           ? ["title", "keyword"]
           : ["keyword"],
         geoUrn,
-        profileLanguage: args.profileLanguage,
+        profileLanguage: effectiveProfileLanguage,
       });
       const runIdPromise = new Promise<RunId>((resolve, reject) => {
         void (async () => {
@@ -388,6 +427,7 @@ export const searchBatch = action({
                 query,
                 searchMode: attempts[0].searchMode,
                 geoUrn: attempts[0].geoUrn,
+                location: attempts[0].geoUrn ? args.location : undefined,
                 profileLanguage: attempts[0].profileLanguage,
                 count: requestedCount,
               }
@@ -469,6 +509,7 @@ export const searchBatch = action({
               query,
               searchMode,
               geoUrn: attempt.geoUrn,
+              location: attempt.geoUrn ? args.location : undefined,
               profileLanguage: attempt.profileLanguage,
               count: requestedCount,
               initialResult,
@@ -525,6 +566,7 @@ export const searchBatch = action({
               query,
               searchMode: nextAttempt.searchMode,
               geoUrn: nextAttempt.geoUrn,
+              location: nextAttempt.geoUrn ? args.location : undefined,
               profileLanguage: nextAttempt.profileLanguage,
               count: requestedCount,
             }
